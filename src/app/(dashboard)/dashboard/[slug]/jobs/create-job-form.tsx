@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useTransition } from 'react'
+import { useState, useRef, useTransition, useCallback } from 'react'
 import { createJob } from './actions'
+import VoiceInput from '@/components/voice-input'
 import type { JobStatus } from '@/types/database'
 
 type CustomerOption = {
@@ -30,6 +31,13 @@ export default function CreateJobForm({ orgId, orgSlug, customers }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const formRef = useRef<HTMLFormElement>(null)
+  const descRef = useRef<HTMLTextAreaElement>(null)
+
+  const handleDescTranscript = useCallback((text: string) => {
+    if (descRef.current) {
+      descRef.current.value += (descRef.current.value ? ' ' : '') + text
+    }
+  }, [])
 
   function handleSubmit(formData: FormData) {
     setError(null)
@@ -109,10 +117,14 @@ export default function CreateJobForm({ orgId, orgSlug, customers }: Props) {
               </div>
 
               <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-                  Description
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                    Description
+                  </label>
+                  <VoiceInput onTranscript={handleDescTranscript} />
+                </div>
                 <textarea
+                  ref={descRef}
                   id="description"
                   name="description"
                   rows={3}

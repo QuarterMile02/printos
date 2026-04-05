@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useCallback } from 'react'
 import { createQuote } from './actions'
+import VoiceInput from '@/components/voice-input'
 
 type CustomerOption = {
   id: string
@@ -70,6 +71,10 @@ export default function CreateQuoteForm({ orgId, orgSlug, customers }: Props) {
   function addLineItem() {
     setLineItems((prev) => [...prev, emptyLineItem()])
   }
+
+  const handleDescTranscript = useCallback((text: string) => {
+    setDescription((prev) => (prev ? prev + ' ' : '') + text)
+  }, [])
 
   const grandTotal = lineItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
 
@@ -163,9 +168,12 @@ export default function CreateQuoteForm({ orgId, orgSlug, customers }: Props) {
               </div>
 
               <div>
-                <label htmlFor="quote_description" className="block text-sm font-medium text-gray-700">
-                  Description
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="quote_description" className="block text-sm font-medium text-gray-700">
+                    Description
+                  </label>
+                  <VoiceInput onTranscript={handleDescTranscript} />
+                </div>
                 <textarea
                   id="quote_description"
                   rows={2}

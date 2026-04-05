@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useTransition } from 'react'
+import { useState, useRef, useTransition, useCallback } from 'react'
 import { createCustomer } from './actions'
+import VoiceInput from '@/components/voice-input'
 
 type Props = {
   orgId: string
@@ -13,6 +14,13 @@ export default function CreateCustomerForm({ orgId, orgSlug }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const formRef = useRef<HTMLFormElement>(null)
+  const notesRef = useRef<HTMLTextAreaElement>(null)
+
+  const handleNotesTranscript = useCallback((text: string) => {
+    if (notesRef.current) {
+      notesRef.current.value += (notesRef.current.value ? ' ' : '') + text
+    }
+  }, [])
 
   function handleSubmit(formData: FormData) {
     setError(null)
@@ -133,10 +141,14 @@ export default function CreateCustomerForm({ orgId, orgSlug }: Props) {
               </div>
 
               <div>
-                <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
-                  Notes
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
+                    Notes
+                  </label>
+                  <VoiceInput onTranscript={handleNotesTranscript} />
+                </div>
                 <textarea
+                  ref={notesRef}
                   id="notes"
                   name="notes"
                   rows={3}
