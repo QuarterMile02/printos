@@ -10,7 +10,10 @@
       "Bash(node -e \"const p = require\\('./node_modules/next/package.json'\\); console.log\\(p.version\\)\")",
       "Bash(notepad:*)",
       "Bash(npx next:*)",
-      "Bash(ls C:/printos/.env*)"
+      "Bash(ls C:/printos/.env*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
