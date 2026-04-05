@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --no-turbopack --yes)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const pkg = require\\('./node_modules/@supabase/supabase-js/package.json'\\); console.log\\(pkg.version\\)\")",
+      "Bash(node -e ':*)",
+      "Bash(npm run:*)",
+      "Bash(node -e \"const p = require\\('./node_modules/next/package.json'\\); console.log\\(p.version\\)\")",
+      "Bash(notepad:*)",
+      "Bash(npx next:*)",
+      "Bash(ls C:/printos/.env*)"
+    ]
+  }
+}
