@@ -70,8 +70,8 @@ export function OrgSidebarNav({ slug, email, signOutAction }: Props) {
 
   return (
     <>
-      {/* Mobile header bar */}
-      <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 md:hidden">
+      {/* Mobile header bar — full width, stacks above content */}
+      <div className="sticky top-0 z-30 flex w-full items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 md:hidden">
         <button
           onClick={() => setOpen(true)}
           className="rounded-md p-1.5 text-qm-gray hover:bg-qm-surface"
