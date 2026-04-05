@@ -52,7 +52,13 @@ const NAV_ITEMS = [
   },
 ]
 
-export function OrgSidebarNav({ slug }: { slug: string }) {
+type Props = {
+  slug: string
+  email: string
+  signOutAction: () => Promise<void>
+}
+
+export function OrgSidebarNav({ slug, email, signOutAction }: Props) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const basePath = `/dashboard/${slug}`
@@ -64,18 +70,18 @@ export function OrgSidebarNav({ slug }: { slug: string }) {
 
   return (
     <>
-      {/* Mobile toggle button */}
-      <div className="sticky top-0 z-30 flex items-center border-b border-gray-200 bg-white px-4 py-2 md:hidden">
+      {/* Mobile header bar */}
+      <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 md:hidden">
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold text-qm-gray hover:bg-qm-surface"
-          aria-label="Open navigation"
+          className="rounded-md p-1.5 text-qm-gray hover:bg-qm-surface"
+          aria-label="Open menu"
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
           </svg>
-          Navigate
         </button>
+        <span className="text-lg font-extrabold text-qm-lime">PrintOS</span>
       </div>
 
       {/* Backdrop */}
@@ -86,21 +92,22 @@ export function OrgSidebarNav({ slug }: { slug: string }) {
         />
       )}
 
-      {/* Sidebar nav */}
-      <nav
+      {/* Sidebar */}
+      <aside
         className={`
-          fixed inset-y-0 left-0 z-40 w-52 border-r border-gray-200 bg-white p-4 space-y-1
+          fixed inset-y-0 left-0 z-40 w-56 border-r border-gray-200 bg-white flex flex-col
           transition-transform duration-200 ease-in-out
           ${open ? 'translate-x-0' : '-translate-x-full'}
           md:static md:translate-x-0 md:transition-none md:shrink-0
         `}
       >
-        {/* Mobile close button */}
-        <div className="flex justify-end mb-2 md:hidden">
+        {/* Branding */}
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <span className="text-xl font-extrabold text-qm-lime">PrintOS</span>
           <button
             onClick={() => setOpen(false)}
-            className="rounded-md p-1 text-qm-gray hover:text-qm-black"
-            aria-label="Close navigation"
+            className="rounded-md p-1 text-qm-gray hover:text-qm-black md:hidden"
+            aria-label="Close menu"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -108,29 +115,45 @@ export function OrgSidebarNav({ slug }: { slug: string }) {
           </button>
         </div>
 
-        {NAV_ITEMS.map((item) => {
-          const href = basePath + item.href
-          const isActive =
-            item.href === ''
-              ? pathname === basePath
-              : pathname.startsWith(href)
+        {/* Nav links */}
+        <nav className="flex-1 p-4 space-y-1">
+          {NAV_ITEMS.map((item) => {
+            const href = basePath + item.href
+            const isActive =
+              item.href === ''
+                ? pathname === basePath
+                : pathname.startsWith(href)
 
-          return (
-            <a
-              key={item.label}
-              href={href}
-              className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold ${
-                isActive
-                  ? 'bg-qm-lime-light text-qm-lime'
-                  : 'text-qm-black hover:bg-qm-surface'
-              }`}
+            return (
+              <a
+                key={item.label}
+                href={href}
+                className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold ${
+                  isActive
+                    ? 'bg-qm-lime-light text-qm-lime'
+                    : 'text-qm-black hover:bg-qm-surface'
+                }`}
+              >
+                {item.icon}
+                {item.label}
+              </a>
+            )
+          })}
+        </nav>
+
+        {/* User / sign out */}
+        <div className="p-4 border-t border-gray-200">
+          <div className="mb-2 px-3 text-xs text-qm-gray truncate">{email}</div>
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              className="w-full rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
             >
-              {item.icon}
-              {item.label}
-            </a>
-          )
-        })}
-      </nav>
+              Sign out
+            </button>
+          </form>
+        </div>
+      </aside>
     </>
   )
 }
