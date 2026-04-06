@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import type {
   Product, ProductCategory, WorkflowTemplate, ProductStatus,
   PricingFormula, Discount, Material, LaborRate, MachineRate, Modifier,
-  ProductDefaultItem, ProductModifier,
+  ProductDefaultItem, ProductModifier, ProductCustomField,
 } from '@/types/product-builder'
 import {
   createProduct, updateProduct,
@@ -40,6 +40,7 @@ type Props = {
   existingDefaultItems: ProductDefaultItem[]
   existingModifiers: ProductModifier[]
   existingDropdownMenus: ExistingDropdownMenu[]
+  existingCustomFields: ProductCustomField[]
 }
 
 type TabKey = 'basic' | 'advanced' | 'pricing' | 'custom-fields'
@@ -127,7 +128,7 @@ export default function ProductForm({
   orgId, orgSlug, product,
   categories, workflows, pricingFormulas, discounts,
   materials, laborRates, machineRates, modifiersList,
-  existingDefaultItems, existingModifiers, existingDropdownMenus,
+  existingDefaultItems, existingModifiers, existingDropdownMenus, existingCustomFields,
 }: Props) {
   const router = useRouter()
   const isNew = product === null
@@ -218,6 +219,16 @@ export default function ProductForm({
     }))
   )
 
+  const [customFields, setCustomFields] = useState<ProductCustomFieldInput[]>(() =>
+    existingCustomFields.map((f) => ({
+      field_name: f.field_name,
+      field_type: (f.field_type ?? 'text') as ProductCustomFieldInput['field_type'],
+      is_required: f.is_required ?? false,
+      print_on_customer_pdf: f.print_on_customer_pdf ?? false,
+      print_on_po: f.print_on_po ?? false,
+    }))
+  )
+
   const [expandedMenus, setExpandedMenus] = useState<Set<number>>(new Set([0]))
   const [materialDragIndex, setMaterialDragIndex] = useState<number | null>(null)
 
@@ -278,7 +289,7 @@ export default function ProductForm({
             return rest
           }),
         })),
-        customFields: [] as ProductCustomFieldInput[],
+        customFields,
       }
 
       if (isNew) {
@@ -439,6 +450,29 @@ export default function ProductForm({
     setDropdownMenus((menus) =>
       menus.map((m, idx) => (idx === menuIdx ? { ...m, items: m.items.filter((_, i) => i !== itemIdx) } : m))
     )
+  }
+
+  // ---- Custom field actions ----
+  function addCustomField() {
+    setCustomFields((rows) => [
+      ...rows,
+      { field_name: '', field_type: 'text', is_required: false, print_on_customer_pdf: false, print_on_po: false },
+    ])
+  }
+  function updateCustomField(i: number, patch: Partial<ProductCustomFieldInput>) {
+    setCustomFields((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+  function removeCustomField(i: number) {
+    setCustomFields((rows) => rows.filter((_, idx) => idx !== i))
+  }
+  function moveCustomField(i: number, dir: -1 | 1) {
+    setCustomFields((rows) => {
+      const j = i + dir
+      if (j < 0 || j >= rows.length) return rows
+      const next = [...rows]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
   }
 
   // ---- Search results ----
@@ -1047,9 +1081,88 @@ export default function ProductForm({
         )}
 
         {activeTab === 'custom-fields' && (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-16 text-center">
-            <p className="text-sm font-medium text-qm-black">Custom Fields</p>
-            <p className="mt-1 text-sm text-qm-gray">Coming next — define per-product custom fields with text/textarea/radio/color/dropdown types.</p>
+          <div className="space-y-4 max-w-4xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-qm-black">Custom Fields</h2>
+                <p className="text-xs text-qm-gray mt-0.5">Per-product fields shown on the quote form. Drag to reorder.</p>
+              </div>
+              <button
+                type="button"
+                onClick={addCustomField}
+                className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                Add Field
+              </button>
+            </div>
+            {customFields.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-qm-gray">
+                No custom fields yet. Click &quot;Add Field&quot; to define one.
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Field Name</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500 w-40">Type</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Required</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Print on PDF</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500 w-20">Order</th>
+                      <th className="w-12"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {customFields.map((f, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={f.field_name}
+                            onChange={(e) => updateCustomField(i, { field_name: e.target.value })}
+                            placeholder="e.g. Installation address"
+                            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={f.field_type}
+                            onChange={(e) => updateCustomField(i, { field_type: e.target.value as ProductCustomFieldInput['field_type'] })}
+                            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                          >
+                            <option value="text">Text</option>
+                            <option value="textarea">Textarea</option>
+                            <option value="radio">Radio</option>
+                            <option value="color">Color</option>
+                            <option value="dropdown">Dropdown</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={f.is_required} onChange={(e) => updateCustomField(i, { is_required: e.target.checked })} className="accent-qm-lime h-4 w-4" />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={f.print_on_customer_pdf} onChange={(e) => updateCustomField(i, { print_on_customer_pdf: e.target.checked })} className="accent-qm-lime h-4 w-4" />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <div className="inline-flex gap-1">
+                            <button type="button" onClick={() => moveCustomField(i, -1)} disabled={i === 0} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↑</button>
+                            <button type="button" onClick={() => moveCustomField(i, 1)} disabled={i === customFields.length - 1} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↓</button>
+                          </div>
+                        </td>
+                        <td className="px-2 text-center">
+                          <button type="button" onClick={() => removeCustomField(i)} className="rounded p-1 text-red-500 hover:bg-red-50" title="Delete">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

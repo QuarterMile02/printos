@@ -4,6 +4,7 @@ import type {
   Product, ProductCategory, WorkflowTemplate, PricingFormula, Discount,
   Material, LaborRate, MachineRate, Modifier,
   ProductDefaultItem, ProductModifier, ProductDropdownMenu, ProductDropdownItem,
+  ProductCustomField,
 } from '@/types/product-builder'
 import ProductForm, { type ExistingDropdownMenu } from '../product-form'
 
@@ -43,6 +44,7 @@ export default async function EditProductPage({ params }: PageProps) {
     defaultItemsRes,
     productModifiersRes,
     dropdownMenusRes,
+    customFieldsRes,
   ] = await Promise.all([
     supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
     supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
@@ -55,6 +57,7 @@ export default async function EditProductPage({ params }: PageProps) {
     supabase.from('product_default_items').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
     supabase.from('product_modifiers').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
     supabase.from('product_dropdown_menus').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
+    supabase.from('product_custom_fields').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
   ])
 
   const categories = (categoriesRes.data ?? []) as ProductCategory[]
@@ -68,6 +71,7 @@ export default async function EditProductPage({ params }: PageProps) {
   const defaultItems = (defaultItemsRes.data ?? []) as ProductDefaultItem[]
   const productModifiers = (productModifiersRes.data ?? []) as ProductModifier[]
   const dropdownMenus = (dropdownMenusRes.data ?? []) as ProductDropdownMenu[]
+  const customFields = (customFieldsRes.data ?? []) as ProductCustomField[]
 
   // Fetch dropdown items for all the menus in one query
   const menuIds = dropdownMenus.map((m) => m.id)
@@ -115,6 +119,7 @@ export default async function EditProductPage({ params }: PageProps) {
         existingDefaultItems={defaultItems}
         existingModifiers={productModifiers}
         existingDropdownMenus={existingDropdownMenus}
+        existingCustomFields={customFields}
       />
     </div>
   )

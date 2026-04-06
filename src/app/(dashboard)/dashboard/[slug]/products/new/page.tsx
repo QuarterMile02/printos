@@ -58,6 +58,7 @@ export default async function NewProductPage({ params }: PageProps) {
         existingDefaultItems={[]}
         existingModifiers={[]}
         existingDropdownMenus={[]}
+        existingCustomFields={[]}
       />
     </div>
   )

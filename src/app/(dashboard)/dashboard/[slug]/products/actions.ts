@@ -210,6 +210,33 @@ async function replaceProductModifiers(productId: string, orgId: string, modifie
   }
 }
 
+async function replaceProductCustomFields(
+  productId: string,
+  orgId: string,
+  fields: ProductCustomFieldInput[],
+) {
+  const service = createServiceClient()
+  await service.from('product_custom_fields').delete().eq('product_id', productId).eq('organization_id', orgId)
+
+  if (fields.length > 0) {
+    const rows = fields
+      .filter((f) => f.field_name.trim())
+      .map((f, i) => ({
+        organization_id: orgId,
+        product_id: productId,
+        field_name: f.field_name.trim(),
+        field_type: f.field_type,
+        is_required: f.is_required,
+        print_on_customer_pdf: f.print_on_customer_pdf,
+        print_on_po: f.print_on_po,
+        sort_order: i,
+      }))
+    if (rows.length > 0) {
+      await service.from('product_custom_fields').insert(rows)
+    }
+  }
+}
+
 async function replaceDropdownMenus(productId: string, orgId: string, menus: DropdownMenuInput[]) {
   const service = createServiceClient()
 
@@ -291,6 +318,7 @@ export async function createProduct(
   await replaceDefaultItems(inserted.id, orgId, bundle.defaultItems)
   await replaceProductModifiers(inserted.id, orgId, bundle.modifiers)
   await replaceDropdownMenus(inserted.id, orgId, bundle.dropdownMenus)
+  await replaceProductCustomFields(inserted.id, orgId, bundle.customFields)
 
   revalidatePath(`/dashboard/${orgSlug}/products`)
   return { id: inserted.id }
@@ -321,6 +349,7 @@ export async function updateProduct(
   await replaceDefaultItems(id, orgId, bundle.defaultItems)
   await replaceProductModifiers(id, orgId, bundle.modifiers)
   await replaceDropdownMenus(id, orgId, bundle.dropdownMenus)
+  await replaceProductCustomFields(id, orgId, bundle.customFields)
 
   revalidatePath(`/dashboard/${orgSlug}/products`)
   revalidatePath(`/dashboard/${orgSlug}/products/${id}`)
