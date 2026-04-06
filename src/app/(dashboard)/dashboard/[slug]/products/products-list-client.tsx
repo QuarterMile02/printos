@@ -156,13 +156,12 @@ export default function ProductsListClient({
                     )}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-right">
-                    <button
-                      disabled
-                      className="text-sm font-medium text-qm-gray opacity-50 cursor-not-allowed"
-                      title="Coming in phase 6"
+                    <a
+                      href={`/dashboard/${orgSlug}/products/${p.id}`}
+                      className="text-sm font-medium text-qm-lime hover:underline"
                     >
                       Edit
-                    </button>
+                    </a>
                   </td>
                 </tr>
               ))}
