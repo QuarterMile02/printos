@@ -39,6 +39,7 @@ const COMPLEXITY_LABELS: Record<number, string> = {
 
 function emptyForm(): ProductFormData {
   return {
+    // Tab 1
     name: '',
     description: null,
     product_type: null,
@@ -48,11 +49,27 @@ function emptyForm(): ProductFormData {
     complexity_value: 3,
     image_url: null,
     status: 'draft',
+    // Tab 2 — defaults per spec
+    income_account: null,
+    income_account_number: null,
+    cog_account: null,
+    cog_account_number: null,
+    asset_account: null,
+    default_sale_type: 'In House',
+    qb_item_type: null,
+    rounding: 2,
+    taxable: true,
+    in_house_commission: false,
+    outsourced_commission: false,
+    include_base_product_in_po: false,
+    print_image_on_pdf: false,
+    production_details: null,
   }
 }
 
 function toFormData(p: Product): ProductFormData {
   return {
+    // Tab 1
     name: p.name,
     description: p.description,
     product_type: p.product_type,
@@ -62,6 +79,21 @@ function toFormData(p: Product): ProductFormData {
     complexity_value: p.complexity_value ?? 3,
     image_url: p.image_url,
     status: p.status ?? 'draft',
+    // Tab 2
+    income_account: p.income_account,
+    income_account_number: p.income_account_number,
+    cog_account: p.cog_account,
+    cog_account_number: p.cog_account_number,
+    asset_account: p.asset_account,
+    default_sale_type: p.default_sale_type ?? 'In House',
+    qb_item_type: p.qb_item_type,
+    rounding: p.rounding ?? 2,
+    taxable: p.taxable ?? true,
+    in_house_commission: p.in_house_commission ?? false,
+    outsourced_commission: p.outsourced_commission ?? false,
+    include_base_product_in_po: p.include_base_product_in_po ?? false,
+    print_image_on_pdf: p.print_image_on_pdf ?? false,
+    production_details: p.production_details,
   }
 }
 
@@ -293,9 +325,164 @@ export default function ProductForm({ orgId, orgSlug, product, categories, workf
         )}
 
         {activeTab === 'advanced' && (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 py-16 text-center">
-            <p className="text-sm font-medium text-qm-black">Advanced Settings</p>
-            <p className="mt-1 text-sm text-qm-gray">Coming next — income/COG accounts, QB Desktop item type, commissions, sales type.</p>
+          <div className="space-y-6 max-w-3xl">
+            {/* Accounts */}
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-qm-gray border-b border-gray-200 pb-1 mb-3">
+                Accounts
+              </h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Income Account">
+                    <input
+                      type="text"
+                      value={form.income_account ?? ''}
+                      onChange={(e) => setForm({ ...form, income_account: e.target.value || null })}
+                      className={inputClass}
+                      placeholder="e.g. Sales — Print Services"
+                    />
+                  </Field>
+                  <Field label="Income Account Number">
+                    <input
+                      type="text"
+                      value={form.income_account_number ?? ''}
+                      onChange={(e) => setForm({ ...form, income_account_number: e.target.value || null })}
+                      className={inputClass}
+                      placeholder="e.g. 4100"
+                    />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="COG Account">
+                    <input
+                      type="text"
+                      value={form.cog_account ?? ''}
+                      onChange={(e) => setForm({ ...form, cog_account: e.target.value || null })}
+                      className={inputClass}
+                      placeholder="e.g. Cost of Goods Sold"
+                    />
+                  </Field>
+                  <Field label="COG Account Number">
+                    <input
+                      type="number"
+                      step="1"
+                      value={form.cog_account_number ?? ''}
+                      onChange={(e) => setForm({ ...form, cog_account_number: e.target.value === '' ? null : parseInt(e.target.value) })}
+                      className={inputClass}
+                      placeholder="e.g. 5000"
+                    />
+                  </Field>
+                </div>
+                <Field label="Asset Account">
+                  <input
+                    type="text"
+                    value={form.asset_account ?? ''}
+                    onChange={(e) => setForm({ ...form, asset_account: e.target.value || null })}
+                    className={inputClass}
+                    placeholder="e.g. Inventory Asset"
+                  />
+                </Field>
+              </div>
+            </div>
+
+            {/* Sale & QB Desktop */}
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-qm-gray border-b border-gray-200 pb-1 mb-3">
+                Sales &amp; QuickBooks Desktop
+              </h3>
+              <div className="space-y-4">
+                <Field label="Default Sale Type">
+                  <div className="flex gap-4">
+                    {(['In House', 'Outsourced'] as const).map((t) => (
+                      <label key={t} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          checked={form.default_sale_type === t}
+                          onChange={() => setForm({ ...form, default_sale_type: t })}
+                          className="accent-qm-lime"
+                        />
+                        {t}
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="QB Item Type">
+                    <select
+                      value={form.qb_item_type ?? ''}
+                      onChange={(e) => setForm({ ...form, qb_item_type: e.target.value || null })}
+                      className={inputClass}
+                    >
+                      <option value="">—</option>
+                      <option value="Inventory">Inventory</option>
+                      <option value="Non-Inventory">Non-Inventory</option>
+                      <option value="Service">Service</option>
+                    </select>
+                  </Field>
+                  <Field label="Rounding (decimal places)">
+                    <input
+                      type="number"
+                      step="1"
+                      min={0}
+                      max={6}
+                      value={form.rounding ?? 2}
+                      onChange={(e) => setForm({ ...form, rounding: e.target.value === '' ? null : parseInt(e.target.value) })}
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+              </div>
+            </div>
+
+            {/* Toggles */}
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-qm-gray border-b border-gray-200 pb-1 mb-3">
+                Behavior
+              </h3>
+              <div className="space-y-2">
+                <Toggle
+                  label="Taxable"
+                  checked={form.taxable}
+                  onChange={(v) => setForm({ ...form, taxable: v })}
+                />
+                <Toggle
+                  label="Pay Commissions on In-House Sales"
+                  checked={form.in_house_commission}
+                  onChange={(v) => setForm({ ...form, in_house_commission: v })}
+                />
+                <Toggle
+                  label="Pay Commissions on Outsourced Sales"
+                  checked={form.outsourced_commission}
+                  onChange={(v) => setForm({ ...form, outsourced_commission: v })}
+                />
+                <Toggle
+                  label="Include in Base Product PO"
+                  checked={form.include_base_product_in_po}
+                  onChange={(v) => setForm({ ...form, include_base_product_in_po: v })}
+                />
+                <Toggle
+                  label="Print Image on PDF"
+                  checked={form.print_image_on_pdf}
+                  onChange={(v) => setForm({ ...form, print_image_on_pdf: v })}
+                />
+              </div>
+            </div>
+
+            {/* Production details */}
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-qm-gray border-b border-gray-200 pb-1 mb-3">
+                Production Notes
+              </h3>
+              <Field label="Production Details">
+                <textarea
+                  value={form.production_details ?? ''}
+                  onChange={(e) => setForm({ ...form, production_details: e.target.value || null })}
+                  rows={4}
+                  className={inputClass}
+                  placeholder="Internal notes visible on Sales Orders for the production team"
+                />
+              </Field>
+            </div>
           </div>
         )}
 
@@ -327,5 +514,20 @@ function Field({ label, required, children }: { label: string; required?: boolea
       </label>
       {children}
     </div>
+  )
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer">
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-qm-lime' : 'bg-gray-300'}`}
+      >
+        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+      </button>
+      <span className="text-sm text-gray-700">{label}</span>
+    </label>
   )
 }

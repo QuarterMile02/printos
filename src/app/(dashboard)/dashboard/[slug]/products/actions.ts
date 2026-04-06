@@ -6,9 +6,9 @@ import { redirect } from 'next/navigation'
 import type { OrgRole } from '@/types/database'
 import type { ProductStatus } from '@/types/product-builder'
 
-// Tab 1 — Basic Settings only for now. Additional tabs will extend this type.
+// Tabs 1 + 2 wired up. Tabs 3/4 will extend this type.
 export type ProductFormData = {
-  // Tab 1
+  // Tab 1 — Basic Settings
   name: string
   description: string | null
   product_type: string | null
@@ -18,6 +18,21 @@ export type ProductFormData = {
   complexity_value: number | null
   image_url: string | null
   status: ProductStatus
+  // Tab 2 — Advanced Settings
+  income_account: string | null
+  income_account_number: string | null
+  cog_account: string | null
+  cog_account_number: number | null
+  asset_account: string | null
+  default_sale_type: string | null
+  qb_item_type: string | null
+  rounding: number | null
+  taxable: boolean
+  in_house_commission: boolean
+  outsourced_commission: boolean
+  include_base_product_in_po: boolean
+  print_image_on_pdf: boolean
+  production_details: string | null
 }
 
 async function getMembership(orgId: string) {
@@ -35,6 +50,7 @@ async function getMembership(orgId: string) {
 
 function buildRecord(data: ProductFormData) {
   return {
+    // Tab 1
     name: data.name.trim(),
     description: data.description?.trim() || null,
     product_type: data.product_type?.trim() || null,
@@ -45,6 +61,21 @@ function buildRecord(data: ProductFormData) {
     image_url: data.image_url?.trim() || null,
     status: data.status,
     active: data.status === 'published',
+    // Tab 2
+    income_account: data.income_account?.trim() || null,
+    income_account_number: data.income_account_number?.trim() || null,
+    cog_account: data.cog_account?.trim() || null,
+    cog_account_number: data.cog_account_number,
+    asset_account: data.asset_account?.trim() || null,
+    default_sale_type: data.default_sale_type,
+    qb_item_type: data.qb_item_type,
+    rounding: data.rounding,
+    taxable: data.taxable,
+    in_house_commission: data.in_house_commission,
+    outsourced_commission: data.outsourced_commission,
+    include_base_product_in_po: data.include_base_product_in_po,
+    print_image_on_pdf: data.print_image_on_pdf,
+    production_details: data.production_details?.trim() || null,
   }
 }
 
