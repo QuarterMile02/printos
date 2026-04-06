@@ -88,11 +88,22 @@ export type DropdownItemInput = {
   is_optional: boolean
 }
 
+export type CustomFieldType = 'text' | 'textarea' | 'radio' | 'color' | 'dropdown'
+
+export type ProductCustomFieldInput = {
+  field_name: string
+  field_type: CustomFieldType
+  is_required: boolean
+  print_on_customer_pdf: boolean
+  print_on_po: boolean
+}
+
 export type ProductSaveBundle = {
   product: ProductFormData
   defaultItems: DefaultItemInput[]
   modifiers: ProductModifierInput[]
   dropdownMenus: DropdownMenuInput[]
+  customFields: ProductCustomFieldInput[]
 }
 
 async function getMembership(orgId: string) {

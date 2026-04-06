@@ -11,7 +11,8 @@ import {
   createProduct, updateProduct,
   type ProductFormData,
   type DefaultItemInput, type ProductModifierInput,
-  type DropdownMenuInput, type DropdownItemInput,
+  type DropdownItemInput,
+  type ProductCustomFieldInput,
 } from './actions'
 
 type MaterialOption = Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>
@@ -42,7 +43,6 @@ type Props = {
 }
 
 type TabKey = 'basic' | 'advanced' | 'pricing' | 'custom-fields'
-type SubTabKey = 'default-items' | 'modifiers' | 'dropdown-menus'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'basic', label: 'Basic Settings' },
@@ -65,7 +65,7 @@ const COMPLEXITY_LABELS: Record<number, string> = {
 const UNIT_OPTIONS = ['Each', 'Sqft', 'Roll', 'Sheet', 'Unit', 'Feet', 'Inch', 'Yard', 'Hr']
 
 // ---- Client-side enriched row types (include display labels) ----
-type DefaultItemRow = DefaultItemInput & { display_name: string; type_label: string }
+type RecipeRow = DefaultItemInput & { display_name: string }
 type ModifierRow = ProductModifierInput & { display_name: string; modifier_type: string }
 type DropdownMenuRow = {
   menu_name: string
@@ -132,7 +132,6 @@ export default function ProductForm({
   const router = useRouter()
   const isNew = product === null
   const [activeTab, setActiveTab] = useState<TabKey>('basic')
-  const [activeSubTab, setActiveSubTab] = useState<SubTabKey>('default-items')
   const [form, setForm] = useState<ProductFormData>(product ? toFormData(product) : emptyForm())
   const [formError, setFormError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -144,20 +143,17 @@ export default function ProductForm({
   const machineMap = useMemo(() => new Map(machineRates.map((m) => [m.id, m])), [machineRates])
   const modifierMap = useMemo(() => new Map(modifiersList.map((m) => [m.id, m])), [modifiersList])
 
-  function defaultItemDisplay(row: DefaultItemInput): { display_name: string; type_label: string } {
+  function defaultItemDisplay(row: DefaultItemInput): { display_name: string } {
     if (row.item_type === 'Material' && row.material_id) {
-      const m = materialMap.get(row.material_id)
-      return { display_name: m?.name ?? 'Unknown material', type_label: 'Material' }
+      return { display_name: materialMap.get(row.material_id)?.name ?? 'Unknown material' }
     }
     if (row.item_type === 'LaborRate' && row.labor_rate_id) {
-      const l = laborMap.get(row.labor_rate_id)
-      return { display_name: l?.name ?? 'Unknown labor rate', type_label: 'Labor' }
+      return { display_name: laborMap.get(row.labor_rate_id)?.name ?? 'Unknown labor rate' }
     }
     if (row.item_type === 'MachineRate' && row.machine_rate_id) {
-      const mr = machineMap.get(row.machine_rate_id)
-      return { display_name: mr?.name ?? 'Unknown machine rate', type_label: 'Machine' }
+      return { display_name: machineMap.get(row.machine_rate_id)?.name ?? 'Unknown machine rate' }
     }
-    return { display_name: row.custom_item_name ?? 'Custom', type_label: 'Custom' }
+    return { display_name: row.custom_item_name ?? 'Custom' }
   }
 
   function dropdownItemDisplay(row: DropdownItemInput): { display_name: string; type_label: string } {
@@ -173,25 +169,31 @@ export default function ProductForm({
     return { display_name: '—', type_label: '—' }
   }
 
-  // Initial state for sub-tabs
-  const [defaultItems, setDefaultItems] = useState<DefaultItemRow[]>(() =>
-    existingDefaultItems.map((r) => {
-      const base: DefaultItemInput = {
-        item_type: (r.item_type as DefaultItemInput['item_type']) ?? 'Material',
-        material_id: r.material_id,
-        labor_rate_id: r.labor_rate_id,
-        machine_rate_id: r.machine_rate_id,
-        custom_item_name: r.custom_item_name,
-        menu_name: r.menu_name,
-        system_formula: r.system_formula,
-        charge_per_li_unit: r.charge_per_li_unit ?? false,
-        include_in_base_price: r.include_in_base_price ?? false,
-        is_optional: r.is_optional ?? false,
-        multiplier: r.multiplier,
-      }
-      return { ...base, ...defaultItemDisplay(base) }
-    })
-  )
+  // Initial state — split existing default items into the three recipe groups
+  function buildRecipeRows(filterType: DefaultItemInput['item_type']): RecipeRow[] {
+    return existingDefaultItems
+      .filter((r) => (r.item_type ?? 'Material') === filterType)
+      .map((r) => {
+        const base: DefaultItemInput = {
+          item_type: (r.item_type as DefaultItemInput['item_type']) ?? 'Material',
+          material_id: r.material_id,
+          labor_rate_id: r.labor_rate_id,
+          machine_rate_id: r.machine_rate_id,
+          custom_item_name: r.custom_item_name,
+          menu_name: r.menu_name,
+          system_formula: r.system_formula,
+          charge_per_li_unit: r.charge_per_li_unit ?? false,
+          include_in_base_price: r.include_in_base_price ?? false,
+          is_optional: r.is_optional ?? false,
+          multiplier: r.multiplier,
+        }
+        return { ...base, ...defaultItemDisplay(base) }
+      })
+  }
+
+  const [recipeMaterials, setRecipeMaterials] = useState<RecipeRow[]>(() => buildRecipeRows('Material'))
+  const [recipeLabor, setRecipeLabor] = useState<RecipeRow[]>(() => buildRecipeRows('LaborRate'))
+  const [recipeMachine, setRecipeMachine] = useState<RecipeRow[]>(() => buildRecipeRows('MachineRate'))
 
   const [modifierRows, setModifierRows] = useState<ModifierRow[]>(() =>
     existingModifiers
@@ -217,11 +219,11 @@ export default function ProductForm({
   )
 
   const [expandedMenus, setExpandedMenus] = useState<Set<number>>(new Set([0]))
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [materialDragIndex, setMaterialDragIndex] = useState<number | null>(null)
 
   // ---- Search modal state ----
   type SearchTarget =
-    | { kind: 'default-item' }
+    | { kind: 'recipe'; itemType: 'Material' | 'LaborRate' | 'MachineRate' }
     | { kind: 'dropdown-item'; menuIdx: number }
   const [searchModal, setSearchModal] = useState<SearchTarget | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -255,12 +257,15 @@ export default function ProductForm({
   function handleSave() {
     setFormError(null)
     startTransition(async () => {
+      const stripDisplay = (rows: RecipeRow[]) =>
+        rows.map(({ display_name: _d, ...rest }) => { void _d; return rest })
       const bundle = {
         product: form,
-        defaultItems: defaultItems.map(({ display_name: _d, type_label: _t, ...rest }) => {
-          void _d; void _t
-          return rest
-        }),
+        defaultItems: [
+          ...stripDisplay(recipeMaterials),
+          ...stripDisplay(recipeLabor),
+          ...stripDisplay(recipeMachine),
+        ],
         modifiers: modifierRows.map(({ display_name: _d, modifier_type: _mt, ...rest }) => {
           void _d; void _mt
           return rest
@@ -273,6 +278,7 @@ export default function ProductForm({
             return rest
           }),
         })),
+        customFields: [] as ProductCustomFieldInput[],
       }
 
       if (isNew) {
@@ -287,48 +293,64 @@ export default function ProductForm({
     })
   }
 
-  // ---- Default items actions ----
-  function openSearchForDefaultItem() {
-    setSearchModal({ kind: 'default-item' })
+  // ---- Recipe (Material / Labor / Machine) actions ----
+  function openSearchForRecipe(itemType: 'Material' | 'LaborRate' | 'MachineRate') {
+    setSearchModal({ kind: 'recipe', itemType })
+    setSearchCategory(itemType)
     setSearchQuery('')
   }
 
-  function addDefaultItemFromSearch(kind: 'Material' | 'LaborRate' | 'MachineRate', item: { id: string; name: string }) {
+  function makeRecipeRow(
+    itemType: 'Material' | 'LaborRate' | 'MachineRate',
+    item: { id: string; name: string; formula?: string | null }
+  ): RecipeRow {
     const base: DefaultItemInput = {
-      item_type: kind,
-      material_id: kind === 'Material' ? item.id : null,
-      labor_rate_id: kind === 'LaborRate' ? item.id : null,
-      machine_rate_id: kind === 'MachineRate' ? item.id : null,
+      item_type: itemType,
+      material_id: itemType === 'Material' ? item.id : null,
+      labor_rate_id: itemType === 'LaborRate' ? item.id : null,
+      machine_rate_id: itemType === 'MachineRate' ? item.id : null,
       custom_item_name: null,
       menu_name: null,
-      system_formula: null,
-      charge_per_li_unit: true,
+      system_formula: item.formula ?? null,
+      charge_per_li_unit: itemType !== 'Material',
       include_in_base_price: true,
       is_optional: false,
       multiplier: 1,
     }
-    const row: DefaultItemRow = { ...base, ...defaultItemDisplay(base) }
-    setDefaultItems((items) => [...items, row])
+    return { ...base, ...defaultItemDisplay(base) }
+  }
+
+  function addRecipeFromSearch(item: { id: string; name: string; formula?: string | null }) {
+    if (!searchModal || searchModal.kind !== 'recipe') return
+    const row = makeRecipeRow(searchModal.itemType, item)
+    if (searchModal.itemType === 'Material') setRecipeMaterials((rows) => [...rows, row])
+    else if (searchModal.itemType === 'LaborRate') setRecipeLabor((rows) => [...rows, row])
+    else setRecipeMachine((rows) => [...rows, row])
     setSearchModal(null)
   }
 
-  function updateDefaultItem(i: number, patch: Partial<DefaultItemInput>) {
-    setDefaultItems((items) =>
-      items.map((it, idx) => (idx === i ? { ...it, ...patch } : it))
-    )
+  function updateRecipeRow(
+    setter: React.Dispatch<React.SetStateAction<RecipeRow[]>>,
+    i: number,
+    patch: Partial<DefaultItemInput>,
+  ) {
+    setter((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   }
-  function removeDefaultItem(i: number) {
-    setDefaultItems((items) => items.filter((_, idx) => idx !== i))
+  function removeRecipeRow(setter: React.Dispatch<React.SetStateAction<RecipeRow[]>>, i: number) {
+    setter((rows) => rows.filter((_, idx) => idx !== i))
   }
-  function handleDefaultItemDrop(targetIdx: number) {
-    if (dragIndex === null || dragIndex === targetIdx) { setDragIndex(null); return }
-    setDefaultItems((items) => {
-      const next = [...items]
-      const [moved] = next.splice(dragIndex, 1)
+  function handleMaterialDrop(targetIdx: number) {
+    if (materialDragIndex === null || materialDragIndex === targetIdx) {
+      setMaterialDragIndex(null)
+      return
+    }
+    setRecipeMaterials((rows) => {
+      const next = [...rows]
+      const [moved] = next.splice(materialDragIndex, 1)
       next.splice(targetIdx, 0, moved)
       return next
     })
-    setDragIndex(null)
+    setMaterialDragIndex(null)
   }
 
   // ---- Modifier actions ----
@@ -745,270 +767,279 @@ export default function ProductForm({
               </div>
             </div>
 
-            {/* ---- Product Template sub-tabs ---- */}
-            <div className="border-t border-gray-200 pt-6">
-              <h2 className="text-base font-bold text-qm-black mb-3">Product Template</h2>
-              <div className="border-b border-gray-200 flex gap-1 mb-4">
-                {([
-                  { key: 'default-items' as SubTabKey, label: `Default Items${defaultItems.length ? ` (${defaultItems.length})` : ''}` },
-                  { key: 'modifiers' as SubTabKey, label: `Modifiers${modifierRows.length ? ` (${modifierRows.length})` : ''}` },
-                  { key: 'dropdown-menus' as SubTabKey, label: `Dropdown Menus${dropdownMenus.length ? ` (${dropdownMenus.length})` : ''}` },
-                ]).map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => setActiveSubTab(t.key)}
-                    className={`px-4 py-2 text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-colors border-b-2 -mb-px ${
-                      activeSubTab === t.key ? 'border-qm-fuchsia text-qm-fuchsia' : 'border-transparent text-qm-gray hover:text-qm-black'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+            {/* ---- Section 2: Product Recipe ---- */}
+            <div className="border-t border-gray-200 pt-6 space-y-6">
+              <div>
+                <h2 className="text-base font-bold text-qm-black">Product Recipe</h2>
+                <p className="text-xs text-qm-gray mt-0.5">The materials, labor, and machine rates that build this product&apos;s cost.</p>
               </div>
 
-              {/* Sub-tab A: Default Items */}
-              {activeSubTab === 'default-items' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-qm-gray">Drag rows to reorder. Items form the product&apos;s pricing recipe.</p>
-                    <button
-                      type="button"
-                      onClick={openSearchForDefaultItem}
-                      className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                      </svg>
-                      Add Item
-                    </button>
-                  </div>
-                  {defaultItems.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-qm-gray">
-                      No items yet. Click &quot;Add Item&quot; to link a material, labor rate, or machine rate.
-                    </div>
-                  ) : (
-                    <div className="overflow-hidden rounded-lg border border-gray-200">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="w-8 px-2"></th>
-                            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Menu Name</th>
-                            <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Per LI</th>
-                            <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Optional</th>
-                            <th className="w-12 px-2"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {defaultItems.map((item, i) => (
-                            <tr
-                              key={i}
-                              draggable
-                              onDragStart={() => setDragIndex(i)}
-                              onDragOver={(e) => e.preventDefault()}
-                              onDrop={() => handleDefaultItemDrop(i)}
-                              className={`${dragIndex === i ? 'opacity-50' : ''}`}
-                            >
-                              <td className="px-2 text-center">
-                                <span className="cursor-grab text-qm-gray">
-                                  <svg className="h-4 w-4 inline" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a1 1 0 000 2h1v12H7a1 1 0 100 2h6a1 1 0 100-2h-1V4h1a1 1 0 100-2H7z" /></svg>
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-sm font-medium text-qm-black">{item.display_name}</td>
-                              <td className="px-3 py-2">
-                                <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2 py-0.5 text-xs font-semibold text-qm-lime-dark">
-                                  {item.type_label}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2">
-                                <input
-                                  type="text"
-                                  value={item.menu_name ?? ''}
-                                  onChange={(e) => updateDefaultItem(i, { menu_name: e.target.value || null })}
-                                  placeholder="Optional"
-                                  className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
-                                />
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <input type="checkbox" checked={item.charge_per_li_unit} onChange={(e) => updateDefaultItem(i, { charge_per_li_unit: e.target.checked })} className="accent-qm-lime h-4 w-4" />
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <input type="checkbox" checked={item.is_optional} onChange={(e) => updateDefaultItem(i, { is_optional: e.target.checked })} className="accent-qm-lime h-4 w-4" />
-                              </td>
-                              <td className="px-2 text-center">
-                                <button type="button" onClick={() => removeDefaultItem(i)} className="rounded p-1 text-red-500 hover:bg-red-50" title="Delete">
-                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166M18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79M9.75 11.25h.008v.008H9.75v-.008Z" />
-                                  </svg>
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+              {/* Materials — full width */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-qm-gray">Materials {recipeMaterials.length > 0 && <span className="text-qm-gray/70">({recipeMaterials.length})</span>}</h3>
+                  <button type="button" onClick={() => openSearchForRecipe('Material')} className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    Add Material
+                  </button>
                 </div>
-              )}
-
-              {/* Sub-tab B: Modifiers */}
-              {activeSubTab === 'modifiers' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-qm-gray">Attach modifiers that apply to this product.</p>
-                    <button
-                      type="button"
-                      onClick={() => { setModifierPickerOpen(true); setModifierSearch('') }}
-                      className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                      </svg>
-                      Add Modifier
-                    </button>
+                {recipeMaterials.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-xs text-qm-gray">
+                    No materials yet.
                   </div>
-                  {modifierRows.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-qm-gray">
-                      No modifiers attached yet.
-                    </div>
-                  ) : (
-                    <div className="overflow-hidden rounded-lg border border-gray-200">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Display Name</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
-                            <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Required</th>
-                            <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Order</th>
-                            <th className="w-12"></th>
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-gray-200">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="w-8 px-2"></th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Material</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Formula</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500 w-24">Multiplier</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">In Base</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Optional</th>
+                          <th className="w-12 px-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {recipeMaterials.map((row, i) => (
+                          <tr
+                            key={i}
+                            draggable
+                            onDragStart={() => setMaterialDragIndex(i)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={() => handleMaterialDrop(i)}
+                            className={materialDragIndex === i ? 'opacity-50' : ''}
+                          >
+                            <td className="px-2 text-center">
+                              <span className="cursor-grab text-qm-gray" title="Drag to reorder">
+                                <svg className="h-4 w-4 inline" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a1 1 0 000 2h1v12H7a1 1 0 100 2h6a1 1 0 100-2h-1V4h1a1 1 0 100-2H7z" /></svg>
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-sm font-medium text-qm-black">{row.display_name}</td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={row.system_formula ?? ''}
+                                onChange={(e) => updateRecipeRow(setRecipeMaterials, i, { system_formula: e.target.value || null })}
+                                placeholder="e.g. width * height"
+                                className="w-full rounded border border-gray-300 px-2 py-1 text-xs font-mono"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={row.multiplier ?? ''}
+                                onChange={(e) => updateRecipeRow(setRecipeMaterials, i, { multiplier: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                                placeholder="1"
+                                className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <input type="checkbox" checked={row.include_in_base_price} onChange={(e) => updateRecipeRow(setRecipeMaterials, i, { include_in_base_price: e.target.checked })} className="accent-qm-lime h-4 w-4" />
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <input type="checkbox" checked={row.is_optional} onChange={(e) => updateRecipeRow(setRecipeMaterials, i, { is_optional: e.target.checked })} className="accent-qm-lime h-4 w-4" />
+                            </td>
+                            <td className="px-2 text-center">
+                              <button type="button" onClick={() => removeRecipeRow(setRecipeMaterials, i)} className="rounded p-1 text-red-500 hover:bg-red-50" title="Delete">
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166M18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79" />
+                                </svg>
+                              </button>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {modifierRows.map((m, i) => (
-                            <tr key={i}>
-                              <td className="px-3 py-2 text-sm font-medium text-qm-black">{m.display_name}</td>
-                              <td className="px-3 py-2">
-                                <span className="inline-flex items-center rounded-full bg-qm-fuchsia-light px-2 py-0.5 text-xs font-semibold text-qm-fuchsia">
-                                  {m.modifier_type}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <input type="checkbox" checked={m.is_required} onChange={(e) => updateModifierRow(i, { is_required: e.target.checked })} className="accent-qm-lime h-4 w-4" />
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <div className="inline-flex gap-1">
-                                  <button type="button" onClick={() => moveModifierRow(i, -1)} disabled={i === 0} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↑</button>
-                                  <button type="button" onClick={() => moveModifierRow(i, 1)} disabled={i === modifierRows.length - 1} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↓</button>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Labor + Machine side-by-side — intentional pairing so estimators
+                  can match labor and machine rates visually. */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <RateColumn
+                  title="Labor Rates"
+                  count={recipeLabor.length}
+                  rows={recipeLabor}
+                  setter={setRecipeLabor}
+                  onAdd={() => openSearchForRecipe('LaborRate')}
+                  addLabel="Add Labor Rate"
+                  updateRow={updateRecipeRow}
+                  removeRow={removeRecipeRow}
+                />
+                <RateColumn
+                  title="Machine Rates"
+                  count={recipeMachine.length}
+                  rows={recipeMachine}
+                  setter={setRecipeMachine}
+                  onAdd={() => openSearchForRecipe('MachineRate')}
+                  addLabel="Add Machine Rate"
+                  updateRow={updateRecipeRow}
+                  removeRow={removeRecipeRow}
+                />
+              </div>
+            </div>
+
+            {/* ---- Section 3: Dropdown Menus ---- */}
+            <div className="border-t border-gray-200 pt-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-qm-black">Dropdown Menus</h2>
+                  <p className="text-xs text-qm-gray mt-0.5">Named option groups shown on quotes (e.g. &quot;Printer Options&quot;).</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addMenu}
+                  className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Add Menu
+                </button>
+              </div>
+              {dropdownMenus.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-xs text-qm-gray">
+                  No dropdown menus yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {dropdownMenus.map((menu, menuIdx) => (
+                    <div key={menuIdx} className="rounded-lg border border-gray-200 bg-white">
+                      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => toggleMenuExpanded(menuIdx)}
+                          className="text-qm-gray hover:text-qm-black"
+                          title="Toggle"
+                        >
+                          <svg className={`h-4 w-4 transition-transform ${expandedMenus.has(menuIdx) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                          </svg>
+                        </button>
+                        <input
+                          type="text"
+                          value={menu.menu_name}
+                          onChange={(e) => updateMenu(menuIdx, { menu_name: e.target.value })}
+                          placeholder="Menu name (e.g. Printer Options)"
+                          className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                        />
+                        <label className="flex items-center gap-1 text-xs text-qm-gray">
+                          <input type="checkbox" checked={menu.is_optional} onChange={(e) => updateMenu(menuIdx, { is_optional: e.target.checked })} className="accent-qm-lime" />
+                          Optional
+                        </label>
+                        <div className="inline-flex gap-1">
+                          <button type="button" onClick={() => moveMenu(menuIdx, -1)} disabled={menuIdx === 0} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↑</button>
+                          <button type="button" onClick={() => moveMenu(menuIdx, 1)} disabled={menuIdx === dropdownMenus.length - 1} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↓</button>
+                        </div>
+                        <button type="button" onClick={() => removeMenu(menuIdx)} className="rounded p-1 text-red-500 hover:bg-red-50">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      {expandedMenus.has(menuIdx) && (
+                        <div className="p-4 space-y-2 bg-gray-50">
+                          {menu.items.length === 0 ? (
+                            <p className="text-xs text-qm-gray italic">No items in this menu yet.</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {menu.items.map((item, itemIdx) => (
+                                <div key={itemIdx} className="flex items-center gap-2 rounded-md bg-white px-3 py-2 border border-gray-100">
+                                  <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2 py-0.5 text-xs font-semibold text-qm-lime-dark shrink-0">
+                                    {item.type_label}
+                                  </span>
+                                  <span className="flex-1 text-sm text-qm-black truncate">{item.display_name}</span>
+                                  <button type="button" onClick={() => removeDropdownItem(menuIdx, itemIdx)} className="rounded p-1 text-red-500 hover:bg-red-50">
+                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
                                 </div>
-                              </td>
-                              <td className="px-2 text-center">
-                                <button type="button" onClick={() => removeModifierRow(i)} className="rounded p-1 text-red-500 hover:bg-red-50">
-                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                              ))}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openSearchForDropdownItem(menuIdx)}
+                            className="text-xs font-semibold text-qm-lime hover:underline"
+                          >
+                            + Add item to this menu
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
+            </div>
 
-              {/* Sub-tab C: Dropdown Menus */}
-              {activeSubTab === 'dropdown-menus' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-qm-gray">Named option groups shown on quotes (e.g. &quot;Printer Options&quot;).</p>
-                    <button
-                      type="button"
-                      onClick={addMenu}
-                      className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                      </svg>
-                      Add Menu
-                    </button>
-                  </div>
-                  {dropdownMenus.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-gray-200 py-8 text-center text-sm text-qm-gray">
-                      No dropdown menus yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {dropdownMenus.map((menu, menuIdx) => (
-                        <div key={menuIdx} className="rounded-lg border border-gray-200 bg-white">
-                          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
-                            <button
-                              type="button"
-                              onClick={() => toggleMenuExpanded(menuIdx)}
-                              className="text-qm-gray hover:text-qm-black"
-                              title="Toggle"
-                            >
-                              <svg className={`h-4 w-4 transition-transform ${expandedMenus.has(menuIdx) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                              </svg>
-                            </button>
-                            <input
-                              type="text"
-                              value={menu.menu_name}
-                              onChange={(e) => updateMenu(menuIdx, { menu_name: e.target.value })}
-                              placeholder="Menu name (e.g. Printer Options)"
-                              className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                            />
-                            <label className="flex items-center gap-1 text-xs text-qm-gray">
-                              <input type="checkbox" checked={menu.is_optional} onChange={(e) => updateMenu(menuIdx, { is_optional: e.target.checked })} className="accent-qm-lime" />
-                              Optional
-                            </label>
+            {/* ---- Section 4: Modifiers ---- */}
+            <div className="border-t border-gray-200 pt-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-qm-black">Modifiers</h2>
+                  <p className="text-xs text-qm-gray mt-0.5">Attach modifiers that apply to this product.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setModifierPickerOpen(true); setModifierSearch('') }}
+                  className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Add Modifier
+                </button>
+              </div>
+              {modifierRows.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-xs text-qm-gray">
+                  No modifiers attached yet.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Display Name</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+                        <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Required</th>
+                        <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Sort</th>
+                        <th className="w-12"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {modifierRows.map((m, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-2 text-sm font-medium text-qm-black">{m.display_name}</td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex items-center rounded-full bg-qm-fuchsia-light px-2 py-0.5 text-xs font-semibold text-qm-fuchsia">
+                              {m.modifier_type}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <input type="checkbox" checked={m.is_required} onChange={(e) => updateModifierRow(i, { is_required: e.target.checked })} className="accent-qm-lime h-4 w-4" />
+                          </td>
+                          <td className="px-3 py-2 text-center">
                             <div className="inline-flex gap-1">
-                              <button type="button" onClick={() => moveMenu(menuIdx, -1)} disabled={menuIdx === 0} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↑</button>
-                              <button type="button" onClick={() => moveMenu(menuIdx, 1)} disabled={menuIdx === dropdownMenus.length - 1} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↓</button>
+                              <button type="button" onClick={() => moveModifierRow(i, -1)} disabled={i === 0} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↑</button>
+                              <button type="button" onClick={() => moveModifierRow(i, 1)} disabled={i === modifierRows.length - 1} className="rounded p-1 text-qm-gray hover:bg-gray-100 disabled:opacity-30">↓</button>
                             </div>
-                            <button type="button" onClick={() => removeMenu(menuIdx)} className="rounded p-1 text-red-500 hover:bg-red-50">
+                          </td>
+                          <td className="px-2 text-center">
+                            <button type="button" onClick={() => removeModifierRow(i)} className="rounded p-1 text-red-500 hover:bg-red-50">
                               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
                               </svg>
                             </button>
-                          </div>
-                          {expandedMenus.has(menuIdx) && (
-                            <div className="p-4 space-y-2 bg-gray-50">
-                              {menu.items.length === 0 ? (
-                                <p className="text-xs text-qm-gray italic">No items in this menu yet.</p>
-                              ) : (
-                                <div className="space-y-1">
-                                  {menu.items.map((item, itemIdx) => (
-                                    <div key={itemIdx} className="flex items-center gap-2 rounded-md bg-white px-3 py-2 border border-gray-100">
-                                      <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2 py-0.5 text-xs font-semibold text-qm-lime-dark shrink-0">
-                                        {item.type_label}
-                                      </span>
-                                      <span className="flex-1 text-sm text-qm-black truncate">{item.display_name}</span>
-                                      <button type="button" onClick={() => removeDropdownItem(menuIdx, itemIdx)} className="rounded p-1 text-red-500 hover:bg-red-50">
-                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => openSearchForDropdownItem(menuIdx)}
-                                className="text-xs font-semibold text-qm-lime hover:underline"
-                              >
-                                + Add item to this menu
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                          </td>
+                        </tr>
                       ))}
-                    </div>
-                  )}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
@@ -1023,14 +1054,17 @@ export default function ProductForm({
         )}
       </div>
 
-      {/* Search modal — shared by Default Items and Dropdown Items */}
+      {/* Search modal — shared by Recipe and Dropdown Items.
+          Recipe mode locks the category; Dropdown mode allows switching. */}
       {searchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSearchModal(null)} />
           <div className="relative w-full max-w-2xl rounded-xl bg-white shadow-xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
               <h3 className="text-sm font-bold text-qm-black">
-                {searchModal.kind === 'default-item' ? 'Add Default Item' : 'Add Dropdown Item'}
+                {searchModal.kind === 'recipe'
+                  ? `Add ${searchModal.itemType === 'Material' ? 'Material' : searchModal.itemType === 'LaborRate' ? 'Labor Rate' : 'Machine Rate'}`
+                  : 'Add Dropdown Item'}
               </h3>
               <button onClick={() => setSearchModal(null)} className="text-qm-gray hover:text-qm-black">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -1038,20 +1072,22 @@ export default function ProductForm({
                 </svg>
               </button>
             </div>
-            <div className="border-b border-gray-200 flex">
-              {(['Material', 'LaborRate', 'MachineRate'] as const).map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setSearchCategory(cat)}
-                  className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors border-b-2 -mb-px ${
-                    searchCategory === cat ? 'border-qm-lime text-qm-lime' : 'border-transparent text-qm-gray hover:text-qm-black'
-                  }`}
-                >
-                  {cat === 'LaborRate' ? 'Labor Rates' : cat === 'MachineRate' ? 'Machine Rates' : 'Materials'}
-                </button>
-              ))}
-            </div>
+            {searchModal.kind === 'dropdown-item' && (
+              <div className="border-b border-gray-200 flex">
+                {(['Material', 'LaborRate', 'MachineRate'] as const).map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSearchCategory(cat)}
+                    className={`flex-1 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors border-b-2 -mb-px ${
+                      searchCategory === cat ? 'border-qm-lime text-qm-lime' : 'border-transparent text-qm-gray hover:text-qm-black'
+                    }`}
+                  >
+                    {cat === 'LaborRate' ? 'Labor Rates' : cat === 'MachineRate' ? 'Machine Rates' : 'Materials'}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="px-5 py-3 border-b border-gray-100">
               <input
                 type="text"
@@ -1072,8 +1108,8 @@ export default function ProductForm({
                       key={r.id}
                       type="button"
                       onClick={() => {
-                        if (searchModal.kind === 'default-item') {
-                          addDefaultItemFromSearch(searchCategory, r)
+                        if (searchModal.kind === 'recipe') {
+                          addRecipeFromSearch(r)
                         } else {
                           addDropdownItemFromSearch(searchCategory, r)
                         }
@@ -1168,5 +1204,92 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
       </button>
       <span className="text-sm text-gray-700">{label}</span>
     </label>
+  )
+}
+
+// Single column for Labor Rates / Machine Rates inside the Product Recipe section.
+function RateColumn({
+  title, count, rows, setter, onAdd, addLabel, updateRow, removeRow,
+}: {
+  title: string
+  count: number
+  rows: (DefaultItemInput & { display_name: string })[]
+  setter: React.Dispatch<React.SetStateAction<(DefaultItemInput & { display_name: string })[]>>
+  onAdd: () => void
+  addLabel: string
+  updateRow: (
+    setter: React.Dispatch<React.SetStateAction<(DefaultItemInput & { display_name: string })[]>>,
+    i: number,
+    patch: Partial<DefaultItemInput>,
+  ) => void
+  removeRow: (
+    setter: React.Dispatch<React.SetStateAction<(DefaultItemInput & { display_name: string })[]>>,
+    i: number,
+  ) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-qm-gray">
+          {title} {count > 0 && <span className="text-qm-gray/70">({count})</span>}
+        </h3>
+      </div>
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-xs text-qm-gray">
+          No {title.toLowerCase()} yet.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-gray-200">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
+                <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Formula</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Per LI</th>
+                <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">In Base</th>
+                <th className="w-10 px-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {rows.map((row, i) => (
+                <tr key={i}>
+                  <td className="px-3 py-2 text-sm font-medium text-qm-black">{row.display_name}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="text"
+                      value={row.system_formula ?? ''}
+                      onChange={(e) => updateRow(setter, i, { system_formula: e.target.value || null })}
+                      placeholder="Optional"
+                      className="w-full rounded border border-gray-300 px-2 py-1 text-xs font-mono"
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" checked={row.charge_per_li_unit} onChange={(e) => updateRow(setter, i, { charge_per_li_unit: e.target.checked })} className="accent-qm-lime h-4 w-4" />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" checked={row.include_in_base_price} onChange={(e) => updateRow(setter, i, { include_in_base_price: e.target.checked })} className="accent-qm-lime h-4 w-4" />
+                  </td>
+                  <td className="px-2 text-center">
+                    <button type="button" onClick={() => removeRow(setter, i)} className="rounded p-1 text-red-500 hover:bg-red-50" title="Delete">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onAdd}
+        className="w-full inline-flex items-center justify-center gap-1 rounded-md border border-dashed border-qm-lime bg-qm-lime-light/40 px-3 py-2 text-xs font-semibold text-qm-lime-dark hover:bg-qm-lime-light"
+      >
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+        {addLabel}
+      </button>
+    </div>
   )
 }
