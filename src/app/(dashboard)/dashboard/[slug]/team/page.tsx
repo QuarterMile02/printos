@@ -6,10 +6,12 @@ import InviteMemberForm from './invite-member-form'
 type PageProps = { params: Promise<{ slug: string }> }
 
 const ROLE_STYLES: Record<OrgRole, string> = {
-  owner:  'bg-qm-lime-light text-qm-lime',
-  admin:  'bg-qm-gray-light text-qm-gray',
-  member: 'bg-qm-black/5 text-qm-black',
-  viewer: 'bg-qm-surface text-qm-gray',
+  owner:      'bg-qm-lime-light text-qm-lime',
+  admin:      'bg-qm-gray-light text-qm-gray',
+  designer:   'bg-qm-fuchsia-light text-qm-fuchsia',
+  accountant: 'bg-amber-50 text-amber-700',
+  member:     'bg-qm-black/5 text-qm-black',
+  viewer:     'bg-qm-surface text-qm-gray',
 }
 
 const INVITE_STATUS_STYLES: Record<InviteStatus, string> = {

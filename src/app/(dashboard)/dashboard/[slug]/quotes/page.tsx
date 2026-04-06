@@ -32,12 +32,14 @@ export default async function QuotesPage({ params }: PageProps) {
       first_name: string
       last_name: string
       company_name: string | null
+      email: string | null
+      phone: string | null
     } | null
   }
 
   const { data: quoteRows } = await supabase
     .from('quotes')
-    .select('id, quote_number, title, status, created_at, customer_id, customers(first_name, last_name, company_name)')
+    .select('id, quote_number, title, status, created_at, customer_id, customers(first_name, last_name, company_name, email, phone)')
     .eq('organization_id', org.id)
     .order('quote_number', { ascending: false }) as { data: QuoteDbRow[] | null; error: unknown }
 
@@ -67,7 +69,13 @@ export default async function QuotesPage({ params }: PageProps) {
     status: r.status,
     created_at: r.created_at,
     total: totalsMap.get(r.id) ?? 0,
-    customer: r.customers ?? null,
+    customer: r.customers ? {
+      first_name: r.customers.first_name,
+      last_name: r.customers.last_name,
+      company_name: r.customers.company_name,
+      email: r.customers.email,
+      phone: r.customers.phone,
+    } : null,
   }))
 
   // Fetch customers for the create form dropdown

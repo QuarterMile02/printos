@@ -94,27 +94,30 @@ export default async function CustomersPage({ params }: PageProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((customer) => (
-                <tr key={customer.id} className="hover:bg-gray-50">
-                  <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
-                    {customer.first_name} {customer.last_name}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {customer.company_name ?? <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {customer.email
-                      ? <a href={`mailto:${customer.email}`} className="hover:text-qm-lime">{customer.email}</a>
-                      : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {customer.phone ?? <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {formatDate(customer.created_at)}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((customer) => {
+                const href = `/dashboard/${slug}/customers/${customer.id}`
+                return (
+                  <tr key={customer.id} className="group hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
+                      <a href={href} className="group-hover:text-qm-lime transition-colors">
+                        {customer.first_name} {customer.last_name}
+                      </a>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                      <a href={href}>{customer.company_name ?? <span className="text-gray-300">—</span>}</a>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                      <a href={href}>{customer.email ?? <span className="text-gray-300">—</span>}</a>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                      <a href={href}>{customer.phone ?? <span className="text-gray-300">—</span>}</a>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
+                      <a href={href}>{formatDate(customer.created_at)}</a>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

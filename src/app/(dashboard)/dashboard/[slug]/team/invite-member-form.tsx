@@ -11,6 +11,8 @@ type Props = {
 
 const ROLE_OPTIONS: { value: OrgRole; label: string; description: string }[] = [
   { value: 'admin', label: 'Admin', description: 'Can manage members, jobs, quotes, and customers' },
+  { value: 'designer', label: 'Designer', description: 'Assigned to jobs for design work with a focused queue view' },
+  { value: 'accountant', label: 'Accountant', description: 'Views invoicing, aging buckets, and completed jobs for billing' },
   { value: 'member', label: 'Member', description: 'Can create and edit jobs, quotes, and customers' },
   { value: 'viewer', label: 'Viewer', description: 'Can view everything but cannot make changes' },
 ]

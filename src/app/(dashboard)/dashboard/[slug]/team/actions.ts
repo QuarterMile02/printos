@@ -4,7 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { OrgRole } from '@/types/database'
 
-const INVITABLE_ROLES: OrgRole[] = ['admin', 'member', 'viewer']
+const INVITABLE_ROLES: OrgRole[] = ['admin', 'designer', 'accountant', 'member', 'viewer']
 
 export async function inviteMember(
   orgId: string,

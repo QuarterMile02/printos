@@ -45,3 +45,54 @@ export async function createCustomer(
   revalidatePath(`/dashboard/${orgSlug}/customers`)
   return {}
 }
+
+export async function updateCustomer(
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+  data: {
+    first_name: string
+    last_name: string
+    company_name: string | null
+    email: string | null
+    phone: string | null
+    notes: string | null
+  }
+): Promise<{ error?: string }> {
+  if (!data.first_name.trim()) return { error: 'First name is required.' }
+  if (!data.last_name.trim()) return { error: 'Last name is required.' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .maybeSingle() as { data: { role: OrgRole } | null; error: unknown }
+
+  if (!membership) return { error: 'You are not a member of this organization.' }
+  if (membership.role === 'viewer') return { error: 'Viewers cannot update customers.' }
+
+  const service = createServiceClient()
+  const { error: updateError } = await service
+    .from('customers')
+    .update({
+      first_name: data.first_name.trim(),
+      last_name: data.last_name.trim(),
+      company_name: data.company_name?.trim() || null,
+      email: data.email?.trim() || null,
+      phone: data.phone?.trim() || null,
+      notes: data.notes?.trim() || null,
+    })
+    .eq('id', customerId)
+    .eq('organization_id', orgId)
+
+  if (updateError) return { error: updateError.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/customers`)
+  revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  return {}
+}

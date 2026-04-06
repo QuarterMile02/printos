@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import type { JobStatus } from '@/types/database'
+import type { JobStatus, JobFlag } from '@/types/database'
 import KanbanBoard, { type JobCard } from './kanban-board'
 import CreateJobForm from './create-job-form'
 
@@ -26,6 +26,7 @@ export default async function JobsPage({ params }: PageProps) {
     job_number: number
     title: string
     status: JobStatus
+    flag: JobFlag | null
     due_date: string | null
     customer_id: string | null
     customers: {
@@ -37,7 +38,7 @@ export default async function JobsPage({ params }: PageProps) {
 
   const { data: jobRows } = await supabase
     .from('jobs')
-    .select('id, job_number, title, status, due_date, customer_id, customers(first_name, last_name, company_name)')
+    .select('id, job_number, title, status, flag, due_date, customer_id, customers(first_name, last_name, company_name)')
     .eq('organization_id', org.id)
     .order('job_number', { ascending: false }) as { data: JobRow[] | null; error: unknown }
 
@@ -54,6 +55,7 @@ export default async function JobsPage({ params }: PageProps) {
     job_number: r.job_number,
     title: r.title,
     status: r.status,
+    flag: r.flag,
     due_date: r.due_date,
     customer: r.customers ?? null,
   }))

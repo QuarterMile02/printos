@@ -6,10 +6,11 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
+export type OrgRole = 'owner' | 'admin' | 'designer' | 'accountant' | 'member' | 'viewer'
 export type OrgPlan = 'free' | 'pro' | 'enterprise'
 export type InviteStatus = 'pending' | 'accepted' | 'expired'
 export type JobStatus = 'new' | 'in_progress' | 'proof_review' | 'ready_for_pickup' | 'completed'
+export type JobFlag = 'file_error' | 'help_needed'
 export type QuoteStatus = 'draft' | 'sent' | 'approved' | 'declined'
 
 export interface Database {
@@ -101,7 +102,11 @@ export interface Database {
           title: string
           description: string | null
           status: JobStatus
+          flag: JobFlag | null
           due_date: string | null
+          source_quote_id: string | null
+          assigned_to: string | null
+          needs_revision: boolean
           created_at: string
           updated_at: string
         }
@@ -113,7 +118,11 @@ export interface Database {
           title: string
           description?: string | null
           status?: JobStatus
+          flag?: JobFlag | null
           due_date?: string | null
+          source_quote_id?: string | null
+          assigned_to?: string | null
+          needs_revision?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -122,7 +131,11 @@ export interface Database {
           title?: string
           description?: string | null
           status?: JobStatus
+          flag?: JobFlag | null
           due_date?: string | null
+          source_quote_id?: string | null
+          assigned_to?: string | null
+          needs_revision?: boolean
           updated_at?: string
         }
       }
@@ -170,6 +183,8 @@ export interface Database {
           title: string
           description: string | null
           status: QuoteStatus
+          needs_pricing_approval: boolean
+          needs_rescue: boolean
           created_at: string
           updated_at: string
         }
@@ -181,6 +196,8 @@ export interface Database {
           title: string
           description?: string | null
           status?: QuoteStatus
+          needs_pricing_approval?: boolean
+          needs_rescue?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -189,6 +206,8 @@ export interface Database {
           title?: string
           description?: string | null
           status?: QuoteStatus
+          needs_pricing_approval?: boolean
+          needs_rescue?: boolean
           updated_at?: string
         }
       }
@@ -259,6 +278,7 @@ export interface Database {
       org_plan: OrgPlan
       invite_status: InviteStatus
       job_status: JobStatus
+      job_flag: JobFlag
       quote_status: QuoteStatus
     }
   }
