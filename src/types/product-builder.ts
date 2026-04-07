@@ -15,7 +15,8 @@ export type CustomFieldType = 'text' | 'textarea' | 'radio' | 'color' | 'dropdow
 
 export interface PricingFormula {
   id: string; organization_id: string | null; name: string; formula: string
-  uom: string; description: string | null; is_system: boolean; created_at: string; updated_at: string
+  uom: string; description: string | null; sort_order: number | null; active: boolean | null
+  is_system: boolean; created_at: string; updated_at: string
 }
 
 export interface MaterialType {
