@@ -3,10 +3,55 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { OrgRole, QuoteStatus } from '@/types/database'
+import { TAX_RATE } from './format'
+
+type ServiceClient = ReturnType<typeof createServiceClient>
+
+// Sums all line items for a quote and writes subtotal/tax_total/total
+// back to the quotes row in cents. Tax is applied only to taxable items
+// at the Laredo TX rate. Called after every line-item mutation.
+async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promise<void> {
+  const { data: items } = await service
+    .from('quote_line_items')
+    .select('quantity, unit_price, discount_percent, taxable, total_price')
+    .eq('quote_id', quoteId) as {
+      data: {
+        quantity: number
+        unit_price: number
+        discount_percent: number | null
+        taxable: boolean | null
+        total_price: number | null
+      }[] | null
+      error: unknown
+    }
+
+  let subtotal = 0
+  let taxableSubtotal = 0
+  for (const i of items ?? []) {
+    const gross = (i.quantity ?? 0) * (i.unit_price ?? 0)
+    const discounted = gross * (1 - (Number(i.discount_percent ?? 0) / 100))
+    const lineTotal = Math.round(discounted)
+    subtotal += lineTotal
+    if (i.taxable !== false) taxableSubtotal += lineTotal
+  }
+  const tax = Math.round(taxableSubtotal * TAX_RATE)
+  const total = subtotal + tax
+
+  await service
+    .from('quotes')
+    .update({ subtotal, tax_total: tax, total })
+    .eq('id', quoteId)
+}
 
 export type DeliveryMethod = 'email' | 'sms' | 'both'
 
-const VALID_STATUSES: QuoteStatus[] = ['draft', 'sent', 'approved', 'declined']
+// All non-legacy statuses are valid for direct manual update. The legacy
+// 'sent' and 'declined' values still exist in the enum but Phase 8 code
+// should not write them, so they're excluded here.
+const VALID_STATUSES: QuoteStatus[] = [
+  'draft', 'delivered', 'customer_review', 'approved', 'approve_with_changes',
+  'revise', 'ordered', 'hold', 'expired', 'lost', 'pending', 'no_charge',
+]
 
 type LineItemInput = {
   description: string
@@ -21,12 +66,16 @@ export async function createQuote(
     title: string
     customerId: string | null
     description: string | null
+    expiresAt: string | null
+    terms: string | null
+    notes: string | null
     lineItems: LineItemInput[]
   }
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; quoteId?: string }> {
   if (!data.title.trim()) return { error: 'Title is required.' }
-  if (data.lineItems.length === 0) return { error: 'At least one line item is required.' }
 
+  // Phase 8: line items are now optional at creation. Users can add them
+  // on the detail page after the quote is created.
   for (let i = 0; i < data.lineItems.length; i++) {
     const item = data.lineItems[i]
     if (!item.description.trim()) return { error: `Line item ${i + 1} needs a description.` }
@@ -58,6 +107,9 @@ export async function createQuote(
       customer_id: data.customerId || null,
       title: data.title.trim(),
       description: data.description?.trim() || null,
+      expires_at: data.expiresAt || null,
+      terms: data.terms?.trim() || null,
+      notes: data.notes?.trim() || null,
       status: 'draft' as QuoteStatus,
     })
     .select('id')
@@ -65,23 +117,28 @@ export async function createQuote(
 
   if (quoteError || !quote) return { error: quoteError?.message ?? 'Failed to create quote.' }
 
-  // Insert line items
-  const lineItemRows = data.lineItems.map((item, i) => ({
-    quote_id: quote.id,
-    description: item.description.trim(),
-    quantity: item.quantity,
-    unit_price: item.unit_price,
-    sort_order: i,
-  }))
+  if (data.lineItems.length > 0) {
+    const lineItemRows = data.lineItems.map((item, i) => ({
+      quote_id: quote.id,
+      description: item.description.trim(),
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total_price: item.quantity * item.unit_price,
+      sort_order: i,
+    }))
 
-  const { error: itemsError } = await service
-    .from('quote_line_items')
-    .insert(lineItemRows)
+    const { error: itemsError } = await service
+      .from('quote_line_items')
+      .insert(lineItemRows)
 
-  if (itemsError) return { error: itemsError.message }
+    if (itemsError) return { error: itemsError.message }
+
+    // Sync subtotal/total on the quote row.
+    await recalcQuoteTotals(service, quote.id)
+  }
 
   revalidatePath(`/dashboard/${orgSlug}/quotes`)
-  return {}
+  return { quoteId: quote.id }
 }
 
 export async function updateQuoteStatus(
@@ -323,4 +380,318 @@ export async function sendQuoteToCustomer(
 
   revalidatePath(`/dashboard/${orgSlug}/quotes`)
   return { sent: true, error: errors.length > 0 ? errors.join(' ') : undefined }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Phase 8 — quote field & line item CRUD + status auto-transitions
+// ──────────────────────────────────────────────────────────────────────
+
+async function getServiceWithMembership(orgId: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' as const }
+
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .maybeSingle() as { data: { role: OrgRole } | null; error: unknown }
+
+  if (!membership) return { error: 'You are not a member of this organization.' as const }
+  if (membership.role === 'viewer') return { error: 'Viewers cannot modify quotes.' as const }
+  return { user, service: createServiceClient() }
+}
+
+export async function updateQuoteFields(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+  fields: { expires_at?: string | null; terms?: string | null; notes?: string | null; title?: string }
+): Promise<{ error?: string }> {
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  const update: Record<string, unknown> = {}
+  if (fields.expires_at !== undefined) update.expires_at = fields.expires_at
+  if (fields.terms !== undefined)      update.terms = fields.terms
+  if (fields.notes !== undefined)      update.notes = fields.notes
+  if (fields.title !== undefined && fields.title.trim()) update.title = fields.title.trim()
+  if (Object.keys(update).length === 0) return {}
+
+  const { error } = await ctx.service
+    .from('quotes')
+    .update(update)
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  return {}
+}
+
+export type LineItemDraft = {
+  product_id: string | null
+  description: string
+  width: number | null
+  height: number | null
+  quantity: number
+  unit_price: number      // cents
+  discount_percent: number
+  taxable: boolean
+}
+
+export async function addQuoteLineItem(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+  draft: LineItemDraft,
+): Promise<{ error?: string; id?: string }> {
+  if (!draft.description.trim()) return { error: 'Description is required.' }
+  if (draft.quantity < 1) return { error: 'Quantity must be at least 1.' }
+  if (draft.unit_price < 0) return { error: 'Unit price cannot be negative.' }
+  if (draft.discount_percent < 0 || draft.discount_percent > 100) {
+    return { error: 'Discount must be between 0 and 100.' }
+  }
+
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  // Verify the quote belongs to this org before mutating any children.
+  const { data: quote } = await ctx.service
+    .from('quotes')
+    .select('id')
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+    .maybeSingle()
+  if (!quote) return { error: 'Quote not found.' }
+
+  // Compute line total in cents.
+  const gross = draft.quantity * draft.unit_price
+  const total = Math.round(gross * (1 - draft.discount_percent / 100))
+
+  // sort_order = max + 1
+  const { data: existing } = await ctx.service
+    .from('quote_line_items')
+    .select('sort_order')
+    .eq('quote_id', quoteId)
+    .order('sort_order', { ascending: false })
+    .limit(1) as { data: { sort_order: number | null }[] | null; error: unknown }
+  const nextSort = (existing?.[0]?.sort_order ?? -1) + 1
+
+  const { data: inserted, error } = await ctx.service
+    .from('quote_line_items')
+    .insert({
+      quote_id: quoteId,
+      product_id: draft.product_id,
+      description: draft.description.trim(),
+      width: draft.width,
+      height: draft.height,
+      quantity: draft.quantity,
+      unit_price: draft.unit_price,
+      discount_percent: draft.discount_percent,
+      total_price: total,
+      taxable: draft.taxable,
+      sort_order: nextSort,
+    })
+    .select('id')
+    .single() as { data: { id: string } | null; error: { message: string } | null }
+
+  if (error) return { error: error.message }
+
+  await recalcQuoteTotals(ctx.service, quoteId)
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  return { id: inserted?.id }
+}
+
+export async function updateQuoteLineItem(
+  itemId: string,
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+  fields: Partial<LineItemDraft>,
+): Promise<{ error?: string }> {
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  // Pull the current row so we can recompute total_price from a mix of
+  // old + new fields without forcing the client to round-trip everything.
+  const { data: current, error: fetchErr } = await ctx.service
+    .from('quote_line_items')
+    .select('quote_id, quantity, unit_price, discount_percent')
+    .eq('id', itemId)
+    .single() as {
+      data: { quote_id: string; quantity: number; unit_price: number; discount_percent: number | null } | null
+      error: { message: string } | null
+    }
+  if (fetchErr || !current) return { error: fetchErr?.message ?? 'Line item not found.' }
+  if (current.quote_id !== quoteId) return { error: 'Line item does not belong to this quote.' }
+
+  const merged = {
+    quantity:         fields.quantity         ?? current.quantity,
+    unit_price:       fields.unit_price       ?? current.unit_price,
+    discount_percent: fields.discount_percent ?? Number(current.discount_percent ?? 0),
+  }
+  const total = Math.round(merged.quantity * merged.unit_price * (1 - merged.discount_percent / 100))
+
+  const update: Record<string, unknown> = { total_price: total }
+  if (fields.product_id       !== undefined) update.product_id       = fields.product_id
+  if (fields.description      !== undefined) update.description      = fields.description.trim()
+  if (fields.width            !== undefined) update.width            = fields.width
+  if (fields.height           !== undefined) update.height           = fields.height
+  if (fields.quantity         !== undefined) update.quantity         = fields.quantity
+  if (fields.unit_price       !== undefined) update.unit_price       = fields.unit_price
+  if (fields.discount_percent !== undefined) update.discount_percent = fields.discount_percent
+  if (fields.taxable          !== undefined) update.taxable          = fields.taxable
+
+  const { error } = await ctx.service
+    .from('quote_line_items')
+    .update(update)
+    .eq('id', itemId)
+
+  if (error) return { error: error.message }
+
+  await recalcQuoteTotals(ctx.service, quoteId)
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  return {}
+}
+
+export async function deleteQuoteLineItem(
+  itemId: string,
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  // Verify ownership through the join before deleting.
+  const { data: item } = await ctx.service
+    .from('quote_line_items')
+    .select('quote_id, quotes!inner(organization_id)')
+    .eq('id', itemId)
+    .maybeSingle() as { data: { quote_id: string; quotes: { organization_id: string } } | null; error: unknown }
+  if (!item || item.quote_id !== quoteId || item.quotes.organization_id !== orgId) {
+    return { error: 'Line item not found.' }
+  }
+
+  const { error } = await ctx.service
+    .from('quote_line_items')
+    .delete()
+    .eq('id', itemId)
+
+  if (error) return { error: error.message }
+
+  await recalcQuoteTotals(ctx.service, quoteId)
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  return {}
+}
+
+// Send the quote email AND auto-transition draft → delivered.
+// Reuses the existing sendQuoteToCustomer (email path) so we don't
+// duplicate the Resend integration.
+export async function sendQuoteEmailAndDeliver(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'email')
+  if (result.error && !result.sent) return { error: result.error }
+
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  const { error } = await ctx.service
+    .from('quotes')
+    .update({ status: 'delivered' as QuoteStatus })
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+    .eq('status', 'draft')
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  revalidatePath(`/dashboard/${orgSlug}/quotes`)
+  return {}
+}
+
+// Send "for review" email and auto-transition delivered → customer_review.
+// For now this reuses the same email body — when QMI wants a different
+// template (with approve/decline links), swap in a dedicated send action.
+export async function sendForReviewAndUpdate(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'email')
+  if (result.error && !result.sent) return { error: result.error }
+
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  const { error } = await ctx.service
+    .from('quotes')
+    .update({ status: 'customer_review' as QuoteStatus })
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+    .in('status', ['delivered', 'draft'])
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  revalidatePath(`/dashboard/${orgSlug}/quotes`)
+  return {}
+}
+
+// Convert quote → sales order. Creates a sales_orders row (so_number
+// assigned by trigger), links it back via quotes.converted_to_so_id,
+// and flips the quote status to 'ordered'.
+export async function convertQuoteToSalesOrder(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string; soNumber?: number; soId?: string; createdAt?: string }> {
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  // Make sure we don't double-convert.
+  const { data: existing } = await ctx.service
+    .from('quotes')
+    .select('id, customer_id, converted_to_so_id, status')
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as {
+      data: { id: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus } | null
+      error: unknown
+    }
+  if (!existing) return { error: 'Quote not found.' }
+  if (existing.converted_to_so_id) return { error: 'This quote already has a sales order.' }
+
+  const { data: so, error: soErr } = await ctx.service
+    .from('sales_orders')
+    .insert({
+      organization_id: orgId,
+      quote_id: quoteId,
+      customer_id: existing.customer_id,
+      status: 'new',
+      created_by: ctx.user.id,
+    })
+    .select('id, so_number, created_at')
+    .single() as {
+      data: { id: string; so_number: number; created_at: string } | null
+      error: { message: string } | null
+    }
+  if (soErr || !so) return { error: soErr?.message ?? 'Failed to create sales order.' }
+
+  const { error: linkErr } = await ctx.service
+    .from('quotes')
+    .update({ converted_to_so_id: so.id, status: 'ordered' as QuoteStatus })
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+  if (linkErr) return { error: linkErr.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  revalidatePath(`/dashboard/${orgSlug}/quotes`)
+  return { soNumber: so.so_number, soId: so.id, createdAt: so.created_at }
 }

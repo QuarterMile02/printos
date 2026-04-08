@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { OrgRole, JobStatus, JobFlag, QuoteStatus } from '@/types/database'
+import { QUOTE_STATUS_STYLES } from './quotes/format'
 
 const ROLE_STYLES: Record<OrgRole, string> = {
   owner:      'bg-qm-lime-light text-qm-lime',
@@ -35,12 +36,9 @@ const JOB_BAR_COLORS: Record<JobStatus, string> = {
   completed:        'bg-qm-lime',
 }
 
-const QUOTE_STATUS_COLORS: Record<QuoteStatus, string> = {
-  draft:    'bg-qm-gray-light text-qm-gray',
-  sent:     'bg-qm-fuchsia-light text-qm-fuchsia',
-  approved: 'bg-qm-lime-light text-qm-lime',
-  declined: 'bg-red-50 text-red-700',
-}
+// Phase 8: 12 statuses live in quotes/format.ts. Re-aliased to avoid
+// touching every site that references QUOTE_STATUS_COLORS in this file.
+const QUOTE_STATUS_COLORS: Record<QuoteStatus, string> = QUOTE_STATUS_STYLES
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', {

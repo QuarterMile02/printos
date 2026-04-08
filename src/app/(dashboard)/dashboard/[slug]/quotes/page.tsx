@@ -4,10 +4,14 @@ import type { QuoteStatus } from '@/types/database'
 import QuoteTable, { type QuoteRow } from './quote-table'
 import CreateQuoteForm from './create-quote-form'
 
-type PageProps = { params: Promise<{ slug: string }> }
+type PageProps = {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ status?: string }>
+}
 
-export default async function QuotesPage({ params }: PageProps) {
+export default async function QuotesPage({ params, searchParams }: PageProps) {
   const { slug } = await params
+  const { status: statusFilter } = await searchParams
   const supabase = await createClient()
 
   // Fetch org — RLS ensures user is a member
@@ -37,11 +41,18 @@ export default async function QuotesPage({ params }: PageProps) {
     } | null
   }
 
-  const { data: quoteRows } = await supabase
+  let quoteQuery = supabase
     .from('quotes')
     .select('id, quote_number, title, status, created_at, customer_id, customers(first_name, last_name, company_name, email, phone)')
     .eq('organization_id', org.id)
-    .order('quote_number', { ascending: false }) as { data: QuoteDbRow[] | null; error: unknown }
+    .order('quote_number', { ascending: false })
+
+  // Status filter from ?status=… search param. 'all' (or unset) means no filter.
+  if (statusFilter && statusFilter !== 'all') {
+    quoteQuery = quoteQuery.eq('status', statusFilter)
+  }
+
+  const { data: quoteRows } = await quoteQuery as { data: QuoteDbRow[] | null; error: unknown }
 
   // Fetch line item totals per quote
   type LineItemRow = { quote_id: string; quantity: number; unit_price: number }
@@ -113,20 +124,10 @@ export default async function QuotesPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Content */}
-      {total === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-qm-lime-light text-qm-lime-dark">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-            </svg>
-          </div>
-          <p className="mt-4 text-sm font-medium text-gray-900">No quotes yet</p>
-          <p className="mt-1 text-sm text-gray-500">Create your first quote to send to a customer.</p>
-        </div>
-      ) : (
-        <QuoteTable quotes={quotes} orgId={org.id} orgSlug={org.slug} />
-      )}
+      {/* Content — always render the table so the filter tabs stay visible
+          even when the current filter has zero matches. The table renders
+          its own empty state. */}
+      <QuoteTable quotes={quotes} orgId={org.id} orgSlug={org.slug} activeFilter={statusFilter ?? 'all'} />
     </div>
   )
 }

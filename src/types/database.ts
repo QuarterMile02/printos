@@ -11,7 +11,35 @@ export type OrgPlan = 'free' | 'pro' | 'enterprise'
 export type InviteStatus = 'pending' | 'accepted' | 'expired'
 export type JobStatus = 'new' | 'in_progress' | 'proof_review' | 'ready_for_pickup' | 'completed'
 export type JobFlag = 'file_error' | 'help_needed'
-export type QuoteStatus = 'draft' | 'sent' | 'approved' | 'declined'
+// Phase 8 statuses. 'sent' and 'declined' are legacy values that remain
+// in the enum (Postgres can't drop enum members) but are remapped to
+// 'delivered' and 'lost' respectively by migration 018b. Don't write
+// 'sent' or 'declined' for new quotes.
+export type QuoteStatus =
+  | 'draft'
+  | 'delivered'
+  | 'customer_review'
+  | 'approved'
+  | 'approve_with_changes'
+  | 'revise'
+  | 'ordered'
+  | 'hold'
+  | 'expired'
+  | 'lost'
+  | 'pending'
+  | 'no_charge'
+  // Legacy — kept so type narrowing still works against historical rows.
+  | 'sent'
+  | 'declined'
+
+export type SalesOrderStatus =
+  | 'new'
+  | 'in_process'
+  | 'completed'
+  | 'hold'
+  | 'no_charge'
+  | 'no_charge_approved'
+  | 'void'
 
 export interface Database {
   public: {

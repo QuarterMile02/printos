@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { JobStatus, QuoteStatus } from '@/types/database'
 import CustomerDetailClient from './customer-detail-client'
+import { QUOTE_STATUS_STYLES } from '../../quotes/format'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New', in_progress: 'In Progress', proof_review: 'Proof Review',
@@ -12,10 +13,10 @@ const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   proof_review: 'bg-qm-gray-light text-qm-gray', ready_for_pickup: 'bg-qm-black/5 text-qm-black',
   completed: 'bg-qm-lime-light text-qm-lime',
 }
-const QUOTE_STATUS_COLORS: Record<QuoteStatus, string> = {
-  draft: 'bg-qm-gray-light text-qm-gray', sent: 'bg-qm-fuchsia-light text-qm-fuchsia',
-  approved: 'bg-qm-lime-light text-qm-lime', declined: 'bg-red-50 text-red-700',
-}
+// QUOTE_STATUS_COLORS now lives in quotes/format.ts so all 12 Phase 8
+// statuses share the same palette. Re-aliased here to keep the rest of
+// this file's references unchanged.
+const QUOTE_STATUS_COLORS: Record<QuoteStatus, string> = QUOTE_STATUS_STYLES
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })

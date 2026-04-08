@@ -1,9 +1,18 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { updateQuoteStatus, sendQuoteToCustomer } from './actions'
 import type { QuoteStatus } from '@/types/database'
 import type { DeliveryMethod } from './actions'
+import {
+  formatQuoteNumber,
+  formatCents,
+  QUOTE_STATUS_STYLES,
+  QUOTE_STATUS_OPTIONS,
+  QUOTE_FILTER_TABS,
+} from './format'
 
 export type QuoteRow = {
   id: string
@@ -21,19 +30,8 @@ export type QuoteRow = {
   } | null
 }
 
-const STATUS_STYLES: Record<QuoteStatus, string> = {
-  draft:    'bg-qm-gray-light text-qm-gray',
-  sent:     'bg-qm-fuchsia-light text-qm-fuchsia',
-  approved: 'bg-qm-lime-light text-qm-lime',
-  declined: 'bg-red-50 text-red-700',
-}
-
-const STATUS_OPTIONS: { value: QuoteStatus; label: string }[] = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'sent', label: 'Sent' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'declined', label: 'Declined' },
-]
+// Status styles + options + formatCents now live in ./format so the
+// detail page and the list page agree on colors and labels.
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', {
@@ -41,10 +39,6 @@ function formatDate(iso: string) {
     day: 'numeric',
     year: 'numeric',
   })
-}
-
-function formatCents(cents: number): string {
-  return (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function SendModal({
@@ -88,7 +82,7 @@ function SendModal({
       <div className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
         <h2 className="text-lg font-semibold text-gray-900">Send Quote to Customer</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Q-{quote.quote_number} &middot; {quote.title} &middot; ${formatCents(quote.total)}
+          {formatQuoteNumber(quote.quote_number, quote.created_at)} &middot; {quote.title} &middot; ${formatCents(quote.total)}
         </p>
 
         {quote.customer ? (
@@ -197,11 +191,14 @@ export default function QuoteTable({
   quotes,
   orgId,
   orgSlug,
+  activeFilter,
 }: {
   quotes: QuoteRow[]
   orgId: string
   orgSlug: string
+  activeFilter: string
 }) {
+  const router = useRouter()
   const [rows, setRows] = useState(quotes)
   const [, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info'; key: number } | null>(null)
@@ -265,6 +262,39 @@ export default function QuoteTable({
         />
       )}
 
+    {/* Status filter tabs */}
+    <div className="mb-4 flex flex-wrap gap-1 border-b border-gray-200">
+      {QUOTE_FILTER_TABS.map((tab) => {
+        const isActive = activeFilter === tab.value
+        const href = tab.value === 'all'
+          ? `/dashboard/${orgSlug}/quotes`
+          : `/dashboard/${orgSlug}/quotes?status=${tab.value}`
+        return (
+          <Link
+            key={tab.value}
+            href={href}
+            className={`inline-flex items-center px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              isActive
+                ? 'border-qm-fuchsia text-qm-fuchsia'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            {tab.label}
+          </Link>
+        )
+      })}
+    </div>
+
+    {rows.length === 0 ? (
+      <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
+        <p className="text-sm font-medium text-gray-900">
+          {activeFilter === 'all' ? 'No quotes yet' : `No quotes with status “${activeFilter.replace(/_/g, ' ')}”`}
+        </p>
+        {activeFilter === 'all' && (
+          <p className="mt-1 text-sm text-gray-500">Create your first quote to send to a customer.</p>
+        )}
+      </div>
+    ) : (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
@@ -295,8 +325,13 @@ export default function QuoteTable({
         <tbody className="divide-y divide-gray-100">
           {rows.map((quote) => (
             <tr key={quote.id} className="hover:bg-gray-50">
-              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-500">
-                Q-{quote.quote_number}
+              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
+                <Link
+                  href={`/dashboard/${orgSlug}/quotes/${quote.id}`}
+                  className="text-qm-fuchsia hover:underline"
+                >
+                  {formatQuoteNumber(quote.quote_number, quote.created_at)}
+                </Link>
               </td>
               <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
                 {quote.title}
@@ -313,9 +348,9 @@ export default function QuoteTable({
                 <select
                   value={quote.status}
                   onChange={(e) => handleStatusChange(quote.id, e.target.value as QuoteStatus)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize border-0 cursor-pointer ${STATUS_STYLES[quote.status]}`}
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border-0 cursor-pointer ${QUOTE_STATUS_STYLES[quote.status]}`}
                 >
-                  {STATUS_OPTIONS.map((s) => (
+                  {QUOTE_STATUS_OPTIONS.map((s) => (
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>
@@ -324,23 +359,20 @@ export default function QuoteTable({
                 {formatDate(quote.created_at)}
               </td>
               <td className="whitespace-nowrap px-6 py-4">
-                {quote.status === 'sent' && (
-                  <button
-                    onClick={() => setSendingQuote(quote)}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-qm-fuchsia px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 transition-all"
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-                    </svg>
-                    Send to Customer
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => router.push(`/dashboard/${orgSlug}/quotes/${quote.id}`)}
+                  className="text-sm font-medium text-qm-fuchsia hover:underline"
+                >
+                  View →
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+    )}
     </>
   )
 }

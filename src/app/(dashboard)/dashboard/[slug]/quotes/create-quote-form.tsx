@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createQuote } from './actions'
 import VoiceInput from '@/components/voice-input'
 
@@ -41,6 +42,7 @@ function parseDollars(value: string): number {
 }
 
 export default function CreateQuoteForm({ orgId, orgSlug, customers }: Props) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -48,12 +50,18 @@ export default function CreateQuoteForm({ orgId, orgSlug, customers }: Props) {
   const [title, setTitle] = useState('')
   const [customerId, setCustomerId] = useState('')
   const [description, setDescription] = useState('')
+  const [expiresAt, setExpiresAt] = useState('')
+  const [terms, setTerms] = useState('')
+  const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<LineItem[]>([emptyLineItem()])
 
   function resetForm() {
     setTitle('')
     setCustomerId('')
     setDescription('')
+    setExpiresAt('')
+    setTerms('')
+    setNotes('')
     setLineItems([emptyLineItem()])
     setError(null)
   }
@@ -82,21 +90,34 @@ export default function CreateQuoteForm({ orgId, orgSlug, customers }: Props) {
     e.preventDefault()
     setError(null)
     startTransition(async () => {
+      // Phase 8: line items can be empty in the create form — users
+      // typically add them on the detail page after creation. Strip
+      // any half-filled placeholder rows before sending.
+      const cleanedItems = lineItems
+        .filter((i) => i.description.trim().length > 0 || i.unit_price > 0)
+        .map((item) => ({
+          description: item.description,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+        }))
+
       const result = await createQuote(orgId, orgSlug, {
         title,
         customerId: customerId || null,
         description: description || null,
-        lineItems: lineItems.map((item) => ({
-          description: item.description,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-        })),
+        expiresAt: expiresAt || null,
+        terms: terms || null,
+        notes: notes || null,
+        lineItems: cleanedItems,
       })
       if (result.error) {
         setError(result.error)
       } else {
         resetForm()
         setOpen(false)
+        if (result.quoteId) {
+          router.push(`/dashboard/${orgSlug}/quotes/${result.quoteId}`)
+        }
       }
     })
   }
@@ -183,6 +204,41 @@ export default function CreateQuoteForm({ orgId, orgSlug, customers }: Props) {
                   placeholder="Additional details or notes for the customer..."
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label htmlFor="quote_expires" className="block text-sm font-medium text-gray-700">Expires At</label>
+                  <input
+                    id="quote_expires"
+                    type="date"
+                    value={expiresAt}
+                    onChange={(e) => setExpiresAt(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="quote_terms" className="block text-sm font-medium text-gray-700">Terms</label>
+                  <input
+                    id="quote_terms"
+                    type="text"
+                    value={terms}
+                    onChange={(e) => setTerms(e.target.value)}
+                    placeholder="Net 30"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="quote_notes" className="block text-sm font-medium text-gray-700">Internal Notes</label>
+                  <input
+                    id="quote_notes"
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="For the team"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                  />
+                </div>
               </div>
 
               {/* Line items */}
