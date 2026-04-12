@@ -13,7 +13,20 @@
       "Bash(ls C:/printos/.env*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npx eslint:*)",
+      "Bash(git restore:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(cmd:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(ls /mnt/)",
+      "Read(//mnt/**)",
+      "Bash(ls .env*:*)",
+      "Bash(npx supabase:*)",
+      "Bash(node:*)",
+      "Read(//c/Users/ruben/Downloads/**)",
+      "Bash(grep:*)"
     ]
   }
 }

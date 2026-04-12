@@ -18,11 +18,22 @@ export default async function MaterialsPage({ params }: PageProps) {
 
   if (!org) notFound()
 
-  const { data: materials } = await supabase
-    .from('materials')
-    .select('*')
-    .eq('organization_id', org.id)
-    .order('name', { ascending: true }) as { data: Material[] | null; error: unknown }
+  // Supabase / PostgREST caps a single response at 1000 rows. Page through
+  // in 1000-row chunks so the client receives the full set (~1.7k+ rows).
+  const PAGE_SIZE = 1000
+  const materials: Material[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const to = from + PAGE_SIZE - 1
+    const { data: chunk } = await supabase
+      .from('materials')
+      .select('*')
+      .eq('organization_id', org.id)
+      .order('name', { ascending: true })
+      .range(from, to) as { data: Material[] | null; error: unknown }
+    if (!chunk || chunk.length === 0) break
+    materials.push(...chunk)
+    if (chunk.length < PAGE_SIZE) break
+  }
 
   const { data: materialTypes } = await supabase
     .from('material_types')
@@ -42,7 +53,7 @@ export default async function MaterialsPage({ params }: PageProps) {
     .eq('organization_id', org.id)
     .order('name') as { data: Pick<Discount, 'id' | 'name' | 'discount_type' | 'applies_to' | 'discount_by' | 'active'>[] | null; error: unknown }
 
-  const materialIds = (materials ?? []).map((m) => m.id)
+  const materialIds = materials.map((m) => m.id)
   const vendorsByMaterial: Record<string, MaterialVendor[]> = {}
   if (materialIds.length > 0) {
     const { data: vendors } = await supabase
@@ -76,7 +87,7 @@ export default async function MaterialsPage({ params }: PageProps) {
       <MaterialsClient
         orgId={org.id}
         orgSlug={slug}
-        initialMaterials={materials ?? []}
+        initialMaterials={materials}
         materialTypes={materialTypes ?? []}
         materialCategories={materialCategories ?? []}
         discounts={discounts ?? []}

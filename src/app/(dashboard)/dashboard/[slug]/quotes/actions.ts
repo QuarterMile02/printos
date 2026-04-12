@@ -588,6 +588,33 @@ export async function deleteQuoteLineItem(
   return {}
 }
 
+// Send the quote SMS AND auto-transition draft → delivered.
+// Mirrors sendQuoteEmailAndDeliver but uses the SMS path.
+export async function sendQuoteSmsAndDeliver(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'sms')
+  if (result.error && !result.sent) return { error: result.error }
+
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  const { error } = await ctx.service
+    .from('quotes')
+    .update({ status: 'delivered' as QuoteStatus })
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+    .eq('status', 'draft')
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  revalidatePath(`/dashboard/${orgSlug}/quotes`)
+  return {}
+}
+
 // Send the quote email AND auto-transition draft → delivered.
 // Reuses the existing sendQuoteToCustomer (email path) so we don't
 // duplicate the Resend integration.

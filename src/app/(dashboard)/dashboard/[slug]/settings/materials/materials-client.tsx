@@ -237,6 +237,22 @@ export default function MaterialsClient({
     })
   }, [materials, search, activeFilter, typeFilter, categoryFilter])
 
+  // Pagination — 100 rows per page over the filtered list. When filters
+  // change the total can shrink, so reset to page 1 whenever they do.
+  const PAGE_SIZE = 100
+  const [currentPage, setCurrentPage] = useState(1)
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, activeFilter, typeFilter, categoryFilter])
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const pageStart = (safePage - 1) * PAGE_SIZE
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, filtered.length)
+  const pageRows = useMemo(
+    () => filtered.slice(pageStart, pageEnd),
+    [filtered, pageStart, pageEnd],
+  )
+
   const typeMap = useMemo(() => {
     const m: Record<string, string> = {}
     for (const t of materialTypes) m[t.id] = t.name
@@ -411,7 +427,7 @@ export default function MaterialsClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((m) => (
+              {pageRows.map((m) => (
                 <tr key={m.id} className="hover:bg-gray-50">
                   <td className="whitespace-nowrap px-6 py-3">
                     <div className="text-sm font-semibold text-qm-black">{m.name}</div>
@@ -438,8 +454,36 @@ export default function MaterialsClient({
               ))}
             </tbody>
           </table>
-          <div className="border-t border-gray-100 bg-gray-50 px-6 py-2 text-xs text-qm-gray">
-            Showing {filtered.length} of {materials.length} materials
+          <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-6 py-2 text-xs text-qm-gray">
+            <div>
+              Showing <span className="font-semibold text-qm-black">{filtered.length === 0 ? 0 : pageStart + 1}</span>
+              –<span className="font-semibold text-qm-black">{pageEnd}</span> of{' '}
+              <span className="font-semibold text-qm-black">{filtered.length.toLocaleString()}</span> materials
+              {filtered.length !== materials.length && (
+                <span className="text-qm-gray"> (filtered from {materials.length.toLocaleString()})</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-qm-black hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="tabular-nums">
+                Page {safePage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-qm-black hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       )}

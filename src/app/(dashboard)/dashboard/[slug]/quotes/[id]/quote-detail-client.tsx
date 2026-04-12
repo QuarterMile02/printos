@@ -5,12 +5,11 @@ import { useRouter } from 'next/navigation'
 import type { QuoteStatus } from '@/types/database'
 import {
   updateQuoteFields,
-  updateQuoteStatus,
   addQuoteLineItem,
   updateQuoteLineItem,
   deleteQuoteLineItem,
   sendQuoteEmailAndDeliver,
-  sendForReviewAndUpdate,
+  sendQuoteSmsAndDeliver,
   convertQuoteToSalesOrder,
 } from '../actions'
 import {
@@ -20,7 +19,6 @@ import {
   productUsesDimensions,
   QUOTE_STATUS_STYLES,
   QUOTE_STATUS_LABELS,
-  QUOTE_STATUS_OPTIONS,
   TAX_RATE,
 } from '../format'
 
@@ -58,6 +56,7 @@ type LineItem = {
   total_price: number      // cents
   taxable: boolean
   sort_order: number
+  material_name: string | null
 }
 
 type ProductOption = { id: string; name: string; formula: string | null }
@@ -87,10 +86,11 @@ export default function QuoteDetailClient({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
 
-  // Local mirrors so the UI feels responsive while server actions run.
   const [status, setStatus] = useState<QuoteStatus>(quote.status)
   const [items, setItems] = useState<LineItem[]>(lineItems)
+  const [title, setTitle] = useState(quote.title)
   const [expiresAt, setExpiresAt] = useState<string>(quote.expires_at ? quote.expires_at.slice(0, 10) : '')
   const [terms, setTerms] = useState<string>(quote.terms ?? '')
   const [notes, setNotes] = useState<string>(quote.notes ?? '')
@@ -102,7 +102,7 @@ export default function QuoteDetailClient({
     return m
   }, [products])
 
-  const subtotal  = useMemo(() => items.reduce((s, i) => s + i.total_price, 0), [items])
+  const subtotal = useMemo(() => items.reduce((s, i) => s + i.total_price, 0), [items])
   const taxableTotal = useMemo(
     () => items.filter((i) => i.taxable).reduce((s, i) => s + i.total_price, 0),
     [items],
@@ -115,29 +115,7 @@ export default function QuoteDetailClient({
     setTimeout(() => setToast(null), 4000)
   }
 
-  // ── Quote field saves (debounce-on-blur) ────────────────────────────
-  function saveFields(patch: { expires_at?: string | null; terms?: string | null; notes?: string | null }) {
-    startTransition(async () => {
-      const res = await updateQuoteFields(quote.id, orgId, orgSlug, patch)
-      if (res.error) flash(res.error, 'error')
-    })
-  }
-
-  function handleStatusChange(next: QuoteStatus) {
-    const prev = status
-    setStatus(next)
-    startTransition(async () => {
-      const res = await updateQuoteStatus(quote.id, orgId, orgSlug, next)
-      if (res.error) {
-        setStatus(prev)
-        flash(res.error, 'error')
-      } else if (res.jobCreated) {
-        flash(`Quote approved — Job #${res.jobCreated} created automatically`)
-      }
-    })
-  }
-
-  // ── Action buttons ──────────────────────────────────────────────────
+  // ── Action handlers (available in both modes) ─────────────────────
   function handleSendEmail() {
     startTransition(async () => {
       const res = await sendQuoteEmailAndDeliver(quote.id, orgId, orgSlug)
@@ -145,19 +123,19 @@ export default function QuoteDetailClient({
         flash(res.error, 'error')
       } else {
         setStatus('delivered')
-        flash('Quote email sent — status set to Delivered')
+        flash('Quote email sent')
       }
     })
   }
 
-  function handleSendForReview() {
+  function handleSendSms() {
     startTransition(async () => {
-      const res = await sendForReviewAndUpdate(quote.id, orgId, orgSlug)
+      const res = await sendQuoteSmsAndDeliver(quote.id, orgId, orgSlug)
       if (res.error) {
         flash(res.error, 'error')
       } else {
-        setStatus('customer_review')
-        flash('Review email sent — status set to Customer Review')
+        setStatus('delivered')
+        flash('Quote SMS sent')
       }
     })
   }
@@ -175,7 +153,14 @@ export default function QuoteDetailClient({
     })
   }
 
-  // ── Line item CRUD ──────────────────────────────────────────────────
+  // ── Edit-mode helpers ─────────────────────────────────────────────
+  function saveFields(patch: { expires_at?: string | null; terms?: string | null; notes?: string | null; title?: string }) {
+    startTransition(async () => {
+      const res = await updateQuoteFields(quote.id, orgId, orgSlug, patch)
+      if (res.error) flash(res.error, 'error')
+    })
+  }
+
   function handleAddLineItem() {
     startTransition(async () => {
       const res = await addQuoteLineItem(quote.id, orgId, orgSlug, {
@@ -206,6 +191,7 @@ export default function QuoteDetailClient({
           total_price: 0,
           taxable: true,
           sort_order: cur.length,
+          material_name: null,
         },
       ])
     })
@@ -258,15 +244,14 @@ export default function QuoteDetailClient({
     })
   }
 
-  // ── Render ──────────────────────────────────────────────────────────
+  // ── Derived ────────────────────────────────────────────────────────
   const customerName = quote.customer
-    ? `${quote.customer.first_name} ${quote.customer.last_name}${quote.customer.company_name ? ` — ${quote.customer.company_name}` : ''}`
-    : '— No customer linked —'
+    ? `${quote.customer.first_name} ${quote.customer.last_name}`
+    : null
+  const companyName = quote.customer?.company_name
+  const canConvert = (status === 'approved' || status === 'customer_review') && !convertedSo
 
-  const showSendEmailBtn  = status === 'draft'
-  const showSendReviewBtn = status === 'delivered'
-  const showConvertBtn    = (status === 'approved' || status === 'customer_review') && !convertedSo
-
+  // ── Render ─────────────────────────────────────────────────────────
   return (
     <>
       {toast && (
@@ -279,90 +264,52 @@ export default function QuoteDetailClient({
         </div>
       )}
 
-      {/* Header card */}
+      {/* ── Header card ────────────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">{formatQuoteNumber(quote.quote_number, quote.created_at)}</p>
-            <h1 className="mt-1 text-2xl font-extrabold text-gray-900">{quote.title}</h1>
-            <p className="mt-1 text-sm text-gray-600">{customerName}</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500">
+              {formatQuoteNumber(quote.quote_number, quote.created_at)}
+            </p>
+            <h1 className="mt-1 text-2xl font-extrabold text-gray-900">{title}</h1>
+            {customerName ? (
+              <p className="mt-1 text-sm text-gray-600">
+                {customerName}
+                {companyName && <span className="text-gray-400"> &mdash; {companyName}</span>}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-gray-400">No customer linked</p>
+            )}
           </div>
           <div className="text-right">
-            <select
-              value={status}
-              onChange={(e) => handleStatusChange(e.target.value as QuoteStatus)}
-              disabled={isPending}
-              className={`rounded-full border-0 px-3 py-1 text-xs font-semibold cursor-pointer ${QUOTE_STATUS_STYLES[status]}`}
-            >
-              {QUOTE_STATUS_OPTIONS.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
+            <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[status]}`}>
+              {QUOTE_STATUS_LABELS[status]}
+            </span>
             <p className="mt-2 text-xs text-gray-500">
               Created {new Date(quote.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </p>
           </div>
         </div>
 
-        {/* Editable meta row */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Expires</label>
-            <input
-              type="date"
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              onBlur={() => saveFields({ expires_at: expiresAt || null })}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Terms</label>
-            <input
-              type="text"
-              value={terms}
-              onChange={(e) => setTerms(e.target.value)}
-              onBlur={() => saveFields({ terms: terms || null })}
-              placeholder="Net 30"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Internal Notes</label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              onBlur={() => saveFields({ notes: notes || null })}
-              placeholder="Notes for the team"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-            />
-          </div>
-        </div>
-
         {/* Action buttons */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
-          {showSendEmailBtn && (
-            <button
-              type="button"
-              onClick={handleSendEmail}
-              disabled={isPending}
-              className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-            >
-              Send Quote Email
-            </button>
-          )}
-          {showSendReviewBtn && (
-            <button
-              type="button"
-              onClick={handleSendForReview}
-              disabled={isPending}
-              className="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-            >
-              Send for Review
-            </button>
-          )}
-          {showConvertBtn && (
+          <button
+            type="button"
+            onClick={handleSendEmail}
+            disabled={isPending || !quote.customer?.email}
+            className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+          >
+            Send Email
+          </button>
+          <button
+            type="button"
+            onClick={handleSendSms}
+            disabled={isPending || !quote.customer?.phone}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+          >
+            Send SMS
+          </button>
+          {canConvert && (
             <button
               type="button"
               onClick={handleConvert}
@@ -374,10 +321,14 @@ export default function QuoteDetailClient({
           )}
           <button
             type="button"
-            onClick={() => router.push(`/dashboard/${orgSlug}/quotes`)}
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            onClick={() => setIsEditing(!isEditing)}
+            className={`rounded-md border px-4 py-2 text-sm font-medium ${
+              isEditing
+                ? 'border-qm-lime bg-qm-lime text-white'
+                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
           >
-            Back to list
+            {isEditing ? 'Done Editing' : 'Edit'}
           </button>
         </div>
 
@@ -388,30 +339,90 @@ export default function QuoteDetailClient({
         )}
       </div>
 
-      {/* Line items */}
+      {/* ── Edit-mode metadata fields ──────────────────────────────── */}
+      {isEditing && (
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-base font-bold text-gray-900">Quote Details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onBlur={() => saveFields({ title })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Expires</label>
+              <input
+                type="date"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                onBlur={() => saveFields({ expires_at: expiresAt || null })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Terms</label>
+              <input
+                type="text"
+                value={terms}
+                onChange={(e) => setTerms(e.target.value)}
+                onBlur={() => saveFields({ terms: terms || null })}
+                placeholder="Net 30"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Internal Notes</label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onBlur={() => saveFields({ notes: notes || null })}
+                placeholder="Notes for the team"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Line items ─────────────────────────────────────────────── */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2 className="text-base font-bold text-gray-900">Line Items</h2>
-          <button
-            type="button"
-            onClick={handleAddLineItem}
-            disabled={isPending}
-            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-          >
-            + Add Line Item
-          </button>
+          {isEditing && (
+            <button
+              type="button"
+              onClick={handleAddLineItem}
+              disabled={isPending}
+              className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+            >
+              + Add Line Item
+            </button>
+          )}
         </div>
 
         {items.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">No line items yet. Click <span className="font-semibold">Add Line Item</span> to start.</div>
-        ) : (
+          <div className="py-12 text-center text-sm text-gray-500">
+            {isEditing ? (
+              <>No line items yet. Click <span className="font-semibold">Add Line Item</span> to start.</>
+            ) : (
+              'No line items.'
+            )}
+          </div>
+        ) : isEditing ? (
+          /* ── Editable table ─────────────────────────────────────── */
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Product</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Description</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">W × H</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">W &times; H</th>
                   <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Qty</th>
                   <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Unit Price</th>
                   <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Disc%</th>
@@ -426,20 +437,18 @@ export default function QuoteDetailClient({
                   const usesDims = productUsesDimensions(product?.formula)
                   return (
                     <tr key={item.id}>
-                      {/* Product picker */}
                       <td className="px-3 py-2">
                         <select
                           value={item.product_id ?? ''}
                           onChange={(e) => handleProductChange(item.id, e.target.value)}
                           className="block w-44 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         >
-                          <option value="">— manual —</option>
+                          <option value="">&mdash; manual &mdash;</option>
                           {products.map((p) => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
                         </select>
                       </td>
-                      {/* Description */}
                       <td className="px-3 py-2">
                         <input
                           type="text"
@@ -449,7 +458,6 @@ export default function QuoteDetailClient({
                           className="block w-56 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
-                      {/* W × H — only when product formula uses dims */}
                       <td className="px-3 py-2">
                         {usesDims ? (
                           <div className="flex items-center gap-1">
@@ -463,7 +471,7 @@ export default function QuoteDetailClient({
                               placeholder="W"
                               className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                             />
-                            <span className="text-xs text-gray-400">×</span>
+                            <span className="text-xs text-gray-400">&times;</span>
                             <input
                               type="number"
                               min={0}
@@ -476,10 +484,9 @@ export default function QuoteDetailClient({
                             />
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-300">—</span>
+                          <span className="text-xs text-gray-300">&mdash;</span>
                         )}
                       </td>
-                      {/* Qty */}
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
@@ -490,7 +497,6 @@ export default function QuoteDetailClient({
                           className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums text-right focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
-                      {/* Unit price */}
                       <td className="px-3 py-2 text-right">
                         <input
                           type="text"
@@ -500,7 +506,6 @@ export default function QuoteDetailClient({
                           className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums text-right focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
-                      {/* Discount */}
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
@@ -513,11 +518,9 @@ export default function QuoteDetailClient({
                           className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums text-right focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
-                      {/* Total */}
                       <td className="px-3 py-2 text-right text-sm font-semibold text-gray-900 tabular-nums">
                         ${formatCents(item.total_price)}
                       </td>
-                      {/* Tax */}
                       <td className="px-3 py-2 text-center">
                         <input
                           type="checkbox"
@@ -529,7 +532,6 @@ export default function QuoteDetailClient({
                           className="h-4 w-4 rounded border-gray-300 accent-qm-lime"
                         />
                       </td>
-                      {/* Delete */}
                       <td className="px-3 py-2 text-right">
                         <button
                           type="button"
@@ -570,11 +572,60 @@ export default function QuoteDetailClient({
               </tfoot>
             </table>
           </div>
+        ) : (
+          /* ── Read-only table ────────────────────────────────────── */
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Product</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Dimensions</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Qty</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Material</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Unit Price</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-3 text-sm text-gray-900">{item.description}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {item.width != null && item.height != null
+                        ? `${item.width}" \u00d7 ${item.height}"`
+                        : <span className="text-gray-300">&mdash;</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">{item.quantity}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {item.material_name ?? <span className="text-gray-300">&mdash;</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(item.unit_price)}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(item.total_price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td colSpan={5} className="px-4 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">Subtotal</td>
+                  <td className="px-4 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(subtotal)}</td>
+                </tr>
+                {taxAmount > 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">
+                      Tax ({(TAX_RATE * 100).toFixed(2)}%)
+                    </td>
+                    <td className="px-4 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(taxAmount)}</td>
+                  </tr>
+                )}
+                <tr>
+                  <td colSpan={5} className="px-4 py-2 text-right text-sm font-bold text-gray-900">Total</td>
+                  <td className="px-4 py-2 text-right text-base font-extrabold tabular-nums text-gray-900">${formatCents(grandTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         )}
       </div>
-
-      {/* Suppress unused import warning for QUOTE_STATUS_LABELS — used elsewhere */}
-      <span hidden>{QUOTE_STATUS_LABELS[status]}</span>
     </>
   )
 }

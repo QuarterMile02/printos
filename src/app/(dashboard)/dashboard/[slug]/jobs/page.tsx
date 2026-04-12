@@ -2,7 +2,6 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { JobStatus, JobFlag } from '@/types/database'
 import KanbanBoard, { type JobCard } from './kanban-board'
-import CreateJobForm from './create-job-form'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -42,14 +41,6 @@ export default async function JobsPage({ params }: PageProps) {
     .eq('organization_id', org.id)
     .order('job_number', { ascending: false }) as { data: JobRow[] | null; error: unknown }
 
-  // Fetch customers for the create form dropdown
-  type CustomerRow = { id: string; first_name: string; last_name: string; company_name: string | null }
-  const { data: customerRows } = await supabase
-    .from('customers')
-    .select('id, first_name, last_name, company_name')
-    .eq('organization_id', org.id)
-    .order('last_name', { ascending: true }) as { data: CustomerRow[] | null; error: unknown }
-
   const jobs: JobCard[] = (jobRows ?? []).map((r) => ({
     id: r.id,
     job_number: r.job_number,
@@ -60,7 +51,6 @@ export default async function JobsPage({ params }: PageProps) {
     customer: r.customers ?? null,
   }))
 
-  const customers = customerRows ?? []
   const total = jobs.length
 
   return (
@@ -80,7 +70,6 @@ export default async function JobsPage({ params }: PageProps) {
             {total === 0 ? 'No jobs yet.' : `${total} job${total === 1 ? '' : 's'}`}
           </p>
         </div>
-        <CreateJobForm orgId={org.id} orgSlug={org.slug} customers={customers} />
       </div>
 
       {/* Board */}
@@ -94,7 +83,7 @@ export default async function JobsPage({ params }: PageProps) {
               </svg>
             </div>
             <p className="mt-4 text-sm font-medium text-gray-900">No jobs yet</p>
-            <p className="mt-1 text-sm text-gray-500">Create your first job to get started.</p>
+            <p className="mt-1 text-sm text-gray-500">Jobs are created automatically when a Sales Order is created.</p>
           </div>
         </div>
       ) : (

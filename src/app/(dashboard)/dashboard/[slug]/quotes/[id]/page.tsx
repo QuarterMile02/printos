@@ -76,9 +76,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .eq('quote_id', id)
     .order('sort_order', { ascending: true }) as { data: LineItemRow[] | null; error: unknown }
 
-  // Products for the line item picker. Pull active ones only and order
-  // by name. Limit to a sane upper bound — bigger orgs can switch this
-  // to a server-side typeahead later.
+  // Products for the line item picker (edit mode).
   type ProductOption = { id: string; name: string; formula: string | null }
   const { data: products } = await supabase
     .from('products')
@@ -88,8 +86,32 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .order('name', { ascending: true })
     .limit(2000) as { data: ProductOption[] | null; error: unknown }
 
-  // If this quote was converted to a sales order, fetch its number for
-  // the success banner / link.
+  // Fetch materials for each product used in line items, via product_items.
+  const productIds = [...new Set(
+    (lineItems ?? []).map((li) => li.product_id).filter(Boolean) as string[],
+  )]
+
+  const materialMap = new Map<string, string>()
+  if (productIds.length > 0) {
+    type ProductMaterialRow = {
+      product_id: string
+      materials: { name: string } | null
+    }
+    const { data: productMats } = await supabase
+      .from('product_items')
+      .select('product_id, materials(name)')
+      .in('product_id', productIds)
+      .eq('item_type', 'Material')
+      .limit(500) as { data: ProductMaterialRow[] | null; error: unknown }
+
+    for (const pm of productMats ?? []) {
+      if (pm.product_id && pm.materials?.name && !materialMap.has(pm.product_id)) {
+        materialMap.set(pm.product_id, pm.materials.name)
+      }
+    }
+  }
+
+  // If this quote was converted to a sales order, fetch its number.
   type SoRef = { id: string; so_number: number; created_at: string }
   let salesOrder: SoRef | null = null
   if (quote.converted_to_so_id) {
@@ -149,6 +171,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           total_price: li.total_price,
           taxable: li.taxable !== false,
           sort_order: li.sort_order ?? 0,
+          material_name: li.product_id ? materialMap.get(li.product_id) ?? null : null,
         }))}
         products={products ?? []}
         salesOrder={salesOrder}

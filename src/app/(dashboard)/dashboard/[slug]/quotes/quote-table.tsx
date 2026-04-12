@@ -3,14 +3,14 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { updateQuoteStatus, sendQuoteToCustomer } from './actions'
+import { sendQuoteToCustomer } from './actions'
 import type { QuoteStatus } from '@/types/database'
 import type { DeliveryMethod } from './actions'
 import {
   formatQuoteNumber,
   formatCents,
   QUOTE_STATUS_STYLES,
-  QUOTE_STATUS_OPTIONS,
+  QUOTE_STATUS_LABELS,
   QUOTE_FILTER_TABS,
 } from './format'
 
@@ -199,28 +199,13 @@ export default function QuoteTable({
   activeFilter: string
 }) {
   const router = useRouter()
-  const [rows, setRows] = useState(quotes)
-  const [, startTransition] = useTransition()
+  const [rows] = useState(quotes)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info'; key: number } | null>(null)
   const [sendingQuote, setSendingQuote] = useState<QuoteRow | null>(null)
 
   function showToast(message: string, type: 'success' | 'info' = 'success') {
     setToast({ message, type, key: Date.now() })
     setTimeout(() => setToast(null), 5000)
-  }
-
-  function handleStatusChange(quoteId: string, newStatus: QuoteStatus) {
-    const prev = rows
-    setRows((r) => r.map((q) => (q.id === quoteId ? { ...q, status: newStatus } : q)))
-
-    startTransition(async () => {
-      const result = await updateQuoteStatus(quoteId, orgId, orgSlug, newStatus)
-      if (result.error) {
-        setRows(prev) // revert on error
-      } else if (result.jobCreated) {
-        showToast(`Quote approved — Job #${result.jobCreated} created automatically`)
-      }
-    })
   }
 
   const toastColors = toast?.type === 'success'
@@ -317,21 +302,17 @@ export default function QuoteTable({
             <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
               Created
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-              Actions
-            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {rows.map((quote) => (
-            <tr key={quote.id} className="hover:bg-gray-50">
-              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
-                <Link
-                  href={`/dashboard/${orgSlug}/quotes/${quote.id}`}
-                  className="text-qm-fuchsia hover:underline"
-                >
-                  {formatQuoteNumber(quote.quote_number, quote.created_at)}
-                </Link>
+            <tr
+              key={quote.id}
+              className="hover:bg-gray-50 cursor-pointer"
+              onClick={() => router.push(`/dashboard/${orgSlug}/quotes/${quote.id}`)}
+            >
+              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-qm-fuchsia">
+                {formatQuoteNumber(quote.quote_number, quote.created_at)}
               </td>
               <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
                 {quote.title}
@@ -345,27 +326,12 @@ export default function QuoteTable({
                 ${formatCents(quote.total)}
               </td>
               <td className="whitespace-nowrap px-6 py-4">
-                <select
-                  value={quote.status}
-                  onChange={(e) => handleStatusChange(quote.id, e.target.value as QuoteStatus)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border-0 cursor-pointer ${QUOTE_STATUS_STYLES[quote.status]}`}
-                >
-                  {QUOTE_STATUS_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
+                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${QUOTE_STATUS_STYLES[quote.status]}`}>
+                  {QUOTE_STATUS_LABELS[quote.status]}
+                </span>
               </td>
               <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
                 {formatDate(quote.created_at)}
-              </td>
-              <td className="whitespace-nowrap px-6 py-4">
-                <button
-                  type="button"
-                  onClick={() => router.push(`/dashboard/${orgSlug}/quotes/${quote.id}`)}
-                  className="text-sm font-medium text-qm-fuchsia hover:underline"
-                >
-                  View →
-                </button>
               </td>
             </tr>
           ))}

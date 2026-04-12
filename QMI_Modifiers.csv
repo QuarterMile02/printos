@@ -1,0 +1,407 @@
+System Lookup Name,Display Name,Type,Units,Range Min Label,Range Max Label,Range Min Value,Range Max Value,Range Default Value,Range Step Interval,Show Internally,Show Customer,System Variable
+Wrap_install_2,Install 2 Man,Boolean,Boolean,,,,,,,Yes,Yes,No
+Coroplast_Aframe3x4ft,3ft h x 4ft w Finished Size,Boolean,Boolean,,,,,,,Yes,Yes,No
+Raceway_Length,Raceway Length,Numeric,Feet,,,,,,,Yes,No,No
+Letter_height_LC,Lowercase Letter Height (in),Numeric,Unit,,,,,,,Yes,No,No
+Tape_Right,Tape Right,Boolean,Boolean,,,,,,,Yes,Yes,No
+PylonSign,Pylon Sign,Boolean,Boolean,,,,,,,Yes,Yes,No
+CL_Pieces_Qty,Qty of Letters/ Pieces,Numeric,Unit,,,,,,,Yes,Yes,No
+Quantities,Quantity,Range,Unit,Qty 100,Qty 1000,25,1000,250,500,Yes,Yes,No
+Partial_Wrap,Partial Wrap,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_3in_84in_144in,3in Pole Pocket: 84in h x 144in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+Hours_On_Site,Hours On Site (total),Numeric,Unit,,,,,,,Yes,Yes,No
+Outdoor,Outdoor,Boolean,Boolean,0,200,,200,,,Yes,No,No
+Additional_Hours,Additional Time,Numeric,Unit,,,,,,,Yes,Yes,No
+Custom_Shape,Custom Cut Shape,Boolean,Boolean,,,,,,,Yes,Yes,No
+Install15Qty,15MinsQty,Numeric,Unit,,,,,,,Yes,No,No
+H_WireStakes10x24,H Wire Stakes 10in x 24in,Numeric,Unit,,,,,,,Yes,Yes,No
+Numbering,Numbering,Numeric,Unit,,,,,,,Yes,Yes,No
+Quarter_Page_Cutting,1/4 Page (Quarter),Boolean,Boolean,,,,,,,Yes,Yes,No
+Metallic_Option,Epson- Metallic Ink Option,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_1in,Pole Pocket 1in,Boolean,Boolean,,,,,,,Yes,Yes,No
+Qtyofletters_LC,Lowercase Letter Qty,Numeric,Unit,,,,,,,Yes,No,No
+Tent_HalfWall_1S_withHardwareQty,1 Sided Half Wall w/Hardware Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+SwissQPrinting,SwissQ Printing,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tent_weights6,Sandbag Weight Set (6),Numeric,Unit,,,,,,,Yes,Yes,No
+Channel_Coil_Length_3rdColor,Channel Coil Length (3rd Color),Numeric,Inches,,,,,,,Yes,No,No
+CL_Led_Qty_2ndColor,Led's Qty (2nd Color),Numeric,Unit,,,,,,,Yes,Yes,No
+Wrap_install2_sqft,Install 2 Man (Vehicle Sq. Ft),Numeric,Sqft,,,,,,,Yes,Yes,No
+Grommets_Sides,Grommets Sides,Boolean,Boolean,,,,,,,Yes,Yes,No
+Special_Colors,Special Colors,Boolean,Boolean,,,,,,,Yes,Yes,No
+Wrap_flat_install,Installed,Boolean,Boolean,,,,,,,Yes,Yes,No
+Landscape,Landscape,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tape_Spacing,Tape Spacing,Numeric,Inches,,,,,,,Yes,Yes,No
+PlasmaCutting,Plasma Cutting,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tent_HalfWall_2S_Qty,2 Sided Half Wall Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Additional_Design_Hours,Additional Design:,Numeric,Unit,,,,,,,Yes,Yes,No
+Accessory_Qty,Accesssory Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Epson_White_Ink_option,Epson- White Ink Option,Boolean,Boolean,,,,,,,Yes,Yes,No
+LetterThickness2in,2in Thick,Boolean,Boolean,,,,,,,Yes,Yes,No
+Channel_Coil_Length_5thColor,Channel Coil Length (5th Color),Numeric,Unit,,,,,,,Yes,No,No
+Tent_FullWallQty,Full Wall Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Number_of_Cards,# of Cards per set,Numeric,Unit,,,,,,,Yes,Yes,No
+Badge_No_Accessory_Cut,No Accessory Hole Cut,Boolean,Boolean,,,,,,,Yes,Yes,No
+Portrait,Portrait,Boolean,Boolean,,,,,,,Yes,Yes,No
+CL_Led_Qty_3rdColor,Led's Qty (3rd Color),Numeric,Unit,,,,,,,Yes,Yes,No
+Wrap_install_1,Install 1 Man,Boolean,Boolean,,,,,,,Yes,Yes,No
+Scaffold_Large,Scaffold Large 7ft,Numeric,Unit,,,,,,,Yes,Yes,No
+Bottom_Placement,Bottom Placement,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_Prep_Add_Time,Add. Design Prep (15 Mins):,Numeric,Unit,,,,,,,Yes,No,No
+Design_PylonSign,Pylon Sign,Boolean,Boolean,,,,,,,Yes,Yes,No
+RGB_Outdoor,RGB Outdoor,Boolean,Boolean,,,,,,,Yes,Yes,No
+Total_Area,Total Area,Numeric,Sqft,,,,,,,Yes,Yes,Yes
+RoundPipe6inSch40,6in Schedule 40 Round Pipe Feet,Numeric,Unit,,,,,,,Yes,No,No
+CL_Led_Qty_4thColor,Led's Qty (4th Color),Numeric,Unit,,,,,,,Yes,Yes,No
+Size4hx8w,4ft h x 8ft w,Boolean,Boolean,,,,,,,Yes,Yes,No
+White_Option,Epson- White Ink Option,Boolean,Boolean,,,,,,,Yes,Yes,No
+Assembly_15min,15 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Assembly_10min,10 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Rounded_Corners,Rounded Corners,Numeric,Inches,,,,,,,Yes,Yes,No
+Reverse_ChannelLetters,Reverse Lit Channel Letters,Boolean,Boolean,,,,,,,Yes,Yes,No
+Stud_Qty,Stud Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Frontlit_ChannelLetters,Front Lit Channel Letters,Boolean,Boolean,,,,,,,Yes,Yes,No
+Substrate_Color_2_Percentage,Substrate 2 Percentage,Numeric,Unit,,,,,,,Yes,No,No
+X_Banner_Stand_32,32in Single Sided (Finished Size: 32in w x 72in h),Boolean,Boolean,,,,,,,Yes,Yes,No
+FullColorFace,Full Color Face,Boolean,Boolean,,,,,,,Yes,Yes,No
+Glue_Qty,Glue Quantity,Numeric,Unit,,,,,,,Yes,No,No
+Trimcap_Length_1stColor,Trimcap Length (1st Color),Numeric,Inches,,,,,,,Yes,Yes,No
+Paint_Coatings,Paint,Numeric,Unit,,,,,,,Yes,Yes,No
+Design_15mins,15 Mins,Boolean,Boolean,,,,,,,Yes,No,No
+DoublePoleSign,2 Pole Sign,Boolean,Boolean,,,,,,,Yes,Yes,No
+Router_Hrs,Router Time,Numeric,Unit,,,,,,,Yes,No,No
+Design_3mins_AddClientPrintReady,Add. Client Print Ready (3min),Numeric,Unit,,,,,,,Yes,No,No
+Assembly_20min,20 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Gloss,Gloss,Boolean,Boolean,,,,,,,Yes,Yes,No
+VacuumFormFace,Cost per Vacuum Form Face,Numeric,Unit,,,,,,,Yes,No,No
+FlexFaceScrewClampClip,Screw Clamp Additional Clip,Boolean,Boolean,,,,,,,Yes,Yes,No
+Electrical_Box_2x4,Electrical Box 2in x 4in Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+X_Banner_Stand_48,48in Single Sided (Finished Size: 48in w x 78in h),Boolean,Boolean,,,,,,,Yes,Yes,No
+MDO_Top_Bottom_Horizontal,Top & Bottom Frame,Boolean,Boolean,,,,,,,Yes,Yes,No
+Length_in_feet,Length in Feet,Numeric,Feet,,,,,,,Yes,Yes,Yes
+Spot,Spot,Boolean,Boolean,,,,,,,Yes,Yes,No
+PushThru1_4,1/2in Acrylic with 1/4in Push Thru (Sq. Ft),Numeric,Sqft,,,,,,,Yes,Yes,No
+LH_Install_3x10_Additional,Additional Sign Installations,Numeric,Unit,,,,,,,Yes,Yes,No
+Standoff_Holes,Standoff_Holes,Boolean,Boolean,,,,,,,Yes,Yes,No
+Wrap_Front_Bumper_Complex,Front_Bumper- Complex,Boolean,Boolean,,,,,,,Yes,Yes,No
+Assembly_Table,Assembly/Table,Numeric,Unit,,,,,,,Yes,No,No
+Survey,Survey,Boolean,Boolean,,,,,,,Yes,Yes,No
+Grommets_Spacing,Grommet Spacing,Numeric,Inches,,,,,,,Yes,No,No
+Grommets_Corners,Grommets (Corners Only),Boolean,Boolean,,,,,,,Yes,No,No
+Additional_Costs,+Additional Cost,Numeric,Unit,,,,,,,Yes,Yes,No
+Accesssory3_Qty,Accesssory#3 Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Install_2_Man,Install (2 Man),Numeric,Unit,,,,,,,Yes,No,No
+Tent_FlagHardware,Flag Holder Hardware,Numeric,Unit,,,,,,,Yes,Yes,No
+Sides_1,1 Side Only,Boolean,Boolean,,,,,,,Yes,Yes,No
+PremaskperMin,Premask Time (Mins),Numeric,Unit,,,,,,,No,No,No
+Lamination_Cost,+Lamination Cost,Numeric,Unit,,,,,,,Yes,Yes,No
+Tent_CarryingBag,Carrying Bag w/Wheels (Upgrade),Numeric,Unit,,,,,,,Yes,Yes,No
+Lam_Reg_Gloss,Regular Gloss Laminate,Boolean,Boolean,,,,,,,Yes,Yes,No
+Leds_RGB,RGB Led's,Boolean,Boolean,,,,,,,Yes,Yes,No
+Perforated_DualColor,Perforated Dual Color Face,Boolean,Boolean,,,,,,,Yes,Yes,No
+LetterThickness75in,.75in Thick,Boolean,Boolean,,,,,,,Yes,Yes,No
+Accesssory5_Qty,Accesssory#5 Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+WeedingOutTime,Weeding Out Time (Mins),Numeric,Unit,,,,,,,No,No,No
+Reflective,Reflective,Boolean,Boolean,,,,,,,Yes,Yes,No
+Vinyl_Color_1_Percentage,Vinyl Color 1 Coverage,Numeric,Unit,,,,,,,Yes,No,No
+Design_5mins_AddNameTags,Add. Name Tags (5 Mins):,Numeric,Unit,,,,,,,Yes,No,No
+NoOf_PowerSupplies,No. of Power Supplies,Numeric,Unit,,,,,,,Yes,No,No
+Channel_Coil_Length_4thColor,Channel Coil Length (4th Color),Numeric,Inches,,,,,,,Yes,No,No
+Day_Nite,Day/Nite Option,Boolean,Boolean,,,,,,,Yes,Yes,No
+Ship,Ship,Boolean,Boolean,,,,,,,Yes,Yes,No
+Lam_Reflective_Gloss,Reflective Gloss Laminate,Boolean,Boolean,,,,,,,Yes,Yes,No
+Name_Tag_Pin,Pin,Boolean,Boolean,,,,,,,Yes,Yes,No
+Lit_WallSigns_Cloud,Wall Signs (Cloud),Boolean,Boolean,,,,,,,Yes,Yes,No
+Vinyl_Color_4_Percentage,Vinyl Color 4 Coverage,Numeric,Unit,,,,,,,Yes,No,No
+KissCutTime,Kiss Cut Time (Mins),Numeric,Unit,,,,,,,No,No,No
+Varnish_Ink_Impala,SwissQ- Varnish/ Clear Ink,Boolean,Boolean,,,,,,,Yes,Yes,No
+FlexFaceRetroBleedPushClip,Retro Bleed Push Clip,Boolean,Boolean,,,,,,,Yes,Yes,No
+Qtyofletters_UC,Uppercase Letter Qty,Numeric,Unit,,,,,,,Yes,No,No
+Assembly_2min,2 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Assembly_3min,3 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Colors,Colors,Numeric,Unit,,,,,,,Yes,Yes,No
+No_Letters_Small,Number of Small Letters,Numeric,Unit,,,,,,,Yes,Yes,No
+Retractable_33,33in Single Sided (Visible Area: 33in w x 78in h),Boolean,Boolean,,,,,,,Yes,Yes,No
+Tape_Middle,Tape Middle,Boolean,Boolean,,,,,,,Yes,Yes,No
+Adhesive_Qty,Adhesive Qty,Numeric,Unit,,,,,,,Yes,Yes,No
+Size_8ft_w_4ft_h,4ft x 8ft,Boolean,Boolean,,,,,,,Yes,Yes,No
+Stencil_Drawing,Drawing,Boolean,Boolean,,,,,,,Yes,Yes,No
+CL_PowerSupplyBox_3,Transco Box (3 Power Supplies per box),Numeric,Unit,,,,,,,Yes,Yes,No
+Hemtek_40mmHem,Hem 40mm - 1.57in,Boolean,Boolean,,,,,,,Yes,Yes,No
+Third_Page_Cutting,1/3 Page (Third),Boolean,Boolean,,,,,,,Yes,Yes,No
+Banner_Hem_Top_Bottom,Hem- Top & Bottom Only (Width),Boolean,Boolean,,,,,,,Yes,Yes,No
+Permit,Permit,Boolean,Boolean,,,,,,,Yes,Yes,No
+PushThru3_8,5/8in Acrylic with 3/8in Push Thru (Sq. Ft),Numeric,Sqft,,,,,,,Yes,Yes,No
+FlagSquareBase,Optional Square Base:,Numeric,Unit,,,,,,,Yes,Yes,No
+Matte,Matte,Boolean,Boolean,,,,,,,Yes,Yes,No
+Wrap_Back_Bumper_Simple,Back Bumper- Simple,Boolean,Boolean,,,,,,,Yes,Yes,No
+Sides,Sides,Numeric,Unit,,,,,,,Yes,Yes,No
+Pole_Pocket_3in_84in,3in Pole Pocket: 84in h x 120in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+Laminate,Laminate,Boolean,Boolean,,,,,,,Yes,Yes,No
+Qty_Up,Qty_up,Numeric,Unit,,,,,,,Yes,Yes,No
+Distance,Distance,Numeric,Miles,,,,,,,Yes,Yes,Yes
+Grommets_Corners_Only,Grommets (Corners Only),Boolean,Boolean,,,,,,,Yes,No,No
+SingleSided,Single Sided,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_Channel_Letter,Channel Letters,Boolean,Boolean,,,,,,,Yes,No,No
+White_Ink_Impala,SwissQ- White Ink Option,Boolean,Boolean,,,,,,,Yes,No,No
+Zund,Zund Cut?,Boolean,Boolean,,,,,,,Yes,No,No
+Hardware_Kit,Post & Panel Hardware,Boolean,Boolean,,,,,,,Yes,Yes,No
+Wrap_Back_Bumper_Complex,Back Bumper- Complex,Boolean,Boolean,,,,,,,Yes,Yes,No
+No_Grommets,No Grommets,Boolean,Boolean,,,,,,,Yes,No,No
+Assembly_2,Assembly 2 Man,Numeric,Unit,,,,,,,Yes,Yes,No
+Wrap_Grill_Inner_Around,Grill- Inner & Surround,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_Prep,Design Prep,Boolean,Boolean,,,,,,,Yes,No,No
+Full_Wrap,Full Wrap,Boolean,Boolean,,,,,,,Yes,Yes,No
+CL_LED_Length,LEDs (Lin. Feet Needed),Numeric,Feet,,,,,,,Yes,No,No
+Coil_Paint_SubContract,Coil Painting,Numeric,Unit,,,,,,,Yes,No,No
+PylonInstallCraneAddTime,Pylon Sign Installation Bigger than 50 sq ft,Boolean,Boolean,,,,,,,No,No,No
+Round_Corners,Rounded Corners,Boolean,Boolean,,,,,,,Yes,No,No
+Pole_Pocket_1_5in,Pole Pocket 1.5in (Telescoping),Boolean,Boolean,,,,,,,Yes,Yes,No
+Full_Page_No_Cutting,Full Page,Boolean,Boolean,,,,,,,Yes,Yes,No
+ThruCutTimePremask,Premask Thru Cut Time (Mins),Numeric,Unit,,,,,,,Yes,No,No
+Round_Corner,Round Corner,Boolean,Boolean,,,,,,,Yes,Yes,No
+MonumentSign,Monument Sign,Boolean,Boolean,,,,,,,Yes,Yes,No
+Liquid_Lamination,Liquid Lamination,Boolean,Boolean,,,,,,,Yes,Yes,No
+VerticalFlutes,Vertical Flutes,Boolean,Boolean,,,,,,,Yes,Yes,No
+AssemblyPerMin,Assembly (Mins),Numeric,Unit,,,,,,,No,No,No
+Pole_Pocket_1in_92in,1in Pole Pocket: 92in h x 120in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+Width_in_feet,Width in Feet,Numeric,Feet,,,,,,,Yes,Yes,Yes
+ShippingCost,Shipping Cost,Numeric,Unit,,,,,,,Yes,No,No
+Vinyl_Color_2_Percentage,Vinyl Color 2 Coverage,Numeric,Unit,,,,,,,Yes,No,No
+Size_2ft_w_3ft_h,2ft W x 3ft H,Boolean,Boolean,,,,,,,Yes,Yes,No
+LH_Install_3x20_Additional,Additional Sign Installations,Numeric,Unit,,,,,,,Yes,Yes,No
+Design_10mins_AddLogoOrText,Add. Logo/Text Change (10 Mins):,Numeric,Unit,,,,,,,Yes,No,No
+Wrap_install1_sqft,Install 1 Man (Vehicle Sq. Ft),Numeric,Sqft,,,,,,,Yes,Yes,No
+Clamp_Spacing,Clamp Spacing,Numeric,Inches,,,,,,,Yes,No,No
+Substrate_Color_1_Percentage,Substrate 1 Percentage,Numeric,Unit,,,,,,,Yes,No,No
+Retractable33in_Double_Sided,33in Double Sided (Visible Area: 33in w x 78in h),Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_5mins_AddClientPrintReady,Add. Client Print Ready (5min),Numeric,Unit,,,,,,,Yes,No,No
+Vinyl_Cutter_Kiss_Cut,Kiss Cut- Vinyl Cutter,Boolean,Boolean,,,,,,,Yes,Yes,No
+Premask,Premask Graphic,Boolean,Boolean,,,,,,,No,No,No
+Kiss_Cut_Vinyl_Cutting,Kiss Cut Vinyl Cutting,Boolean,Boolean,,,,,,,Yes,Yes,No
+Half_Page_Cutting,1/2 Page (Half),Boolean,Boolean,,,,,,,Yes,Yes,No
+Substrate_Color_5_Percentage,Substrate 5 Percentage,Numeric,Unit,,,,,,,Yes,No,No
+CL_Assembly,Bending/Assembly Time,Numeric,Unit,,,,,,,Yes,No,No
+Staple,Staple,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_1in_92in_144in,1in Pole Pocket: 92in h x 144in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+Substrate_Color_4_Percentage,Substrate 4 Percentage,Numeric,Unit,,,,,,,Yes,No,No
+H_WireStakes10x30,H Wire Stakes 10in x 30in,Boolean,Boolean,,,,,,,Yes,Yes,No
+Channel_Coil_Length_1stColor,Channel Coil Length (1st Color),Numeric,Inches,,,,,,,Yes,No,No
+LaserCutting,Laser Cutting,Boolean,Boolean,,,,,,,Yes,Yes,No
+PercentageOfKissCut,Kiss Cut Percentage,Numeric,Unit,,,,,,,Yes,No,No
+Contour_cut,Contour Cutting,Boolean,Boolean,,,,,,,No,No,No
+HorizontalFlutes,Horizontal Flutes,Boolean,Boolean,,,,,,,Yes,Yes,No
+WhiteFullPageCoverage,White Full Page Coverage,Boolean,Boolean,,,,,,,Yes,Yes,No
+Lit_WallSigns_Individual,Wall Signs (Individual),Boolean,Boolean,,,,,,,Yes,Yes,No
+Assembly_1hr,1 hr,Boolean,Boolean,,,,,,,Yes,Yes,No
+PowerSupplies150w,150w Power Supply Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Diameter_in_yards,Diameter,Numeric,Yard,,,,,,,Yes,Yes,Yes
+Substrate_Color_3_Percentage,Substrate 3 Percentage,Numeric,Unit,,,,,,,Yes,No,No
+Tape_Sides,Tape Sides,Boolean,Boolean,,,,,,,Yes,Yes,No
+Name_Badges_Lanyard,Lanyard,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_Hrs,Design Time (Hours),Numeric,Unit,,,,,,,Yes,No,No
+ConcreteFooting3ftRoundx5ftDepth,Round Concrete Footing 3ft w x 5ft Depth,Boolean,Boolean,,,,,,,Yes,No,No
+Tape_2in_Pieces,Tape 2in Pieces,Numeric,Unit,,,,,,,Yes,Yes,No
+Pole_Pocket_Bottom,Pole Pocket Bottom,Boolean,Boolean,,,,,,,Yes,Yes,No
+Width,Width,Numeric,Inches,,,,,,,Yes,Yes,Yes
+Select,Select,Boolean,Boolean,,,,,,,No,No,No
+Name_Badges_Clip_Retractable,Retractable Clip,Boolean,Boolean,,,,,,,Yes,Yes,No
+CL_Led_Qty_1stColor,Led's Qty (1st Color),Numeric,Unit,,,,,,,Yes,Yes,No
+RunLength_Conduit,EMT Conduit Length:,Numeric,Inches,,,,,,,Yes,Yes,No
+Hemtek_30mmHem,Hem 30mm - 1.18in,Boolean,Boolean,,,,,,,Yes,Yes,No
+All_Sizes_Entered,All Sizes Entered,Boolean,Boolean,,,,,,,Yes,Yes,No
+Grommets_Bottom,Grommets Bottom,Boolean,Boolean,,,,,,,Yes,Yes,No
+Trimcap_Length,Trimcap Length,Numeric,Inches,,,,,,,Yes,Yes,No
+Foldable,Foldable,Boolean,Boolean,,,,,,,Yes,Yes,No
+number_controllers,# of Controllers,Numeric,Unit,,,,,,,Yes,No,No
+Length,Length,Numeric,Inches,,,,,,,Yes,Yes,Yes
+Bindery_Cost,+Bindery Cost,Numeric,Unit,,,,,,,Yes,Yes,No
+Wrap_flat_install_sqft,Install (Box Truck Sq. Ft),Numeric,Sqft,,,,,,,Yes,Yes,No
+Number_Colors,No. of Colors,Numeric,Unit,,,,,,,Yes,Yes,No
+Channel_Coil_Length_2ndColor,Channel Coil Length (2nd Color),Numeric,Inches,,,,,,,Yes,No,No
+Assembly_45min,45 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_5mins_AddDockNum,Add. Dock Numbers (5 Mins):,Numeric,Unit,,,,,,,Yes,No,No
+Pole_Pocket_2_5_86in_144in,2.5in Pole Pocket: 86in h x 144in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+Grommets_Top_Corners,Grommets Top Corners Only,Boolean,Boolean,,,,,,,Yes,Yes,No
+Double_Sided,Double Sided,Boolean,Boolean,,,,,,,Yes,Yes,No
+Raceway_Painting,Raceway Painting,Numeric,Unit,,,,,,,Yes,Yes,No
+Height_Sign_From_Ground,Sign Starting Height: (Max 5ft),Numeric,Feet,,,,,,,Yes,Yes,No
+Banner_Hem_All_Sides,Hem- All Around (Perimeter),Boolean,Boolean,,,,,,,Yes,Yes,No
+Install15,Install15,Boolean,Boolean,,,,,,,Yes,No,No
+PowerSupplies100w,100w Power Supply Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Size_5ft_h_10ft_w,5ft x 10ft,Boolean,Boolean,,,,,,,Yes,Yes,No
+Install,Install,Boolean,Boolean,,,,,,,Yes,Yes,No
+Coroplast_Aframe4x5ft,4ft h x 5ft w Finished Size,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tent_FullWall,Full Wall,Numeric,Unit,,,,,,,Yes,Yes,No
+QTY_Num_Pages,QTY Num of Pages,Numeric,Unit,,,,,,,Yes,Yes,No
+Tent_FlagHolder,Flag Holder,Numeric,Unit,,,,,,,Yes,Yes,No
+Studs_2in,2in Studs,Boolean,Boolean,,,,,,,Yes,Yes,No
+Trimcap_Length_3rdColor,Trimcap Length (3rd Color),Numeric,Inches,,,,,,,Yes,Yes,No
+HourlyQty,Hours in Decimals,Numeric,Unit,,,,,,,Yes,Yes,No
+Cutting,Cutting,Boolean,Boolean,,,,,,,Yes,No,No
+Design_FlexFace,Flex Face (# of Colors),Numeric,Unit,,,,,,,Yes,Yes,No
+Indoor,Indoor,Boolean,Boolean,,,,,,,Yes,Yes,No
+Name_Badges_Clip,Clip,Boolean,Boolean,,,,,,,Yes,Yes,No
+Bucket_Truck,Bucket Truck,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tent_HalfWall_1S_Qty,1 Sided Half Wall Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Paint_SubContract,Paint,Numeric,Unit,,,,,,,Yes,Yes,No
+Vinyl_Color_3_Percentage,Vinyl Color 3 Coverage,Numeric,Unit,,,,,,,Yes,No,No
+Tent_HalfWall_2S_withHardwareQty,2 Sided Half Wall w/Hardware Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Design_10mins_AddBizcards,Add. Buisness Cards (10 Mins):,Numeric,Unit,,,,,,,Yes,No,No
+Pole_Pocket_2_5_86in,2.5in Pole Pocket: 86in h x 120in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+Spacer_Qty,Spacer Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Design_1mins_AddClientPrintReady,Add. Client Print Ready (1min),Numeric,Unit,,,,,,,Yes,No,No
+CL_Led_Qty,Led Quantity,Numeric,Unit,,,,,,,Yes,No,No
+Channel_Letter_Cabinet,Channel Letter Cabinet (Up to 32 sq ft),Boolean,Boolean,,,,,,,Yes,Yes,No
+X_Banner_Stand_24,24in Single Sided (Finished Size: 24in w x 63in h),Boolean,Boolean,,,,,,,Yes,Yes,No
+MDO_Middle_Vertical,Middle Vertical Brace,Boolean,Boolean,,,,,,,Yes,Yes,No
+Mounting_Pad_GI01,1.75in GI-01 Perforated Mounting Pad,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_Lit_Wall_Sign,Lit Wall Sign,Boolean,Boolean,,,,,,,Yes,No,No
+Wrap_Back_Bumper,Back Bumper,Boolean,Boolean,,,,,,,Yes,Yes,No
+Accesssory4_Qty,Accesssory#4 Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Install_1_Man,Install (1 Man),Numeric,Unit,,,,,,,Yes,No,No
+Badge_Accessory_Cut,Accessory Cut Only,Boolean,Boolean,,,,,,,Yes,Yes,No
+Rotate_90,Rotate 90°,Boolean,Boolean,,,,,,,Yes,Yes,No
+Scaffold_Small,Scaffold Slim 6ft,Numeric,Unit,,,,,,,Yes,Yes,No
+LetterThickness5in,.5in Thick,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design,Design,Boolean,Boolean,,,,,,,Yes,No,No
+Push_Thru_SqFt,Push Thru Sq Ft,Numeric,Unit,,,,,,,Yes,No,No
+Accesssory2_Qty,Accesssory#2 Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Electrical_Box_4x4,Electrical Box 4in x 4in Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Tent_TopPrintQty,Tent Top Cover Print,Numeric,Unit,,,,,,,Yes,Yes,No
+Packaging_Cost,+ Packaging Costs,Numeric,Unit,,,,,,,Yes,Yes,No
+Board_foot,Board Foot,Numeric,Cuft,,,,,,,Yes,Yes,Yes
+Paint_Hrs,Painting Time,Numeric,Unit,,,,,,,Yes,No,No
+Die_Cut_Cost,+Diecut Cost,Numeric,Unit,,,,,,,Yes,Yes,No
+Wrap_Front_Bumper,Front Bumper,Boolean,Boolean,,,,,,,Yes,Yes,No
+Raised_Printing,SwissQ- 3D Raised Printing,Boolean,Boolean,,,,,,,Yes,Yes,No
+Grommets_All_Around,Grommets- All Sides,Boolean,Boolean,,,,,,,Yes,Yes,No
+Wiring_Hrs,Electrical/Wiring Time,Numeric,Unit,,,,,,,Yes,No,No
+Clamps_Qty,Conduit U Channel Clamps Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Deliver,Deliver,Boolean,Boolean,,,,,,,Yes,Yes,No
+FlagCarryingCaseX_XL,Optional Carrying Case X-XL,Numeric,Unit,,,,,,,Yes,Yes,No
+Design_10mins_AddBarcodes,Add. Barcodes (10 Mins):,Numeric,Unit,,,,,,,Yes,No,No
+LetterThickness1in,1in Thick,Boolean,Boolean,,,,,,,Yes,Yes,No
+Collate,Collate,Boolean,Boolean,,,,,,,Yes,Yes,No
+Folding,Folding,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tape_Left,Tape Left,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tent_weights4,Sandbag Weight Set (4),Numeric,Unit,,,,,,,Yes,Yes,No
+Post_Total_Height,Post Total Height,Numeric,Feet,,,,,,,Yes,Yes,No
+Conduit_Wiring_Length,Conduit Wiring Length (12-2),Numeric,Inches,,,,,,,Yes,Yes,No
+FlexFaceNoClips,No Clips,Boolean,Boolean,,,,,,,Yes,Yes,No
+Exisiting_Design,Existing Design with Changes,Boolean,Boolean,,,,,,,Yes,No,No
+Assembly_30min,30 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pattern_Stencil,Pattern/ Stencil,Boolean,Boolean,,,,,,,Yes,Yes,No
+Design_45mins,45 Mins,Boolean,Boolean,,,,,,,Yes,No,No
+DoNotSelect,Do Not Select,Boolean,Boolean,,,,,,,No,No,No
+FlexFaceScrewClamp,Angle Frame Screw Clamp,Boolean,Boolean,,,,,,,Yes,Yes,No
+Epson_Printing,Epson Printing,Boolean,Boolean,,,,,,,Yes,Yes,No
+MDOSignHeight,Final Sign Height: (Max 9ft),Numeric,Feet,,,,,,,Yes,Yes,No
+Design_30mins,30 Mins,Boolean,Boolean,,,,,,,Yes,No,No
+CL_PowerSupplyBox_2,Paige Box ( 2 Power Supplies per box),Numeric,Unit,,,,,,,Yes,Yes,No
+MDOHole_Depth,Install Depth (3ft Recommended),Numeric,Feet,,,,,,,Yes,Yes,No
+Design_monument,Monument,Boolean,Boolean,,,,,,,Yes,No,No
+RGB_Indoor,RGB Indoor,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_2in,Pole Pocket 2in,Boolean,Boolean,,,,,,,Yes,Yes,No
+Assembly_Canvas,Canvas Assembly,Boolean,Boolean,,,,,,,Yes,Yes,No
+Height_in_yards,Height,Numeric,Yard,,,,,,,Yes,Yes,Yes
+Design_1_5mins_AddHangTagNumbering,Add. Hang Tag Numbering (1.5 Mins):,Numeric,Unit,,,,,,,Yes,No,No
+Extrustion_Cabinet,Extrusion Cabinet,Boolean,Boolean,,,,,,,Yes,Yes,No
+Straps,Straps,Boolean,Boolean,,,,,,,Yes,Yes,No
+ClientPrintReadyArtwork,Client Print Ready Artwork,Boolean,Boolean,,,,,,,Yes,Yes,No
+Vinyl_Faces,Translucent Vinyl on Faces,Boolean,Boolean,,,,,,,Yes,No,No
+Pole_Pocket_2in_88in,2in Pole Pocket: 88in h x 120in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+Height,Height,Numeric,Inches,,,,,,,Yes,Yes,Yes
+Acrylic_3D_Return_Length,Return Length,Numeric,Unit,,,,,,,Yes,No,No
+FlagCrossBase,Optional Cross Base:,Numeric,Unit,,,,,,,Yes,Yes,No
+Wrap_Front_Bumper_Simple,Front Bumper Simple,Boolean,Boolean,,,,,,,Yes,Yes,No
+Grommets_Top,Grommets Top,Boolean,Boolean,,,,,,,Yes,Yes,No
+LedScreen_AdditionalController,Additonal Controller for Individual Content per Screen or Side,Boolean,Boolean,,,,,,,Yes,Yes,No
+CustomShape_Channel_Letter_Cabinet,Custom Shape Channel Letter Cabinet,Boolean,Boolean,,,,,,,Yes,Yes,No
+Liquid_Laminate,Liquid Laminate,Boolean,Boolean,,,,,,,Yes,Yes,No
+No_Letters,Number of Letters,Numeric,Unit,,,,,,,Yes,No,No
+MasterElectricianTripTravel,Trip/Travel,Boolean,Boolean,,,,,,,Yes,No,No
+Labor_Multiplier,Job Complexity,Range,Unit,Easy,Hard,0.1,3,1,0.1,No,No,No
+Epson_White_Ink_Cost,Epson White Ink Per Sq Ft,Boolean,Boolean,,,,,,,Yes,Yes,No
+Trimcap_Length_5thColor,Trimcap Length (5th Color),Numeric,Inches,,,,,,,Yes,No,No
+Posts,Number of Posts,Numeric,Unit,,,,,,,Yes,Yes,No
+Accessories_Hardware,Accessories/Hardware,Boolean,Boolean,,,,,,,Yes,Yes,No
+FoilMachinePerPressEmbossQty,Embossing Run Size: (Optional),Numeric,Unit,,,,,,,Yes,Yes,No
+Radius,Radius,Numeric,Inches,,,,,,,Yes,Yes,Yes
+Pole_Pocket_Top,Pole Pocket Top,Boolean,Boolean,,,,,,,Yes,Yes,No
+Grommets,Grommets,Numeric,Unit,,,,,,,Yes,Yes,No
+Travel_Time,Travel Time (hours),Numeric,Unit,,,,,,,Yes,Yes,No
+BizCardFinish_RoundedCorners501_1000,501 - 1000 Cards,Boolean,Boolean,,,,,,,Yes,No,No
+FlagCarryingCaseSM,Optional Carry Case S-M,Numeric,Unit,,,,,,,Yes,Yes,No
+Leds_1color,Regular Led's,Boolean,Boolean,,,,,,,Yes,Yes,No
+Vinyl_Thru_Cut,Thru Cut- UCT,Boolean,Boolean,,,,,,,Yes,Yes,No
+Width_in_yards,Width,Numeric,Yard,,,,,,,Yes,Yes,Yes
+Rush_Charge,Rush Charge,Boolean,Boolean,,,,,,,Yes,Yes,No
+Vinyl_Zund_Kiss_Cut,Kiss Cut- KCT,Boolean,Boolean,,,,,,,Yes,Yes,No
+Lam_Reg_Matte,Regular Matte Laminate,Boolean,Boolean,,,,,,,Yes,Yes,No
+Regular_Vinyl,Regular Vinyl,Boolean,Boolean,,,,,,,Yes,Yes,No
+Length_in_yards,Length,Numeric,Yard,,,,,,,Yes,Yes,Yes
+Diameter,Diameter,Numeric,Inches,,,,,,,Yes,Yes,Yes
+WindSlits,Wind Slits,Boolean,Boolean,,,,,,,Yes,Yes,No
+Channel_Coil_Length,Channel Coil Length,Numeric,Inches,,,,,,,Yes,No,No
+Banner_Hem_Sides,Hem- Left & Right (Height),Boolean,Boolean,,,,,,,Yes,Yes,No
+PoleQty,Poles per Sign:,Numeric,Unit,,,,,,,Yes,Yes,No
+Trimcap_Length_2ndColor,Trimcap Length (2nd Color),Numeric,Inches,,,,,,,Yes,Yes,No
+DigitalScreen,Digital Screen,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tape_Top,Tape Top,Boolean,Boolean,,,,,,,Yes,Yes,No
+Wrap_Grill,Grill,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_2in_88in_144in,2in Pole Pocket: 88in h x 144in w,Boolean,Boolean,,,,,,,Yes,Yes,No
+FoilMachinePerPressFoilQty,Foil Run Size: (Optional),Numeric,Unit,,,,,,,Yes,Yes,No
+Vinyl_Kiss_Cut,Kiss Cut,Boolean,Boolean,,,,,,,Yes,Yes,No
+Trimcap_Length_4thColor,Trimcap Length (4th Color),Numeric,Inches,,,,,,,Yes,Yes,No
+V_Cutting,V Cutting,Boolean,Boolean,,,,,,,Yes,Yes,No
+Tape,Tape,Numeric,Inches,,,,,,,Yes,Yes,No
+DesignPerimeter,Design Perimeter,Numeric,Inches,,,,,,,Yes,No,No
+Mounting_Pad_GI18,.5in GI-18 Mounting Pad,Boolean,Boolean,,,,,,,Yes,Yes,No
+Concrete,Concrete,Boolean,Boolean,,,,,,,Yes,Yes,No
+Letter_height_UC,Uppercase Letter Height (in),Numeric,Unit,,,,,,,Yes,No,No
+PlylonSignBackCoverNeeded,Back Cover Needed Required?,Boolean,Boolean,,,,,,,Yes,Yes,No
+PreDrilled_Holes1_4,1/4in Pre-Drilled Holes (.25in),Boolean,Boolean,,,,,,,Yes,Yes,No
+Area,Area,Numeric,Sqft,,,,,,,Yes,Yes,Yes
+CustomShape_Extrustion_Cabinet,Custom Shape Extrustion Flex Face Cabinet,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_1_5in_90in,1.5in Pole Pocket: 90in h x 120in w (Telescoping),Boolean,Boolean,,,,,,,Yes,Yes,No
+CL_Led_Qty_5thColor,Led's Qty (5th Color),Numeric,Unit,,,,,,,Yes,Yes,No
+Retractable_45,45in Single Sided (Visible Area: 45in w x 78in h),Boolean,Boolean,,,,,,,Yes,Yes,No
+Backdrop_LED_Lights_Set,LED Lights Set (2),Boolean,Boolean,,,,,,,Yes,Yes,No
+FoilMachinePerPressDebossQty,Debossing Run Size: (Optional),Numeric,Unit,,,,,,,Yes,Yes,No
+Design_1hr,1 Hour,Boolean,Boolean,,,,,,,Yes,No,No
+PylonPipeCircumference,Pylon Pipe Circumference,Numeric,Inches,,,,,,,Yes,Yes,No
+RunLength_MC,MC Cable Run Length:,Numeric,Inches,,,,,,,Yes,Yes,No
+Pole_Pocket_2_5,Pole Pocket 2.5in,Boolean,Boolean,,,,,,,Yes,Yes,No
+Premask_Thru_Cut,Premask Thru Cut- UCT,Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_3in,Pole Pocket 3in,Boolean,Boolean,,,,,,,Yes,Yes,No
+Scoring,Scoring,Boolean,Boolean,,,,,,,Yes,Yes,No
+No_Letters_Big,Number of Big Letters,Numeric,Unit,,,,,,,Yes,Yes,No
+Wrap_Grill_Surround,Grill- Surround,Boolean,Boolean,,,,,,,Yes,Yes,No
+Number_of_Vinyl_Colors,Number of Vinyl Colors,Numeric,Unit,,,,,,,Yes,Yes,No
+Canvas_Joiner_Qty,Canvas Joiner Qty,Numeric,Unit,,,,,,,Yes,Yes,No
+Install_3_Man,Install 3 Man,Numeric,Unit,,,,,,,Yes,Yes,No
+PreDrilled_Holes3_16,3/16in Pre-Drilled Holes (.1875in),Boolean,Boolean,,,,,,,Yes,Yes,No
+Pole_Pocket_1_5in_90in_144in,1.5in Pole Pocket: 90in h x 144in w (Telescoping),Boolean,Boolean,,,,,,,Yes,Yes,No
+PowerSupplies60w,150w Power Supply Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+FlagWeight,Additional Weight Qty:,Numeric,Unit,,,,,,,Yes,Yes,No
+Assembly_5min,5 mins,Boolean,Boolean,,,,,,,Yes,Yes,No
+Kiss_Cut_Vinyl_SqFt,Kiss Cut Vinyl Sq Ft,Numeric,Sqft,,,,,,,Yes,No,No
+Depth,Depth,Numeric,Inches,,,,,,,Yes,Yes,Yes
+number_of_screens,# of Screens,Numeric,Unit,,,,,,,Yes,No,No
+Stitch_Count,Stitch,Numeric,Unit,,,,,,,Yes,Yes,No
+Creasing,Creasing,Boolean,Boolean,,,,,,,Yes,Yes,No
+Spot_White,Spot White (Transparent Background),Boolean,Boolean,,,,,,,Yes,Yes,No
+Leds_Back_Qty,Back Halo Led Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Overs_Percent,Overs,Numeric,%,,,,,,,Yes,No,No
+Vinyl_Color_5_Percentage,Vinyl Color 5 Coverage,Numeric,Unit,,,,,,,Yes,No,No
+Bleed,+Bleed,Numeric,Inches,,,,,,,Yes,Yes,No
+Tape_Bottom,Tape Bottom,Boolean,Boolean,,,,,,,Yes,Yes,No
+Mounting_Pad_GI00,1in GI-00 Perforated Mounting Pad,Boolean,Boolean,,,,,,,Yes,Yes,No
+Leds_Front_Qty,Front Face Led Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Pattern_Stencil_Qty,Pattern/ Stencil Quantity,Numeric,Unit,,,,,,,Yes,Yes,No
+Solid_Color,Solid Color,Boolean,Boolean,,,,,,,Yes,Yes,No
+Studs_3in,3in Studs,Boolean,Boolean,,,,,,,Yes,Yes,No
+BizCardFinish_RoundedCorners200_500,200 - 500 Cards,Boolean,Boolean,,,,,,,Yes,No,No
+Thru_Cut_Thin,Thru Cut,Boolean,Boolean,,,,,,,Yes,Yes,No
+Shop_Hrs,Production/Assembly Time (hrs),Numeric,Unit,,,,,,,Yes,No,No
+Name_Tag_Magnets,Magnetic,Boolean,Boolean,,,,,,,Yes,Yes,No

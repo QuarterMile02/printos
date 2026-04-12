@@ -112,40 +112,42 @@ export async function importMaterialsBatch(
   })
   if (cleaned.length === 0) return { result }
 
-  // 2) Look up existing materials by name (case-insensitive) — skip dupes.
-  // Build a lower-cased set of names from the batch and query in one shot.
-  const namesLower = Array.from(new Set(cleaned.map((c) => c.row.name.toLowerCase())))
-  const { data: existing, error: existingError } = await service
-    .from('materials')
-    .select('name')
-    .eq('organization_id', orgId)
-    .in('name', cleaned.map((c) => c.row.name)) // exact-case shortlist
-  if (existingError) return { error: existingError.message }
-
-  // The .in() above is exact-case. Catch case variations with a second
-  // ilike fallback per unique name only if needed. For ShopVOX exports
-  // names are usually consistent so the exact match catches almost all.
-  const existingLower = new Set((existing ?? []).map((r) => r.name.toLowerCase()))
-  if (existingLower.size < namesLower.length) {
-    // Check the leftovers with a case-insensitive query in one batch.
-    const leftover = namesLower.filter((n) => !existingLower.has(n))
-    if (leftover.length > 0) {
-      const { data: ciExisting } = await service
-        .from('materials')
-        .select('name')
-        .eq('organization_id', orgId)
-        .or(leftover.map((n) => `name.ilike.${n.replace(/[,()]/g, '')}`).join(','))
-      for (const r of ciExisting ?? []) existingLower.add(r.name.toLowerCase())
-    }
+  // 2) Build an authoritative set of every existing material name in this
+  // org (case-insensitive). We fetch all names — paged in 1000-row chunks
+  // to bypass the PostgREST cap — and put them in a Set so we don't have
+  // to escape special characters (commas, parentheses, slashes etc.) for
+  // a server-side filter, which is where the prior version leaked dupes.
+  const existingLower = new Set<string>()
+  const PAGE_SIZE = 1000
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const to = from + PAGE_SIZE - 1
+    const { data: chunk, error: chunkError } = await service
+      .from('materials')
+      .select('name')
+      .eq('organization_id', orgId)
+      .range(from, to) as { data: { name: string }[] | null; error: { message: string } | null }
+    if (chunkError) return { error: chunkError.message }
+    if (!chunk || chunk.length === 0) break
+    for (const r of chunk) existingLower.add(r.name.toLowerCase())
+    if (chunk.length < PAGE_SIZE) break
   }
 
-  const toInsert = cleaned.filter(({ row }) => {
-    if (existingLower.has(row.name.toLowerCase())) {
+  // 3) Filter the batch:
+  //   - skip rows whose name is already in the DB (case-insensitive)
+  //   - skip rows whose name appears earlier in the SAME batch (intra-batch
+  //     dedupe — keep first). Without this, two CSV rows with the same name
+  //     would both pass since the DB lookup wouldn't see either yet.
+  const seenInBatch = new Set<string>()
+  const toInsert: { row: MaterialImportRow; csvRow: number }[] = []
+  for (const item of cleaned) {
+    const key = item.row.name.toLowerCase()
+    if (existingLower.has(key) || seenInBatch.has(key)) {
       result.skipped++
-      return false
+      continue
     }
-    return true
-  })
+    seenInBatch.add(key)
+    toInsert.push(item)
+  }
   if (toInsert.length === 0) return { result }
 
   // 3) Resolve type and category names to FK ids (auto-create missing).
