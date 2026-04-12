@@ -11,23 +11,12 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org, error: orgError } = await supabase
+  const { data: org } = await supabase
     .from('organizations')
     .select('id, name, slug')
     .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: { message: string } | null }
-
-  if (!org) {
-    return (
-      <div className="p-8 max-w-2xl space-y-4 font-mono text-sm">
-        <h1 className="text-xl font-bold text-red-600">DEBUG: Org lookup failed</h1>
-        <p><strong>slug:</strong> {slug}</p>
-        <p><strong>id:</strong> {id}</p>
-        <p><strong>org data:</strong> {JSON.stringify(org)}</p>
-        <p><strong>org error:</strong> {JSON.stringify(orgError)}</p>
-      </div>
-    )
-  }
+    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  if (!org) notFound()
 
   type QuoteRow = {
     id: string
@@ -39,9 +28,9 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     expires_at: string | null
     terms: string | null
     notes: string | null
-    subtotal: number
-    tax_total: number
-    total: number
+    subtotal: number | null
+    tax_total: number | null
+    total: number | null
     customer_id: string | null
     converted_to_so_id: string | null
     customers: {
@@ -53,7 +42,12 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     } | null
   }
 
-  const { data: quote, error: quoteError } = await supabase
+  // Phase 8 columns (expires_at, terms, notes, subtotal, tax_total, total,
+  // converted_to_so_id) may not exist yet if migration 018b hasn't been
+  // applied. Fetch core fields first, then try the extended set.
+  let quote: QuoteRow | null = null
+
+  const { data: q1, error: e1 } = await supabase
     .from('quotes')
     .select(`
       id, quote_number, title, description, status, created_at,
@@ -65,19 +59,36 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     .eq('organization_id', org.id)
     .maybeSingle() as { data: QuoteRow | null; error: { message: string } | null }
 
-  if (!quote) {
-    return (
-      <div className="p-8 max-w-2xl space-y-4 font-mono text-sm">
-        <h1 className="text-xl font-bold text-red-600">DEBUG: Quote lookup failed</h1>
-        <p><strong>slug:</strong> {slug}</p>
-        <p><strong>id:</strong> {id}</p>
-        <p><strong>org.id:</strong> {org.id}</p>
-        <p><strong>org.name:</strong> {org.name}</p>
-        <p><strong>quote data:</strong> {JSON.stringify(quote)}</p>
-        <p><strong>quote error:</strong> {JSON.stringify(quoteError)}</p>
-      </div>
-    )
+  if (q1) {
+    quote = q1
+  } else if (e1?.message?.includes('does not exist')) {
+    // Fallback: fetch only columns from the original 002_quotes migration
+    const { data: q2 } = await supabase
+      .from('quotes')
+      .select(`
+        id, quote_number, title, description, status, created_at,
+        customer_id,
+        customers(first_name, last_name, company_name, email, phone)
+      `)
+      .eq('id', id)
+      .eq('organization_id', org.id)
+      .maybeSingle() as { data: Omit<QuoteRow, 'expires_at' | 'terms' | 'notes' | 'subtotal' | 'tax_total' | 'total' | 'converted_to_so_id'> | null; error: unknown }
+
+    if (q2) {
+      quote = {
+        ...q2,
+        expires_at: null,
+        terms: null,
+        notes: null,
+        subtotal: null,
+        tax_total: null,
+        total: null,
+        converted_to_so_id: null,
+      }
+    }
   }
+
+  if (!quote) notFound()
 
   type LineItemRow = {
     id: string
@@ -173,9 +184,9 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           expires_at: quote.expires_at,
           terms: quote.terms,
           notes: quote.notes,
-          subtotal: quote.subtotal,
-          tax_total: quote.tax_total,
-          total: quote.total,
+          subtotal: quote.subtotal ?? 0,
+          tax_total: quote.tax_total ?? 0,
+          total: quote.total ?? 0,
           customer: quote.customers
             ? {
                 first_name: quote.customers.first_name,
