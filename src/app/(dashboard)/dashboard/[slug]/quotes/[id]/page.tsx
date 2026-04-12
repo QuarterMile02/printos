@@ -93,21 +93,25 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   const materialMap = new Map<string, string>()
   if (productIds.length > 0) {
-    type ProductMaterialRow = {
-      product_id: string
-      materials: { name: string } | null
-    }
-    const { data: productMats } = await supabase
-      .from('product_items')
-      .select('product_id, materials(name)')
-      .in('product_id', productIds)
-      .eq('item_type', 'Material')
-      .limit(500) as { data: ProductMaterialRow[] | null; error: unknown }
-
-    for (const pm of productMats ?? []) {
-      if (pm.product_id && pm.materials?.name && !materialMap.has(pm.product_id)) {
-        materialMap.set(pm.product_id, pm.materials.name)
+    try {
+      type ProductMaterialRow = {
+        product_id: string
+        materials: { name: string } | null
       }
+      const { data: productMats } = await supabase
+        .from('product_items')
+        .select('product_id, materials(name)')
+        .in('product_id', productIds)
+        .eq('item_type', 'Material')
+        .limit(500) as { data: ProductMaterialRow[] | null; error: unknown }
+
+      for (const pm of productMats ?? []) {
+        if (pm.product_id && pm.materials?.name && !materialMap.has(pm.product_id)) {
+          materialMap.set(pm.product_id, pm.materials.name)
+        }
+      }
+    } catch {
+      // product_items table may not exist yet — skip material lookup
     }
   }
 
