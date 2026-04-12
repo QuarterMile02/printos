@@ -11,12 +11,23 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
+  const { data: org, error: orgError } = await supabase
     .from('organizations')
     .select('id, name, slug')
     .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
-  if (!org) notFound()
+    .maybeSingle() as { data: OrgRow | null; error: { message: string } | null }
+
+  if (!org) {
+    return (
+      <div className="p-8 max-w-2xl space-y-4 font-mono text-sm">
+        <h1 className="text-xl font-bold text-red-600">DEBUG: Org lookup failed</h1>
+        <p><strong>slug:</strong> {slug}</p>
+        <p><strong>id:</strong> {id}</p>
+        <p><strong>org data:</strong> {JSON.stringify(org)}</p>
+        <p><strong>org error:</strong> {JSON.stringify(orgError)}</p>
+      </div>
+    )
+  }
 
   type QuoteRow = {
     id: string
@@ -42,7 +53,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     } | null
   }
 
-  const { data: quote } = await supabase
+  const { data: quote, error: quoteError } = await supabase
     .from('quotes')
     .select(`
       id, quote_number, title, description, status, created_at,
@@ -52,9 +63,21 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     `)
     .eq('id', id)
     .eq('organization_id', org.id)
-    .maybeSingle() as { data: QuoteRow | null; error: unknown }
+    .maybeSingle() as { data: QuoteRow | null; error: { message: string } | null }
 
-  if (!quote) notFound()
+  if (!quote) {
+    return (
+      <div className="p-8 max-w-2xl space-y-4 font-mono text-sm">
+        <h1 className="text-xl font-bold text-red-600">DEBUG: Quote lookup failed</h1>
+        <p><strong>slug:</strong> {slug}</p>
+        <p><strong>id:</strong> {id}</p>
+        <p><strong>org.id:</strong> {org.id}</p>
+        <p><strong>org.name:</strong> {org.name}</p>
+        <p><strong>quote data:</strong> {JSON.stringify(quote)}</p>
+        <p><strong>quote error:</strong> {JSON.stringify(quoteError)}</p>
+      </div>
+    )
+  }
 
   type LineItemRow = {
     id: string
