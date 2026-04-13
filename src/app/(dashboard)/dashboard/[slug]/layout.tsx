@@ -24,7 +24,7 @@ export default async function OrgLayout({ children, params }: LayoutProps) {
   return (
     <div className="flex flex-col md:flex-row min-h-full">
       <OrgSidebarNav slug={slug} email={user.email!} signOutAction={signOut} />
-      <div className="flex-1 overflow-auto min-w-0">{children}</div>
+      <div className="flex-1 min-w-0">{children}</div>
     </div>
   )
 }
