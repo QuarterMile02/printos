@@ -249,19 +249,46 @@ export default async function OrgDashboardPage({ params }: PageProps) {
   ]
   const totalOutstanding = agingBuckets.reduce((sum, b) => sum + b.total, 0)
 
-  // Alert bar counts (owner dashboard)
+  // Alert bar counts (owner dashboard) — ShopVOX pattern
+  const quotesNoCustomer = allQuotes.filter((q) => !q.customers && q.status === 'draft').length
   const approvedQuotes = allQuotes.filter((q) => q.status === 'approved').length
-  const proofsAwaiting = allJobs.filter((j) => j.status === 'proof_review').length
+  const revisedQuotes = allQuotes.filter((q) => q.status === 'revise' || q.status === 'approve_with_changes').length
   const completedNotInvoiced = allJobs.filter((j) => j.status === 'completed').length
   const overdueInvoices = 0 // No invoices table yet
 
+  // Sales order counts
+  type SoCountRow = { id: string; status: string }
+  const { data: soRows } = await supabase
+    .from('sales_orders')
+    .select('id, status')
+    .eq('organization_id', org.id) as { data: SoCountRow[] | null; error: unknown }
+  const allSOs = soRows ?? []
+  const soNoCustomer = 0 // SOs always have customer from quote
+  const soCompletedNotInvoiced = allSOs.filter((s) => s.status === 'completed').length
+
+  // Today's jobs
+  const today = now.toISOString().slice(0, 10)
+  const todaysJobs = allJobs.filter((j) => j.due_date === today && j.status !== 'completed')
+
   const alertItems = [
-    { label: 'Approved quotes to convert', count: approvedQuotes, href: `/dashboard/${slug}/quotes` },
-    { label: 'Overdue invoices', count: overdueInvoices, href: `/dashboard/${slug}/jobs` },
-    { label: 'Completed jobs not invoiced', count: completedNotInvoiced, href: `/dashboard/${slug}/jobs` },
-    { label: 'Proofs awaiting approval', count: proofsAwaiting, href: `/dashboard/${slug}/jobs` },
+    { section: 'Quotes', items: [
+      { label: 'Without customer', count: quotesNoCustomer, href: `/dashboard/${slug}/quotes?status=draft` },
+      { label: 'Approved', count: approvedQuotes, href: `/dashboard/${slug}/quotes?status=approved` },
+      { label: 'Revised / Changes', count: revisedQuotes, href: `/dashboard/${slug}/quotes?status=revise` },
+    ]},
+    { section: 'Sales Orders', items: [
+      { label: 'New (no jobs yet)', count: allSOs.filter((s) => s.status === 'new').length, href: `/dashboard/${slug}/sales-orders?status=new` },
+      { label: 'Completed not invoiced', count: soCompletedNotInvoiced, href: `/dashboard/${slug}/sales-orders?status=completed` },
+    ]},
+    { section: 'Jobs', items: [
+      { label: 'Completed not invoiced', count: completedNotInvoiced, href: `/dashboard/${slug}/jobs` },
+      { label: 'Due today', count: todaysJobs.length, href: `/dashboard/${slug}/jobs` },
+    ]},
+    { section: 'Invoices', items: [
+      { label: 'Overdue', count: overdueInvoices, href: `/dashboard/${slug}/jobs` },
+    ]},
   ]
-  const totalAlerts = approvedQuotes + overdueInvoices + completedNotInvoiced + proofsAwaiting
+  const totalAlerts = alertItems.reduce((sum, g) => sum + g.items.reduce((s, i) => s + i.count, 0), 0)
   const hasUrgent = overdueInvoices > 0
   const alertBarColor = hasUrgent
     ? 'border-red-300 bg-red-50'
@@ -306,24 +333,31 @@ export default async function OrgDashboardPage({ params }: PageProps) {
               {totalAlerts === 0 ? 'All clear — nothing needs attention' : `${totalAlerts} item${totalAlerts === 1 ? '' : 's'} need${totalAlerts === 1 ? 's' : ''} attention`}
             </h2>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {alertItems.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                className={`flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 text-sm transition-colors hover:bg-white ${
-                  item.count > 0 ? alertTextColor + ' font-semibold' : 'text-gray-500'
-                }`}
-              >
-                <span>{item.label}</span>
-                <span className={`ml-2 inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-bold ${
-                  item.count > 0
-                    ? (hasUrgent ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-800')
-                    : 'bg-gray-200 text-gray-600'
-                }`}>
-                  {item.count}
-                </span>
-              </a>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {alertItems.map((group) => (
+              <div key={group.section}>
+                <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 ${alertTextColor}`}>{group.section}</h3>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <a
+                      key={item.label}
+                      href={item.href}
+                      className={`flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 text-sm transition-colors hover:bg-white ${
+                        item.count > 0 ? alertTextColor + ' font-semibold' : 'text-gray-500'
+                      }`}
+                    >
+                      <span>{item.label}</span>
+                      <span className={`ml-2 inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-bold ${
+                        item.count > 0
+                          ? (hasUrgent ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-800')
+                          : 'bg-gray-200 text-gray-600'
+                      }`}>
+                        {item.count}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -360,6 +394,49 @@ export default async function OrgDashboardPage({ params }: PageProps) {
             </svg>
             New Customer
           </a>
+        </div>
+      )}
+
+      {/* Today's Jobs */}
+      {role === 'owner' && (
+        <div className="mb-8 rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+            <h2 className="text-base font-bold text-qm-black">Today&apos;s Jobs</h2>
+            <span className="text-xs font-medium text-qm-gray">{today}</span>
+          </div>
+          {todaysJobs.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-qm-gray">No jobs due today</p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {todaysJobs.map((j) => (
+                <a
+                  key={j.id}
+                  href={`/dashboard/${slug}/jobs/${j.id}`}
+                  className="flex items-center justify-between px-6 py-3 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-gray-500">JOB-{String(j.job_number).padStart(4, '0')}</span>
+                    <span className="text-sm font-semibold text-qm-black">{j.title}</span>
+                    {j.customers && (
+                      <span className="text-xs text-qm-gray">
+                        {j.customers.first_name} {j.customers.last_name}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {j.flag && (
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">
+                        {j.flag === 'file_error' ? 'File Error' : 'Help Needed'}
+                      </span>
+                    )}
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${JOB_STATUS_COLORS[j.status]}`}>
+                      {JOB_STATUS_LABELS[j.status]}
+                    </span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
