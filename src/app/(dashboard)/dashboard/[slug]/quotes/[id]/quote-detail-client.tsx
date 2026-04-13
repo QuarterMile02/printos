@@ -95,7 +95,17 @@ export default function QuoteDetailClient({
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const addFormRef = useRef<HTMLDivElement>(null)
   const lastItemRef = useRef<HTMLTableRowElement>(null)
+
+  // New line item draft state
+  const [newProductId, setNewProductId] = useState<string>('')
+  const [newDescription, setNewDescription] = useState('')
+  const [newWidth, setNewWidth] = useState('')
+  const [newHeight, setNewHeight] = useState('')
+  const [newQty, setNewQty] = useState('1')
+  const [newUnitPrice, setNewUnitPrice] = useState('')
 
   const [status, setStatus] = useState<QuoteStatus>(quote.status)
   const [items, setItems] = useState<LineItem[]>(lineItems)
@@ -162,15 +172,36 @@ export default function QuoteDetailClient({
     })
   }
 
-  function handleAddLineItem() {
+  function handleShowAddForm() {
+    setShowAddForm(true)
+    setNewProductId('')
+    setNewDescription('')
+    setNewWidth('')
+    setNewHeight('')
+    setNewQty('1')
+    setNewUnitPrice('')
+    setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+  }
+
+  function handleCancelAdd() {
+    setShowAddForm(false)
+  }
+
+  function handleSaveNewItem() {
+    const qty = Math.max(1, parseInt(newQty, 10) || 1)
+    const unitPriceCents = dollarsToCents(newUnitPrice)
+    const w = newWidth ? Number(newWidth) : null
+    const h = newHeight ? Number(newHeight) : null
+    const desc = newDescription.trim() || (newProductId ? productMap.get(newProductId)?.name ?? 'Item' : 'Item')
+
     startTransition(async () => {
       const res = await addQuoteLineItem(quote.id, orgId, orgSlug, {
-        product_id: null,
-        description: 'New item',
-        width: null,
-        height: null,
-        quantity: 1,
-        unit_price: 0,
+        product_id: newProductId || null,
+        description: desc,
+        width: w,
+        height: h,
+        quantity: qty,
+        unit_price: unitPriceCents,
         discount_percent: 0,
         taxable: true,
       })
@@ -182,21 +213,21 @@ export default function QuoteDetailClient({
         ...cur,
         {
           id: res.id!,
-          product_id: null,
-          description: 'New item',
-          width: null,
-          height: null,
-          quantity: 1,
-          unit_price: 0,
+          product_id: newProductId || null,
+          description: desc,
+          width: w,
+          height: h,
+          quantity: qty,
+          unit_price: unitPriceCents,
           discount_percent: 0,
-          total_price: 0,
+          total_price: lineTotalCents(qty, unitPriceCents, 0),
           taxable: true,
           sort_order: cur.length,
           material_name: null,
         },
       ])
-      // Scroll to new row after React renders it
-      setTimeout(() => lastItemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
+      setShowAddForm(false)
+      flash('Line item added')
     })
   }
 
@@ -465,22 +496,120 @@ export default function QuoteDetailClient({
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2 className="text-base font-bold text-gray-900">Line Items</h2>
-          {isEditing && (
+          {isEditing && !showAddForm && (
             <button
               type="button"
-              onClick={handleAddLineItem}
-              disabled={isPending}
-              className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+              onClick={handleShowAddForm}
+              className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
             >
               + Add Line Item
             </button>
           )}
         </div>
 
-        {items.length === 0 ? (
+        {/* Inline add form */}
+        {showAddForm && (
+          <div ref={addFormRef} className="border-b border-gray-200 bg-gray-50 px-6 py-4">
+            <h3 className="mb-3 text-sm font-semibold text-gray-700">New Line Item</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="col-span-2 sm:col-span-3 lg:col-span-2">
+                <label className="block text-xs font-medium text-gray-500">Product</label>
+                <select
+                  value={newProductId}
+                  onChange={(e) => {
+                    setNewProductId(e.target.value)
+                    const p = productMap.get(e.target.value)
+                    if (p) setNewDescription(p.name)
+                  }}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                >
+                  <option value="">&mdash; select product &mdash;</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500">Width (in)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={newWidth}
+                  onChange={(e) => setNewWidth(e.target.value)}
+                  placeholder="0"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500">Height (in)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={newHeight}
+                  onChange={(e) => setNewHeight(e.target.value)}
+                  placeholder="0"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500">Qty</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={newQty}
+                  onChange={(e) => setNewQty(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500">Unit Price</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={newUnitPrice}
+                  onChange={(e) => setNewUnitPrice(e.target.value)}
+                  placeholder="0.00"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-500">Description</label>
+              <input
+                type="text"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Item description"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleSaveNewItem}
+                disabled={isPending}
+                className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+              >
+                {isPending ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelAdd}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {items.length === 0 && !showAddForm ? (
           <div className="py-12 text-center text-sm text-gray-500">
             {isEditing ? (
-              <>No line items yet. Click <span className="font-semibold">Add Line Item</span> to start.</>
+              <>No line items yet. Click <span className="font-semibold">+ Add Line Item</span> to start.</>
             ) : (
               'No line items.'
             )}
