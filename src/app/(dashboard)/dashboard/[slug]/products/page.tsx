@@ -4,6 +4,8 @@ import Link from 'next/link'
 import type { Product, ProductCategory } from '@/types/product-builder'
 import ProductsListClient, { type ProductRow } from './products-list-client'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = { params: Promise<{ slug: string }> }
 
 export default async function ProductsPage({ params }: PageProps) {
@@ -20,28 +22,45 @@ export default async function ProductsPage({ params }: PageProps) {
 
   if (!org) notFound()
 
-  // Fetch products with category join
-  type ProductDbRow = Pick<
-    Product,
-    'id' | 'name' | 'part_number' | 'pricing_type' | 'price' | 'status' | 'active'
-  > & {
-    category: Pick<ProductCategory, 'name'> | null
+  // Fetch products — try with category join, fall back without
+  type ProductDbRow = {
+    id: string
+    name: string
+    part_number: string | null
+    pricing_type: string | null
+    price: number | null
+    status: string | null
+    active: boolean | null
+    category?: { name: string } | null
   }
 
-  const { data: productRows } = await supabase
+  let productRows: ProductDbRow[] = []
+  const { data: withCat, error: catErr } = await supabase
     .from('products')
     .select('id, name, part_number, pricing_type, price, status, active, category:product_categories(name)')
     .eq('organization_id', org.id)
-    .order('name', { ascending: true }) as { data: ProductDbRow[] | null; error: unknown }
+    .order('name', { ascending: true })
 
-  const products: ProductRow[] = (productRows ?? []).map((p) => ({
+  if (withCat && !catErr) {
+    productRows = withCat as unknown as ProductDbRow[]
+  } else {
+    // category join failed — fetch without it
+    const { data: noCat } = await supabase
+      .from('products')
+      .select('id, name, part_number, pricing_type, price, status, active')
+      .eq('organization_id', org.id)
+      .order('name', { ascending: true })
+    productRows = (noCat ?? []) as unknown as ProductDbRow[]
+  }
+
+  const products: ProductRow[] = productRows.map((p) => ({
     id: p.id,
     name: p.name,
     part_number: p.part_number,
     category_name: p.category?.name ?? null,
-    pricing_type: p.pricing_type,
-    price: p.price,
-    status: p.status,
+    pricing_type: (p.pricing_type as ProductRow['pricing_type']) ?? null,
+    price: p.price != null ? Number(p.price) : null,
+    status: (p.status as ProductRow['status']) ?? null,
     active: p.active,
   }))
 
