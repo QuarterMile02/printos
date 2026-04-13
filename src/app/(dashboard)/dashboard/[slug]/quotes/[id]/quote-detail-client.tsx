@@ -193,7 +193,13 @@ export default function QuoteDetailClient({
     const unitPriceCents = dollarsToCents(newUnitPrice)
     const w = newWidth ? Number(newWidth) : null
     const h = newHeight ? Number(newHeight) : null
-    const desc = newDescription.trim() || (newProductId ? productMap.get(newProductId)?.name ?? 'Item' : 'Item')
+    const desc = newDescription.trim() || (newProductId ? productMap.get(newProductId)?.name ?? 'Custom Item' : 'Custom Item')
+
+    // Sqft pricing: W * H / 144 * Qty * UnitPrice; flat if no dimensions
+    const hasDims = w && w > 0 && h && h > 0
+    const totalCents = hasDims
+      ? Math.round((w * h / 144) * qty * unitPriceCents)
+      : qty * unitPriceCents
 
     setIsSavingItem(true)
     try {
@@ -222,7 +228,7 @@ export default function QuoteDetailClient({
           quantity: qty,
           unit_price: unitPriceCents,
           discount_percent: 0,
-          total_price: lineTotalCents(qty, unitPriceCents, 0),
+          total_price: totalCents,
           taxable: true,
           sort_order: cur.length,
           material_name: null,

@@ -496,7 +496,11 @@ export async function addQuoteLineItem(
     if (!quote) return { error: 'Quote not found.' }
 
     // Compute line total in cents.
-    const gross = draft.quantity * draft.unit_price
+    // Sqft pricing: W * H / 144 * Qty * UnitPrice; flat if no dimensions.
+    const hasDims = draft.width && draft.width > 0 && draft.height && draft.height > 0
+    const gross = hasDims
+      ? (draft.width! * draft.height! / 144) * draft.quantity * draft.unit_price
+      : draft.quantity * draft.unit_price
     const total = Math.round(gross * (1 - draft.discount_percent / 100))
 
     // sort_order = max + 1
