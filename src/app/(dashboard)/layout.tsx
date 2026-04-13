@@ -11,9 +11,6 @@ export default async function DashboardLayout({
 
   if (!user) redirect('/login')
 
-  return (
-    <div className="min-h-screen bg-qm-surface">
-      {children}
-    </div>
-  )
+  return <>{children}</>
+
 }

@@ -94,7 +94,7 @@ export default async function EditProductPage({ params }: PageProps) {
   }))
 
   return (
-    <div className="p-8">
+    <div className="p-8 w-full">
       <div className="mb-6">
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
           <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
