@@ -191,8 +191,14 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
 
       {/* Recipe */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Product Recipe</h2>
+          <Link
+            href={`/dashboard/${slug}/products/${id}/edit`}
+            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+          >
+            Edit Recipe
+          </Link>
         </div>
         {recipeItems.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-gray-400">No recipe items configured.</p>
