@@ -22,9 +22,9 @@ export default async function OrgLayout({ children, params }: LayoutProps) {
   }
 
   return (
-    <div className="flex flex-col md:flex-row min-h-full">
+    <div className="flex flex-col md:flex-row min-h-screen">
       <OrgSidebarNav slug={slug} email={user.email!} signOutAction={signOut} />
-      <div className="flex-1 min-w-0">{children}</div>
+      <main className="flex-1 min-w-0">{children}</main>
     </div>
   )
 }

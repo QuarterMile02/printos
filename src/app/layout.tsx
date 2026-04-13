@@ -21,7 +21,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${montserrat.variable} h-full antialiased`}
+      className={`${montserrat.variable} antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">{children}</body>
     </html>
