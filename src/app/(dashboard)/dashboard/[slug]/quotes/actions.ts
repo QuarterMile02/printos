@@ -710,15 +710,32 @@ export async function convertQuoteToSalesOrder(
   if ('error' in ctx) return { error: ctx.error }
 
   // Make sure we don't double-convert.
-  const { data: existing } = await ctx.service
+  // Try full column set first; fall back if Phase 8 columns are missing.
+  type ExistingQuote = { id: string; title: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus; total: number | null }
+  let existing: ExistingQuote | null = null
+
+  const { data: eq1, error: eqErr1 } = await ctx.service
     .from('quotes')
     .select('id, title, customer_id, converted_to_so_id, status, total')
     .eq('id', quoteId)
     .eq('organization_id', orgId)
-    .maybeSingle() as {
-      data: { id: string; title: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus; total: number | null } | null
-      error: unknown
-    }
+    .maybeSingle() as { data: ExistingQuote | null; error: { message: string } | null }
+
+  if (eq1) {
+    existing = eq1
+  } else if (eqErr1?.message?.includes('does not exist')) {
+    // Fallback: columns like converted_to_so_id or total may not exist
+    const { data: eq2 } = await ctx.service
+      .from('quotes')
+      .select('id, title, customer_id, status')
+      .eq('id', quoteId)
+      .eq('organization_id', orgId)
+      .maybeSingle() as { data: { id: string; title: string; customer_id: string | null; status: QuoteStatus } | null; error: unknown }
+    if (eq2) existing = { ...eq2, converted_to_so_id: null, total: null }
+  } else if (eqErr1) {
+    return { error: `Quote lookup failed: ${eqErr1.message}` }
+  }
+
   if (!existing) return { error: 'Quote not found.' }
   if (existing.converted_to_so_id) return { error: 'This quote already has a sales order.' }
 
@@ -740,12 +757,23 @@ export async function convertQuoteToSalesOrder(
     }
   if (soErr || !so) return { error: soErr?.message ?? 'Failed to create sales order.' }
 
+  // Link quote to SO and set status. If converted_to_so_id column is
+  // missing, fall back to updating status only.
   const { error: linkErr } = await ctx.service
     .from('quotes')
     .update({ converted_to_so_id: so.id, status: 'ordered' as QuoteStatus })
     .eq('id', quoteId)
     .eq('organization_id', orgId)
-  if (linkErr) return { error: linkErr.message }
+
+  if (linkErr?.message?.includes('does not exist')) {
+    await ctx.service
+      .from('quotes')
+      .update({ status: 'ordered' as QuoteStatus })
+      .eq('id', quoteId)
+      .eq('organization_id', orgId)
+  } else if (linkErr) {
+    return { error: linkErr.message }
+  }
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   revalidatePath(`/dashboard/${orgSlug}/quotes`)

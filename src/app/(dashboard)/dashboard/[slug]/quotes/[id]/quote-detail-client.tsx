@@ -156,13 +156,19 @@ export default function QuoteDetailClient({
 
   function handleConvert() {
     startTransition(async () => {
-      const res = await convertQuoteToSalesOrder(quote.id, orgId, orgSlug)
-      if (res.error) {
-        flash(res.error, 'error')
-      } else if (res.soNumber && res.soId && res.createdAt) {
-        setStatus('ordered')
-        setConvertedSo({ id: res.soId, so_number: res.soNumber, created_at: res.createdAt })
-        router.push(`/dashboard/${orgSlug}/sales-orders/${res.soId}`)
+      try {
+        const res = await convertQuoteToSalesOrder(quote.id, orgId, orgSlug)
+        if (res.error) {
+          flash(res.error, 'error')
+        } else if (res.soId) {
+          setStatus('ordered')
+          setConvertedSo({ id: res.soId, so_number: res.soNumber!, created_at: res.createdAt! })
+          router.push(`/dashboard/${orgSlug}/sales-orders/${res.soId}`)
+        } else {
+          flash('Conversion failed — no sales order was returned.', 'error')
+        }
+      } catch (err) {
+        flash(`Conversion error: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
     })
   }
