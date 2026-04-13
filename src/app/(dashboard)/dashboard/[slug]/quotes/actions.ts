@@ -475,61 +475,74 @@ export async function addQuoteLineItem(
   orgSlug: string,
   draft: LineItemDraft,
 ): Promise<{ error?: string; id?: string }> {
-  if (!draft.description.trim()) return { error: 'Description is required.' }
-  if (draft.quantity < 1) return { error: 'Quantity must be at least 1.' }
-  if (draft.unit_price < 0) return { error: 'Unit price cannot be negative.' }
-  if (draft.discount_percent < 0 || draft.discount_percent > 100) {
-    return { error: 'Discount must be between 0 and 100.' }
+  try {
+    if (!draft.description.trim()) return { error: 'Description is required.' }
+    if (draft.quantity < 1) return { error: 'Quantity must be at least 1.' }
+    if (draft.unit_price < 0) return { error: 'Unit price cannot be negative.' }
+    if (draft.discount_percent < 0 || draft.discount_percent > 100) {
+      return { error: 'Discount must be between 0 and 100.' }
+    }
+
+    const ctx = await getServiceWithMembership(orgId)
+    if ('error' in ctx) return { error: ctx.error }
+
+    // Verify the quote belongs to this org before mutating any children.
+    const { data: quote } = await ctx.service
+      .from('quotes')
+      .select('id')
+      .eq('id', quoteId)
+      .eq('organization_id', orgId)
+      .maybeSingle()
+    if (!quote) return { error: 'Quote not found.' }
+
+    // Compute line total in cents.
+    const gross = draft.quantity * draft.unit_price
+    const total = Math.round(gross * (1 - draft.discount_percent / 100))
+
+    // sort_order = max + 1
+    const sortResult = await ctx.service
+      .from('quote_line_items')
+      .select('sort_order')
+      .eq('quote_id', quoteId)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+    const nextSort = ((sortResult.data as unknown as { sort_order: number | null }[] | null)?.[0]?.sort_order ?? -1) + 1
+
+    const insertResult = await ctx.service
+      .from('quote_line_items')
+      .insert({
+        quote_id: quoteId,
+        product_id: draft.product_id,
+        description: draft.description.trim(),
+        width: draft.width,
+        height: draft.height,
+        quantity: draft.quantity,
+        unit_price: draft.unit_price,
+        discount_percent: draft.discount_percent,
+        total_price: total,
+        taxable: draft.taxable,
+        sort_order: nextSort,
+      })
+      .select('id')
+      .single()
+
+    if (insertResult.error) {
+      console.error('[addQuoteLineItem] Insert failed:', insertResult.error.message)
+      return { error: `Failed to add line item: ${insertResult.error.message}` }
+    }
+    const inserted = insertResult.data as unknown as { id: string } | null
+    if (!inserted?.id) {
+      console.error('[addQuoteLineItem] Insert returned no data')
+      return { error: 'Line item insert returned no data.' }
+    }
+
+    await recalcQuoteTotals(ctx.service, quoteId)
+    revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+    return { id: inserted.id }
+  } catch (err) {
+    console.error('[addQuoteLineItem] Unexpected error:', err)
+    return { error: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }
   }
-
-  const ctx = await getServiceWithMembership(orgId)
-  if ('error' in ctx) return { error: ctx.error }
-
-  // Verify the quote belongs to this org before mutating any children.
-  const { data: quote } = await ctx.service
-    .from('quotes')
-    .select('id')
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-    .maybeSingle()
-  if (!quote) return { error: 'Quote not found.' }
-
-  // Compute line total in cents.
-  const gross = draft.quantity * draft.unit_price
-  const total = Math.round(gross * (1 - draft.discount_percent / 100))
-
-  // sort_order = max + 1
-  const { data: existing } = await ctx.service
-    .from('quote_line_items')
-    .select('sort_order')
-    .eq('quote_id', quoteId)
-    .order('sort_order', { ascending: false })
-    .limit(1) as { data: { sort_order: number | null }[] | null; error: unknown }
-  const nextSort = (existing?.[0]?.sort_order ?? -1) + 1
-
-  const { data: inserted, error } = await ctx.service
-    .from('quote_line_items')
-    .insert({
-      quote_id: quoteId,
-      product_id: draft.product_id,
-      description: draft.description.trim(),
-      width: draft.width,
-      height: draft.height,
-      quantity: draft.quantity,
-      unit_price: draft.unit_price,
-      discount_percent: draft.discount_percent,
-      total_price: total,
-      taxable: draft.taxable,
-      sort_order: nextSort,
-    })
-    .select('id')
-    .single() as { data: { id: string } | null; error: { message: string } | null }
-
-  if (error) return { error: error.message }
-
-  await recalcQuoteTotals(ctx.service, quoteId)
-  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
-  return { id: inserted?.id }
 }
 
 export async function updateQuoteLineItem(

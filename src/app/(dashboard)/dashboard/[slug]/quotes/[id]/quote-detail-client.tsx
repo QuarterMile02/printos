@@ -96,6 +96,7 @@ export default function QuoteDetailClient({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [isSavingItem, setIsSavingItem] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
   const lastItemRef = useRef<HTMLTableRowElement>(null)
 
@@ -187,14 +188,15 @@ export default function QuoteDetailClient({
     setShowAddForm(false)
   }
 
-  function handleSaveNewItem() {
+  async function handleSaveNewItem() {
     const qty = Math.max(1, parseInt(newQty, 10) || 1)
     const unitPriceCents = dollarsToCents(newUnitPrice)
     const w = newWidth ? Number(newWidth) : null
     const h = newHeight ? Number(newHeight) : null
     const desc = newDescription.trim() || (newProductId ? productMap.get(newProductId)?.name ?? 'Item' : 'Item')
 
-    startTransition(async () => {
+    setIsSavingItem(true)
+    try {
       const res = await addQuoteLineItem(quote.id, orgId, orgSlug, {
         product_id: newProductId || null,
         description: desc,
@@ -228,7 +230,11 @@ export default function QuoteDetailClient({
       ])
       setShowAddForm(false)
       flash('Line item added')
-    })
+    } catch (err) {
+      flash(`Save failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setIsSavingItem(false)
+    }
   }
 
   function patchItem(id: string, patch: Partial<LineItem>) {
@@ -590,10 +596,10 @@ export default function QuoteDetailClient({
               <button
                 type="button"
                 onClick={handleSaveNewItem}
-                disabled={isPending}
+                disabled={isSavingItem}
                 className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
               >
-                {isPending ? 'Saving...' : 'Save'}
+                {isSavingItem ? 'Saving...' : 'Save'}
               </button>
               <button
                 type="button"
