@@ -706,9 +706,13 @@ export async function convertQuoteToSalesOrder(
   orgId: string,
   orgSlug: string,
 ): Promise<{ error?: string; soNumber?: number; soId?: string; createdAt?: string }> {
+  console.log('[convertQuoteToSalesOrder] Starting conversion', { quoteId, orgId, orgSlug })
   try {
     const ctx = await getServiceWithMembership(orgId)
-    if ('error' in ctx) return { error: ctx.error }
+    if ('error' in ctx) {
+      console.error('[convertQuoteToSalesOrder] Auth error:', ctx.error)
+      return { error: ctx.error }
+    }
 
     // Make sure we don't double-convert.
     // Try full column set first; fall back if Phase 8 columns are missing.
@@ -739,7 +743,11 @@ export async function convertQuoteToSalesOrder(
       return { error: `Quote lookup failed: ${eqErr1.message}` }
     }
 
-    if (!existing) return { error: 'Quote not found.' }
+    if (!existing) {
+      console.error('[convertQuoteToSalesOrder] Quote not found')
+      return { error: 'Quote not found.' }
+    }
+    console.log('[convertQuoteToSalesOrder] Found quote:', existing.id, existing.title)
     if (existing.converted_to_so_id) return { error: 'This quote already has a sales order.' }
 
     // Insert into sales_orders — do NOT use `as` cast so we see real errors.
@@ -758,12 +766,15 @@ export async function convertQuoteToSalesOrder(
       .single()
 
     if (soResult.error) {
+      console.error('[convertQuoteToSalesOrder] Insert error:', soResult.error.message)
       return { error: `Failed to create sales order: ${soResult.error.message}` }
     }
     const so = soResult.data as unknown as { id: string; so_number: number; created_at: string }
     if (!so?.id) {
+      console.error('[convertQuoteToSalesOrder] Insert returned no data')
       return { error: 'Sales order insert returned no data. The sales_orders table may not exist — run migration 020_sales_orders_ensure.sql in the Supabase SQL Editor.' }
     }
+    console.log('[convertQuoteToSalesOrder] Created SO:', so.id, 'so_number:', so.so_number)
 
     // Link quote to SO and set status. If converted_to_so_id column is
     // missing, fall back to updating status only.
@@ -788,6 +799,7 @@ export async function convertQuoteToSalesOrder(
     revalidatePath(`/dashboard/${orgSlug}/sales-orders`)
     return { soNumber: so.so_number, soId: so.id, createdAt: so.created_at }
   } catch (err) {
+    console.error('[convertQuoteToSalesOrder] Unexpected error:', err)
     return { error: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }
   }
 }
