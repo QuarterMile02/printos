@@ -148,7 +148,7 @@ export default function QuoteDetailClient({
       } else if (res.soNumber && res.soId && res.createdAt) {
         setStatus('ordered')
         setConvertedSo({ id: res.soId, so_number: res.soNumber, created_at: res.createdAt })
-        flash(`Created ${formatSoNumber(res.soNumber, res.createdAt)}`)
+        router.push(`/dashboard/${orgSlug}/sales-orders/${res.soId}`)
       }
     })
   }

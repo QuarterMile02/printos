@@ -685,11 +685,11 @@ export async function convertQuoteToSalesOrder(
   // Make sure we don't double-convert.
   const { data: existing } = await ctx.service
     .from('quotes')
-    .select('id, customer_id, converted_to_so_id, status')
+    .select('id, title, customer_id, converted_to_so_id, status, total')
     .eq('id', quoteId)
     .eq('organization_id', orgId)
     .maybeSingle() as {
-      data: { id: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus } | null
+      data: { id: string; title: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus; total: number | null } | null
       error: unknown
     }
   if (!existing) return { error: 'Quote not found.' }
@@ -701,6 +701,8 @@ export async function convertQuoteToSalesOrder(
       organization_id: orgId,
       quote_id: quoteId,
       customer_id: existing.customer_id,
+      title: existing.title,
+      total: existing.total ?? 0,
       status: 'new',
       created_by: ctx.user.id,
     })
@@ -720,5 +722,6 @@ export async function convertQuoteToSalesOrder(
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   revalidatePath(`/dashboard/${orgSlug}/quotes`)
+  revalidatePath(`/dashboard/${orgSlug}/sales-orders`)
   return { soNumber: so.so_number, soId: so.id, createdAt: so.created_at }
 }
