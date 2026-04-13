@@ -94,6 +94,7 @@ export default function QuoteDetailClient({
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const [isConverting, startConvertTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
 
@@ -154,21 +155,23 @@ export default function QuoteDetailClient({
     })
   }
 
-  async function handleConvert() {
-    try {
-      const res = await convertQuoteToSalesOrder(quote.id, orgId, orgSlug)
-      if (res.error) {
-        flash(res.error, 'error')
-      } else if (res.soId) {
-        setStatus('ordered')
-        setConvertedSo({ id: res.soId, so_number: res.soNumber!, created_at: res.createdAt! })
-        router.push(`/dashboard/${orgSlug}/sales-orders/${res.soId}`)
-      } else {
-        flash('Conversion failed — no sales order was returned. Check Vercel logs.', 'error')
+  function handleConvert() {
+    startConvertTransition(async () => {
+      try {
+        const res = await convertQuoteToSalesOrder(quote.id, orgId, orgSlug)
+        if (res.error) {
+          flash(res.error, 'error')
+        } else if (res.soId) {
+          setStatus('ordered')
+          setConvertedSo({ id: res.soId, so_number: res.soNumber!, created_at: res.createdAt! })
+          router.push(`/dashboard/${orgSlug}/sales-orders/${res.soId}`)
+        } else {
+          flash('Conversion failed — no sales order was returned. Check Vercel logs.', 'error')
+        }
+      } catch (err) {
+        flash(`Conversion error: ${err instanceof Error ? err.message : String(err)}`, 'error')
       }
-    } catch (err) {
-      flash(`Conversion error: ${err instanceof Error ? err.message : String(err)}`, 'error')
-    }
+    })
   }
 
   // ── Edit-mode helpers ─────────────────────────────────────────────
@@ -349,10 +352,10 @@ export default function QuoteDetailClient({
             <button
               type="button"
               onClick={handleConvert}
-              disabled={isPending}
+              disabled={isConverting}
               className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
             >
-              Convert to Sales Order
+              {isConverting ? 'Converting...' : 'Convert to Sales Order'}
             </button>
           )}
           <button
