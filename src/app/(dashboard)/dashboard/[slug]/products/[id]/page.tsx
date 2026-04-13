@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import type {
   Product, ProductCategory, WorkflowTemplate, PricingFormula, Discount,
   Material, LaborRate, MachineRate, Modifier,
@@ -8,6 +9,7 @@ import type {
   ProductCustomField,
 } from '@/types/product-builder'
 import ProductForm, { type ExistingDropdownMenu } from '../product-form'
+import ProductFormErrorBoundary from './error-boundary'
 
 export const dynamic = 'force-dynamic'
 
@@ -103,23 +105,56 @@ export default async function EditProductPage({ params }: PageProps) {
         </div>
       </div>
 
-      <ProductForm
-        orgId={org.id}
-        orgSlug={slug}
-        product={product}
-        categories={categories}
-        workflows={workflows}
-        pricingFormulas={pricingFormulas}
-        discounts={discounts}
-        materials={materials}
-        laborRates={laborRates}
-        machineRates={machineRates}
-        modifiersList={modifiers}
-        existingDefaultItems={defaultItems}
-        existingModifiers={productModifiers}
-        existingDropdownMenus={existingDropdownMenus}
-        existingCustomFields={customFields}
-      />
+      {/* Server-rendered product summary — always visible */}
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h1 className="text-2xl font-extrabold text-gray-900">{product.name}</h1>
+        {product.description && <p className="mt-1 text-sm text-gray-600">{product.description}</p>}
+        <div className="mt-4 flex flex-wrap gap-4 text-sm">
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Pricing Type</span>
+            <p className="mt-0.5 text-gray-900">{product.pricing_type ?? '—'}</p>
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Formula</span>
+            <p className="mt-0.5 text-gray-900">{product.formula ?? '—'}</p>
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Price</span>
+            <p className="mt-0.5 text-gray-900">${Number(product.price ?? 0).toFixed(2)}</p>
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Status</span>
+            <p className="mt-0.5 text-gray-900 capitalize">{product.status ?? 'draft'}</p>
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Taxable</span>
+            <p className="mt-0.5 text-gray-900">{product.taxable ? 'Yes' : 'No'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Client-rendered product form — wrapped in error boundary */}
+      <ProductFormErrorBoundary productName={product.name}>
+        <Suspense fallback={<div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">Loading editor...</div>}>
+          <ProductForm
+            orgId={org.id}
+            orgSlug={slug}
+            product={product}
+            categories={categories}
+            workflows={workflows}
+            pricingFormulas={pricingFormulas}
+            discounts={discounts}
+            materials={materials}
+            laborRates={laborRates}
+            machineRates={machineRates}
+            modifiersList={modifiers}
+            existingDefaultItems={defaultItems}
+            existingModifiers={productModifiers}
+            existingDropdownMenus={existingDropdownMenus}
+            existingCustomFields={customFields}
+          />
+        </Suspense>
+      </ProductFormErrorBoundary>
     </div>
   )
 }
