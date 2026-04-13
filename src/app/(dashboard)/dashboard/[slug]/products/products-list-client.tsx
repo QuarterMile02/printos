@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import type { PricingType, ProductStatus } from '@/types/product-builder'
 
 export type ProductRow = {
@@ -43,6 +44,7 @@ export default function ProductsListClient({
   products: ProductRow[]
   orgSlug: string
 }) {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [pricingFilter, setPricingFilter] = useState<PricingFilter>('all')
@@ -125,12 +127,15 @@ export default function ProductsListClient({
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Pricing Type</th>
                 <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
-                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50">
+                <tr
+                  key={p.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => router.push(`/dashboard/${orgSlug}/products/${p.id}`)}
+                >
                   <td className="whitespace-nowrap px-6 py-4">
                     <div className="text-sm font-semibold text-qm-black">{p.name}</div>
                     {p.part_number && (
@@ -154,14 +159,6 @@ export default function ProductsListClient({
                     ) : (
                       <span className="text-gray-300 text-xs">—</span>
                     )}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-right">
-                    <a
-                      href={`/dashboard/${orgSlug}/products/${p.id}`}
-                      className="text-sm font-medium text-qm-lime hover:underline"
-                    >
-                      Edit
-                    </a>
                   </td>
                 </tr>
               ))}

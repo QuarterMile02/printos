@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import type {
   Product, ProductCategory, WorkflowTemplate, PricingFormula, Discount,
   Material, LaborRate, MachineRate, Modifier,
@@ -104,6 +105,16 @@ export default async function EditProductPage({ params }: PageProps) {
 
   return (
     <div className="p-8">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
+          <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
+          <span>/</span>
+          <Link href={`/dashboard/${slug}/products`} className="hover:text-gray-700">Products</Link>
+          <span>/</span>
+          <span className="text-gray-700">{product.name}</span>
+        </div>
+      </div>
+
       <ProductForm
         orgId={org.id}
         orgSlug={slug}

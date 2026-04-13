@@ -46,9 +46,9 @@ type Props = {
 type TabKey = 'basic' | 'advanced' | 'pricing' | 'custom-fields'
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'basic', label: 'Basic Settings' },
-  { key: 'advanced', label: 'Advanced Settings' },
-  { key: 'pricing', label: 'Configure Pricing' },
+  { key: 'basic', label: 'Basic' },
+  { key: 'pricing', label: 'Pricing' },
+  { key: 'advanced', label: 'Modifiers' },
   { key: 'custom-fields', label: 'Custom Fields' },
 ]
 
