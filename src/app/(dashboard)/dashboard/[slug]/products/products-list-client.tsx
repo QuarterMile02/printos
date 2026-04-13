@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import type { PricingType, ProductStatus } from '@/types/product-builder'
 
 export type ProductRow = {
@@ -44,7 +44,6 @@ export default function ProductsListClient({
   products: ProductRow[]
   orgSlug: string
 }) {
-  const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [pricingFilter, setPricingFilter] = useState<PricingFilter>('all')
@@ -130,38 +129,47 @@ export default function ProductsListClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((p) => (
-                <tr
-                  key={p.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => router.push(`/dashboard/${orgSlug}/products/${p.id}`)}
-                >
-                  <td className="whitespace-nowrap px-6 py-4">
-                    <div className="text-sm font-semibold text-qm-black">{p.name}</div>
-                    {p.part_number && (
-                      <div className="text-xs text-qm-gray">{p.part_number}</div>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {p.category_name ?? <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {p.pricing_type ?? <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-qm-black text-right">
-                    {formatPrice(p.price)}
-                  </td>
-                  <td className="whitespace-nowrap px-6 py-4">
-                    {p.status ? (
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>
-                        {STATUS_LABELS[p.status]}
-                      </span>
-                    ) : (
-                      <span className="text-gray-300 text-xs">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((p) => {
+                const href = `/dashboard/${orgSlug}/products/${p.id}`
+                return (
+                  <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap">
+                      <Link href={href} className="block px-6 py-4">
+                        <div className="text-sm font-semibold text-qm-black">{p.name}</div>
+                        {p.part_number && (
+                          <div className="text-xs text-qm-gray">{p.part_number}</div>
+                        )}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <Link href={href} className="block px-6 py-4 text-sm text-gray-500">
+                        {p.category_name ?? <span className="text-gray-300">—</span>}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <Link href={href} className="block px-6 py-4 text-sm text-gray-500">
+                        {p.pricing_type ?? <span className="text-gray-300">—</span>}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <Link href={href} className="block px-6 py-4 text-sm font-medium text-qm-black text-right">
+                        {formatPrice(p.price)}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <Link href={href} className="block px-6 py-4">
+                        {p.status ? (
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>
+                            {STATUS_LABELS[p.status]}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           <div className="border-t border-gray-100 bg-gray-50 px-6 py-2 text-xs text-qm-gray">
