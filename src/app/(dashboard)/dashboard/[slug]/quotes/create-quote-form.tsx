@@ -108,6 +108,11 @@ export default function CreateQuoteForm({ orgId, orgSlug, customers }: Props) {
         expiresAt: expiresAt || null,
         terms: terms || null,
         notes: notes || null,
+        dueDate: null,
+        salesRepId: null,
+        poNumber: null,
+        installAddress: null,
+        productionNotes: null,
         lineItems: cleanedItems,
       })
       if (result.error) {

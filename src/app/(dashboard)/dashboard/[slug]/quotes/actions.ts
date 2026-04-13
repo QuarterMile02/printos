@@ -69,6 +69,11 @@ export async function createQuote(
     expiresAt: string | null
     terms: string | null
     notes: string | null
+    dueDate: string | null
+    salesRepId: string | null
+    poNumber: string | null
+    installAddress: string | null
+    productionNotes: string | null
     lineItems: LineItemInput[]
   }
 ): Promise<{ error?: string; quoteId?: string }> {
@@ -100,18 +105,25 @@ export async function createQuote(
   const service = createServiceClient()
 
   // Insert quote — quote_number is set by trigger
+  const insert: Record<string, unknown> = {
+    organization_id: orgId,
+    customer_id: data.customerId || null,
+    title: data.title.trim(),
+    description: data.description?.trim() || null,
+    expires_at: data.expiresAt || null,
+    terms: data.terms?.trim() || null,
+    notes: data.notes?.trim() || null,
+    status: 'draft' as QuoteStatus,
+  }
+  if (data.dueDate)         insert.due_date = data.dueDate
+  if (data.salesRepId)      insert.sales_rep_id = data.salesRepId
+  if (data.poNumber)        insert.po_number = data.poNumber.trim()
+  if (data.installAddress)  insert.install_address = data.installAddress.trim()
+  if (data.productionNotes) insert.production_notes = data.productionNotes.trim()
+
   const { data: quote, error: quoteError } = await service
     .from('quotes')
-    .insert({
-      organization_id: orgId,
-      customer_id: data.customerId || null,
-      title: data.title.trim(),
-      description: data.description?.trim() || null,
-      expires_at: data.expiresAt || null,
-      terms: data.terms?.trim() || null,
-      notes: data.notes?.trim() || null,
-      status: 'draft' as QuoteStatus,
-    })
+    .insert(insert)
     .select('id')
     .single()
 

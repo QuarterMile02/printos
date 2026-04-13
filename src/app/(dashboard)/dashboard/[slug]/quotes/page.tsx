@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import type { QuoteStatus } from '@/types/database'
 import QuoteTable, { type QuoteRow } from './quote-table'
-import CreateQuoteForm from './create-quote-form'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -89,15 +89,6 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
     } : null,
   }))
 
-  // Fetch customers for the create form dropdown
-  type CustomerRow = { id: string; first_name: string; last_name: string; company_name: string | null }
-  const { data: customerRows } = await supabase
-    .from('customers')
-    .select('id, first_name, last_name, company_name')
-    .eq('organization_id', org.id)
-    .order('last_name', { ascending: true }) as { data: CustomerRow[] | null; error: unknown }
-
-  const customers = customerRows ?? []
   const total = quotes.length
 
   return (
@@ -120,7 +111,12 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
                 : `${total} quote${total === 1 ? '' : 's'}`}
             </p>
           </div>
-          <CreateQuoteForm orgId={org.id} orgSlug={org.slug} customers={customers} />
+          <Link
+            href={`/dashboard/${slug}/quotes/new`}
+            className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+          >
+            Create Quote
+          </Link>
         </div>
       </div>
 
