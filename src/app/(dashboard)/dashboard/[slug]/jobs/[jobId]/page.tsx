@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { uploadProof, updateProofStatus } from './proof-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,11 +72,24 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     assignedName = p?.full_name || p?.email || null
   }
 
-  // Workflow stages
-  type WfStage = { name: string; sort_order: number }
-  let stages: WfStage[] = []
-  // Try to get workflow from product linked via quote
-  // For now show job status as a simple progress bar
+  // Proof versions
+  const { data: proofRows } = await supabase
+    .from('proof_versions')
+    .select('id, file_url, file_name, version_number, status, created_at')
+    .eq('job_id', jobId)
+    .order('version_number', { ascending: false })
+  const proofs = (proofRows ?? []) as {
+    id: string; file_url: string; file_name: string; version_number: number
+    status: string; created_at: string
+  }[]
+
+  const proofStatusStyles: Record<string, string> = {
+    pending: 'bg-amber-50 text-amber-700',
+    approved: 'bg-green-50 text-green-700',
+    rejected: 'bg-red-50 text-red-700',
+  }
+
+  // Workflow progress
   const statusOrder = ['new', 'in_progress', 'proof_review', 'ready_for_pickup', 'completed']
   const currentIdx = statusOrder.indexOf(job.status)
 
@@ -176,20 +190,86 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
         {/* Upload Proof */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Upload Proof</h2>
-          <div className="rounded-lg border-2 border-dashed border-gray-300 p-8 text-center">
-            <svg className="mx-auto h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-            </svg>
-            <p className="mt-2 text-sm text-gray-500">Drag and drop or click to upload</p>
-            <p className="mt-1 text-xs text-gray-400">PDF, PNG, JPG up to 10MB</p>
-            <input
-              type="file"
-              accept=".pdf,.png,.jpg,.jpeg"
-              className="mt-3 block mx-auto text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-qm-lime file:text-white hover:file:brightness-110"
-            />
-          </div>
-          <p className="mt-2 text-xs text-gray-400">File upload storage coming soon. This is a placeholder.</p>
+          <form action={uploadProof}>
+            <input type="hidden" name="jobId" value={jobId} />
+            <input type="hidden" name="orgId" value={org.id} />
+            <input type="hidden" name="orgSlug" value={slug} />
+            <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center">
+              <svg className="mx-auto h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+              </svg>
+              <p className="mt-2 text-sm text-gray-500">PDF, PNG, JPG up to 10MB</p>
+              <input
+                type="file"
+                name="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                required
+                className="mt-3 block mx-auto text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-qm-lime file:text-white hover:file:brightness-110"
+              />
+            </div>
+            <button type="submit" className="mt-3 rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
+              Upload Proof
+            </button>
+          </form>
         </div>
+
+        {/* Proof Versions */}
+        {proofs.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Proof Versions</h2>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {proofs.map((proof) => (
+                <div key={proof.id} className="flex items-center justify-between px-6 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-bold text-gray-600">
+                      v{proof.version_number}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{proof.file_name}</p>
+                      <p className="text-xs text-gray-500">
+                        {new Date(proof.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${proofStatusStyles[proof.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                      {proof.status}
+                    </span>
+                    <a href={proof.file_url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-qm-fuchsia hover:underline">
+                      Download
+                    </a>
+                    {proof.status === 'pending' && (
+                      <>
+                        <form action={updateProofStatus} className="inline">
+                          <input type="hidden" name="proofId" value={proof.id} />
+                          <input type="hidden" name="jobId" value={jobId} />
+                          <input type="hidden" name="orgId" value={org.id} />
+                          <input type="hidden" name="orgSlug" value={slug} />
+                          <input type="hidden" name="status" value="approved" />
+                          <button type="submit" className="rounded px-2 py-1 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100">
+                            Approve
+                          </button>
+                        </form>
+                        <form action={updateProofStatus} className="inline">
+                          <input type="hidden" name="proofId" value={proof.id} />
+                          <input type="hidden" name="jobId" value={jobId} />
+                          <input type="hidden" name="orgId" value={org.id} />
+                          <input type="hidden" name="orgSlug" value={slug} />
+                          <input type="hidden" name="status" value="rejected" />
+                          <button type="submit" className="rounded px-2 py-1 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100">
+                            Reject
+                          </button>
+                        </form>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Customer card */}
