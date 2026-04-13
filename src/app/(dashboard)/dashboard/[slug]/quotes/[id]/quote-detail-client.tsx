@@ -35,6 +35,11 @@ type Quote = {
   subtotal: number
   tax_total: number
   total: number
+  due_date: string | null
+  sales_rep_id: string | null
+  po_number: string | null
+  install_address: string | null
+  production_notes: string | null
   customer: {
     first_name: string
     last_name: string
@@ -43,6 +48,8 @@ type Quote = {
     phone: string | null
   } | null
 }
+
+type TeamMember = { id: string; name: string }
 
 type LineItem = {
   id: string
@@ -68,6 +75,8 @@ type Props = {
   lineItems: LineItem[]
   products: ProductOption[]
   salesOrder: { id: string; so_number: number; created_at: string } | null
+  teamMembers: TeamMember[]
+  salesRepName: string | null
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -81,7 +90,7 @@ function dollarsToCents(s: string): number {
 }
 
 export default function QuoteDetailClient({
-  orgId, orgSlug, quote, lineItems, products, salesOrder,
+  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -94,6 +103,11 @@ export default function QuoteDetailClient({
   const [expiresAt, setExpiresAt] = useState<string>(quote.expires_at ? quote.expires_at.slice(0, 10) : '')
   const [terms, setTerms] = useState<string>(quote.terms ?? '')
   const [notes, setNotes] = useState<string>(quote.notes ?? '')
+  const [dueDate, setDueDate] = useState<string>(quote.due_date ? quote.due_date.slice(0, 10) : '')
+  const [salesRepId, setSalesRepId] = useState<string>(quote.sales_rep_id ?? '')
+  const [poNumber, setPoNumber] = useState<string>(quote.po_number ?? '')
+  const [installAddress, setInstallAddress] = useState<string>(quote.install_address ?? '')
+  const [productionNotes, setProductionNotes] = useState<string>(quote.production_notes ?? '')
   const [convertedSo, setConvertedSo] = useState(salesOrder)
 
   const productMap = useMemo(() => {
@@ -154,7 +168,7 @@ export default function QuoteDetailClient({
   }
 
   // ── Edit-mode helpers ─────────────────────────────────────────────
-  function saveFields(patch: { expires_at?: string | null; terms?: string | null; notes?: string | null; title?: string }) {
+  function saveFields(patch: Record<string, string | null | undefined>) {
     startTransition(async () => {
       const res = await updateQuoteFields(quote.id, orgId, orgSlug, patch)
       if (res.error) flash(res.error, 'error')
@@ -291,6 +305,24 @@ export default function QuoteDetailClient({
           </div>
         </div>
 
+        {/* Read-only metadata row */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          {dueDate && (
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Due </span>
+              <span className="text-gray-700">
+                {new Date(dueDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            </div>
+          )}
+          {(salesRepName || salesRepId) && (
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Sales Rep </span>
+              <span className="text-gray-700">{salesRepName ?? 'Unassigned'}</span>
+            </div>
+          )}
+        </div>
+
         {/* Action buttons */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
@@ -355,6 +387,43 @@ export default function QuoteDetailClient({
               />
             </div>
             <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Due Date</label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                onBlur={() => saveFields({ due_date: dueDate || null })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Sales Rep</label>
+              <select
+                value={salesRepId}
+                onChange={(e) => {
+                  setSalesRepId(e.target.value)
+                  saveFields({ sales_rep_id: e.target.value || null })
+                }}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              >
+                <option value="">— Unassigned —</option>
+                {teamMembers.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">PO Number</label>
+              <input
+                type="text"
+                value={poNumber}
+                onChange={(e) => setPoNumber(e.target.value)}
+                onBlur={() => saveFields({ po_number: poNumber || null })}
+                placeholder="Customer PO #"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Expires</label>
               <input
                 type="date"
@@ -375,14 +444,38 @@ export default function QuoteDetailClient({
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Internal Notes</label>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Install Address</label>
               <input
                 type="text"
+                value={installAddress}
+                onChange={(e) => setInstallAddress(e.target.value)}
+                onBlur={() => saveFields({ install_address: installAddress || null })}
+                placeholder="Job installation address"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Internal Notes</label>
+              <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 onBlur={() => saveFields({ notes: notes || null })}
                 placeholder="Notes for the team"
+                rows={3}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Production Notes</label>
+              <textarea
+                value={productionNotes}
+                onChange={(e) => setProductionNotes(e.target.value)}
+                onBlur={() => saveFields({ production_notes: productionNotes || null })}
+                placeholder="Visible to production staff only — not on customer PDF"
+                rows={3}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
               />
             </div>

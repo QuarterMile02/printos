@@ -407,16 +407,31 @@ export async function updateQuoteFields(
   quoteId: string,
   orgId: string,
   orgSlug: string,
-  fields: { expires_at?: string | null; terms?: string | null; notes?: string | null; title?: string }
+  fields: {
+    expires_at?: string | null
+    terms?: string | null
+    notes?: string | null
+    title?: string
+    due_date?: string | null
+    sales_rep_id?: string | null
+    po_number?: string | null
+    install_address?: string | null
+    production_notes?: string | null
+  }
 ): Promise<{ error?: string }> {
   const ctx = await getServiceWithMembership(orgId)
   if ('error' in ctx) return { error: ctx.error }
 
   const update: Record<string, unknown> = {}
-  if (fields.expires_at !== undefined) update.expires_at = fields.expires_at
-  if (fields.terms !== undefined)      update.terms = fields.terms
-  if (fields.notes !== undefined)      update.notes = fields.notes
+  if (fields.expires_at !== undefined)       update.expires_at = fields.expires_at
+  if (fields.terms !== undefined)            update.terms = fields.terms
+  if (fields.notes !== undefined)            update.notes = fields.notes
   if (fields.title !== undefined && fields.title.trim()) update.title = fields.title.trim()
+  if (fields.due_date !== undefined)         update.due_date = fields.due_date
+  if (fields.sales_rep_id !== undefined)     update.sales_rep_id = fields.sales_rep_id
+  if (fields.po_number !== undefined)        update.po_number = fields.po_number
+  if (fields.install_address !== undefined)  update.install_address = fields.install_address
+  if (fields.production_notes !== undefined) update.production_notes = fields.production_notes
   if (Object.keys(update).length === 0) return {}
 
   const { error } = await ctx.service

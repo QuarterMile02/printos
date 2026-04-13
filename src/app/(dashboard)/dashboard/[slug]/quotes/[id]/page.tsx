@@ -33,6 +33,11 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     total: number | null
     customer_id: string | null
     converted_to_so_id: string | null
+    due_date: string | null
+    sales_rep_id: string | null
+    po_number: string | null
+    install_address: string | null
+    production_notes: string | null
     customers: {
       first_name: string
       last_name: string
@@ -53,6 +58,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
       id, quote_number, title, description, status, created_at,
       expires_at, terms, notes, subtotal, tax_total, total,
       customer_id, converted_to_so_id,
+      due_date, sales_rep_id, po_number, install_address, production_notes,
       customers(first_name, last_name, company_name, email, phone)
     `)
     .eq('id', id)
@@ -84,6 +90,11 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         tax_total: null,
         total: null,
         converted_to_so_id: null,
+        due_date: null,
+        sales_rep_id: null,
+        po_number: null,
+        install_address: null,
+        production_notes: null,
       }
     }
   }
@@ -149,6 +160,24 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     }
   }
 
+  // Fetch team members for the sales rep dropdown (owners + members).
+  type TeamMember = { user_id: string; role: string; profiles: { full_name: string | null; email: string } | null }
+  const { data: teamRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role, profiles(full_name, email)')
+    .eq('organization_id', org.id)
+    .in('role', ['owner', 'admin', 'member']) as { data: TeamMember[] | null; error: unknown }
+
+  const teamMembers = (teamRows ?? []).map((m) => ({
+    id: m.user_id,
+    name: m.profiles?.full_name || m.profiles?.email || m.user_id,
+  }))
+
+  // Resolve sales rep name for display
+  const salesRepName = quote.sales_rep_id
+    ? teamMembers.find((m) => m.id === quote.sales_rep_id)?.name ?? null
+    : null
+
   // If this quote was converted to a sales order, fetch its number.
   type SoRef = { id: string; so_number: number; created_at: string }
   let salesOrder: SoRef | null = null
@@ -187,6 +216,11 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           subtotal: quote.subtotal ?? 0,
           tax_total: quote.tax_total ?? 0,
           total: quote.total ?? 0,
+          due_date: quote.due_date,
+          sales_rep_id: quote.sales_rep_id,
+          po_number: quote.po_number,
+          install_address: quote.install_address,
+          production_notes: quote.production_notes,
           customer: quote.customers
             ? {
                 first_name: quote.customers.first_name,
@@ -213,6 +247,8 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         }))}
         products={products ?? []}
         salesOrder={salesOrder}
+        teamMembers={teamMembers}
+        salesRepName={salesRepName}
       />
     </div>
   )
