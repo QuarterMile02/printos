@@ -27,7 +27,8 @@
       "Bash(node:*)",
       "Read(//c/Users/ruben/Downloads/**)",
       "Bash(grep:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(npm list:*)"
     ]
   }
 }

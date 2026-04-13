@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { uploadProof, updateProofStatus } from './proof-actions'
+import { generateQRDataUrl } from '@/lib/qr'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,6 +89,29 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     approved: 'bg-green-50 text-green-700',
     rejected: 'bg-red-50 text-red-700',
   }
+
+  // Time logs
+  const { data: timeLogRows } = await supabase
+    .from('job_time_logs')
+    .select('id, action, stage, duration_minutes, scanned_at, user_id')
+    .eq('job_id', jobId)
+    .order('scanned_at', { ascending: false })
+  const timeLogs = (timeLogRows ?? []) as {
+    id: string; action: string; stage: string | null; duration_minutes: number | null
+    scanned_at: string; user_id: string | null
+  }[]
+  const totalMinutes = timeLogs
+    .filter(l => l.duration_minutes)
+    .reduce((sum, l) => sum + Number(l.duration_minutes ?? 0), 0)
+  const totalHrs = Math.floor(totalMinutes / 60)
+  const totalMins = Math.round(totalMinutes % 60)
+
+  // QR code
+  const scanUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://printos-lemon.vercel.app'}/dashboard/${slug}/jobs/${jobId}/scan`
+  let qrDataUrl = ''
+  try {
+    qrDataUrl = await generateQRDataUrl(scanUrl)
+  } catch { /* QR generation optional */ }
 
   // Workflow progress
   const statusOrder = ['new', 'in_progress', 'proof_review', 'ready_for_pickup', 'completed']
@@ -270,6 +294,70 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
             </div>
           </div>
         )}
+      </div>
+
+      {/* QR Code + Time Log */}
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* QR Code */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm text-center">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Time Tracking QR Code</h2>
+          {qrDataUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qrDataUrl} alt="Scan to clock in/out" className="mx-auto h-48 w-48" />
+              <p className="mt-2 text-xs text-gray-400">Scan to clock in/out on mobile</p>
+              <a
+                href={`/dashboard/${slug}/jobs/${jobId}/scan`}
+                className="mt-3 inline-block rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Open Scan Page
+              </a>
+            </>
+          ) : (
+            <a
+              href={`/dashboard/${slug}/jobs/${jobId}/scan`}
+              className="inline-block rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+            >
+              Open Scan Page
+            </a>
+          )}
+        </div>
+
+        {/* Time Log */}
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Time Log</h2>
+            <span className="text-sm font-semibold text-gray-700">
+              Total: {totalHrs > 0 ? `${totalHrs}h ` : ''}{totalMins}m
+            </span>
+          </div>
+          {timeLogs.length === 0 ? (
+            <p className="text-sm text-gray-400">No time entries yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {timeLogs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block h-2 w-2 rounded-full ${log.action === 'clock_in' ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <span className="text-sm font-medium text-gray-700">
+                      {log.action === 'clock_in' ? 'Clock In' : 'Clock Out'}
+                    </span>
+                    {log.duration_minutes != null && (
+                      <span className="text-xs text-gray-400">({Number(log.duration_minutes).toFixed(0)} min)</span>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500">
+                      {new Date(log.scanned_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}{' '}
+                      {new Date(log.scanned_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </p>
+                    {log.stage && <p className="text-xs text-gray-400">{STATUS_LABELS[log.stage] ?? log.stage}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Customer card */}
