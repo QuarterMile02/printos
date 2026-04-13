@@ -47,8 +47,8 @@ type TabKey = 'basic' | 'advanced' | 'pricing' | 'custom-fields'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'basic', label: 'Basic' },
-  { key: 'pricing', label: 'Pricing' },
-  { key: 'advanced', label: 'Modifiers' },
+  { key: 'advanced', label: 'Advanced' },
+  { key: 'pricing', label: 'Pricing & Recipe' },
   { key: 'custom-fields', label: 'Custom Fields' },
 ]
 
