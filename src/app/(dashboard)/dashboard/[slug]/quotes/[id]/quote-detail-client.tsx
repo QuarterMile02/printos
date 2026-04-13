@@ -201,6 +201,8 @@ export default function QuoteDetailClient({
       ? Math.round((w * h / 144) * qty * unitPriceCents)
       : qty * unitPriceCents
 
+    console.log('[handleSaveNewItem] values:', { desc, w, h, qty, unitPriceCents, totalCents, productId: newProductId || null })
+
     setIsSavingItem(true)
     try {
       const res = await addQuoteLineItem(quote.id, orgId, orgSlug, {
