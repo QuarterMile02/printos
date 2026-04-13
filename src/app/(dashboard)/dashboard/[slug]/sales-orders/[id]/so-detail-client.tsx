@@ -69,6 +69,7 @@ type Props = {
 }
 
 const MANUAL_STATUSES: { value: SalesOrderStatus; label: string }[] = [
+  { value: 'completed', label: 'Mark Completed' },
   { value: 'hold', label: 'Hold' },
   { value: 'no_charge', label: 'No Charge' },
   { value: 'no_charge_approved', label: 'No Charge Approved' },
