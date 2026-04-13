@@ -1,0 +1,246 @@
+import { createServiceClient } from '@/lib/supabase/server'
+
+// ── Types ────────────────────────────────────────────────────────────
+
+export type PricingInput = {
+  product_id: string
+  width_inches: number
+  height_inches: number
+  quantity: number
+  selected_modifiers?: Record<string, boolean | number> // modifier_id → value
+  selected_dropdown_items?: Record<string, string>       // menu_id → dropdown_item_id
+}
+
+export type LineBreakdown = {
+  name: string
+  item_type: string
+  formula: string
+  cost_cents: number
+  price_cents: number
+  in_base: boolean
+}
+
+export type PricingResult = {
+  unit_price_cents: number
+  total_price_cents: number
+  breakdown: LineBreakdown[]
+  error?: string
+}
+
+// ── Formula helpers ──────────────────────────────────────────────────
+
+function formulaMultiplier(
+  formula: string | null,
+  widthIn: number,
+  heightIn: number,
+  qty: number,
+): number {
+  switch (formula) {
+    case 'Area':      return (widthIn * heightIn) / 144 // sq ft
+    case 'Perimeter': return (2 * (widthIn + heightIn)) / 12 // linear ft
+    case 'Width':     return widthIn / 12 // linear ft
+    case 'Height':    return heightIn / 12 // linear ft
+    case 'Unit':      return 1
+    case 'Fixed Qty': return 1
+    default:          return 1
+  }
+}
+
+// ── Main engine ──────────────────────────────────────────────────────
+
+export async function calculateProductPrice(input: PricingInput): Promise<PricingResult> {
+  const service = createServiceClient()
+
+  // 1. Load product
+  const { data: prodRow, error: prodErr } = await service
+    .from('products')
+    .select('id, cost, price, markup, formula, pricing_type')
+    .eq('id', input.product_id)
+    .single()
+
+  if (prodErr || !prodRow) {
+    return { unit_price_cents: 0, total_price_cents: 0, breakdown: [], error: prodErr?.message ?? 'Product not found' }
+  }
+  const product = prodRow as { id: string; cost: number | null; price: number | null; markup: number | null; formula: string | null; pricing_type: string | null }
+
+  // 2. Load recipe (product_default_items)
+  const { data: recipeRows } = await service
+    .from('product_default_items')
+    .select('id, item_type, material_id, labor_rate_id, machine_rate_id, custom_item_name, custom_item_cost, custom_item_price, system_formula, multiplier, include_in_base_price, charge_per_li_unit, fixed_quantity, percentage_of_base')
+    .eq('product_id', input.product_id)
+    .order('sort_order')
+
+  const recipeItems = (recipeRows ?? []) as {
+    id: string; item_type: string
+    material_id: string | null; labor_rate_id: string | null; machine_rate_id: string | null
+    custom_item_name: string | null; custom_item_cost: number | null; custom_item_price: number | null
+    system_formula: string | null; multiplier: number | null
+    include_in_base_price: boolean | null; charge_per_li_unit: boolean | null
+    fixed_quantity: number | null; percentage_of_base: number | null
+  }[]
+
+  // 3. Load rate costs
+  const matIds = recipeItems.filter(r => r.material_id).map(r => r.material_id!)
+  const laborIds = recipeItems.filter(r => r.labor_rate_id).map(r => r.labor_rate_id!)
+  const machineIds = recipeItems.filter(r => r.machine_rate_id).map(r => r.machine_rate_id!)
+
+  const rateMap = new Map<string, { name: string; cost: number; price: number }>()
+
+  if (matIds.length > 0) {
+    const { data } = await service.from('materials').select('id, name, cost, price').in('id', matIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null }[])
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0) })
+  }
+  if (laborIds.length > 0) {
+    const { data } = await service.from('labor_rates').select('id, name, cost, price').in('id', laborIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null }[])
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0) })
+  }
+  if (machineIds.length > 0) {
+    const { data } = await service.from('machine_rates').select('id, name, cost, price').in('id', machineIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null }[])
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0) })
+  }
+
+  // 4. Load product modifiers + modifier definitions
+  const { data: pmRows } = await service
+    .from('product_modifiers')
+    .select('modifier_id')
+    .eq('product_id', input.product_id)
+  const modifierIds = ((pmRows ?? []) as { modifier_id: string | null }[])
+    .map(r => r.modifier_id).filter(Boolean) as string[]
+
+  const modifierMap = new Map<string, { name: string; modifier_type: string }>()
+  if (modifierIds.length > 0) {
+    const { data } = await service.from('modifiers').select('id, display_name, modifier_type').in('id', modifierIds)
+    for (const m of (data ?? []) as { id: string; display_name: string; modifier_type: string }[])
+      modifierMap.set(m.id, { name: m.display_name, modifier_type: m.modifier_type })
+  }
+
+  // 5. Calculate each recipe item
+  const breakdown: LineBreakdown[] = []
+  let basePriceCents = 0
+  let totalCostCents = 0
+
+  for (const item of recipeItems) {
+    const refId = item.material_id ?? item.labor_rate_id ?? item.machine_rate_id
+    let rateCost = 0
+    let ratePrice = 0
+    let name = item.custom_item_name ?? 'Custom'
+
+    if (refId && rateMap.has(refId)) {
+      const r = rateMap.get(refId)!
+      rateCost = r.cost
+      ratePrice = r.price
+      name = r.name
+    } else if (item.item_type === 'CustomItem') {
+      rateCost = Number(item.custom_item_cost ?? 0)
+      ratePrice = Number(item.custom_item_price ?? 0)
+    }
+
+    const formula = item.system_formula ?? product.formula ?? 'Area'
+    const mult = Number(item.multiplier ?? 1)
+    const fMult = formulaMultiplier(formula, input.width_inches, input.height_inches, input.quantity)
+
+    // percentage_of_base items are handled after base is summed
+    if (item.percentage_of_base && Number(item.percentage_of_base) > 0) {
+      // Defer — handled in step 6
+      breakdown.push({
+        name,
+        item_type: item.item_type,
+        formula: `PBase ${Number(item.percentage_of_base)}%`,
+        cost_cents: 0, // filled later
+        price_cents: 0,
+        in_base: false,
+      })
+      continue
+    }
+
+    let itemCost = rateCost * fMult * mult
+    let itemPrice = ratePrice * fMult * mult
+
+    if (item.fixed_quantity && Number(item.fixed_quantity) > 0) {
+      itemCost = rateCost * Number(item.fixed_quantity) * mult
+      itemPrice = ratePrice * Number(item.fixed_quantity) * mult
+    }
+
+    if (item.charge_per_li_unit) {
+      itemCost *= input.quantity
+      itemPrice *= input.quantity
+    }
+
+    const costCents = Math.round(itemCost * 100)
+    const priceCents = Math.round(itemPrice * 100)
+
+    breakdown.push({
+      name,
+      item_type: item.item_type,
+      formula,
+      cost_cents: costCents,
+      price_cents: priceCents,
+      in_base: item.include_in_base_price ?? false,
+    })
+
+    totalCostCents += costCents
+    if (item.include_in_base_price) {
+      basePriceCents += priceCents
+    }
+  }
+
+  // 6. Apply percentage-of-base items
+  for (let i = 0; i < recipeItems.length; i++) {
+    const item = recipeItems[i]
+    if (!item.percentage_of_base || Number(item.percentage_of_base) <= 0) continue
+    const pct = Number(item.percentage_of_base) / 100
+    const pbaseCost = Math.round(basePriceCents * pct)
+    // Find this item in breakdown and fill costs
+    const bItem = breakdown.find(b => b.formula.startsWith('PBase'))
+    if (bItem && bItem.cost_cents === 0) {
+      bItem.cost_cents = pbaseCost
+      bItem.price_cents = pbaseCost
+      totalCostCents += pbaseCost
+    }
+  }
+
+  // 7. Apply modifier charges
+  const selectedMods = input.selected_modifiers ?? {}
+  for (const [modId, value] of Object.entries(selectedMods)) {
+    const mod = modifierMap.get(modId)
+    if (!mod) continue
+
+    if (mod.modifier_type === 'Boolean' && value === true) {
+      // Boolean modifiers typically add a percentage of base
+      // For now treat as a flat addition — extend later
+      breakdown.push({
+        name: mod.name,
+        item_type: 'Modifier',
+        formula: 'Boolean',
+        cost_cents: 0,
+        price_cents: 0,
+        in_base: false,
+      })
+    } else if (mod.modifier_type === 'Numeric' && typeof value === 'number') {
+      const addCents = Math.round(value * 100)
+      breakdown.push({
+        name: mod.name,
+        item_type: 'Modifier',
+        formula: 'Numeric',
+        cost_cents: addCents,
+        price_cents: addCents,
+        in_base: false,
+      })
+      totalCostCents += addCents
+    }
+  }
+
+  // 8. Apply markup
+  const markup = Number(product.markup ?? 1)
+  const unitPriceCents = Math.round(totalCostCents * markup)
+  const totalPriceCents = unitPriceCents * input.quantity
+
+  return {
+    unit_price_cents: unitPriceCents,
+    total_price_cents: totalPriceCents,
+    breakdown,
+  }
+}
