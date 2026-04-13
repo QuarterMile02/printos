@@ -20,6 +20,7 @@ export type QuoteStatus =
   | 'delivered'
   | 'customer_review'
   | 'approved'
+  | 'internally_approved'
   | 'approve_with_changes'
   | 'revise'
   | 'ordered'

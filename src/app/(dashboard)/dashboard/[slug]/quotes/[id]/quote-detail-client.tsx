@@ -270,7 +270,7 @@ export default function QuoteDetailClient({
     ? `${quote.customer.first_name} ${quote.customer.last_name}`
     : null
   const companyName = quote.customer?.company_name
-  const canConvert = (status === 'approved' || status === 'customer_review') && !convertedSo
+  const canConvert = (status === 'approved' || status === 'customer_review' || status === 'internally_approved') && !convertedSo
 
   // ── Render ─────────────────────────────────────────────────────────
   return (

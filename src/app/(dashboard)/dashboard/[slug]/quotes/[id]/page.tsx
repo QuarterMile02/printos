@@ -4,6 +4,8 @@ import Link from 'next/link'
 import type { QuoteStatus } from '@/types/database'
 import QuoteDetailClient from './quote-detail-client'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
 export default async function QuoteDetailPage({ params }: PageProps) {
