@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { QuoteStatus } from '@/types/database'
 import QuoteDetailClient from './quote-detail-client'
+import { convertToSalesOrder } from './convert-action'
 
 export const dynamic = 'force-dynamic'
 
@@ -201,6 +202,21 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         <span>/</span>
         <span className="text-gray-700">Q-{String(quote.quote_number).padStart(4, '0')}</span>
       </div>
+
+      {/* Convert to SO — plain server action form, no client JS needed */}
+      {(quote.status === 'approved' || quote.status === 'customer_review' || quote.status === 'internally_approved') && !quote.converted_to_so_id && (
+        <form action={convertToSalesOrder} className="mb-6">
+          <input type="hidden" name="quoteId" value={quote.id} />
+          <input type="hidden" name="orgId" value={org.id} />
+          <input type="hidden" name="orgSlug" value={slug} />
+          <button
+            type="submit"
+            className="rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+          >
+            Convert to Sales Order
+          </button>
+        </form>
+      )}
 
       <QuoteDetailClient
         orgId={org.id}
