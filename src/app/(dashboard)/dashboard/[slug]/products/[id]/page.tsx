@@ -9,6 +9,8 @@ import type {
 } from '@/types/product-builder'
 import ProductForm, { type ExistingDropdownMenu } from '../product-form'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
 export default async function EditProductPage({ params }: PageProps) {
@@ -33,57 +35,43 @@ export default async function EditProductPage({ params }: PageProps) {
 
   if (!product) notFound()
 
-  const [
-    categoriesRes,
-    workflowsRes,
-    pricingFormulasRes,
-    discountsRes,
-    materialsRes,
-    laborRatesRes,
-    machineRatesRes,
-    modifiersRes,
-    defaultItemsRes,
-    productModifiersRes,
-    dropdownMenusRes,
-    customFieldsRes,
-  ] = await Promise.all([
-    supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('pricing_formulas').select('*').or(`organization_id.eq.${org.id},is_system.eq.true`).order('name'),
-    supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('labor_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('machine_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name'),
-    supabase.from('product_default_items').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
-    supabase.from('product_modifiers').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
-    supabase.from('product_dropdown_menus').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
-    supabase.from('product_custom_fields').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order'),
-  ])
+  // Safe query helper — returns empty array if table doesn't exist
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function safeQuery<T>(query: PromiseLike<any>): Promise<T[]> {
+    try {
+      const res = await query
+      return (res?.data ?? []) as T[]
+    } catch {
+      return []
+    }
+  }
 
-  const categories = (categoriesRes.data ?? []) as ProductCategory[]
-  const workflows = (workflowsRes.data ?? []) as WorkflowTemplate[]
-  const pricingFormulas = (pricingFormulasRes.data ?? []) as PricingFormula[]
-  const discounts = (discountsRes.data ?? []) as Discount[]
-  const materials = (materialsRes.data ?? []) as Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>[]
-  const laborRates = (laborRatesRes.data ?? []) as Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]
-  const machineRates = (machineRatesRes.data ?? []) as Pick<MachineRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]
-  const modifiers = (modifiersRes.data ?? []) as Modifier[]
-  const defaultItems = (defaultItemsRes.data ?? []) as ProductDefaultItem[]
-  const productModifiers = (productModifiersRes.data ?? []) as ProductModifier[]
-  const dropdownMenus = (dropdownMenusRes.data ?? []) as ProductDropdownMenu[]
-  const customFields = (customFieldsRes.data ?? []) as ProductCustomField[]
+  const [
+    categories, workflows, pricingFormulas, discounts,
+    materials, laborRates, machineRates, modifiers,
+    defaultItems, productModifiers, dropdownMenus, customFields,
+  ] = await Promise.all([
+    safeQuery<ProductCategory>(supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name')),
+    safeQuery<WorkflowTemplate>(supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name')),
+    safeQuery<PricingFormula>(supabase.from('pricing_formulas').select('*').or(`organization_id.eq.${org.id},is_system.eq.true`).order('name')),
+    safeQuery<Discount>(supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name')),
+    safeQuery<Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>>(supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    safeQuery<Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>>(supabase.from('labor_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    safeQuery<Pick<MachineRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>>(supabase.from('machine_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    safeQuery<Modifier>(supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name')),
+    safeQuery<ProductDefaultItem>(supabase.from('product_default_items').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order')),
+    safeQuery<ProductModifier>(supabase.from('product_modifiers').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order')),
+    safeQuery<ProductDropdownMenu>(supabase.from('product_dropdown_menus').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order')),
+    safeQuery<ProductCustomField>(supabase.from('product_custom_fields').select('*').eq('product_id', id).eq('organization_id', org.id).order('sort_order')),
+  ])
 
   // Fetch dropdown items for all the menus in one query
   const menuIds = dropdownMenus.map((m) => m.id)
   let dropdownItems: ProductDropdownItem[] = []
   if (menuIds.length > 0) {
-    const { data } = await supabase
-      .from('product_dropdown_items')
-      .select('*')
-      .in('dropdown_menu_id', menuIds)
-      .order('sort_order')
-    dropdownItems = (data ?? []) as ProductDropdownItem[]
+    dropdownItems = await safeQuery<ProductDropdownItem>(
+      supabase.from('product_dropdown_items').select('*').in('dropdown_menu_id', menuIds).order('sort_order')
+    )
   }
 
   // Group items by menu
