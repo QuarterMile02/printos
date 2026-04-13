@@ -706,77 +706,88 @@ export async function convertQuoteToSalesOrder(
   orgId: string,
   orgSlug: string,
 ): Promise<{ error?: string; soNumber?: number; soId?: string; createdAt?: string }> {
-  const ctx = await getServiceWithMembership(orgId)
-  if ('error' in ctx) return { error: ctx.error }
+  try {
+    const ctx = await getServiceWithMembership(orgId)
+    if ('error' in ctx) return { error: ctx.error }
 
-  // Make sure we don't double-convert.
-  // Try full column set first; fall back if Phase 8 columns are missing.
-  type ExistingQuote = { id: string; title: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus; total: number | null }
-  let existing: ExistingQuote | null = null
+    // Make sure we don't double-convert.
+    // Try full column set first; fall back if Phase 8 columns are missing.
+    type ExistingQuote = { id: string; title: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus; total: number | null }
+    let existing: ExistingQuote | null = null
 
-  const { data: eq1, error: eqErr1 } = await ctx.service
-    .from('quotes')
-    .select('id, title, customer_id, converted_to_so_id, status, total')
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-    .maybeSingle() as { data: ExistingQuote | null; error: { message: string } | null }
-
-  if (eq1) {
-    existing = eq1
-  } else if (eqErr1?.message?.includes('does not exist')) {
-    // Fallback: columns like converted_to_so_id or total may not exist
-    const { data: eq2 } = await ctx.service
+    const { data: eq1, error: eqErr1 } = await ctx.service
       .from('quotes')
-      .select('id, title, customer_id, status')
+      .select('id, title, customer_id, converted_to_so_id, status, total')
       .eq('id', quoteId)
       .eq('organization_id', orgId)
-      .maybeSingle() as { data: { id: string; title: string; customer_id: string | null; status: QuoteStatus } | null; error: unknown }
-    if (eq2) existing = { ...eq2, converted_to_so_id: null, total: null }
-  } else if (eqErr1) {
-    return { error: `Quote lookup failed: ${eqErr1.message}` }
-  }
+      .maybeSingle()
 
-  if (!existing) return { error: 'Quote not found.' }
-  if (existing.converted_to_so_id) return { error: 'This quote already has a sales order.' }
-
-  const { data: so, error: soErr } = await ctx.service
-    .from('sales_orders')
-    .insert({
-      organization_id: orgId,
-      quote_id: quoteId,
-      customer_id: existing.customer_id,
-      title: existing.title,
-      total: existing.total ?? 0,
-      status: 'new',
-      created_by: ctx.user.id,
-    })
-    .select('id, so_number, created_at')
-    .single() as {
-      data: { id: string; so_number: number; created_at: string } | null
-      error: { message: string } | null
+    if (eq1) {
+      existing = eq1 as unknown as ExistingQuote
+    } else if (eqErr1?.message?.includes('does not exist')) {
+      const { data: eq2 } = await ctx.service
+        .from('quotes')
+        .select('id, title, customer_id, status')
+        .eq('id', quoteId)
+        .eq('organization_id', orgId)
+        .maybeSingle()
+      if (eq2) {
+        const q = eq2 as unknown as { id: string; title: string; customer_id: string | null; status: QuoteStatus }
+        existing = { ...q, converted_to_so_id: null, total: null }
+      }
+    } else if (eqErr1) {
+      return { error: `Quote lookup failed: ${eqErr1.message}` }
     }
-  if (soErr || !so) return { error: soErr?.message ?? 'Failed to create sales order.' }
 
-  // Link quote to SO and set status. If converted_to_so_id column is
-  // missing, fall back to updating status only.
-  const { error: linkErr } = await ctx.service
-    .from('quotes')
-    .update({ converted_to_so_id: so.id, status: 'ordered' as QuoteStatus })
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
+    if (!existing) return { error: 'Quote not found.' }
+    if (existing.converted_to_so_id) return { error: 'This quote already has a sales order.' }
 
-  if (linkErr?.message?.includes('does not exist')) {
-    await ctx.service
+    // Insert into sales_orders — do NOT use `as` cast so we see real errors.
+    const soResult = await ctx.service
+      .from('sales_orders')
+      .insert({
+        organization_id: orgId,
+        quote_id: quoteId,
+        customer_id: existing.customer_id,
+        title: existing.title,
+        total: existing.total ?? 0,
+        status: 'new',
+        created_by: ctx.user.id,
+      })
+      .select('id, so_number, created_at')
+      .single()
+
+    if (soResult.error) {
+      return { error: `Failed to create sales order: ${soResult.error.message}` }
+    }
+    const so = soResult.data as unknown as { id: string; so_number: number; created_at: string }
+    if (!so?.id) {
+      return { error: 'Sales order insert returned no data. The sales_orders table may not exist — run migration 020_sales_orders_ensure.sql in the Supabase SQL Editor.' }
+    }
+
+    // Link quote to SO and set status. If converted_to_so_id column is
+    // missing, fall back to updating status only.
+    const linkResult = await ctx.service
       .from('quotes')
-      .update({ status: 'ordered' as QuoteStatus })
+      .update({ converted_to_so_id: so.id, status: 'ordered' as QuoteStatus })
       .eq('id', quoteId)
       .eq('organization_id', orgId)
-  } else if (linkErr) {
-    return { error: linkErr.message }
-  }
 
-  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
-  revalidatePath(`/dashboard/${orgSlug}/quotes`)
-  revalidatePath(`/dashboard/${orgSlug}/sales-orders`)
-  return { soNumber: so.so_number, soId: so.id, createdAt: so.created_at }
+    if (linkResult.error?.message?.includes('does not exist')) {
+      await ctx.service
+        .from('quotes')
+        .update({ status: 'ordered' as QuoteStatus })
+        .eq('id', quoteId)
+        .eq('organization_id', orgId)
+    } else if (linkResult.error) {
+      return { error: `Failed to link quote: ${linkResult.error.message}` }
+    }
+
+    revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+    revalidatePath(`/dashboard/${orgSlug}/quotes`)
+    revalidatePath(`/dashboard/${orgSlug}/sales-orders`)
+    return { soNumber: so.so_number, soId: so.id, createdAt: so.created_at }
+  } catch (err) {
+    return { error: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }
+  }
 }
