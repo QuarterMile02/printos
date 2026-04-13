@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic'
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
 export default async function EditProductPage({ params }: PageProps) {
+  try {
   const { slug, id } = await params
   const supabase = await createClient()
 
@@ -185,4 +186,14 @@ export default async function EditProductPage({ params }: PageProps) {
       </ProductFormErrorBoundary>
     </div>
   )
+  } catch (err) {
+    return (
+      <div className="p-8">
+        <div className="rounded-lg border border-red-300 bg-red-50 p-6 text-sm">
+          <h1 className="text-lg font-bold text-red-800">Product Detail — Caught Error</h1>
+          <pre className="mt-2 whitespace-pre-wrap text-red-700">{err instanceof Error ? err.stack ?? err.message : String(err)}</pre>
+        </div>
+      </div>
+    )
+  }
 }
