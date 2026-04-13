@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { QuoteStatus } from '@/types/database'
 import {
@@ -95,6 +95,10 @@ export default function QuoteDetailClient({
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
+
+  useEffect(() => {
+    console.log('[QuoteDetailClient] hydrated, isEditing:', isEditing)
+  }, [isEditing])
 
   const [status, setStatus] = useState<QuoteStatus>(quote.status)
   const [items, setItems] = useState<LineItem[]>(lineItems)
@@ -328,7 +332,10 @@ export default function QuoteDetailClient({
           </button>
           <button
             type="button"
-            onClick={() => setIsEditing(!isEditing)}
+            onClick={() => {
+              console.log('[QuoteDetailClient] Edit clicked, toggling from', isEditing)
+              setIsEditing((prev) => !prev)
+            }}
             className={`rounded-md border px-4 py-2 text-sm font-medium ${
               isEditing
                 ? 'border-qm-lime bg-qm-lime text-white'
