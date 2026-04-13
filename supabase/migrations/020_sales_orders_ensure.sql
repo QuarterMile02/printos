@@ -58,42 +58,43 @@ ALTER TABLE quotes ADD COLUMN IF NOT EXISTS total integer DEFAULT 0;
 -- 5. RLS
 ALTER TABLE sales_orders ENABLE ROW LEVEL SECURITY;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'so_select_members' AND tablename = 'sales_orders') THEN
-    CREATE POLICY so_select_members ON sales_orders FOR SELECT USING (
-      organization_id IN (
-        SELECT organization_id FROM organization_members WHERE user_id = auth.uid()
-      )
-    );
-  END IF;
+DO $$ BEGIN
+  CREATE POLICY so_select_members ON sales_orders FOR SELECT USING (
+    organization_id IN (
+      SELECT organization_id FROM organization_members WHERE user_id = auth.uid()
+    )
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'so_insert_non_viewers' AND tablename = 'sales_orders') THEN
-    CREATE POLICY so_insert_non_viewers ON sales_orders FOR INSERT WITH CHECK (
-      organization_id IN (
-        SELECT organization_id FROM organization_members
-         WHERE user_id = auth.uid() AND role <> 'viewer'
-      )
-    );
-  END IF;
+DO $$ BEGIN
+  CREATE POLICY so_insert_non_viewers ON sales_orders FOR INSERT WITH CHECK (
+    organization_id IN (
+      SELECT organization_id FROM organization_members
+       WHERE user_id = auth.uid() AND role <> 'viewer'
+    )
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'so_update_non_viewers' AND tablename = 'sales_orders') THEN
-    CREATE POLICY so_update_non_viewers ON sales_orders FOR UPDATE USING (
-      organization_id IN (
-        SELECT organization_id FROM organization_members
-         WHERE user_id = auth.uid() AND role <> 'viewer'
-      )
-    );
-  END IF;
+DO $$ BEGIN
+  CREATE POLICY so_update_non_viewers ON sales_orders FOR UPDATE USING (
+    organization_id IN (
+      SELECT organization_id FROM organization_members
+       WHERE user_id = auth.uid() AND role <> 'viewer'
+    )
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'so_delete_admins' AND tablename = 'sales_orders') THEN
-    CREATE POLICY so_delete_admins ON sales_orders FOR DELETE USING (
-      organization_id IN (
-        SELECT organization_id FROM organization_members
-         WHERE user_id = auth.uid() AND role IN ('owner','admin')
-      )
-    );
-  END IF;
+DO $$ BEGIN
+  CREATE POLICY so_delete_admins ON sales_orders FOR DELETE USING (
+    organization_id IN (
+      SELECT organization_id FROM organization_members
+       WHERE user_id = auth.uid() AND role IN ('owner','admin')
+    )
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 -- 6. Indexes
