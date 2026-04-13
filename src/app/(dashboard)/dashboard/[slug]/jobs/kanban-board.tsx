@@ -16,6 +16,11 @@ export type JobCard = {
     last_name: string
     company_name: string | null
   } | null
+  product_name: string | null
+  width: number | null
+  height: number | null
+  quantity: number | null
+  assigned_initials: string | null
 }
 
 type Column = {
@@ -132,47 +137,81 @@ function JobCardItem({ job, orgId, orgSlug, onNotified }: CardProps & { onNotifi
 
   const detailHref = `/dashboard/${orgSlug}/jobs/${job.id}`
 
+  const dueDateStyle = overdue
+    ? 'bg-red-50 text-red-700'
+    : dueSoon
+      ? 'bg-amber-50 text-amber-700'
+      : 'bg-gray-50 text-gray-500'
+
   return (
-    <div className={`rounded-lg ${borderClass} bg-white p-3 shadow-sm transition-opacity ${isPending ? 'opacity-60' : ''}`}>
-      {/* Job number + due date */}
-      <div className="flex items-center justify-between mb-2">
-        <a href={detailHref} className="text-xs font-semibold text-gray-400 hover:text-qm-lime transition-colors">
-          #{job.job_number}
-        </a>
-        {job.due_date && (
-          <span className={`text-xs font-medium ${overdue ? 'text-red-500' : 'text-gray-400'}`}>
-            {overdue ? 'Overdue · ' : ''}{formatDueDate(job.due_date)}
-          </span>
-        )}
+    <a href={detailHref} className={`block rounded-lg ${borderClass} bg-white p-3 shadow-sm transition-all hover:shadow-md ${isPending ? 'opacity-60' : ''}`}>
+      {/* Top row: job number + assigned initials */}
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold text-gray-400">#{job.job_number}</span>
+        <div className="flex items-center gap-1.5">
+          {job.flag && (
+            <span className={`inline-block h-2 w-2 rounded-full ${job.flag === 'file_error' ? 'bg-red-500 animate-pulse' : 'bg-amber-500'}`}
+              title={job.flag === 'file_error' ? 'File Error' : 'Help Needed'} />
+          )}
+          {job.assigned_initials && (
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-qm-lime-light text-xs font-bold text-qm-lime-dark" title="Assigned">
+              {job.assigned_initials}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Title */}
-      <a href={detailHref} className="block text-sm font-medium text-gray-900 leading-snug mb-2 hover:text-qm-lime transition-colors">
-        {job.title}
-      </a>
+      <p className="text-sm font-medium text-gray-900 leading-snug mb-1">{job.title}</p>
+
+      {/* Product + dimensions */}
+      {job.product_name && (
+        <p className="text-xs text-gray-600 mb-1">
+          {job.product_name}
+          {job.width && job.height ? (
+            <span className="text-gray-400"> &mdash; {job.width}&quot; &times; {job.height}&quot;</span>
+          ) : null}
+          {job.quantity && job.quantity > 1 ? (
+            <span className="text-gray-400"> &times; {job.quantity}</span>
+          ) : null}
+        </p>
+      )}
 
       {/* Customer */}
       {job.customer && (
-        <p className="text-xs text-gray-500 mb-3">
+        <p className="text-xs text-gray-500 mb-2">
           {job.customer.first_name} {job.customer.last_name}
           {job.customer.company_name && (
-            <span className="text-gray-400"> · {job.customer.company_name}</span>
+            <span className="text-gray-400"> &middot; {job.customer.company_name}</span>
           )}
         </p>
       )}
 
-      {/* Status selector */}
+      {/* Due date badge */}
+      {job.due_date && (
+        <div className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${dueDateStyle}`}>
+          {overdue && (
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+            </svg>
+          )}
+          {overdue ? 'Overdue' : dueSoon ? 'Due today' : formatDueDate(job.due_date)}
+        </div>
+      )}
+
+      {/* Status selector — stop propagation so clicking it doesn't navigate */}
       <select
         value={optimisticStatus}
         disabled={isPending}
         onChange={(e) => handleStatusChange(e.target.value as JobStatus)}
-        className="mt-1 w-full rounded border border-gray-200 bg-qm-surface px-2 py-1 text-xs text-qm-black focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:opacity-50"
+        onClick={(e) => e.preventDefault()}
+        className="mt-2 w-full rounded border border-gray-200 bg-qm-surface px-2 py-1 text-xs text-qm-black focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:opacity-50"
       >
         {STATUS_OPTIONS.map((s) => (
           <option key={s.value} value={s.value}>{s.label}</option>
         ))}
       </select>
-    </div>
+    </a>
   )
 }
 

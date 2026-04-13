@@ -28,6 +28,8 @@ export default async function JobsPage({ params }: PageProps) {
     flag: JobFlag | null
     due_date: string | null
     customer_id: string | null
+    source_quote_id: string | null
+    assigned_to: string | null
     customers: {
       first_name: string
       last_name: string
@@ -37,19 +39,56 @@ export default async function JobsPage({ params }: PageProps) {
 
   const { data: jobRows } = await supabase
     .from('jobs')
-    .select('id, job_number, title, status, flag, due_date, customer_id, customers(first_name, last_name, company_name)')
+    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, customers(first_name, last_name, company_name)')
     .eq('organization_id', org.id)
     .order('job_number', { ascending: false }) as { data: JobRow[] | null; error: unknown }
 
-  const jobs: JobCard[] = (jobRows ?? []).map((r) => ({
-    id: r.id,
-    job_number: r.job_number,
-    title: r.title,
-    status: r.status,
-    flag: r.flag,
-    due_date: r.due_date,
-    customer: r.customers ?? null,
-  }))
+  const allJobs = jobRows ?? []
+
+  // Fetch first line item per quote for product/dimension info
+  const quoteIds = [...new Set(allJobs.map(j => j.source_quote_id).filter(Boolean) as string[])]
+  const lineItemMap = new Map<string, { description: string; width: number | null; height: number | null; quantity: number }>()
+  if (quoteIds.length > 0) {
+    const { data: liRows } = await supabase
+      .from('quote_line_items')
+      .select('quote_id, description, width, height, quantity')
+      .in('quote_id', quoteIds)
+      .order('sort_order', { ascending: true })
+    // Keep first line item per quote
+    for (const li of (liRows ?? []) as { quote_id: string; description: string; width: number | null; height: number | null; quantity: number }[]) {
+      if (!lineItemMap.has(li.quote_id)) lineItemMap.set(li.quote_id, li)
+    }
+  }
+
+  // Fetch assigned user initials
+  const assignedIds = [...new Set(allJobs.map(j => j.assigned_to).filter(Boolean) as string[])]
+  const initialsMap = new Map<string, string>()
+  if (assignedIds.length > 0) {
+    const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', assignedIds)
+    for (const p of (profiles ?? []) as { id: string; full_name: string | null; email: string }[]) {
+      const name = p.full_name || p.email
+      const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+      initialsMap.set(p.id, initials)
+    }
+  }
+
+  const jobs: JobCard[] = allJobs.map((r) => {
+    const li = r.source_quote_id ? lineItemMap.get(r.source_quote_id) : undefined
+    return {
+      id: r.id,
+      job_number: r.job_number,
+      title: r.title,
+      status: r.status,
+      flag: r.flag,
+      due_date: r.due_date,
+      customer: r.customers ?? null,
+      product_name: li?.description ?? null,
+      width: li?.width ?? null,
+      height: li?.height ?? null,
+      quantity: li?.quantity ?? null,
+      assigned_initials: r.assigned_to ? initialsMap.get(r.assigned_to) ?? null : null,
+    }
+  })
 
   const total = jobs.length
 
