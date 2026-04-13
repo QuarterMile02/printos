@@ -20,22 +20,50 @@ export default async function EditProductPage({ params }: PageProps) {
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
+  const { data: org, error: orgError } = await supabase
     .from('organizations')
     .select('id, name, slug')
     .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+    .maybeSingle() as { data: OrgRow | null; error: { message: string } | null }
 
-  if (!org) notFound()
+  if (!org) {
+    return (
+      <div className="p-8">
+        <div className="rounded-lg border border-red-300 bg-red-50 p-6 text-sm">
+          <h1 className="text-lg font-bold text-red-800">Product Detail — Debug</h1>
+          <p className="mt-2"><strong>slug:</strong> {slug}</p>
+          <p><strong>id:</strong> {id}</p>
+          <p><strong>org:</strong> null</p>
+          <p><strong>org error:</strong> {orgError?.message ?? 'none (org not found for this slug)'}</p>
+        </div>
+      </div>
+    )
+  }
 
-  const { data: product } = await supabase
+  const { data: product, error: productError } = await supabase
     .from('products')
     .select('*')
     .eq('id', id)
     .eq('organization_id', org.id)
-    .maybeSingle() as { data: Product | null; error: unknown }
+    .maybeSingle()
 
-  if (!product) notFound()
+  if (!product) {
+    return (
+      <div className="p-8">
+        <div className="rounded-lg border border-red-300 bg-red-50 p-6 text-sm">
+          <h1 className="text-lg font-bold text-red-800">Product Detail — Debug</h1>
+          <p className="mt-2"><strong>slug:</strong> {slug}</p>
+          <p><strong>id:</strong> {id}</p>
+          <p><strong>org.id:</strong> {org.id}</p>
+          <p><strong>org.name:</strong> {org.name}</p>
+          <p><strong>product:</strong> null</p>
+          <p><strong>product error:</strong> {productError?.message ?? 'none (product not found for this id + org)'}</p>
+        </div>
+      </div>
+    )
+  }
+
+  const typedProduct = product as unknown as Product
 
   // Safe query helper — returns empty array if table doesn't exist
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,45 +129,45 @@ export default async function EditProductPage({ params }: PageProps) {
           <span>/</span>
           <Link href={`/dashboard/${slug}/products`} className="hover:text-gray-700">Products</Link>
           <span>/</span>
-          <span className="text-gray-700">{product.name}</span>
+          <span className="text-gray-700">{typedProduct.name}</span>
         </div>
       </div>
 
       {/* Server-rendered product summary — always visible */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-extrabold text-gray-900">{product.name}</h1>
-        {product.description && <p className="mt-1 text-sm text-gray-600">{product.description}</p>}
+        <h1 className="text-2xl font-extrabold text-gray-900">{typedProduct.name}</h1>
+        {typedProduct.description && <p className="mt-1 text-sm text-gray-600">{typedProduct.description}</p>}
         <div className="mt-4 flex flex-wrap gap-4 text-sm">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Pricing Type</span>
-            <p className="mt-0.5 text-gray-900">{product.pricing_type ?? '—'}</p>
+            <p className="mt-0.5 text-gray-900">{typedProduct.pricing_type ?? '—'}</p>
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Formula</span>
-            <p className="mt-0.5 text-gray-900">{product.formula ?? '—'}</p>
+            <p className="mt-0.5 text-gray-900">{typedProduct.formula ?? '—'}</p>
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Price</span>
-            <p className="mt-0.5 text-gray-900">${Number(product.price ?? 0).toFixed(2)}</p>
+            <p className="mt-0.5 text-gray-900">${Number(typedProduct.price ?? 0).toFixed(2)}</p>
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Status</span>
-            <p className="mt-0.5 text-gray-900 capitalize">{product.status ?? 'draft'}</p>
+            <p className="mt-0.5 text-gray-900 capitalize">{typedProduct.status ?? 'draft'}</p>
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Taxable</span>
-            <p className="mt-0.5 text-gray-900">{product.taxable ? 'Yes' : 'No'}</p>
+            <p className="mt-0.5 text-gray-900">{typedProduct.taxable ? 'Yes' : 'No'}</p>
           </div>
         </div>
       </div>
 
       {/* Client-rendered product form — wrapped in error boundary */}
-      <ProductFormErrorBoundary productName={product.name}>
+      <ProductFormErrorBoundary productName={typedProduct.name}>
         <Suspense fallback={<div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">Loading editor...</div>}>
           <ProductForm
             orgId={org.id}
             orgSlug={slug}
-            product={product}
+            product={typedProduct}
             categories={categories}
             workflows={workflows}
             pricingFormulas={pricingFormulas}
