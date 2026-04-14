@@ -145,16 +145,20 @@ export default function QuoteDetailClient({
   const [isSendingSms, setIsSendingSms] = useState(false)
 
   async function handleSendEmail() {
+    console.log('[handleSendEmail] clicked, customer email:', quote.customer?.email)
     setIsSendingEmail(true)
     try {
       const res = await sendQuoteEmailAndDeliver(quote.id, orgId, orgSlug)
+      console.log('[handleSendEmail] result:', JSON.stringify(res))
       if (res.error) {
         flash(res.error, 'error')
       } else {
         setStatus('delivered')
         flash('Quote email sent')
+        router.refresh()
       }
     } catch (err) {
+      console.error('[handleSendEmail] caught:', err)
       flash(`Send failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setIsSendingEmail(false)
@@ -170,6 +174,7 @@ export default function QuoteDetailClient({
       } else {
         setStatus('delivered')
         flash('Quote SMS sent')
+        router.refresh()
       }
     } catch (err) {
       flash(`Send failed: ${err instanceof Error ? err.message : String(err)}`, 'error')

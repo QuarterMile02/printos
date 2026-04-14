@@ -689,7 +689,9 @@ export async function sendQuoteEmailAndDeliver(
   orgId: string,
   orgSlug: string,
 ): Promise<{ error?: string }> {
+  console.log('[sendQuoteEmailAndDeliver] Starting for quote:', quoteId)
   const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'email')
+  console.log('[sendQuoteEmailAndDeliver] sendQuoteToCustomer result:', JSON.stringify(result))
   if (result.error && !result.sent) return { error: result.error }
 
   const ctx = await getServiceWithMembership(orgId)
