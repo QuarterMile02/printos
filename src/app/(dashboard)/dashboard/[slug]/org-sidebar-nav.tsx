@@ -183,7 +183,7 @@ export function OrgSidebarNav({ slug, email, signOutAction }: Props) {
           fixed inset-y-0 left-0 z-40 w-56 border-r border-gray-200 bg-white flex flex-col
           transition-transform duration-200 ease-in-out
           ${open ? 'translate-x-0' : '-translate-x-full'}
-          md:static md:translate-x-0 md:transition-none md:shrink-0
+          md:static md:translate-x-0 md:transition-none md:shrink-0 md:h-full md:overflow-y-auto
         `}
       >
         {/* Branding */}
