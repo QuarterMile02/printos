@@ -76,3 +76,51 @@ export async function cloneLaborRate(formData: FormData) {
   const path = targetTable === 'machine_rates' ? 'machine-rates' : 'labor-rates'
   redirect(`/dashboard/${orgSlug}/settings/${path}${newId ? '?edit=' + newId : ''}`)
 }
+
+export async function importLaborRatesCsv(formData: FormData): Promise<{ created: number; updated: number; errors: number }> {
+  const file = formData.get('file') as File | null
+  const orgId = formData.get('orgId') as string
+  if (!file) return { created: 0, updated: 0, errors: 0 }
+
+  const text = await file.text()
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  if (lines.length < 2) return { created: 0, updated: 0, errors: 0 }
+
+  const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim().toLowerCase())
+  const nameIdx = headers.indexOf('name')
+  if (nameIdx < 0) return { created: 0, updated: 0, errors: 0 }
+
+  const service = createServiceClient()
+  const { data: existing } = await service.from('labor_rates').select('id, name').eq('organization_id', orgId)
+  const nameToId = new Map<string, string>()
+  for (const r of (existing ?? []) as { id: string; name: string }[]) nameToId.set(r.name.toLowerCase(), r.id)
+
+  let created = 0, updated = 0, errors = 0
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',').map(v => v.replace(/"/g, '').trim())
+    const name = vals[nameIdx]
+    if (!name) { errors++; continue }
+
+    const row: Record<string, unknown> = { name }
+    const map: Record<string, string> = { 'external name': 'external_name', cost: 'cost', price: 'price', markup: 'markup', units: 'units', formula: 'formula', 'setup charge': 'setup_charge', 'machine charge': 'machine_charge', 'other charge': 'other_charge', 'production rate': 'production_rate', active: 'active' }
+    for (const [h, col] of Object.entries(map)) {
+      const idx = headers.indexOf(h)
+      if (idx >= 0 && vals[idx]) {
+        if (['cost', 'price', 'markup', 'setup_charge', 'machine_charge', 'other_charge', 'production_rate'].includes(col)) row[col] = parseFloat(vals[idx]) || 0
+        else if (col === 'active') row[col] = vals[idx].toLowerCase() === 'true'
+        else row[col] = vals[idx]
+      }
+    }
+
+    const existingId = nameToId.get(name.toLowerCase())
+    if (existingId) {
+      await service.from('labor_rates').update(row).eq('id', existingId)
+      updated++
+    } else {
+      row.organization_id = orgId
+      await service.from('labor_rates').insert(row)
+      created++
+    }
+  }
+  return { created, updated, errors }
+}

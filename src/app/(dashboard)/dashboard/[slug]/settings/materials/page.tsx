@@ -47,7 +47,8 @@ export default async function Page({ params, searchParams }: {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Materials <span className="text-sm font-normal text-gray-400">({materials.length})</span></h1>
         <div className="flex gap-2">
-          <Link href={`/dashboard/${slug}/settings/materials/import`} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Import CSV</Link>
+          <a href={`/api/export/materials?orgId=${org.id}`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Export CSV</a>
+          <Link href={`/dashboard/${slug}/settings/materials/import`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Import CSV</Link>
           <Link href={`/dashboard/${slug}/settings/materials/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">+ New Material</Link>
         </div>
       </div>

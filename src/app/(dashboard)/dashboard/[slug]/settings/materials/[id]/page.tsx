@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import MaterialForm from '../material-form'
+import { cloneMaterial, deleteMaterial } from '../actions-sr'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,6 +43,16 @@ export default async function Page({ params, searchParams }: {
     const { data: t } = await supabase.from('material_types').select('name').eq('id', m.material_type_id).single()
     typeName = (t as { name: string } | null)?.name ?? '—'
   }
+
+  // Used In products
+  const { data: usedRows } = await supabase.from('product_default_items').select('product_id').eq('material_id', id)
+  const usedProductIds = [...new Set(((usedRows ?? []) as { product_id: string }[]).map(u => u.product_id))]
+  let usedInProducts: { id: string; name: string }[] = []
+  if (usedProductIds.length > 0) {
+    const { data: prods } = await supabase.from('products').select('id, name').in('id', usedProductIds)
+    usedInProducts = (prods ?? []) as { id: string; name: string }[]
+  }
+  const canDelete = sp.edit === '1' && usedProductIds.length === 0
 
   const n = (v: number | null, d = 0) => Number(v ?? d)
 
@@ -115,6 +126,36 @@ export default async function Page({ params, searchParams }: {
                 <div className="flex justify-between"><dt className="text-gray-500">Machine</dt><dd className="font-medium tabular-nums">${n(m.machine_charge).toFixed(2)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Setup</dt><dd className="font-medium tabular-nums">${n(m.setup_charge).toFixed(2)}</dd></div>
               </dl>
+            </div>
+          </div>
+
+          {/* Used In + Actions */}
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-3">Used In ({usedProductIds.length} product{usedProductIds.length === 1 ? '' : 's'})</h2>
+            {usedInProducts.length > 0 ? (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {usedInProducts.map(p => (
+                  <Link key={p.id} href={`/dashboard/${slug}/products/${p.id}`} className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-gray-200">{p.name}</Link>
+                ))}
+              </div>
+            ) : <p className="text-xs text-gray-400 mb-4">Not used in any products.</p>}
+
+            <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-4">
+              <form action={cloneMaterial} className="inline">
+                <input type="hidden" name="sourceId" value={id} />
+                <input type="hidden" name="orgId" value={org.id} />
+                <input type="hidden" name="orgSlug" value={slug} />
+                <button type="submit" className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">Clone Material</button>
+              </form>
+              {canDelete ? (
+                <form action={deleteMaterial} className="inline">
+                  <input type="hidden" name="id" value={id} />
+                  <input type="hidden" name="orgSlug" value={slug} />
+                  <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete Material</button>
+                </form>
+              ) : usedProductIds.length > 0 ? (
+                <span className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-400">Cannot delete — used in {usedProductIds.length} product{usedProductIds.length === 1 ? '' : 's'}</span>
+              ) : null}
             </div>
           </div>
         </>
