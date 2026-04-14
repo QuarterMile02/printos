@@ -90,17 +90,22 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   const rateMap = new Map<string, { name: string; cost: number; price: number; production_rate: number | null; units: string | null }>()
 
   if (matIds.length > 0) {
-    const { data } = await service.from('materials').select('id, name, cost, price, selling_units').in('id', matIds)
+    const { data, error: matErr } = await service.from('materials').select('id, name, cost, price, selling_units').in('id', matIds)
+    console.log('[pricing] materials loaded:', data?.length, 'error:', matErr?.message)
     for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; selling_units: string | null }[])
       rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units })
   }
   if (laborIds.length > 0) {
-    const { data } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units').in('id', laborIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[])
+    const { data, error: laborErr } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units').in('id', laborIds)
+    console.log('[pricing] labor_rates loaded:', data?.length, 'error:', laborErr?.message)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[]) {
+      console.log('[pricing] labor:', r.name, 'cost:', r.cost, 'prod_rate:', r.production_rate, 'units:', r.units)
       rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
+    }
   }
   if (machineIds.length > 0) {
-    const { data } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units').in('id', machineIds)
+    const { data, error: machErr } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units').in('id', machineIds)
+    console.log('[pricing] machine_rates loaded:', data?.length, 'error:', machErr?.message)
     for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[])
       rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
   }
@@ -171,14 +176,14 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     let itemPrice: number
 
     if (rateUnits === 'Hr' && productionRate && productionRate > 0 && formula !== 'Unit') {
-      // Hourly rate with production rate: convert area/perimeter to hours
       const timeHours = fMult / productionRate
       itemCost = rateCost * timeHours * mult
       itemPrice = ratePrice * timeHours * mult
+      console.log('[pricing] hourly calc:', name, 'fMult:', fMult, 'prodRate:', productionRate, 'timeHrs:', timeHours, 'cost:', itemCost)
     } else {
-      // Per-unit rate (materials, or hourly without production_rate)
       itemCost = rateCost * fMult * mult
       itemPrice = ratePrice * fMult * mult
+      console.log('[pricing] direct calc:', name, 'rateCost:', rateCost, 'fMult:', fMult, 'mult:', mult, 'cost:', itemCost)
     }
 
     if (item.fixed_quantity && Number(item.fixed_quantity) > 0) {
@@ -257,6 +262,7 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
 
   // 8. Apply markup
   const markup = Number(product.markup ?? 1)
+  console.log('[pricing] totalCostCents:', totalCostCents, 'markup:', markup, 'recipe items:', recipeItems.length, 'rateMap size:', rateMap.size)
   let unitPriceCents = Math.round(totalCostCents * markup)
   const originalUnitPriceCents = unitPriceCents
 
