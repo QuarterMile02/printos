@@ -18,7 +18,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
   // Product
   const { data: prodRow } = await supabase
     .from('products')
-    .select('id, name, description, pricing_type, formula, cost, markup, price, status, active, taxable, units, workflow_template_id, category_id')
+    .select('id, name, description, pricing_type, formula, cost, markup, price, status, active, taxable, units, workflow_template_id, category_id, volume_discount_id, range_discount_id')
     .eq('id', id)
     .single()
   const p = prodRow as {
@@ -27,6 +27,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     cost: number | null; markup: number | null; price: number | null
     status: string | null; active: boolean | null; taxable: boolean | null
     units: string | null; workflow_template_id: string | null; category_id: string | null
+    volume_discount_id: string | null; range_discount_id: string | null
   } | null
 
   if (!p) {
@@ -64,6 +65,18 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     custom_item_name: string | null; system_formula: string | null
     multiplier: number | null; include_in_base_price: boolean | null; charge_per_li_unit: boolean | null
   }[]
+
+  // Discount names
+  let volumeDiscountName: string | null = null
+  let rangeDiscountName: string | null = null
+  if (p.volume_discount_id) {
+    const { data: vd } = await supabase.from('discounts').select('name').eq('id', p.volume_discount_id).single()
+    volumeDiscountName = (vd as { name: string } | null)?.name ?? null
+  }
+  if (p.range_discount_id) {
+    const { data: rd } = await supabase.from('discounts').select('name').eq('id', p.range_discount_id).single()
+    rangeDiscountName = (rd as { name: string } | null)?.name ?? null
+  }
 
   // Resolve recipe item names
   const matIds = recipeItems.filter(r => r.material_id).map(r => r.material_id!)
@@ -161,6 +174,14 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
             <div className="flex justify-between">
               <span className="text-gray-500">Profit Margin</span>
               <span className={`font-semibold ${Number(margin) > 0 ? 'text-green-700' : 'text-gray-500'}`}>{margin}%</span>
+            </div>
+            <div className="flex justify-between border-t border-gray-100 pt-3">
+              <span className="text-gray-500">Volume Discount</span>
+              <span className="font-medium text-gray-900">{volumeDiscountName ?? '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Range Discount</span>
+              <span className="font-medium text-gray-900">{rangeDiscountName ?? '—'}</span>
             </div>
           </div>
         </div>
