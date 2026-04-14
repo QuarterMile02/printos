@@ -489,6 +489,7 @@ export type LineItemDraft = {
   unit_price: number      // cents
   discount_percent: number
   taxable: boolean
+  modifier_values?: Record<string, boolean | number>
 }
 
 export async function addQuoteLineItem(
@@ -548,6 +549,9 @@ export async function addQuoteLineItem(
         total_price: total,
         taxable: draft.taxable,
         sort_order: nextSort,
+        ...(draft.modifier_values && Object.keys(draft.modifier_values).length > 0
+          ? { modifier_values: draft.modifier_values }
+          : {}),
       })
       .select('id')
       .single()

@@ -11,6 +11,7 @@ import {
   sendQuoteEmailAndDeliver,
   sendQuoteSmsAndDeliver,
 } from '../actions'
+import { getProductModifiers, type ModifierDef } from '@/app/actions/get-product-modifiers'
 import {
   formatQuoteNumber,
   formatSoNumber,
@@ -107,6 +108,8 @@ export default function QuoteDetailClient({
   const [newHeight, setNewHeight] = useState('')
   const [newQty, setNewQty] = useState('1')
   const [newUnitPrice, setNewUnitPrice] = useState('')
+  const [newModifiers, setNewModifiers] = useState<ModifierDef[]>([])
+  const [newModifierValues, setNewModifierValues] = useState<Record<string, boolean | number>>({})
 
   const [status, setStatus] = useState<QuoteStatus>(quote.status)
   const [items, setItems] = useState<LineItem[]>(lineItems)
@@ -198,6 +201,8 @@ export default function QuoteDetailClient({
     setNewWidth('')
     setNewHeight('')
     setNewQty('1')
+    setNewModifiers([])
+    setNewModifierValues({})
     setNewUnitPrice('')
     setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
   }
@@ -232,6 +237,7 @@ export default function QuoteDetailClient({
         unit_price: unitPriceCents,
         discount_percent: 0,
         taxable: true,
+        modifier_values: Object.keys(newModifierValues).length > 0 ? newModifierValues : undefined,
       })
       if (res.error || !res.id) {
         flash(res.error ?? 'Failed to add line item', 'error')
@@ -553,6 +559,24 @@ export default function QuoteDetailClient({
                     setNewProductId(pid)
                     const p = productMap.get(pid)
                     if (p) setNewDescription(p.name)
+                    // Load modifiers for this product
+                    if (pid) {
+                      try {
+                        const mods = await getProductModifiers(pid, orgId)
+                        setNewModifiers(mods)
+                        // Set defaults
+                        const defaults: Record<string, boolean | number> = {}
+                        for (const m of mods) {
+                          if (m.modifier_type === 'Boolean') defaults[m.system_lookup_name] = false
+                          else if (m.modifier_type === 'Range') defaults[m.system_lookup_name] = m.range_default_value ?? m.range_min_value ?? 0
+                          else defaults[m.system_lookup_name] = 0
+                        }
+                        setNewModifierValues(defaults)
+                      } catch { /* modifiers optional */ }
+                    } else {
+                      setNewModifiers([])
+                      setNewModifierValues({})
+                    }
                     // Auto-calculate price from formula engine
                     if (pid) {
                       try {
@@ -638,6 +662,90 @@ export default function QuoteDetailClient({
                 className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
               />
             </div>
+
+            {/* Modifiers / Options */}
+            {newModifiers.length > 0 && (
+              <div className="mt-3">
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Options</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {newModifiers.map((mod) => {
+                    const key = mod.system_lookup_name
+                    const val = newModifierValues[key]
+
+                    if (mod.modifier_type === 'Boolean') {
+                      return (
+                        <label key={mod.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={val === true}
+                            onChange={(e) => setNewModifierValues(prev => ({ ...prev, [key]: e.target.checked }))}
+                            className="h-4 w-4 rounded border-gray-300 accent-qm-lime"
+                          />
+                          <span className="text-gray-700">{mod.display_name}</span>
+                          {mod.show_customer && (
+                            <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                          )}
+                        </label>
+                      )
+                    }
+
+                    if (mod.modifier_type === 'Range') {
+                      const min = mod.range_min_value ?? 0
+                      const max = mod.range_max_value ?? 100
+                      const step = mod.range_step_interval ?? 1
+                      const numVal = typeof val === 'number' ? val : mod.range_default_value ?? min
+                      return (
+                        <div key={mod.id}>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-700">{mod.display_name}</span>
+                            <span className="text-xs font-medium text-gray-900 tabular-nums">{numVal}{mod.units ? ` ${mod.units}` : ''}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={min}
+                            max={max}
+                            step={step}
+                            value={numVal}
+                            onChange={(e) => setNewModifierValues(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                            className="mt-1 w-full accent-qm-lime"
+                          />
+                          {mod.show_customer && (
+                            <span className="text-xs text-gray-400">Visible to customer</span>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    // Numeric
+                    return (
+                      <div key={mod.id}>
+                        <label className="block text-xs text-gray-700">
+                          {mod.display_name}
+                          {mod.units && <span className="text-gray-400"> ({mod.units})</span>}
+                          {mod.show_customer && (
+                            <svg className="inline h-3 w-3 ml-1 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                          )}
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={typeof val === 'number' ? val : 0}
+                          onChange={(e) => setNewModifierValues(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                          className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
