@@ -260,9 +260,9 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     }
   }
 
-  // 8. Apply markup
-  const markup = Number(product.markup ?? 1)
-  console.log('[pricing] totalCostCents:', totalCostCents, 'markup:', markup, 'recipe items:', recipeItems.length, 'rateMap size:', rateMap.size)
+  // 8. Apply markup (default to 1 if 0 or null — 0 markup makes no business sense)
+  const markup = Number(product.markup) > 0 ? Number(product.markup) : 1
+  console.log('[pricing] totalCostCents:', totalCostCents, 'markup:', markup, '(raw:', product.markup, ') recipe items:', recipeItems.length, 'rateMap size:', rateMap.size)
   let unitPriceCents = Math.round(totalCostCents * markup)
   const originalUnitPriceCents = unitPriceCents
 
