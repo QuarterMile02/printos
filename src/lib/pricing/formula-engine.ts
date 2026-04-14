@@ -87,22 +87,22 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   const laborIds = recipeItems.filter(r => r.labor_rate_id).map(r => r.labor_rate_id!)
   const machineIds = recipeItems.filter(r => r.machine_rate_id).map(r => r.machine_rate_id!)
 
-  const rateMap = new Map<string, { name: string; cost: number; price: number }>()
+  const rateMap = new Map<string, { name: string; cost: number; price: number; production_rate: number | null; units: string | null }>()
 
   if (matIds.length > 0) {
-    const { data } = await service.from('materials').select('id, name, cost, price').in('id', matIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null }[])
-      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0) })
+    const { data } = await service.from('materials').select('id, name, cost, price, selling_units').in('id', matIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; selling_units: string | null }[])
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units })
   }
   if (laborIds.length > 0) {
-    const { data } = await service.from('labor_rates').select('id, name, cost, price').in('id', laborIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null }[])
-      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0) })
+    const { data } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units').in('id', laborIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[])
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
   }
   if (machineIds.length > 0) {
-    const { data } = await service.from('machine_rates').select('id, name, cost, price').in('id', machineIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null }[])
-      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0) })
+    const { data } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units').in('id', machineIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[])
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
   }
 
   // 4. Load product modifiers + modifier definitions
@@ -131,11 +131,16 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     let ratePrice = 0
     let name = item.custom_item_name ?? 'Custom'
 
+    let productionRate: number | null = null
+    let rateUnits: string | null = null
+
     if (refId && rateMap.has(refId)) {
       const r = rateMap.get(refId)!
       rateCost = r.cost
       ratePrice = r.price
       name = r.name
+      productionRate = r.production_rate
+      rateUnits = r.units
     } else if (item.item_type === 'CustomItem') {
       rateCost = Number(item.custom_item_cost ?? 0)
       ratePrice = Number(item.custom_item_price ?? 0)
@@ -147,20 +152,34 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
 
     // percentage_of_base items are handled after base is summed
     if (item.percentage_of_base && Number(item.percentage_of_base) > 0) {
-      // Defer — handled in step 6
       breakdown.push({
         name,
         item_type: item.item_type,
         formula: `PBase ${Number(item.percentage_of_base)}%`,
-        cost_cents: 0, // filled later
+        cost_cents: 0,
         price_cents: 0,
         in_base: false,
       })
       continue
     }
 
-    let itemCost = rateCost * fMult * mult
-    let itemPrice = ratePrice * fMult * mult
+    // For hourly labor/machine rates with a production_rate:
+    // time_hours = formula_units / production_rate
+    // cost = time_hours * hourly_cost
+    // Without production_rate: treat cost as per-formula-unit directly
+    let itemCost: number
+    let itemPrice: number
+
+    if (rateUnits === 'Hr' && productionRate && productionRate > 0 && formula !== 'Unit') {
+      // Hourly rate with production rate: convert area/perimeter to hours
+      const timeHours = fMult / productionRate
+      itemCost = rateCost * timeHours * mult
+      itemPrice = ratePrice * timeHours * mult
+    } else {
+      // Per-unit rate (materials, or hourly without production_rate)
+      itemCost = rateCost * fMult * mult
+      itemPrice = ratePrice * fMult * mult
+    }
 
     if (item.fixed_quantity && Number(item.fixed_quantity) > 0) {
       itemCost = rateCost * Number(item.fixed_quantity) * mult
