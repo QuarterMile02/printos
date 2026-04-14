@@ -171,6 +171,32 @@ export default function QuoteDetailClient({
     return () => { cancelled = true }
   }, [newProductId, orgId])
 
+  // Auto-calculate price when product, dimensions, or quantity change
+  useEffect(() => {
+    if (!newProductId) return
+    const w = Number(newWidth) || 0
+    const h = Number(newHeight) || 0
+    const q = Number(newQty) || 1
+    if (w <= 0 && h <= 0) return // skip if no dimensions entered yet
+    let cancelled = false
+    const timer = setTimeout(() => {
+      fetch('/api/pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: newProductId, width_inches: w, height_inches: h, quantity: q, selected_modifiers: newModifierValues }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (cancelled) return
+          if (data.unit_price_cents) {
+            setNewUnitPrice((data.unit_price_cents / 100).toFixed(2))
+          }
+        })
+        .catch(() => {})
+    }, 300) // debounce 300ms
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [newProductId, newWidth, newHeight, newQty, newModifierValues])
+
   const subtotal = useMemo(() => items.reduce((s, i) => s + i.total_price, 0), [items])
   const taxableTotal = useMemo(
     () => items.filter((i) => i.taxable).reduce((s, i) => s + i.total_price, 0),
@@ -595,31 +621,12 @@ export default function QuoteDetailClient({
                 <label className="block text-xs font-medium text-gray-500">Product</label>
                 <select
                   value={newProductId}
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const pid = e.target.value
                     setNewProductId(pid)
                     const p = productMap.get(pid)
                     if (p) setNewDescription(p.name)
-                    // Modifiers loaded via useEffect watching newProductId
-                    // Auto-calculate price from formula engine
-                    if (pid) {
-                      try {
-                        const w = Number(newWidth) || 24
-                        const h = Number(newHeight) || 24
-                        const q = Number(newQty) || 1
-                        const res = await fetch('/api/pricing', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ product_id: pid, width_inches: w, height_inches: h, quantity: q }),
-                        })
-                        if (res.ok) {
-                          const data = await res.json()
-                          if (data.unit_price_cents) {
-                            setNewUnitPrice((data.unit_price_cents / 100).toFixed(2))
-                          }
-                        }
-                      } catch { /* pricing API optional */ }
-                    }
+                    // Modifiers + pricing loaded via useEffect watching newProductId
                   }}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                 >
