@@ -1,7 +1,24 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
+
+async function saveProductDiscounts(formData: FormData) {
+  'use server'
+  const productId = formData.get('productId') as string
+  const orgSlug = formData.get('orgSlug') as string
+  const volumeDiscountId = (formData.get('volume_discount_id') as string) || null
+  const rangeDiscountId = (formData.get('range_discount_id') as string) || null
+
+  const service = createServiceClient()
+  await service.from('products').update({
+    volume_discount_id: volumeDiscountId,
+    range_discount_id: rangeDiscountId,
+  }).eq('id', productId)
+
+  redirect(`/dashboard/${orgSlug}/products/${productId}`)
+}
 
 export default async function Page({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params
@@ -66,17 +83,16 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     multiplier: number | null; include_in_base_price: boolean | null; charge_per_li_unit: boolean | null
   }[]
 
-  // Discount names
-  let volumeDiscountName: string | null = null
-  let rangeDiscountName: string | null = null
-  if (p.volume_discount_id) {
-    const { data: vd } = await supabase.from('discounts').select('name').eq('id', p.volume_discount_id).single()
-    volumeDiscountName = (vd as { name: string } | null)?.name ?? null
-  }
-  if (p.range_discount_id) {
-    const { data: rd } = await supabase.from('discounts').select('name').eq('id', p.range_discount_id).single()
-    rangeDiscountName = (rd as { name: string } | null)?.name ?? null
-  }
+  // Load all discounts for dropdowns
+  const { data: allDiscounts } = await supabase
+    .from('discounts')
+    .select('id, name, discount_type')
+    .eq('organization_id', org!.id)
+    .eq('active', true)
+    .order('name')
+  const discounts = (allDiscounts ?? []) as { id: string; name: string; discount_type: string }[]
+  const volumeDiscounts = discounts.filter(d => d.discount_type === 'Volume')
+  const rangeDiscounts = discounts.filter(d => d.discount_type === 'Range')
 
   // Resolve recipe item names
   const matIds = recipeItems.filter(r => r.material_id).map(r => r.material_id!)
@@ -175,13 +191,26 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
               <span className="text-gray-500">Profit Margin</span>
               <span className={`font-semibold ${Number(margin) > 0 ? 'text-green-700' : 'text-gray-500'}`}>{margin}%</span>
             </div>
-            <div className="flex justify-between border-t border-gray-100 pt-3">
-              <span className="text-gray-500">Volume Discount</span>
-              <span className="font-medium text-gray-900">{volumeDiscountName ?? '—'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Range Discount</span>
-              <span className="font-medium text-gray-900">{rangeDiscountName ?? '—'}</span>
+            <div className="border-t border-gray-100 pt-3 space-y-2">
+              <form action={saveProductDiscounts} className="space-y-2">
+                <input type="hidden" name="productId" value={id} />
+                <input type="hidden" name="orgSlug" value={slug} />
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500 text-sm shrink-0">Volume Discount</span>
+                  <select name="volume_discount_id" defaultValue={p.volume_discount_id ?? ''} className="w-48 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
+                    <option value="">— None —</option>
+                    {volumeDiscounts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-gray-500 text-sm shrink-0">Range Discount</span>
+                  <select name="range_discount_id" defaultValue={p.range_discount_id ?? ''} className="w-48 rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
+                    <option value="">— None —</option>
+                    {rangeDiscounts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+                <button type="submit" className="rounded-md bg-qm-lime px-3 py-1 text-xs font-semibold text-white hover:brightness-110">Save Discounts</button>
+              </form>
             </div>
           </div>
         </div>
