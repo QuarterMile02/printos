@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { JobStatus, JobFlag, OrgRole } from '@/types/database'
+import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 
 const VALID_STATUSES: JobStatus[] = [
   'new', 'in_progress', 'proof_review', 'ready_for_pickup', 'completed',
@@ -103,20 +104,27 @@ export async function updateJobStatus(
         let sentEmail = false
         let sentSms = false
 
-        // Email via Resend
+        // Email via Resend — use template if available
         if (customer.email && process.env.RESEND_API_KEY) {
           try {
-            const res = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
-                to: [customer.email],
-                subject: `Your order is ready for pickup! Job #${job.job_number}`,
-                html: `
+            const templateVars = {
+              contact_name: customerName,
+              txn_number: `JOB-${String(job.job_number).padStart(4, '0')}`,
+              job_name: job.title,
+            }
+            const template = await getEmailTemplate(orgId, 'order_ready')
+
+            const emailSubject = template
+              ? await renderTemplate(template.subject, templateVars)
+              : `Your order is ready for pickup! Job #${job.job_number}`
+
+            const emailBodyText = template
+              ? await renderTemplate(template.body, templateVars)
+              : null
+
+            const emailHtml = emailBodyText
+              ? `<div style="font-family: sans-serif; max-width: 600px; white-space: pre-wrap;">${emailBodyText.replace(/\n/g, '<br>')}</div>`
+              : `
                   <div style="font-family: sans-serif; max-width: 600px;">
                     <h2 style="color: #1a1a1a;">Your Order is Ready!</h2>
                     <p>Hi ${customerName},</p>
@@ -134,7 +142,19 @@ export async function updateJobStatus(
                     <p>Please contact us to schedule your pickup.</p>
                     <p style="color: #999; font-size: 0.85em; margin-top: 32px;">Sent via PrintOS</p>
                   </div>
-                `,
+                `
+
+            const res = await fetch('https://api.resend.com/emails', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
+                to: [customer.email],
+                subject: emailSubject,
+                html: emailHtml,
               }),
             })
             sentEmail = res.ok

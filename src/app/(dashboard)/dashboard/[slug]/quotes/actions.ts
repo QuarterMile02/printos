@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { OrgRole, QuoteStatus } from '@/types/database'
 import { TAX_RATE } from './format'
+import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 
 type ServiceClient = ReturnType<typeof createServiceClient>
 
@@ -232,7 +233,8 @@ export async function sendQuoteToCustomer(
   quoteId: string,
   orgId: string,
   orgSlug: string,
-  method: DeliveryMethod
+  method: DeliveryMethod,
+  triggerOverride?: string,
 ): Promise<{ error?: string; sent?: boolean }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -297,17 +299,25 @@ export async function sendQuoteToCustomer(
       errors.push('Email delivery not configured — RESEND_API_KEY is missing.')
     } else {
       try {
-        const res = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
-            to: [customerEmail],
-            subject: `Quote #${quote.quote_number} — ${quote.title}`,
-            html: `
+        // Load template if available
+        const templateVars = {
+          contact_name: customerName,
+          txn_number: `Q-${quote.quote_number}`,
+          total: `$${totalFormatted}`,
+        }
+        const template = await getEmailTemplate(orgId, triggerOverride ?? 'quote_sent')
+
+        const emailSubject = template
+          ? await renderTemplate(template.subject, templateVars)
+          : `Quote #${quote.quote_number} — ${quote.title}`
+
+        const emailBodyText = template
+          ? await renderTemplate(template.body, templateVars)
+          : null
+
+        const emailHtml = emailBodyText
+          ? `<div style="font-family: sans-serif; max-width: 600px; white-space: pre-wrap;">${emailBodyText.replace(/\n/g, '<br>')}</div>`
+          : `
               <div style="font-family: sans-serif; max-width: 600px;">
                 <h2 style="color: #1a1a1a;">Quote #${quote.quote_number}</h2>
                 <p>Hi ${customerName},</p>
@@ -326,7 +336,19 @@ export async function sendQuoteToCustomer(
                 <p>To approve this quote, please give us a call and we'll get started right away.</p>
                 <p style="color: #999; font-size: 0.85em; margin-top: 32px;">Sent via PrintOS</p>
               </div>
-            `,
+            `
+
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
+            to: [customerEmail],
+            subject: emailSubject,
+            html: emailHtml,
           }),
         })
         if (!res.ok) {
@@ -695,7 +717,7 @@ export async function sendForReviewAndUpdate(
   orgId: string,
   orgSlug: string,
 ): Promise<{ error?: string }> {
-  const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'email')
+  const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'email', 'quote_revised')
   if (result.error && !result.sent) return { error: result.error }
 
   const ctx = await getServiceWithMembership(orgId)
