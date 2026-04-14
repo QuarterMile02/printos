@@ -141,8 +141,12 @@ export default function QuoteDetailClient({
   }
 
   // ── Action handlers (available in both modes) ─────────────────────
-  function handleSendEmail() {
-    startTransition(async () => {
+  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [isSendingSms, setIsSendingSms] = useState(false)
+
+  async function handleSendEmail() {
+    setIsSendingEmail(true)
+    try {
       const res = await sendQuoteEmailAndDeliver(quote.id, orgId, orgSlug)
       if (res.error) {
         flash(res.error, 'error')
@@ -150,11 +154,16 @@ export default function QuoteDetailClient({
         setStatus('delivered')
         flash('Quote email sent')
       }
-    })
+    } catch (err) {
+      flash(`Send failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setIsSendingEmail(false)
+    }
   }
 
-  function handleSendSms() {
-    startTransition(async () => {
+  async function handleSendSms() {
+    setIsSendingSms(true)
+    try {
       const res = await sendQuoteSmsAndDeliver(quote.id, orgId, orgSlug)
       if (res.error) {
         flash(res.error, 'error')
@@ -162,7 +171,11 @@ export default function QuoteDetailClient({
         setStatus('delivered')
         flash('Quote SMS sent')
       }
-    })
+    } catch (err) {
+      flash(`Send failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    } finally {
+      setIsSendingSms(false)
+    }
   }
 
   // ── Edit-mode helpers ─────────────────────────────────────────────
@@ -361,18 +374,18 @@ export default function QuoteDetailClient({
           <button
             type="button"
             onClick={handleSendEmail}
-            disabled={isPending || !quote.customer?.email}
+            disabled={isSendingEmail || !quote.customer?.email}
             className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
           >
-            Send Email
+            {isSendingEmail ? 'Sending...' : 'Send Email'}
           </button>
           <button
             type="button"
             onClick={handleSendSms}
-            disabled={isPending || !quote.customer?.phone}
+            disabled={isSendingSms || !quote.customer?.phone}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
           >
-            Send SMS
+            {isSendingSms ? 'Sending...' : 'Send SMS'}
           </button>
           <button
             type="button"
