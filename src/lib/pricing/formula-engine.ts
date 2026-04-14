@@ -24,6 +24,9 @@ export type PricingResult = {
   unit_price_cents: number
   total_price_cents: number
   breakdown: LineBreakdown[]
+  original_unit_price_cents?: number
+  discount_percent?: number
+  discount_type?: string
   error?: string
 }
 
@@ -54,14 +57,14 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   // 1. Load product
   const { data: prodRow, error: prodErr } = await service
     .from('products')
-    .select('id, cost, price, markup, formula, pricing_type')
+    .select('id, cost, price, markup, formula, pricing_type, volume_discount_id, range_discount_id')
     .eq('id', input.product_id)
     .single()
 
   if (prodErr || !prodRow) {
     return { unit_price_cents: 0, total_price_cents: 0, breakdown: [], error: prodErr?.message ?? 'Product not found' }
   }
-  const product = prodRow as { id: string; cost: number | null; price: number | null; markup: number | null; formula: string | null; pricing_type: string | null }
+  const product = prodRow as { id: string; cost: number | null; price: number | null; markup: number | null; formula: string | null; pricing_type: string | null; volume_discount_id: string | null; range_discount_id: string | null }
 
   // 2. Load recipe (product_default_items)
   const { data: recipeRows } = await service
@@ -235,12 +238,67 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
 
   // 8. Apply markup
   const markup = Number(product.markup ?? 1)
-  const unitPriceCents = Math.round(totalCostCents * markup)
+  let unitPriceCents = Math.round(totalCostCents * markup)
+  const originalUnitPriceCents = unitPriceCents
+
+  // 9. Apply discounts (volume first, then range)
+  let discountPercent = 0
+  let discountType: string | undefined
+
+  // Volume discount — based on quantity
+  if (product.volume_discount_id) {
+    const tier = await findDiscountTier(service, product.volume_discount_id, input.quantity)
+    if (tier && tier.discount_percent > 0) {
+      discountPercent = tier.discount_percent
+      discountType = 'Volume'
+    }
+  }
+
+  // Range discount — based on area (sqft)
+  if (!discountPercent && product.range_discount_id) {
+    const area = (input.width_inches * input.height_inches) / 144
+    const tier = await findDiscountTier(service, product.range_discount_id, area)
+    if (tier && tier.discount_percent > 0) {
+      discountPercent = tier.discount_percent
+      discountType = 'Range'
+    }
+  }
+
+  if (discountPercent > 0) {
+    unitPriceCents = Math.round(unitPriceCents * (1 - discountPercent / 100))
+  }
+
   const totalPriceCents = unitPriceCents * input.quantity
 
   return {
     unit_price_cents: unitPriceCents,
     total_price_cents: totalPriceCents,
     breakdown,
+    original_unit_price_cents: discountPercent > 0 ? originalUnitPriceCents : undefined,
+    discount_percent: discountPercent > 0 ? discountPercent : undefined,
+    discount_type: discountType,
   }
+}
+
+// ── Discount tier lookup ─────────────────────────────────────────────
+
+async function findDiscountTier(
+  service: ReturnType<typeof createServiceClient>,
+  discountId: string,
+  value: number,
+): Promise<{ discount_percent: number } | null> {
+  const { data: tiers } = await service
+    .from('discount_tiers')
+    .select('min_qty, max_qty, discount_percent')
+    .eq('discount_id', discountId)
+    .order('min_qty', { ascending: true })
+
+  for (const tier of (tiers ?? []) as { min_qty: number; max_qty: number; discount_percent: number }[]) {
+    const min = Number(tier.min_qty)
+    const max = Number(tier.max_qty)
+    if (value >= min && value <= max) {
+      return { discount_percent: Number(tier.discount_percent) }
+    }
+  }
+  return null
 }
