@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveEmailTemplate, deleteEmailTemplate } from '../actions'
+import ImproveButton from './improve-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,7 +80,10 @@ export default async function Page({ params, searchParams }: {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Body *</label>
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700">Body *</label>
+                <ImproveButton textareaName="body" />
+              </div>
               <textarea name="body" required rows={10} defaultValue={t?.body ?? ''} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
               <p className="mt-1 text-xs text-gray-400">Variables: {VARIABLES.join(', ')}</p>
             </div>
