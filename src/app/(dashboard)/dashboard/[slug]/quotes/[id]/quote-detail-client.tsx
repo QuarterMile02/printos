@@ -11,7 +11,21 @@ import {
   sendQuoteEmailAndDeliver,
   sendQuoteSmsAndDeliver,
 } from '../actions'
-import { getProductModifiers, type ModifierDef } from '@/app/actions/get-product-modifiers'
+type ModifierDef = {
+  id: string
+  system_lookup_name: string
+  display_name: string
+  modifier_type: string
+  units: string | null
+  range_min_value: number | null
+  range_max_value: number | null
+  range_default_value: number | null
+  range_step_interval: number | null
+  show_customer: boolean
+  show_internal: boolean
+  default_value: string | null
+  is_required: boolean
+}
 import {
   formatQuoteNumber,
   formatSoNumber,
@@ -130,7 +144,7 @@ export default function QuoteDetailClient({
     return m
   }, [products])
 
-  // Load modifiers when product changes
+  // Load modifiers when product changes — uses API route (not server action)
   useEffect(() => {
     if (!newProductId) {
       setNewModifiers([])
@@ -138,17 +152,22 @@ export default function QuoteDetailClient({
       return
     }
     let cancelled = false
-    getProductModifiers(newProductId, orgId).then((mods) => {
-      if (cancelled) return
-      setNewModifiers(mods)
-      const defaults: Record<string, boolean | number> = {}
-      for (const m of mods) {
-        if (m.modifier_type === 'Boolean') defaults[m.system_lookup_name] = false
-        else if (m.modifier_type === 'Range') defaults[m.system_lookup_name] = m.range_default_value ?? m.range_min_value ?? 0
-        else defaults[m.system_lookup_name] = 0
-      }
-      setNewModifierValues(defaults)
-    }).catch(() => { /* optional */ })
+    console.log('[modifiers] loading for product:', newProductId)
+    fetch(`/api/product-modifiers?productId=${newProductId}&orgId=${orgId}`)
+      .then(res => res.json())
+      .then((mods: ModifierDef[]) => {
+        if (cancelled) return
+        console.log('[modifiers] loaded:', mods.length)
+        setNewModifiers(mods)
+        const defaults: Record<string, boolean | number> = {}
+        for (const m of mods) {
+          if (m.modifier_type === 'Boolean') defaults[m.system_lookup_name] = false
+          else if (m.modifier_type === 'Range') defaults[m.system_lookup_name] = m.range_default_value ?? m.range_min_value ?? 0
+          else defaults[m.system_lookup_name] = 0
+        }
+        setNewModifierValues(defaults)
+      })
+      .catch(err => console.error('[modifiers] error:', err))
     return () => { cancelled = true }
   }, [newProductId, orgId])
 
