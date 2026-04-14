@@ -535,26 +535,38 @@ export async function addQuoteLineItem(
       .limit(1)
     const nextSort = ((sortResult.data as unknown as { sort_order: number | null }[] | null)?.[0]?.sort_order ?? -1) + 1
 
-    const insertResult = await ctx.service
+    const baseRow: Record<string, unknown> = {
+      quote_id: quoteId,
+      product_id: draft.product_id,
+      description: draft.description.trim(),
+      width: draft.width,
+      height: draft.height,
+      quantity: draft.quantity,
+      unit_price: draft.unit_price,
+      discount_percent: draft.discount_percent,
+      total_price: total,
+      taxable: draft.taxable,
+      sort_order: nextSort,
+    }
+    if (draft.modifier_values && Object.keys(draft.modifier_values).length > 0) {
+      baseRow.modifier_values = draft.modifier_values
+    }
+
+    let insertResult = await ctx.service
       .from('quote_line_items')
-      .insert({
-        quote_id: quoteId,
-        product_id: draft.product_id,
-        description: draft.description.trim(),
-        width: draft.width,
-        height: draft.height,
-        quantity: draft.quantity,
-        unit_price: draft.unit_price,
-        discount_percent: draft.discount_percent,
-        total_price: total,
-        taxable: draft.taxable,
-        sort_order: nextSort,
-        ...(draft.modifier_values && Object.keys(draft.modifier_values).length > 0
-          ? { modifier_values: draft.modifier_values }
-          : {}),
-      })
+      .insert(baseRow)
       .select('id')
       .single()
+
+    // If modifier_values column doesn't exist, retry without it
+    if (insertResult.error?.message?.includes('modifier_values')) {
+      delete baseRow.modifier_values
+      insertResult = await ctx.service
+        .from('quote_line_items')
+        .insert(baseRow)
+        .select('id')
+        .single()
+    }
 
     if (insertResult.error) {
       console.error('[addQuoteLineItem] Insert failed:', insertResult.error.message)
