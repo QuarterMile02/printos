@@ -274,9 +274,10 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     unit_price_cents: unitPriceCents,
     total_price_cents: totalPriceCents,
     breakdown,
-    original_unit_price_cents: discountPercent > 0 ? originalUnitPriceCents : undefined,
-    discount_percent: discountPercent > 0 ? discountPercent : undefined,
-    discount_type: discountType,
+    // Always return discount fields so callers can confirm the code path ran
+    original_unit_price_cents: originalUnitPriceCents,
+    discount_percent: discountPercent,
+    discount_type: discountType ?? (product.volume_discount_id || product.range_discount_id ? 'none_matched' : 'no_discount_assigned'),
   }
 }
 
