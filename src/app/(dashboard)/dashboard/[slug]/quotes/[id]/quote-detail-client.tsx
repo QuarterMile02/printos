@@ -130,6 +130,28 @@ export default function QuoteDetailClient({
     return m
   }, [products])
 
+  // Load modifiers when product changes
+  useEffect(() => {
+    if (!newProductId) {
+      setNewModifiers([])
+      setNewModifierValues({})
+      return
+    }
+    let cancelled = false
+    getProductModifiers(newProductId, orgId).then((mods) => {
+      if (cancelled) return
+      setNewModifiers(mods)
+      const defaults: Record<string, boolean | number> = {}
+      for (const m of mods) {
+        if (m.modifier_type === 'Boolean') defaults[m.system_lookup_name] = false
+        else if (m.modifier_type === 'Range') defaults[m.system_lookup_name] = m.range_default_value ?? m.range_min_value ?? 0
+        else defaults[m.system_lookup_name] = 0
+      }
+      setNewModifierValues(defaults)
+    }).catch(() => { /* optional */ })
+    return () => { cancelled = true }
+  }, [newProductId, orgId])
+
   const subtotal = useMemo(() => items.reduce((s, i) => s + i.total_price, 0), [items])
   const taxableTotal = useMemo(
     () => items.filter((i) => i.taxable).reduce((s, i) => s + i.total_price, 0),
@@ -559,24 +581,7 @@ export default function QuoteDetailClient({
                     setNewProductId(pid)
                     const p = productMap.get(pid)
                     if (p) setNewDescription(p.name)
-                    // Load modifiers for this product
-                    if (pid) {
-                      try {
-                        const mods = await getProductModifiers(pid, orgId)
-                        setNewModifiers(mods)
-                        // Set defaults
-                        const defaults: Record<string, boolean | number> = {}
-                        for (const m of mods) {
-                          if (m.modifier_type === 'Boolean') defaults[m.system_lookup_name] = false
-                          else if (m.modifier_type === 'Range') defaults[m.system_lookup_name] = m.range_default_value ?? m.range_min_value ?? 0
-                          else defaults[m.system_lookup_name] = 0
-                        }
-                        setNewModifierValues(defaults)
-                      } catch { /* modifiers optional */ }
-                    } else {
-                      setNewModifiers([])
-                      setNewModifierValues({})
-                    }
+                    // Modifiers loaded via useEffect watching newProductId
                     // Auto-calculate price from formula engine
                     if (pid) {
                       try {
