@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import type { OrgRole, QuoteStatus } from '@/types/database'
 import { TAX_RATE } from './format'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
+import { getSignatureHtml } from '@/app/actions/email-signature'
 
 type ServiceClient = ReturnType<typeof createServiceClient>
 
@@ -338,6 +339,12 @@ export async function sendQuoteToCustomer(
               </div>
             `
 
+        // Append sender's email signature
+        console.log('[sendQuoteToCustomer] SIG LOOKUP:', user.id, orgId)
+        const sigHtml = await getSignatureHtml(user.id, orgId)
+        console.log('[sendQuoteToCustomer] SIG RESULT:', sigHtml.length)
+        const finalHtml = emailHtml + sigHtml
+
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -348,7 +355,7 @@ export async function sendQuoteToCustomer(
             from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
             to: [customerEmail],
             subject: emailSubject,
-            html: emailHtml,
+            html: finalHtml,
           }),
         })
         if (!res.ok) {
@@ -749,6 +756,137 @@ export async function sendForReviewAndUpdate(
     .in('status', ['delivered', 'draft'])
 
   if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  revalidatePath(`/dashboard/${orgSlug}/quotes`)
+  return {}
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Email modal helpers
+// ──────────────────────────────────────────────────────────────────────
+
+export type EmailTemplate = {
+  id: string
+  name: string
+  subject: string
+  body: string
+  trigger_event: string
+}
+
+export async function getOrgEmailTemplates(
+  orgId: string,
+): Promise<{ templates: EmailTemplate[]; error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { templates: [], error: 'Not authenticated.' }
+
+  const { data, error } = await supabase
+    .from('email_templates')
+    .select('id, name, subject, body, trigger_event')
+    .eq('organization_id', orgId)
+    .eq('is_active', true)
+    .order('name', { ascending: true }) as {
+      data: EmailTemplate[] | null
+      error: { message: string } | null
+    }
+
+  if (error) return { templates: [], error: error.message }
+  return { templates: data ?? [] }
+}
+
+export async function sendQuoteEmailCustom(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+  payload: {
+    to: string
+    cc: string
+    pdfType: string
+    subject: string
+    body: string
+    templateName: string
+  },
+): Promise<{ error?: string }> {
+  if (!payload.to.trim()) return { error: 'Recipient email is required.' }
+
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  // Verify quote exists in this org
+  const { data: quote } = await ctx.service
+    .from('quotes')
+    .select('id, quote_number, status')
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as {
+      data: { id: string; quote_number: number; status: QuoteStatus } | null
+      error: unknown
+    }
+  if (!quote) return { error: 'Quote not found.' }
+
+  if (!process.env.RESEND_API_KEY) {
+    return { error: 'Email delivery not configured — RESEND_API_KEY is missing.' }
+  }
+
+  // Build HTML from the plain-text body + append signature
+  const bodyHtml = `<div style="font-family: sans-serif; max-width: 600px; white-space: pre-wrap;">${
+    payload.body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
+  }</div>`
+  console.log('[sendQuoteEmailCustom] SIG LOOKUP:', ctx.user.id, orgId)
+  const sigHtml = await getSignatureHtml(ctx.user.id, orgId)
+  console.log('[sendQuoteEmailCustom] SIG RESULT:', sigHtml.length)
+  const emailHtml = bodyHtml + sigHtml
+
+  // Build recipient list
+  const toList = [payload.to.trim()]
+  const ccList = payload.cc
+    ? payload.cc.split(',').map((e) => e.trim()).filter(Boolean)
+    : []
+
+  try {
+    const emailPayload: Record<string, unknown> = {
+      from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
+      to: toList,
+      subject: payload.subject,
+      html: emailHtml,
+    }
+    if (ccList.length > 0) emailPayload.cc = ccList
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(emailPayload),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      return { error: `Email failed: ${body}` }
+    }
+  } catch (e) {
+    return { error: `Email failed: ${e instanceof Error ? e.message : 'Unknown error'}` }
+  }
+
+  // Log delivery
+  await ctx.service.from('quote_deliveries').insert({
+    quote_id: quoteId,
+    organization_id: orgId,
+    method: 'email' as DeliveryMethod,
+    sent_by: ctx.user.id,
+    recipient_email: payload.to.trim(),
+    status: 'sent',
+  })
+
+  // Auto-transition draft → delivered
+  if (quote.status === 'draft') {
+    await ctx.service
+      .from('quotes')
+      .update({ status: 'delivered' as QuoteStatus })
+      .eq('id', quoteId)
+      .eq('organization_id', orgId)
+  }
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   revalidatePath(`/dashboard/${orgSlug}/quotes`)

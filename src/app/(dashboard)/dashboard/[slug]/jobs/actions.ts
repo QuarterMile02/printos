@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { JobStatus, JobFlag, OrgRole } from '@/types/database'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
+import { getSignatureHtml } from '@/app/actions/email-signature'
 
 const VALID_STATUSES: JobStatus[] = [
   'new', 'in_progress', 'proof_review', 'ready_for_pickup', 'completed',
@@ -144,6 +145,10 @@ export async function updateJobStatus(
                   </div>
                 `
 
+            // Append sender's email signature
+            const sigHtml = await getSignatureHtml(user.id, orgId)
+            const finalHtml = emailHtml + sigHtml
+
             const res = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: {
@@ -154,7 +159,7 @@ export async function updateJobStatus(
                 from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
                 to: [customer.email],
                 subject: emailSubject,
-                html: emailHtml,
+                html: finalHtml,
               }),
             })
             sentEmail = res.ok

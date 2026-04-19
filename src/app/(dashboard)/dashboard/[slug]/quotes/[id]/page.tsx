@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { QuoteStatus } from '@/types/database'
 import QuoteDetailClient from './quote-detail-client'
 import { convertToSalesOrder } from './convert-action'
+import type { EmailTemplate } from '../actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -193,6 +194,23 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     salesOrder = so
   }
 
+  // Fetch active email templates for the send-email modal.
+  let emailTemplates: EmailTemplate[] = []
+  try {
+    const { data: tplRows } = await supabase
+      .from('email_templates')
+      .select('id, name, subject, body, trigger_event')
+      .eq('organization_id', org.id)
+      .eq('is_active', true)
+      .order('name', { ascending: true }) as {
+        data: EmailTemplate[] | null
+        error: unknown
+      }
+    emailTemplates = tplRows ?? []
+  } catch {
+    // email_templates table may not exist yet — skip
+  }
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -267,6 +285,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         salesOrder={salesOrder}
         teamMembers={teamMembers}
         salesRepName={salesRepName}
+        emailTemplates={emailTemplates}
       />
     </div>
   )

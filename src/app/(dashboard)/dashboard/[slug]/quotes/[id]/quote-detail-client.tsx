@@ -8,9 +8,10 @@ import {
   addQuoteLineItem,
   updateQuoteLineItem,
   deleteQuoteLineItem,
-  sendQuoteEmailAndDeliver,
   sendQuoteSmsAndDeliver,
 } from '../actions'
+import type { EmailTemplate } from '../actions'
+import SendEmailModal from './send-email-modal'
 type ModifierDef = {
   id: string
   system_lookup_name: string
@@ -91,6 +92,7 @@ type Props = {
   salesOrder: { id: string; so_number: number; created_at: string } | null
   teamMembers: TeamMember[]
   salesRepName: string | null
+  emailTemplates: EmailTemplate[]
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -104,7 +106,7 @@ function dollarsToCents(s: string): number {
 }
 
 export default function QuoteDetailClient({
-  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName,
+  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -211,29 +213,8 @@ export default function QuoteDetailClient({
   }
 
   // ── Action handlers (available in both modes) ─────────────────────
-  const [isSendingEmail, setIsSendingEmail] = useState(false)
+  const [showEmailModal, setShowEmailModal] = useState(false)
   const [isSendingSms, setIsSendingSms] = useState(false)
-
-  async function handleSendEmail() {
-    console.log('[handleSendEmail] clicked, customer email:', quote.customer?.email)
-    setIsSendingEmail(true)
-    try {
-      const res = await sendQuoteEmailAndDeliver(quote.id, orgId, orgSlug)
-      console.log('[handleSendEmail] result:', JSON.stringify(res))
-      if (res.error) {
-        flash(res.error, 'error')
-      } else {
-        setStatus('delivered')
-        flash('Quote email sent')
-        router.refresh()
-      }
-    } catch (err) {
-      console.error('[handleSendEmail] caught:', err)
-      flash(`Send failed: ${err instanceof Error ? err.message : String(err)}`, 'error')
-    } finally {
-      setIsSendingEmail(false)
-    }
-  }
 
   async function handleSendSms() {
     setIsSendingSms(true)
@@ -451,11 +432,10 @@ export default function QuoteDetailClient({
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={handleSendEmail}
-            disabled={isSendingEmail || !quote.customer?.email}
-            className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+            onClick={() => setShowEmailModal(true)}
+            className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
           >
-            {isSendingEmail ? 'Sending...' : 'Send Email'}
+            Send Email
           </button>
           <button
             type="button"
@@ -1018,6 +998,27 @@ export default function QuoteDetailClient({
           </div>
         )}
       </div>
+
+      <SendEmailModal
+        open={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        onSent={() => {
+          setShowEmailModal(false)
+          if (status === 'draft') setStatus('delivered')
+          flash('Quote email sent')
+          router.refresh()
+        }}
+        orgId={orgId}
+        orgSlug={orgSlug}
+        quote={{
+          id: quote.id,
+          quote_number: quote.quote_number,
+          title: quote.title,
+          total: grandTotal,
+          customer: quote.customer,
+        }}
+        templates={emailTemplates}
+      />
     </>
   )
 }
