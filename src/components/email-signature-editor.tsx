@@ -1,15 +1,21 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { saveEmailSignature } from '@/app/actions/email-signature'
+import { saveEmailSignatureFields } from '@/app/actions/email-signature'
+import type { SignatureFields } from '@/app/actions/email-signature'
 
 type Props = {
   orgId: string
+  initialFields: SignatureFields
   initialBody: string
 }
 
-export default function EmailSignatureEditor({ orgId, initialBody }: Props) {
-  const [body, setBody] = useState(initialBody)
+export default function EmailSignatureEditor({ orgId, initialFields, initialBody }: Props) {
+  const [fullName, setFullName] = useState(initialFields.sig_full_name)
+  const [title, setTitle] = useState(initialFields.sig_title)
+  const [phone, setPhone] = useState(initialFields.sig_phone)
+  const [mobile, setMobile] = useState(initialFields.sig_mobile)
+  const [address, setAddress] = useState(initialFields.sig_address)
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -21,7 +27,13 @@ export default function EmailSignatureEditor({ orgId, initialBody }: Props) {
 
   function handleSave() {
     startTransition(async () => {
-      const result = await saveEmailSignature(orgId, body)
+      const result = await saveEmailSignatureFields(orgId, {
+        sig_full_name: fullName,
+        sig_title: title,
+        sig_phone: phone,
+        sig_mobile: mobile,
+        sig_address: address,
+      })
       if (result.error) {
         flash(result.error, 'error')
       } else {
@@ -30,19 +42,40 @@ export default function EmailSignatureEditor({ orgId, initialBody }: Props) {
     })
   }
 
-  function handleReset() {
-    setBody('')
+  // Build a preview HTML by substituting contact fields into the existing body
+  function getPreviewHtml(): string {
+    const phoneLine = [
+      phone ? `P: ${phone}` : '',
+      mobile ? `M: ${mobile}` : '',
+    ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+
+    const contactBlock = `<div style="flex:1;">
+      <p class="sn">${esc(fullName)}</p>
+      <p class="st">${esc(title)}</p>
+      <div class="sd"></div>
+      ${phoneLine ? `<p class="sc">${phoneLine}</p>` : ''}
+      ${address ? `<p class="sc">${esc(address)}</p>` : ''}
+      <p class="sc"><a href="https://www.QuarterMileInc.com">www.QuarterMileInc.com</a></p>
+    </div>`
+
+    const regex = /<div style="flex:1;">[\s\S]*?<\/div>\s*<\/div>\s*<div class="sf">/
+    if (regex.test(initialBody)) {
+      return initialBody.replace(regex, `${contactBlock}\n  </div>\n  <div class="sf">`)
+    }
+    return initialBody
   }
 
-  // Write HTML into the iframe for sandboxed preview
   function updatePreview(iframe: HTMLIFrameElement | null) {
     if (!iframe) return
     const doc = iframe.contentDocument
     if (!doc) return
     doc.open()
-    doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:8px;font-family:sans-serif;">${body}</body></html>`)
+    doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:8px;font-family:sans-serif;">${getPreviewHtml()}</body></html>`)
     doc.close()
   }
+
+  // Trigger preview re-render on field changes
+  const previewKey = `${fullName}|${title}|${phone}|${mobile}|${address}`
 
   return (
     <>
@@ -57,19 +90,60 @@ export default function EmailSignatureEditor({ orgId, initialBody }: Props) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Editor */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Signature HTML
-          </label>
-          <p className="text-xs text-gray-400 mb-2">HTML supported — paste your full signature markup including inline styles.</p>
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows={18}
-            spellCheck={false}
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-          />
+        {/* Fields */}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Full Name</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Ruben Reyes"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="President"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Phone</label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="(956) 722-7690"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Mobile</label>
+              <input
+                type="tel"
+                value={mobile}
+                onChange={(e) => setMobile(e.target.value)}
+                placeholder="(956) 236-4367"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Address</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="6420 Polaris Dr. Ste 4, Laredo, Texas 78041"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            />
+          </div>
         </div>
 
         {/* Live preview */}
@@ -77,18 +151,18 @@ export default function EmailSignatureEditor({ orgId, initialBody }: Props) {
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Preview
           </label>
-          <p className="text-xs text-gray-400 mb-2">How your signature will appear in emails.</p>
-          <div className="rounded-md border border-gray-200 bg-white overflow-hidden" style={{ minHeight: 300 }}>
+          <p className="text-xs text-gray-400 mb-2">Updates as you type. The design template is locked.</p>
+          <div className="rounded-md border border-gray-200 bg-white overflow-hidden" style={{ minHeight: 260 }}>
             <iframe
               ref={(el) => {
                 iframeRef.current = el
                 updatePreview(el)
               }}
-              key={body}
+              key={previewKey}
               title="Signature preview"
               sandbox="allow-same-origin"
               className="w-full border-0"
-              style={{ minHeight: 300 }}
+              style={{ minHeight: 260 }}
             />
           </div>
         </div>
@@ -104,15 +178,11 @@ export default function EmailSignatureEditor({ orgId, initialBody }: Props) {
         >
           {isPending ? 'Saving...' : 'Save Signature'}
         </button>
-        <button
-          type="button"
-          onClick={handleReset}
-          disabled={isPending}
-          className="text-sm font-medium text-gray-500 hover:text-gray-700"
-        >
-          Reset to Default
-        </button>
       </div>
     </>
   )
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }

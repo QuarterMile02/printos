@@ -2,9 +2,22 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
+export type SignatureFields = {
+  sig_full_name: string
+  sig_title: string
+  sig_phone: string
+  sig_mobile: string
+  sig_address: string
+}
+
+export type SignatureRow = SignatureFields & {
+  body: string
+  is_html: boolean
+}
+
 export async function getEmailSignature(
   orgId: string,
-): Promise<{ body: string; is_html: boolean } | null> {
+): Promise<SignatureRow | null> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -12,14 +25,92 @@ export async function getEmailSignature(
   const service = createServiceClient()
   const { data } = await service
     .from('email_signatures')
-    .select('body, is_html')
+    .select('body, is_html, sig_full_name, sig_title, sig_phone, sig_mobile, sig_address')
     .eq('user_id', user.id)
     .eq('organization_id', orgId)
     .maybeSingle()
 
   if (!data) return null
-  const row = data as { body: string; is_html: boolean }
-  return { body: row.body, is_html: row.is_html }
+  return data as SignatureRow
+}
+
+// Regenerate the contact info section in the locked v32 signature HTML.
+// Replaces the content inside <div style="flex:1;">...</div> — everything
+// after the logo <img> and before the services footer <div class="sf">.
+function regenerateContactHtml(
+  existingBody: string,
+  fields: SignatureFields,
+): string {
+  // Build the new contact block
+  const phoneLine = [
+    fields.sig_phone ? `P: ${fields.sig_phone}` : '',
+    fields.sig_mobile ? `M: ${fields.sig_mobile}` : '',
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ')
+
+  const contactBlock = `<div style="flex:1;">
+      <p class="sn">${escapeHtml(fields.sig_full_name)}</p>
+      <p class="st">${escapeHtml(fields.sig_title)}</p>
+      <div class="sd"></div>
+      ${phoneLine ? `<p class="sc">${phoneLine}</p>` : ''}
+      ${fields.sig_address ? `<p class="sc">${escapeHtml(fields.sig_address)}</p>` : ''}
+      <p class="sc"><a href="https://www.QuarterMileInc.com">www.QuarterMileInc.com</a></p>
+    </div>`
+
+  // Replace the existing contact block (between the logo img closing tag and the services footer)
+  // Pattern: <div style="flex:1;">...anything...</div>\n  </div>\n  <div class="sf">
+  const regex = /<div style="flex:1;">[\s\S]*?<\/div>\s*<\/div>\s*<div class="sf">/
+  if (regex.test(existingBody)) {
+    return existingBody.replace(regex, `${contactBlock}\n  </div>\n  <div class="sf">`)
+  }
+
+  // Fallback: if regex doesn't match, return existing body unchanged
+  return existingBody
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+export async function saveEmailSignatureFields(
+  orgId: string,
+  fields: SignatureFields,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const service = createServiceClient()
+
+  // Fetch existing row to get the current body HTML (with logo)
+  const { data: existing } = await service
+    .from('email_signatures')
+    .select('body')
+    .eq('user_id', user.id)
+    .eq('organization_id', orgId)
+    .maybeSingle() as { data: { body: string } | null; error: unknown }
+
+  if (!existing) {
+    return { error: 'No signature found. Please contact your administrator to set up your signature.' }
+  }
+
+  // Regenerate the body HTML with the new contact info
+  const newBody = regenerateContactHtml(existing.body, fields)
+
+  const { error } = await service
+    .from('email_signatures')
+    .update({
+      body: newBody,
+      sig_full_name: fields.sig_full_name,
+      sig_title: fields.sig_title,
+      sig_phone: fields.sig_phone,
+      sig_mobile: fields.sig_mobile,
+      sig_address: fields.sig_address,
+    })
+    .eq('user_id', user.id)
+    .eq('organization_id', orgId)
+
+  if (error) return { error: error.message }
+  return {}
 }
 
 // Helper for send actions — fetches signature and returns HTML snippet
@@ -65,29 +156,4 @@ export async function getSignatureHtml(
     console.error('[getSignatureHtml] caught exception:', err instanceof Error ? err.message : String(err))
     return ''
   }
-}
-
-export async function saveEmailSignature(
-  orgId: string,
-  body: string,
-): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated.' }
-
-  const service = createServiceClient()
-  const { error } = await service
-    .from('email_signatures')
-    .upsert(
-      {
-        user_id: user.id,
-        organization_id: orgId,
-        body,
-        is_html: true,
-      },
-      { onConflict: 'user_id,organization_id' },
-    )
-
-  if (error) return { error: error.message }
-  return {}
 }

@@ -5,6 +5,7 @@ import type { QuoteStatus } from '@/types/database'
 import QuoteDetailClient from './quote-detail-client'
 import { convertToSalesOrder } from './convert-action'
 import type { EmailTemplate } from '../actions'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -211,6 +212,9 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     // email_templates table may not exist yet — skip
   }
 
+  // Check if user can see pricing columns
+  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -286,6 +290,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         teamMembers={teamMembers}
         salesRepName={salesRepName}
         emailTemplates={emailTemplates}
+        canSeePricing={canSeePricing}
       />
     </div>
   )

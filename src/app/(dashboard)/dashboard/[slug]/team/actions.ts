@@ -3,6 +3,8 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { OrgRole } from '@/types/database'
+import type { Role, Tier } from '@/lib/permissions'
+import { ALL_ROLES, ALL_TIERS } from '@/lib/permissions'
 
 const INVITABLE_ROLES: OrgRole[] = ['admin', 'designer', 'accountant', 'member', 'viewer']
 
@@ -74,6 +76,178 @@ export async function inviteMember(
 
   if (insertError) return { error: insertError.message }
 
+  revalidatePath(`/dashboard/${orgSlug}/team`)
+  return {}
+}
+
+export async function updateMemberProfile(
+  targetUserId: string,
+  orgId: string,
+  orgSlug: string,
+  fields: {
+    role?: string
+    tier?: string
+    departments?: string[]
+    title?: string
+    phone?: string
+  },
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  // Only owner can change role/tier; owner/manager can change departments
+  const service = createServiceClient()
+  const { data: callerProfile } = await service
+    .from('profiles')
+    .select('role, tier')
+    .eq('id', user.id)
+    .maybeSingle() as { data: { role: string; tier: string } | null; error: unknown }
+
+  if (!callerProfile) return { error: 'Profile not found.' }
+
+  const isOwner = callerProfile.role === 'owner'
+  const isManager = callerProfile.tier === 'manager' || callerProfile.tier === 'lead'
+
+  // Only owner can change role or tier
+  if (fields.role !== undefined && !isOwner) {
+    return { error: 'Only owners can change roles.' }
+  }
+  if (fields.tier !== undefined && !isOwner) {
+    return { error: 'Only owners can change tiers.' }
+  }
+  // Owner or manager can change departments
+  if (fields.departments !== undefined && !isOwner && !isManager) {
+    return { error: 'Only owners and managers can assign departments.' }
+  }
+
+  // Validate values
+  if (fields.role && !ALL_ROLES.includes(fields.role as Role)) {
+    return { error: 'Invalid role.' }
+  }
+  if (fields.tier && !ALL_TIERS.includes(fields.tier as Tier)) {
+    return { error: 'Invalid tier.' }
+  }
+
+  const update: Record<string, unknown> = {}
+  if (fields.role !== undefined) update.role = fields.role
+  if (fields.tier !== undefined) update.tier = fields.tier
+  if (fields.departments !== undefined) update.departments = fields.departments
+  if (fields.title !== undefined) update.title = fields.title || null
+  if (fields.phone !== undefined) update.phone = fields.phone || null
+  if (Object.keys(update).length === 0) return {}
+
+  const { error } = await service
+    .from('profiles')
+    .update(update)
+    .eq('id', targetUserId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/team`)
+  return {}
+}
+
+// ── Permission Overrides ──────────────────────────────────────────
+
+export type PermissionOverride = {
+  id: string
+  permission_key: string
+  granted: boolean
+  note: string | null
+}
+
+export async function getPermissionOverrides(
+  targetUserId: string,
+  orgId: string,
+): Promise<{ overrides: PermissionOverride[]; error?: string }> {
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('permission_overrides')
+    .select('id, permission_key, granted, note')
+    .eq('user_id', targetUserId)
+    .eq('organization_id', orgId)
+    .order('permission_key') as {
+      data: PermissionOverride[] | null
+      error: { message: string } | null
+    }
+
+  if (error) return { overrides: [], error: error.message }
+  return { overrides: data ?? [] }
+}
+
+export async function setPermissionOverride(
+  targetUserId: string,
+  orgId: string,
+  orgSlug: string,
+  permissionKey: string,
+  granted: boolean,
+  note?: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const service = createServiceClient()
+  const { data: callerProfile } = await service
+    .from('profiles')
+    .select('role, tier')
+    .eq('id', user.id)
+    .maybeSingle() as { data: { role: string; tier: string } | null; error: unknown }
+
+  if (!callerProfile) return { error: 'Profile not found.' }
+  const canManage = callerProfile.role === 'owner' || callerProfile.tier === 'manager' || callerProfile.tier === 'lead'
+  if (!canManage) return { error: 'Only owners and managers can manage permission overrides.' }
+
+  const { error } = await service
+    .from('permission_overrides')
+    .upsert(
+      {
+        user_id: targetUserId,
+        organization_id: orgId,
+        permission_key: permissionKey,
+        granted,
+        granted_by: user.id,
+        granted_at: new Date().toISOString(),
+        note: note || null,
+      },
+      { onConflict: 'user_id,permission_key' },
+    )
+
+  if (error) return { error: error.message }
+  revalidatePath(`/dashboard/${orgSlug}/team`)
+  return {}
+}
+
+export async function removePermissionOverride(
+  targetUserId: string,
+  orgId: string,
+  orgSlug: string,
+  permissionKey: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const service = createServiceClient()
+  const { data: callerProfile } = await service
+    .from('profiles')
+    .select('role, tier')
+    .eq('id', user.id)
+    .maybeSingle() as { data: { role: string; tier: string } | null; error: unknown }
+
+  if (!callerProfile) return { error: 'Profile not found.' }
+  const canManage = callerProfile.role === 'owner' || callerProfile.tier === 'manager' || callerProfile.tier === 'lead'
+  if (!canManage) return { error: 'Only owners and managers can manage permission overrides.' }
+
+  const { error } = await service
+    .from('permission_overrides')
+    .delete()
+    .eq('user_id', targetUserId)
+    .eq('organization_id', orgId)
+    .eq('permission_key', permissionKey)
+
+  if (error) return { error: error.message }
   revalidatePath(`/dashboard/${orgSlug}/team`)
   return {}
 }

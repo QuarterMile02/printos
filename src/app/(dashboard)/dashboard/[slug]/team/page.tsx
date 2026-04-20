@@ -1,7 +1,10 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { OrgRole, InviteStatus } from '@/types/database'
+import type { Role, Tier } from '@/lib/permissions'
+import { ROLE_LABELS, TIER_LABELS } from '@/lib/permissions'
 import InviteMemberForm from './invite-member-form'
+import MemberSettings from './member-settings'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -56,10 +59,10 @@ export default async function TeamPage({ params }: PageProps) {
   const canInvite = currentRole === 'owner' || currentRole === 'admin'
 
   // Fetch members with profile data (via RLS — members can view other members)
-  type MemberRow = { id: string; user_id: string; role: OrgRole; created_at: string; profiles: { full_name: string | null } | null }
+  type MemberRow = { id: string; user_id: string; role: OrgRole; created_at: string; profiles: { full_name: string | null; role: string | null; tier: string | null; departments: string[] | null; title: string | null; phone: string | null } | null }
   const { data: memberRows } = await supabase
     .from('organization_members')
-    .select('id, user_id, role, created_at, profiles(full_name)')
+    .select('id, user_id, role, created_at, profiles(full_name, role, tier, departments, title, phone)')
     .eq('organization_id', org.id)
     .order('created_at', { ascending: true }) as { data: MemberRow[] | null; error: unknown }
 
@@ -74,6 +77,23 @@ export default async function TeamPage({ params }: PageProps) {
       if (u.email) emailMap.set(u.id, u.email)
     }
   }
+
+  // Fetch departments for the selector
+  type DeptRow = { id: string; name: string; code: string | null }
+  let deptRows: DeptRow[] = []
+  try {
+    const { data } = await supabase
+      .from('departments')
+      .select('id, name, code')
+      .eq('organization_id', org.id)
+      .order('sort_order', { ascending: true }) as { data: DeptRow[] | null; error: unknown }
+    deptRows = data ?? []
+  } catch { /* departments table may not exist yet */ }
+
+  // Determine caller's profile role for permission checks
+  const callerProfile = members.find((m) => m.user_id === user!.id)?.profiles
+  const callerIsOwner = callerProfile?.role === 'owner'
+  const callerIsManager = callerProfile?.tier === 'manager' || callerProfile?.tier === 'lead'
 
   // Fetch pending invites (visible to all members via RLS)
   type InviteRow = { id: string; email: string; role: OrgRole; status: InviteStatus; created_at: string; expires_at: string }
@@ -123,8 +143,17 @@ export default async function TeamPage({ params }: PageProps) {
                 Role
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                Tier
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                Departments
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                 Joined
               </th>
+              {(callerIsOwner || callerIsManager) && (
+                <th className="px-6 py-3 w-10"></th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -132,6 +161,9 @@ export default async function TeamPage({ params }: PageProps) {
               const name = member.profiles?.full_name
               const email = emailMap.get(member.user_id)
               const isCurrentUser = member.user_id === user!.id
+              const profileRole = (member.profiles?.role ?? 'production') as Role
+              const profileTier = (member.profiles?.tier ?? 'staff') as Tier
+              const profileDepts = member.profiles?.departments ?? []
 
               return (
                 <tr key={member.id} className="hover:bg-gray-50">
@@ -147,20 +179,65 @@ export default async function TeamPage({ params }: PageProps) {
                             <span className="ml-1.5 text-xs text-gray-400">(you)</span>
                           )}
                         </p>
+                        {member.profiles?.title && (
+                          <p className="text-xs text-gray-400">{member.profiles.title}</p>
+                        )}
                       </div>
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {email ?? <span className="text-gray-300">—</span>}
+                    {email ?? <span className="text-gray-300">&mdash;</span>}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${ROLE_STYLES[member.role]}`}>
-                      {member.role}
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_STYLES[member.role]}`}>
+                      {ROLE_LABELS[profileRole] ?? member.role}
                     </span>
+                  </td>
+                  <td className="whitespace-nowrap px-6 py-4">
+                    <span className="text-xs font-medium text-gray-600">
+                      {TIER_LABELS[profileTier] ?? profileTier}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    {profileDepts.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {profileDepts.slice(0, 3).map((d) => {
+                          const dept = deptRows.find((dr) => dr.code === d)
+                          return (
+                            <span key={d} className="inline-block rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                              {dept?.name ?? d}
+                            </span>
+                          )
+                        })}
+                        {profileDepts.length > 3 && (
+                          <span className="text-xs text-gray-400">+{profileDepts.length - 3}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-300">&mdash;</span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
                     {formatDate(member.created_at)}
                   </td>
+                  {(callerIsOwner || callerIsManager) && (
+                    <td className="px-6 py-4">
+                      <MemberSettings
+                        userId={member.user_id}
+                        orgId={org.id}
+                        orgSlug={org.slug}
+                        currentRole={profileRole}
+                        currentTier={profileTier}
+                        currentDepartments={profileDepts}
+                        currentTitle={member.profiles?.title ?? ''}
+                        currentPhone={member.profiles?.phone ?? ''}
+                        departments={deptRows.map((d) => ({ id: d.id, name: d.name, code: d.code ?? '' }))}
+                        canEditRole={callerIsOwner}
+                        canEditDepts={callerIsOwner || callerIsManager}
+                        memberName={name || email || 'Member'}
+                      />
+                    </td>
+                  )}
                 </tr>
               )
             })}

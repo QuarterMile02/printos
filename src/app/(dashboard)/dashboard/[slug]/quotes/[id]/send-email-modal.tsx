@@ -57,11 +57,13 @@ export default function SendEmailModal({
   const [showPreview, setShowPreview] = useState(false)
 
   // Template variables for rendering
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
   const templateVars: Record<string, string> = {
     contact_name: customerName,
     txn_number: `Q-${String(quote.quote_number).padStart(4, '0')}`,
     total: `$${(quote.total / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     txn_name: quote.title,
+    quote_link: `${baseUrl}/dashboard/${orgSlug}/quotes/${quote.id}`,
   }
 
   // Reset state when modal opens

@@ -301,10 +301,13 @@ export async function sendQuoteToCustomer(
     } else {
       try {
         // Load template if available
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+          || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://printos-lemon.vercel.app')
         const templateVars = {
           contact_name: customerName,
           txn_number: `Q-${quote.quote_number}`,
           total: `$${totalFormatted}`,
+          quote_link: `${baseUrl}/dashboard/${orgSlug}/quotes/${quoteId}`,
         }
         const template = await getEmailTemplate(orgId, triggerOverride ?? 'quote_sent')
 

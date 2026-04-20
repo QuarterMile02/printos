@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveMachineRate, cloneMachineRate } from './actions-sr'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +21,19 @@ export default async function Page({ params, searchParams }: {
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
   const org = orgRow as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
+
+  // Permission gate — owner + accounting only
+  const { allowed } = await checkPermission(org.id, 'settings.machine_rates')
+  if (!allowed) {
+    return (
+      <div className="p-8 max-w-5xl">
+        <h1 className="text-2xl font-bold text-gray-900">Machine Rates</h1>
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
+          You don&apos;t have permission to view machine rates. Contact your organization owner to request access.
+        </div>
+      </div>
+    )
+  }
 
   const { data: rows } = await supabase
     .from('machine_rates')

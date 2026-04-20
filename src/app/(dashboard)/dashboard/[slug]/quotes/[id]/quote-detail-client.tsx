@@ -93,6 +93,7 @@ type Props = {
   teamMembers: TeamMember[]
   salesRepName: string | null
   emailTemplates: EmailTemplate[]
+  canSeePricing: boolean
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -106,7 +107,7 @@ function dollarsToCents(s: string): number {
 }
 
 export default function QuoteDetailClient({
-  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates,
+  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -795,10 +796,10 @@ export default function QuoteDetailClient({
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Description</th>
                   <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">W &times; H</th>
                   <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Qty</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Unit Price</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Disc%</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
-                  <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Tax</th>
+                  {canSeePricing && <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Unit Price</th>}
+                  {canSeePricing && <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Disc%</th>}
+                  {canSeePricing && <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>}
+                  {canSeePricing && <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Tax</th>}
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -869,6 +870,7 @@ export default function QuoteDetailClient({
                           className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums text-right focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
+                      {canSeePricing && (
                       <td className="px-3 py-2 text-right">
                         <input
                           type="text"
@@ -878,6 +880,8 @@ export default function QuoteDetailClient({
                           className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums text-right focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
+                      )}
+                      {canSeePricing && (
                       <td className="px-3 py-2 text-right">
                         <input
                           type="number"
@@ -890,9 +894,13 @@ export default function QuoteDetailClient({
                           className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums text-right focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
+                      )}
+                      {canSeePricing && (
                       <td className="px-3 py-2 text-right text-sm font-semibold text-gray-900 tabular-nums">
                         ${formatCents(item.total_price)}
                       </td>
+                      )}
+                      {canSeePricing && (
                       <td className="px-3 py-2 text-center">
                         <input
                           type="checkbox"
@@ -904,6 +912,7 @@ export default function QuoteDetailClient({
                           className="h-4 w-4 rounded border-gray-300 accent-qm-lime"
                         />
                       </td>
+                      )}
                       <td className="px-3 py-2 text-right">
                         <button
                           type="button"
@@ -921,6 +930,7 @@ export default function QuoteDetailClient({
                   )
                 })}
               </tbody>
+              {canSeePricing && (
               <tfoot className="bg-gray-50">
                 <tr>
                   <td colSpan={6} className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">Subtotal</td>
@@ -942,6 +952,7 @@ export default function QuoteDetailClient({
                   <td colSpan={2}></td>
                 </tr>
               </tfoot>
+              )}
             </table>
           </div>
         ) : (
@@ -954,8 +965,8 @@ export default function QuoteDetailClient({
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Dimensions</th>
                   <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Qty</th>
                   <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Material</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Unit Price</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
+                  {canSeePricing && <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Unit Price</th>}
+                  {canSeePricing && <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -971,29 +982,31 @@ export default function QuoteDetailClient({
                     <td className="px-4 py-3 text-sm text-gray-600">
                       {item.material_name ?? <span className="text-gray-300">&mdash;</span>}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(item.unit_price)}</td>
-                    <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(item.total_price)}</td>
+                    {canSeePricing && <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(item.unit_price)}</td>}
+                    {canSeePricing && <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(item.total_price)}</td>}
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-gray-50">
-                <tr>
-                  <td colSpan={5} className="px-4 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">Subtotal</td>
-                  <td className="px-4 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(subtotal)}</td>
-                </tr>
-                {taxAmount > 0 && (
+              {canSeePricing && (
+                <tfoot className="bg-gray-50">
                   <tr>
-                    <td colSpan={5} className="px-4 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">
-                      Tax ({(TAX_RATE * 100).toFixed(2)}%)
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(taxAmount)}</td>
+                    <td colSpan={4} className="px-4 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">Subtotal</td>
+                    <td colSpan={2} className="px-4 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(subtotal)}</td>
                   </tr>
-                )}
-                <tr>
-                  <td colSpan={5} className="px-4 py-2 text-right text-sm font-bold text-gray-900">Total</td>
-                  <td className="px-4 py-2 text-right text-base font-extrabold tabular-nums text-gray-900">${formatCents(grandTotal)}</td>
-                </tr>
-              </tfoot>
+                  {taxAmount > 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Tax ({(TAX_RATE * 100).toFixed(2)}%)
+                      </td>
+                      <td colSpan={2} className="px-4 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(taxAmount)}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td colSpan={4} className="px-4 py-2 text-right text-sm font-bold text-gray-900">Total</td>
+                    <td colSpan={2} className="px-4 py-2 text-right text-base font-extrabold tabular-nums text-gray-900">${formatCents(grandTotal)}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { formatInvNumber, formatCents, INV_STATUS_STYLES, INV_STATUS_LABELS, INV_FILTER_TABS } from './format'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +19,19 @@ export default async function Page({ params, searchParams }: PageProps) {
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
   const org = orgRow as { id: string; name: string } | null
   if (!org) notFound()
+
+  // Permission gate — only owner + accounting + sales (with override) can view invoices
+  const { allowed } = await checkPermission(org.id, 'invoices.view')
+  if (!allowed) {
+    return (
+      <div className="p-8 max-w-5xl">
+        <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
+          You don&apos;t have permission to view invoices. Contact your organization owner to request access.
+        </div>
+      </div>
+    )
+  }
 
   let query = supabase
     .from('invoices')
