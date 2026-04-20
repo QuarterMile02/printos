@@ -5,6 +5,8 @@ import Link from 'next/link'
 import type { PricingType, ProductStatus } from '@/types/product-builder'
 import { copyProduct } from './actions'
 
+export type MigrationStatus = 'shopvox_reference' | 'in_progress' | 'printos_ready'
+
 export type ProductRow = {
   id: string
   name: string
@@ -17,6 +19,13 @@ export type ProductRow = {
   status: ProductStatus | null
   active: boolean | null
   updated_at: string | null
+  migration_status: MigrationStatus | null
+}
+
+const MIGRATION_STYLES: Record<MigrationStatus, { label: string; cls: string }> = {
+  shopvox_reference: { label: 'ShopVOX',      cls: 'bg-gray-100 text-gray-700 border-gray-200' },
+  in_progress:       { label: 'In Progress',  cls: 'bg-amber-100 text-amber-800 border-amber-200' },
+  printos_ready:     { label: 'PrintOS Ready', cls: 'bg-green-100 text-green-700 border-green-200' },
 }
 
 const STATUS_STYLES: Record<ProductStatus, string> = {
@@ -198,13 +207,19 @@ export default function ProductsListClient({
                   <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
                 )}
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Migration</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Updated</th>
                 <th className="px-4 py-3 w-16"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((p) => {
-                const editHref = `/dashboard/${orgSlug}/products/${p.id}/edit`
+                const migrationStatus = p.migration_status ?? 'printos_ready'
+                const migrationStyle = MIGRATION_STYLES[migrationStatus]
+                const needsMigration = migrationStatus !== 'printos_ready'
+                const editHref = needsMigration
+                  ? `/dashboard/${orgSlug}/products/${p.id}/migrate`
+                  : `/dashboard/${orgSlug}/products/${p.id}/edit`
                 return (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="whitespace-nowrap">
@@ -252,6 +267,16 @@ export default function ProductsListClient({
                           </span>
                         ) : (
                           <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <Link href={editHref} className="block px-6 py-4">
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${migrationStyle.cls}`}>
+                          {migrationStyle.label}
+                        </span>
+                        {needsMigration && (
+                          <span className="ml-2 text-[11px] font-semibold text-qm-lime">Migrate →</span>
                         )}
                       </Link>
                     </td>
