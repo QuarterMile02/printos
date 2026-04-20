@@ -18,6 +18,8 @@ export type LineBreakdown = {
   cost_cents: number
   price_cents: number
   in_base: boolean
+  inactive?: boolean
+  inactive_reason?: string
 }
 
 export type PricingResult = {
@@ -229,8 +231,101 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     }
   }
 
-  // 7. Apply modifier charges
+  // 6b. Load product_option_rates (labor/machine rates that can be selected at quote time)
+  const { data: optionRateRows } = await service
+    .from('product_option_rates')
+    .select('id, rate_type, rate_id, formula, multiplier, charge_per_li_unit, include_in_base_price, modifier_formula')
+    .eq('product_id', input.product_id)
+    .order('sort_order')
+  const optionRates = (optionRateRows ?? []) as {
+    id: string; rate_type: 'labor_rate' | 'machine_rate'; rate_id: string
+    formula: string | null; multiplier: number | null
+    charge_per_li_unit: boolean | null; include_in_base_price: boolean | null
+    modifier_formula: string | null
+  }[]
+
+  const orLaborIds = optionRates.filter(r => r.rate_type === 'labor_rate').map(r => r.rate_id)
+  const orMachineIds = optionRates.filter(r => r.rate_type === 'machine_rate').map(r => r.rate_id)
+  if (orLaborIds.length > 0) {
+    const { data } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units').in('id', orLaborIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[]) {
+      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
+    }
+  }
+  if (orMachineIds.length > 0) {
+    const { data } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units').in('id', orMachineIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[]) {
+      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
+    }
+  }
+
   const selectedMods = input.selected_modifiers ?? {}
+  const modifierValueByName = new Map<string, boolean | number>()
+  for (const [modId, value] of Object.entries(selectedMods)) {
+    const mod = modifierMap.get(modId)
+    if (mod) modifierValueByName.set(mod.name, value)
+  }
+
+  for (const r of optionRates) {
+    const rate = rateMap.get(r.rate_id)
+    const name = rate?.name ?? 'Unknown rate'
+    const formula = r.formula ?? product.formula ?? 'Area'
+    const mult = Number(r.multiplier ?? 1)
+    const rateCost = rate?.cost ?? 0
+    const ratePrice = rate?.price ?? 0
+    const fMult = formulaMultiplier(formula, input.width_inches, input.height_inches, input.quantity)
+
+    let itemCost: number
+    let itemPrice: number
+    if (rate?.units === 'Hr' && rate.production_rate && rate.production_rate > 0 && formula !== 'Unit') {
+      const timeHours = fMult / rate.production_rate
+      itemCost = rateCost * timeHours * mult
+      itemPrice = ratePrice * timeHours * mult
+    } else {
+      itemCost = rateCost * fMult * mult
+      itemPrice = ratePrice * fMult * mult
+    }
+    if (r.charge_per_li_unit) {
+      itemCost *= input.quantity
+      itemPrice *= input.quantity
+    }
+
+    // Apply modifier condition — modifier_formula may name a product modifier.
+    // Boolean modifier: only charges when selected. Numeric modifier: multiplies by value.
+    let inactive = false
+    let inactiveReason: string | undefined
+    if (r.modifier_formula && modifierValueByName.size > 0) {
+      const direct = modifierValueByName.get(r.modifier_formula)
+      if (direct !== undefined) {
+        if (typeof direct === 'boolean') {
+          if (!direct) { inactive = true; inactiveReason = `${r.modifier_formula} unchecked` }
+        } else if (typeof direct === 'number') {
+          itemCost *= direct; itemPrice *= direct
+        }
+      }
+      // If modifier_formula doesn't match a known modifier name, treat as always-charges custom formula.
+    }
+
+    const costCents = inactive ? 0 : Math.round(itemCost * 100)
+    const priceCents = inactive ? 0 : Math.round(itemPrice * 100)
+
+    breakdown.push({
+      name,
+      item_type: r.rate_type === 'labor_rate' ? 'LaborRate' : 'MachineRate',
+      formula,
+      cost_cents: costCents,
+      price_cents: priceCents,
+      in_base: r.include_in_base_price ?? false,
+      inactive,
+      inactive_reason: inactiveReason,
+    })
+    if (!inactive) {
+      totalCostCents += costCents
+      if (r.include_in_base_price) basePriceCents += priceCents
+    }
+  }
+
+  // 7. Apply modifier charges
   for (const [modId, value] of Object.entries(selectedMods)) {
     const mod = modifierMap.get(modId)
     if (!mod) continue

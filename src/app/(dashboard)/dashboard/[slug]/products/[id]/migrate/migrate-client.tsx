@@ -89,6 +89,7 @@ export type ExistingOptionRate = {
   formula: string | null
   multiplier: number | null
   charge_per_li_unit: boolean | null
+  include_in_base_price: boolean | null
   modifier_formula: string | null
   workflow_step: boolean | null
   sort_order: number | null
@@ -123,8 +124,23 @@ type Props = {
 
 // ---- Local row types ----
 type MaterialRow = { id: string; category_id: string | null; wastage_percent: number; item_markup: number }
-type RateRow = { id: string; rate_id: string; formula: string | null; multiplier: number; charge_per_li_unit: boolean; modifier_formula: string | null; workflow_step: boolean }
+type RateRow = { id: string; rate_id: string; formula: string | null; multiplier: number; charge_per_li_unit: boolean; include_in_base_price: boolean; modifier_formula: string | null; workflow_step: boolean }
 type ModifierRow = { id: string; modifier_id: string; is_required: boolean; default_value: string | null; display_name: string; modifier_type: string }
+
+type CreateRateFormInput = {
+  name: string
+  category: string | null
+  cost: number
+  markup: number
+  formula: string | null
+  production_rate: number | null
+  production_rate_units: string | null
+  setup_charge: number | null
+  description: string | null
+  show_internal: boolean
+  equipment_replacement_value?: number | null
+  monthly_operating_hours?: number | null
+}
 type DropdownItemRow = { item_type: 'Material' | 'LaborRate' | 'MachineRate'; material_id: string | null; labor_rate_id: string | null; machine_rate_id: string | null; system_formula: string | null; charge_per_li_unit: boolean; is_optional: boolean; id: string }
 type DropdownMenuRow = { id: string; menu_name: string; is_optional: boolean; items: DropdownItemRow[] }
 
@@ -227,13 +243,15 @@ export default function MigrateClient({
   const [laborRateRows, setLaborRateRows] = useState<RateRow[]>(() =>
     existingOptionRates.filter((r) => r.rate_type === 'labor_rate').map((r) => ({
       id: uid(), rate_id: r.rate_id, formula: r.formula, multiplier: r.multiplier ?? 1,
-      charge_per_li_unit: r.charge_per_li_unit ?? false, modifier_formula: r.modifier_formula, workflow_step: r.workflow_step ?? false,
+      charge_per_li_unit: r.charge_per_li_unit ?? false, include_in_base_price: r.include_in_base_price ?? false,
+      modifier_formula: r.modifier_formula, workflow_step: r.workflow_step ?? false,
     }))
   )
   const [machineRateRows, setMachineRateRows] = useState<RateRow[]>(() =>
     existingOptionRates.filter((r) => r.rate_type === 'machine_rate').map((r) => ({
       id: uid(), rate_id: r.rate_id, formula: r.formula, multiplier: r.multiplier ?? 1,
-      charge_per_li_unit: r.charge_per_li_unit ?? false, modifier_formula: r.modifier_formula, workflow_step: r.workflow_step ?? false,
+      charge_per_li_unit: r.charge_per_li_unit ?? false, include_in_base_price: r.include_in_base_price ?? false,
+      modifier_formula: r.modifier_formula, workflow_step: r.workflow_step ?? false,
     }))
   )
 
@@ -353,12 +371,12 @@ export default function MigrateClient({
       const match = laborRates.find((l: LaborRateOption) => l.name.toLowerCase().trim() === lcName)
       if (!match) { showToast(`No labor rate match for "${it.name}"`); return }
       if (laborRateRows.some((r: RateRow) => r.rate_id === match.id)) return
-      setLaborRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
+      setLaborRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li, include_in_base_price: false, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
     } else {
       const match = machineRates.find((m: MachineRateOption) => m.name.toLowerCase().trim() === lcName)
       if (!match) { showToast(`No machine rate match for "${it.name}"`); return }
       if (machineRateRows.some((r: RateRow) => r.rate_id === match.id)) return
-      setMachineRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
+      setMachineRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li, include_in_base_price: false, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
     }
   }
 
@@ -377,7 +395,7 @@ export default function MigrateClient({
     const setter = kind === 'LaborRate' ? setLaborRateRows : setMachineRateRows
     setter((rows: RateRow[]) => {
       const existing = new Set(rows.map((r: RateRow) => r.rate_id))
-      return [...rows, ...rateIds.filter((id) => !existing.has(id)).map<RateRow>((rate_id) => ({ id: uid(), rate_id, formula: 'Area', multiplier: 1, charge_per_li_unit: false, modifier_formula: null, workflow_step: false }))]
+      return [...rows, ...rateIds.filter((id) => !existing.has(id)).map<RateRow>((rate_id) => ({ id: uid(), rate_id, formula: 'Area', multiplier: 1, charge_per_li_unit: false, include_in_base_price: false, modifier_formula: null, workflow_step: false }))]
     })
   }
   function updateRate(kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) {
@@ -412,6 +430,18 @@ export default function MigrateClient({
   function onMachineDragEnd(e: DragEndEvent) { const { active, over } = e; if (!over || active.id === over.id) return; setMachineRateRows((rows: RateRow[]) => reorder(rows, String(active.id), String(over.id))) }
   function onModifierDragEnd(e: DragEndEvent) { const { active, over } = e; if (!over || active.id === over.id) return; setModifierRows((rows: ModifierRow[]) => reorder(rows, String(active.id), String(over.id))) }
 
+  // FIX 3: Workflow step drag — reorders the underlying rate row within its kind's array.
+  // Keys are `L:<rowId>` (labor) or `M:<rowId>` (machine). Cross-kind drops are ignored.
+  function onWorkflowStepDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const [aKind, aId] = String(active.id).split(':')
+    const [oKind, oId] = String(over.id).split(':')
+    if (aKind !== oKind) return
+    if (aKind === 'L') setLaborRateRows((rows: RateRow[]) => reorder(rows, aId, oId))
+    else if (aKind === 'M') setMachineRateRows((rows: RateRow[]) => reorder(rows, aId, oId))
+  }
+
   // ---- Bundle ----
   function buildBundle(): MigrateBundle {
     return {
@@ -419,8 +449,8 @@ export default function MigrateClient({
       pricing: { pricing_type: pricing.pricing_type, pricing_method: pricing.pricing_method, formula: pricing.formula, buying_units: pricing.buying_units, range_discount_id: pricing.range_discount_id },
       defaultItems: materialRows.map<MigrateDefaultItem>((r: MaterialRow) => ({ item_type: 'Material', material_id: null, labor_rate_id: null, machine_rate_id: null, custom_item_name: null, system_formula: null, multiplier: 1, charge_per_li_unit: false, include_in_base_price: true, menu_name: null, is_optional: false, workflow_step: false, modifier_formula: null, wastage_percent: r.wastage_percent, item_markup: r.item_markup, overrides_material_category_id: r.category_id })),
       optionRates: [
-        ...laborRateRows.map<MigrateOptionRate>((r: RateRow) => ({ rate_type: 'labor_rate', rate_id: r.rate_id, category: laborById.get(r.rate_id)?.category ?? null, formula: r.formula, multiplier: r.multiplier, charge_per_li_unit: r.charge_per_li_unit, modifier_formula: r.modifier_formula, workflow_step: r.workflow_step })),
-        ...machineRateRows.map<MigrateOptionRate>((r: RateRow) => ({ rate_type: 'machine_rate', rate_id: r.rate_id, category: machineById.get(r.rate_id)?.category ?? null, formula: r.formula, multiplier: r.multiplier, charge_per_li_unit: r.charge_per_li_unit, modifier_formula: r.modifier_formula, workflow_step: r.workflow_step })),
+        ...laborRateRows.map<MigrateOptionRate>((r: RateRow) => ({ rate_type: 'labor_rate', rate_id: r.rate_id, category: laborById.get(r.rate_id)?.category ?? null, formula: r.formula, multiplier: r.multiplier, charge_per_li_unit: r.charge_per_li_unit, include_in_base_price: r.include_in_base_price, modifier_formula: r.modifier_formula, workflow_step: r.workflow_step })),
+        ...machineRateRows.map<MigrateOptionRate>((r: RateRow) => ({ rate_type: 'machine_rate', rate_id: r.rate_id, category: machineById.get(r.rate_id)?.category ?? null, formula: r.formula, multiplier: r.multiplier, charge_per_li_unit: r.charge_per_li_unit, include_in_base_price: r.include_in_base_price, modifier_formula: r.modifier_formula, workflow_step: r.workflow_step })),
       ],
       modifiers: modifierRows.map((r: ModifierRow) => ({ modifier_id: r.modifier_id, is_required: r.is_required, default_value: r.default_value })),
       dropdownMenus: dropdownMenus.map<MigrateDropdownMenu>((m: DropdownMenuRow) => ({ menu_name: m.menu_name, is_optional: m.is_optional, items: m.items.map((i: DropdownItemRow) => ({ item_type: i.item_type, material_id: i.material_id, labor_rate_id: i.labor_rate_id, machine_rate_id: i.machine_rate_id, system_formula: i.system_formula, charge_per_li_unit: i.charge_per_li_unit, is_optional: i.is_optional })) })),
@@ -445,15 +475,15 @@ export default function MigrateClient({
   }
 
   const workflowSteps = useMemo(() => {
-    const steps: { kind: 'LaborRate' | 'MachineRate'; name: string; row: RateRow }[] = []
-    for (const r of laborRateRows) { if (!r.workflow_step) continue; steps.push({ kind: 'LaborRate', name: laborById.get(r.rate_id)?.name ?? 'Unknown labor rate', row: r }) }
-    for (const r of machineRateRows) { if (!r.workflow_step) continue; steps.push({ kind: 'MachineRate', name: machineById.get(r.rate_id)?.name ?? 'Unknown machine rate', row: r }) }
+    const steps: { key: string; kind: 'LaborRate' | 'MachineRate'; name: string; row: RateRow }[] = []
+    for (const r of laborRateRows) { if (!r.workflow_step) continue; steps.push({ key: `L:${r.id}`, kind: 'LaborRate', name: laborById.get(r.rate_id)?.name ?? 'Unknown labor rate', row: r }) }
+    for (const r of machineRateRows) { if (!r.workflow_step) continue; steps.push({ key: `M:${r.id}`, kind: 'MachineRate', name: machineById.get(r.rate_id)?.name ?? 'Unknown machine rate', row: r }) }
     return steps
   }, [laborRateRows, machineRateRows, laborById, machineById])
 
   // ---- Inline create handlers ----
-  async function handleCreateMaterialCategory(name: string): Promise<string | null> {
-    const res = await createMaterialCategory(orgId, name)
+  async function handleCreateMaterialCategory(name: string, description?: string | null): Promise<string | null> {
+    const res = await createMaterialCategory(orgId, name, description ?? null)
     if (res.error || !res.row) { setFormError(res.error ?? 'Failed'); return null }
     setMaterialCats((list: Pick<MaterialCategory, 'id' | 'name'>[]) => [...list, res.row!].sort((a, b) => a.name.localeCompare(b.name)))
     showToast(`Created category "${res.row.name}"`); return res.row.id
@@ -472,22 +502,46 @@ export default function MigrateClient({
     setDiscounts((list: Discount[]) => [...list, d].sort((a: Discount, b: Discount) => a.name.localeCompare(b.name)))
     showToast(`Created discount "${res.row.name}"`); return res.row.id
   }
-  async function handleCreateModifier(name: string, modifier_type: 'Boolean' | 'Numeric' | 'Range', default_value: string | null): Promise<string | null> {
-    const res = await createModifier(orgId, { name, modifier_type, default_value })
+  async function handleCreateModifier(input: { name: string; display_name: string; modifier_type: 'Boolean' | 'Numeric' | 'Range'; default_value: string | null; show_customer: boolean }): Promise<string | null> {
+    const res = await createModifier(orgId, { name: input.name, display_name: input.display_name, modifier_type: input.modifier_type, default_value: input.default_value, show_customer: input.show_customer })
     if (res.error || !res.row) { setFormError(res.error ?? 'Failed'); return null }
     const mod: Modifier = { id: res.row.id, name: res.row.name, display_name: res.row.display_name, modifier_type: res.row.modifier_type as Modifier['modifier_type'], organization_id: orgId, system_lookup_name: null, units: null, range_min_label: null, range_max_label: null, range_min_value: null, range_max_value: null, range_default_value: null, range_step_interval: null, show_internally: null, show_customer: null, is_system_variable: null, active: true, created_at: new Date().toISOString(), created_by: null, updated_at: new Date().toISOString(), updated_by: null }
     setModifiersList((list: Modifier[]) => [...list, mod].sort((a: Modifier, b: Modifier) => a.display_name.localeCompare(b.display_name)))
     showToast(`Created modifier "${res.row.display_name}"`); return res.row.id
   }
-  async function handleCreateLaborRate(input: { name: string; category: string; cost: number; markup: number }): Promise<string | null> {
-    const res = await createLaborRate(orgId, input)
+  async function handleCreateLaborRate(input: CreateRateFormInput): Promise<string | null> {
+    const res = await createLaborRate(orgId, {
+      name: input.name,
+      category: input.category,
+      cost: input.cost,
+      markup: input.markup,
+      formula: input.formula,
+      production_rate: input.production_rate,
+      production_rate_units: input.production_rate_units,
+      setup_charge: input.setup_charge,
+      description: input.description,
+      show_internal: input.show_internal,
+    })
     if (res.error || !res.row) { setFormError(res.error ?? 'Failed'); return null }
     const rate: LaborRateOption = { id: res.row.id, name: res.row.name, category: res.row.category, cost: res.row.cost, markup: res.row.markup }
     setLaborRates((list: LaborRateOption[]) => [...list, rate].sort((a: LaborRateOption, b: LaborRateOption) => a.name.localeCompare(b.name)))
     addRatesByCategory('LaborRate', [res.row.id]); showToast(`Created labor rate "${res.row.name}"`); return res.row.id
   }
-  async function handleCreateMachineRate(input: { name: string; category: string; cost: number; markup: number }): Promise<string | null> {
-    const res = await createMachineRate(orgId, input)
+  async function handleCreateMachineRate(input: CreateRateFormInput): Promise<string | null> {
+    const res = await createMachineRate(orgId, {
+      name: input.name,
+      category: input.category,
+      cost: input.cost,
+      markup: input.markup,
+      formula: input.formula,
+      production_rate: input.production_rate,
+      production_rate_units: input.production_rate_units,
+      setup_charge: input.setup_charge,
+      description: input.description,
+      show_internal: input.show_internal,
+      equipment_replacement_value: input.equipment_replacement_value ?? null,
+      monthly_operating_hours: input.monthly_operating_hours ?? null,
+    })
     if (res.error || !res.row) { setFormError(res.error ?? 'Failed'); return null }
     const rate: MachineRateOption = { id: res.row.id, name: res.row.name, category: res.row.category, cost: res.row.cost, markup: res.row.markup }
     setMachineRates((list: MachineRateOption[]) => [...list, rate].sort((a: MachineRateOption, b: MachineRateOption) => a.name.localeCompare(b.name)))
@@ -599,10 +653,10 @@ export default function MigrateClient({
                   const rKey = `mod:${i}`
                   return (
                     <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewedRows.has(rKey)} onToggle={() => toggleReviewed(rKey)} onCopy={() => copyShopvoxModifier(m)}>
-                      <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${m.type === 'Boolean' ? 'bg-blue-100 text-blue-700' : m.type === 'Numeric' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'}`}>{m.type}</span>
-                        <span className="text-sm font-medium text-gray-800 truncate">{m.name}</span>
-                        <span className="text-xs text-gray-400 ml-auto">{typeof m.default === 'boolean' ? String(m.default) : (m.default ?? '')}</span>
+                      <div className="flex items-start gap-2 flex-wrap">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0 ${m.type === 'Boolean' ? 'bg-blue-100 text-blue-700' : m.type === 'Numeric' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'}`}>{m.type}</span>
+                        <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{m.name}</span>
+                        <span className="text-xs text-gray-400 shrink-0">{typeof m.default === 'boolean' ? String(m.default) : (m.default ?? '')}</span>
                       </div>
                     </LeftCheckRow>
                   )
@@ -615,11 +669,11 @@ export default function MigrateClient({
                   const rKey = `dd:${i}`
                   return (
                     <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewedRows.has(rKey)} onToggle={() => toggleReviewed(rKey)} onCopy={() => copyShopvoxDropdown(m)}>
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-fuchsia-100 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-700">{m.kind}</span>
-                        <span className="text-sm font-medium text-gray-800 truncate">{m.name}</span>
-                        {m.optional && <span className="text-[10px] text-gray-400 ml-auto">optional</span>}
-                        {m.category && <span className="text-[10px] text-gray-400">{m.category}</span>}
+                      <div className="flex items-start gap-2 flex-wrap">
+                        <span className="inline-flex items-center rounded-full bg-fuchsia-100 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-700 shrink-0">{m.kind}</span>
+                        <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{m.name}</span>
+                        {m.optional && <span className="text-[10px] text-gray-400 shrink-0">optional</span>}
+                        {m.category && <span className="text-[10px] text-gray-400 break-words shrink-0">{m.category}</span>}
                       </div>
                     </LeftCheckRow>
                   )
@@ -636,9 +690,9 @@ export default function MigrateClient({
                       <div className="flex items-start gap-1.5">
                         <TypeBadge kind="Material" />
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium truncate block">{it.name}</span>
-                          <div className="flex gap-2 text-xs text-gray-500">
-                            <span>Formula: {it.formula}</span>
+                          <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed block">{it.name}</span>
+                          <div className="flex gap-2 flex-wrap text-xs text-gray-500">
+                            <span className="break-words">Formula: {it.formula}</span>
                             <span>× {it.multiplier}</span>
                             {it.per_li && <span className="text-amber-600">Per LI</span>}
                           </div>
@@ -658,18 +712,18 @@ export default function MigrateClient({
                   return (
                     <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewed} onToggle={() => toggleReviewed(rKey)} onCopy={() => addShopvoxDefaultItem(it)}>
                       <div className={`space-y-0.5 transition-all ${reviewed ? 'line-through text-gray-400' : ''}`}>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono text-gray-400 w-5 shrink-0">#{it.idx ?? i + 1}</span>
+                        <div className="flex items-start gap-2 flex-wrap">
+                          <span className="text-[10px] font-mono text-gray-400 w-5 shrink-0 pt-0.5">#{it.idx ?? i + 1}</span>
                           <TypeBadge kind={it.kind} />
-                          <span className="text-sm font-medium truncate">{it.name}</span>
+                          <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{it.name}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-xs pl-7">
-                          <span>Formula: {it.formula}</span>
+                        <div className="flex items-start gap-2 flex-wrap text-xs pl-7">
+                          <span className="break-words">Formula: {it.formula}</span>
                           <span>× {it.multiplier}</span>
                           {it.per_li && <span className={reviewed ? '' : 'text-amber-600'}>Per LI</span>}
-                          {it.modifier && <span className="truncate" title={it.modifier.expression}>Mod: {it.modifier.expression}</span>}
+                          {it.modifier && <span className="break-all whitespace-normal leading-relaxed text-gray-600" title={it.modifier.expression}>Mod: {it.modifier.expression}</span>}
                         </div>
-                        {it.note && <div className="text-[11px] italic pl-7">{it.note}</div>}
+                        {it.note && <div className="text-[11px] italic pl-7 break-words whitespace-normal leading-relaxed">{it.note}</div>}
                       </div>
                     </LeftCheckRow>
                   )
@@ -698,7 +752,7 @@ export default function MigrateClient({
                 <input className={inputCls} value={basic.product_type} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBasic((p: BasicState) => ({ ...p, product_type: e.target.value }))} />
               </FieldRow>
               <FieldRow label="Workflow">
-                <SelectWithAdd value={basic.workflow_template_id ?? ''} onChange={(v) => setBasic((p: BasicState) => ({ ...p, workflow_template_id: v || null }))} options={workflows.map((w: WorkflowTemplate) => ({ value: w.id, label: w.name }))} addLabel="+ Add New Workflow" renderAddForm={(close) => (<AddWorkflowForm onCancel={close} onSubmit={async (name) => { const id = await handleCreateWorkflow(name); if (id) { setBasic((p: BasicState) => ({ ...p, workflow_template_id: id })); close() } }} />)} />
+                <SelectWithAdd value={basic.workflow_template_id ?? ''} onChange={(v) => setBasic((p: BasicState) => ({ ...p, workflow_template_id: v || null }))} options={workflows.map((w: WorkflowTemplate) => ({ value: w.id, label: w.name }))} addLabel="+ Add New Workflow" renderAddForm={(close) => (<AddWorkflowModal onCancel={close} onSubmit={async (name) => { const id = await handleCreateWorkflow(name); if (id) { setBasic((p: BasicState) => ({ ...p, workflow_template_id: id })); close() } }} />)} />
               </FieldRow>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -742,14 +796,14 @@ export default function MigrateClient({
               </FieldRow>
             </div>
             <FieldRow label="Range Discount">
-              <SelectWithAdd value={pricing.range_discount_id ?? ''} onChange={(v) => setPricing((p: PricingState) => ({ ...p, range_discount_id: v || null }))} options={discounts.filter((d: Discount) => d.discount_type === 'Range').map((d: Discount) => ({ value: d.id, label: d.name }))} addLabel="+ Add New Discount" renderAddForm={(close) => (<AddDiscountForm onCancel={close} onSubmit={async (name, type) => { const id = await handleCreateDiscount(name, type); if (id) { setPricing((p: PricingState) => ({ ...p, range_discount_id: id })); close() } }} />)} />
+              <SelectWithAdd value={pricing.range_discount_id ?? ''} onChange={(v) => setPricing((p: PricingState) => ({ ...p, range_discount_id: v || null }))} options={discounts.filter((d: Discount) => d.discount_type === 'Range').map((d: Discount) => ({ value: d.id, label: d.name }))} addLabel="+ Add New Discount" renderAddForm={(close) => (<AddDiscountModal onCancel={close} onSubmit={async (name, type) => { const id = await handleCreateDiscount(name, type); if (id) { setPricing((p: PricingState) => ({ ...p, range_discount_id: id })); close() } }} />)} />
             </FieldRow>
           </RightSection>
 
           {/* 3. Modifiers — FIX 5: purple left border */}
           <ColoredSection title={`Modifiers (${modifierRows.length})`} borderColor="border-l-purple-500">
             <div className="mb-2">
-              <SelectWithAdd value="" onChange={(v) => { if (v) addModifierById(v) }} options={modifiersList.filter((m: Modifier) => !modifierRows.some((r: ModifierRow) => r.modifier_id === m.id)).map((m: Modifier) => ({ value: m.id, label: `${m.display_name} (${m.modifier_type})` }))} placeholder="— Add modifier —" addLabel="+ Add New Modifier" renderAddForm={(close) => (<AddModifierForm onCancel={close} onSubmit={async (name, type, def) => { const id = await handleCreateModifier(name, type, def); if (id) { addModifierById(id); close() } }} />)} />
+              <SelectWithAdd value="" onChange={(v) => { if (v) addModifierById(v) }} options={modifiersList.filter((m: Modifier) => !modifierRows.some((r: ModifierRow) => r.modifier_id === m.id)).map((m: Modifier) => ({ value: m.id, label: `${m.display_name} (${m.modifier_type})` }))} placeholder="— Add modifier —" addLabel="+ Add New Modifier" renderAddForm={(close) => (<AddModifierModal onCancel={close} onSubmit={async (input) => { const id = await handleCreateModifier(input); if (id) { addModifierById(id); close() } }} />)} />
             </div>
             {modifierRows.length === 0 ? <EmptyState text="No modifiers yet." /> : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onModifierDragEnd}>
@@ -789,31 +843,28 @@ export default function MigrateClient({
 
           {/* 6. Labor + Machine Rates side-by-side — FIX 4: Add by Name + Add by Category */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <RateSection kind="LaborRate" title="Labor Rates" borderColor="border-l-green-500" rows={laborRateRows} rates={laborRates} rateCategories={laborCategories} ratesById={laborById} onAddRates={(ids) => addRatesByCategory('LaborRate', ids)} onUpdate={updateRate} onDelete={deleteRate} sensors={sensors} onDragEnd={onLaborDragEnd} onCreateRate={handleCreateLaborRate} />
-            <RateSection kind="MachineRate" title="Machine Rates" borderColor="border-l-orange-500" rows={machineRateRows} rates={machineRates} rateCategories={machineCategories} ratesById={machineById} onAddRates={(ids) => addRatesByCategory('MachineRate', ids)} onUpdate={updateRate} onDelete={deleteRate} sensors={sensors} onDragEnd={onMachineDragEnd} onCreateRate={handleCreateMachineRate} />
+            <RateSection kind="LaborRate" title="Labor Rates" borderColor="border-l-green-500" rows={laborRateRows} rates={laborRates} rateCategories={laborCategories} ratesById={laborById} productModifiers={modifierRows} onAddRates={(ids) => addRatesByCategory('LaborRate', ids)} onUpdate={updateRate} onDelete={deleteRate} sensors={sensors} onDragEnd={onLaborDragEnd} onCreateRate={handleCreateLaborRate} />
+            <RateSection kind="MachineRate" title="Machine Rates" borderColor="border-l-orange-500" rows={machineRateRows} rates={machineRates} rateCategories={machineCategories} ratesById={machineById} productModifiers={modifierRows} onAddRates={(ids) => addRatesByCategory('MachineRate', ids)} onUpdate={updateRate} onDelete={deleteRate} sensors={sensors} onDragEnd={onMachineDragEnd} onCreateRate={handleCreateMachineRate} />
           </div>
 
-          {/* 7. Workflow Steps — FIX 5: indigo left border */}
+          {/* 7. Workflow Steps — drag handles, reorder per kind */}
           <ColoredSection title={`Workflow Steps (${workflowSteps.length})`} borderColor="border-l-indigo-500">
             {workflowSteps.length === 0 ? <EmptyState text="Check the Workflow ☑ box on any Labor or Machine rate to make it a step." /> : (
-              <ol className="space-y-1">
-                {workflowSteps.map((s: { kind: 'LaborRate' | 'MachineRate'; name: string; row: RateRow }, i: number) => (
-                  <li key={`${s.kind}-${s.row.id}`} className="flex items-center gap-2 rounded-md border border-gray-100 bg-white px-2 py-1.5">
-                    <span className="text-[11px] font-mono font-semibold text-gray-400 w-6 shrink-0">{i + 1}.</span>
-                    <input type="checkbox" checked readOnly className="accent-purple-600 h-4 w-4" />
-                    <TypeBadge kind={s.kind} />
-                    <span className="text-sm font-medium text-gray-800 truncate">{s.name}</span>
-                    <span className="ml-auto text-[11px] text-gray-500 flex items-center gap-2">
-                      <span>{s.row.formula ?? '—'}</span>
-                      <span className="text-gray-400">×</span>
-                      <span className="tabular-nums">{s.row.multiplier}</span>
-                      {s.row.charge_per_li_unit && <span className="text-amber-600">Per Qty</span>}
-                    </span>
-                  </li>
-                ))}
-              </ol>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onWorkflowStepDragEnd}>
+                <SortableContext items={workflowSteps.map((s) => s.key)} strategy={verticalListSortingStrategy}>
+                  <ol className="space-y-1">
+                    {workflowSteps.map((s, i) => <SortableWorkflowStep key={s.key} sortKey={s.key} index={i} step={s} />)}
+                  </ol>
+                </SortableContext>
+              </DndContext>
             )}
           </ColoredSection>
+
+          {/* 8. Check Pricing — only in draft/building state (FIX 6) */}
+          {migrationStatus !== 'printos_ready' && (
+            <CheckPricingPanel productId={product.id} modifiers={modifierRows} />
+          )}
+
           <div className="h-6" />
         </div>
       </div>
@@ -825,7 +876,7 @@ export default function MigrateClient({
 // Sub-components
 // ============================================================
 
-function MaterialTable({ rows, materialCats, materialsByCategory, onCreateCategory, onUpdate, onDelete }: { rows: MaterialRow[]; materialCats: Pick<MaterialCategory, 'id' | 'name'>[]; materialsByCategory: Map<string, MaterialOption[]>; onCreateCategory: (name: string) => Promise<string | null>; onUpdate: (id: string, patch: Partial<MaterialRow>) => void; onDelete: (id: string) => void }) {
+function MaterialTable({ rows, materialCats, materialsByCategory, onCreateCategory, onUpdate, onDelete }: { rows: MaterialRow[]; materialCats: Pick<MaterialCategory, 'id' | 'name'>[]; materialsByCategory: Map<string, MaterialOption[]>; onCreateCategory: (name: string, description?: string | null) => Promise<string | null>; onUpdate: (id: string, patch: Partial<MaterialRow>) => void; onDelete: (id: string) => void }) {
   const GRID = 'grid grid-cols-[minmax(180px,2fr)_96px_96px_36px] items-center gap-2 px-2 py-1.5'
   return (
     <div className="divide-y divide-gray-100">
@@ -835,7 +886,7 @@ function MaterialTable({ rows, materialCats, materialsByCategory, onCreateCatego
   )
 }
 
-function MaterialRowUI({ row, grid, materialCats, materialsByCategory, onCreateCategory, onUpdate, onDelete }: { row: MaterialRow; grid: string; materialCats: Pick<MaterialCategory, 'id' | 'name'>[]; materialsByCategory: Map<string, MaterialOption[]>; onCreateCategory: (name: string) => Promise<string | null>; onUpdate: (id: string, patch: Partial<MaterialRow>) => void; onDelete: (id: string) => void }) {
+function MaterialRowUI({ row, grid, materialCats, materialsByCategory, onCreateCategory, onUpdate, onDelete }: { row: MaterialRow; grid: string; materialCats: Pick<MaterialCategory, 'id' | 'name'>[]; materialsByCategory: Map<string, MaterialOption[]>; onCreateCategory: (name: string, description?: string | null) => Promise<string | null>; onUpdate: (id: string, patch: Partial<MaterialRow>) => void; onDelete: (id: string) => void }) {
   const [showAddForm, setShowAddForm] = useState(false)
   function handleCategoryChange(value: string) {
     if (value === ADD_NEW) { setShowAddForm(true); return }
@@ -859,13 +910,13 @@ function MaterialRowUI({ row, grid, materialCats, materialsByCategory, onCreateC
         <input type="number" step="0.01" className="h-7 rounded border border-gray-200 px-1.5 text-xs tabular-nums" value={Number.isFinite(row.item_markup) ? row.item_markup : 1} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdate(row.id, { item_markup: parseFloat(e.target.value) || 0 })} />
         <button onClick={() => onDelete(row.id)} className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600" title="Delete"><TrashIcon /></button>
       </div>
-      {showAddForm && <div className="px-2 py-2"><AddCategoryForm onCancel={() => setShowAddForm(false)} onSubmit={async (name) => { const id = await onCreateCategory(name); if (id) { onUpdate(row.id, { category_id: id }); setShowAddForm(false) } }} /></div>}
+      {showAddForm && <AddMaterialCategoryModal onCancel={() => setShowAddForm(false)} onSubmit={async (name, description) => { const id = await onCreateCategory(name, description); if (id) { onUpdate(row.id, { category_id: id }); setShowAddForm(false) } }} />}
     </>
   )
 }
 
 // FIX 4: RateSection — Add by Name search + Add by Category checklist
-function RateSection({ kind, title, borderColor, rows, rates, rateCategories, ratesById, onAddRates, onUpdate, onDelete, sensors, onDragEnd, onCreateRate }: { kind: 'LaborRate' | 'MachineRate'; title: string; borderColor: string; rows: RateRow[]; rates: (LaborRateOption | MachineRateOption)[]; rateCategories: string[]; ratesById: Map<string, LaborRateOption | MachineRateOption>; onAddRates: (ids: string[]) => void; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void; sensors: ReturnType<typeof useSensors>; onDragEnd: (e: DragEndEvent) => void; onCreateRate: (input: { name: string; category: string; cost: number; markup: number }) => Promise<string | null> }) {
+function RateSection({ kind, title, borderColor, rows, rates, rateCategories, ratesById, productModifiers, onAddRates, onUpdate, onDelete, sensors, onDragEnd, onCreateRate }: { kind: 'LaborRate' | 'MachineRate'; title: string; borderColor: string; rows: RateRow[]; rates: (LaborRateOption | MachineRateOption)[]; rateCategories: string[]; ratesById: Map<string, LaborRateOption | MachineRateOption>; productModifiers: ModifierRow[]; onAddRates: (ids: string[]) => void; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void; sensors: ReturnType<typeof useSensors>; onDragEnd: (e: DragEndEvent) => void; onCreateRate: (input: CreateRateFormInput) => Promise<string | null> }) {
   const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   const [showAddForm, setShowAddForm] = useState(false)
@@ -936,24 +987,25 @@ function RateSection({ kind, title, borderColor, rows, rates, rateCategories, ra
           )}
           {selectedCategory && ratesInCategory.length === 0 && <div className="mt-1 text-xs text-gray-400 italic">All {title.toLowerCase()} in this category are already added.</div>}
         </div>
-        {showAddForm && <AddRateForm kind={kind} categories={rateCategories} onCancel={() => setShowAddForm(false)} onSubmit={async (input) => { const id = await onCreateRate(input); if (id) setShowAddForm(false) }} />}
+        {showAddForm && <AddRateModal kind={kind} categories={rateCategories} onCancel={() => setShowAddForm(false)} onSubmit={async (input) => { const id = await onCreateRate(input); if (id) setShowAddForm(false) }} />}
       </div>
-      <RateTable kind={kind} rows={rows} ratesById={ratesById} onUpdate={onUpdate} onDelete={onDelete} sensors={sensors} onDragEnd={onDragEnd} emptyText={`No ${title.toLowerCase()} yet. Use search or browse by category above.`} />
+      <RateTable kind={kind} rows={rows} ratesById={ratesById} productModifiers={productModifiers} onUpdate={onUpdate} onDelete={onDelete} sensors={sensors} onDragEnd={onDragEnd} emptyText={`No ${title.toLowerCase()} yet. Use search or browse by category above.`} />
     </ColoredSection>
   )
 }
 
-function RateTable({ kind, rows, ratesById, onUpdate, onDelete, sensors, onDragEnd, emptyText }: { kind: 'LaborRate' | 'MachineRate'; rows: RateRow[]; ratesById: Map<string, LaborRateOption | MachineRateOption>; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void; sensors: ReturnType<typeof useSensors>; onDragEnd: (e: DragEndEvent) => void; emptyText?: string }) {
-  const GRID = 'grid grid-cols-[28px_24px_minmax(120px,1.5fr)_80px_60px_40px_minmax(120px,1.2fr)_28px] items-center gap-1.5 px-1.5 py-1.5'
+function RateTable({ kind, rows, ratesById, productModifiers, onUpdate, onDelete, sensors, onDragEnd, emptyText }: { kind: 'LaborRate' | 'MachineRate'; rows: RateRow[]; ratesById: Map<string, LaborRateOption | MachineRateOption>; productModifiers: ModifierRow[]; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void; sensors: ReturnType<typeof useSensors>; onDragEnd: (e: DragEndEvent) => void; emptyText?: string }) {
+  const GRID = 'grid grid-cols-[28px_24px_minmax(110px,1.4fr)_72px_56px_40px_40px_minmax(110px,1.1fr)_28px] items-center gap-1.5 px-1.5 py-1.5'
   return (
     <div className="divide-y divide-gray-100 rounded border border-gray-100">
       <div className={`${GRID} bg-gray-50 text-[10px] font-medium uppercase tracking-wider text-gray-500 border-b`}>
-        <span className="text-center" title="Show as workflow step">☑</span>
+        <span className="text-center" title="Show as workflow step">☑ WF</span>
         <span className="text-center" title="Drag to reorder">⠿</span>
         <span>Name</span>
         <span>Formula</span>
         <span>Mult</span>
-        <span className="text-center">Qty</span>
+        <span className="text-center" title="Charge multiplies by order quantity">Per Unit</span>
+        <span className="text-center" title="Included in base price before modifiers">Base</span>
         <span>Modifier</span>
         <span className="text-center" title="Delete">✕</span>
       </div>
@@ -962,7 +1014,7 @@ function RateTable({ kind, rows, ratesById, onUpdate, onDelete, sensors, onDragE
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-            {rows.map((row: RateRow) => <SortableRateRow key={row.id} row={row} kind={kind} grid={GRID} ratesById={ratesById} onUpdate={onUpdate} onDelete={onDelete} />)}
+            {rows.map((row: RateRow) => <SortableRateRow key={row.id} row={row} kind={kind} grid={GRID} ratesById={ratesById} productModifiers={productModifiers} onUpdate={onUpdate} onDelete={onDelete} />)}
           </SortableContext>
         </DndContext>
       )}
@@ -970,7 +1022,7 @@ function RateTable({ kind, rows, ratesById, onUpdate, onDelete, sensors, onDragE
   )
 }
 
-function SortableRateRow({ row, kind, grid, ratesById, onUpdate, onDelete }: { row: RateRow; kind: 'LaborRate' | 'MachineRate'; grid: string; ratesById: Map<string, LaborRateOption | MachineRateOption>; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void }) {
+function SortableRateRow({ row, kind, grid, ratesById, productModifiers, onUpdate, onDelete }: { row: RateRow; kind: 'LaborRate' | 'MachineRate'; grid: string; ratesById: Map<string, LaborRateOption | MachineRateOption>; productModifiers: ModifierRow[]; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   const name = ratesById.get(row.rate_id)?.name ?? 'Unknown'
@@ -983,10 +1035,59 @@ function SortableRateRow({ row, kind, grid, ratesById, onUpdate, onDelete }: { r
         <option value="">—</option>{FORMULA_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
       </select>
       <input type="number" step="0.01" className="h-7 rounded border border-gray-200 px-1 text-xs tabular-nums" value={Number.isFinite(row.multiplier) ? row.multiplier : 1} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdate(kind, row.id, { multiplier: parseFloat(e.target.value) || 0 })} />
-      <label className="flex justify-center"><input type="checkbox" checked={row.charge_per_li_unit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdate(kind, row.id, { charge_per_li_unit: e.target.checked })} className="accent-purple-600 h-4 w-4" /></label>
-      <input type="text" className="h-7 rounded border border-gray-200 px-1.5 text-xs font-mono" placeholder="Name or ((A)+(B))" value={row.modifier_formula ?? ''} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdate(kind, row.id, { modifier_formula: e.target.value || null })} title="Modifier name or custom formula expression" />
+      <label className="flex justify-center" title="Charge multiplies by order quantity"><input type="checkbox" checked={row.charge_per_li_unit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdate(kind, row.id, { charge_per_li_unit: e.target.checked })} className="accent-purple-600 h-4 w-4" /></label>
+      <label className="flex justify-center" title="Include in base price before modifiers"><input type="checkbox" checked={row.include_in_base_price} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdate(kind, row.id, { include_in_base_price: e.target.checked })} className="accent-emerald-600 h-4 w-4" /></label>
+      <ModifierCell value={row.modifier_formula} productModifiers={productModifiers} onChange={(v) => onUpdate(kind, row.id, { modifier_formula: v })} />
       <button onClick={() => onDelete(kind, row.id)} className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600" title="Remove"><TrashIcon /></button>
     </div>
+  )
+}
+
+// Fix 5: Modifier dropdown — pick existing product modifier or custom formula.
+// Stores modifier name as modifier_formula (backwards compat) or raw expression.
+const CUSTOM_MODIFIER = '__custom__'
+function ModifierCell({ value, productModifiers, onChange }: { value: string | null; productModifiers: ModifierRow[]; onChange: (v: string | null) => void }) {
+  const modNames = useMemo(() => new Set(productModifiers.map(m => m.display_name)), [productModifiers])
+  const valueIsKnownModifier = value != null && value !== '' && modNames.has(value)
+  const [mode, setMode] = useState<'select' | 'custom'>(() => (value && !valueIsKnownModifier ? 'custom' : 'select'))
+  if (mode === 'custom') {
+    return (
+      <div className="flex items-center gap-1">
+        <input type="text" className="h-7 flex-1 min-w-0 rounded border border-gray-200 px-1.5 text-[11px] font-mono" placeholder="((A)+(B))" value={value ?? ''} onChange={(e) => onChange(e.target.value || null)} title="Custom formula expression" />
+        <button type="button" className="shrink-0 text-[10px] text-gray-400 hover:text-gray-600" onClick={() => { setMode('select'); onChange(null) }} title="Back to dropdown">↺</button>
+      </div>
+    )
+  }
+  return (
+    <select className="h-7 rounded border border-gray-200 px-1 text-[11px]" value={valueIsKnownModifier ? value! : ''} onChange={(e) => {
+      const v = e.target.value
+      if (v === CUSTOM_MODIFIER) { setMode('custom'); return }
+      onChange(v || null)
+    }} title="No modifier = always charges | Boolean = charges when selected | Numeric = multiplies by value">
+      <option value="">— No modifier —</option>
+      {productModifiers.map((m) => <option key={m.id} value={m.display_name}>{m.display_name} [{m.modifier_type}]</option>)}
+      <option value={CUSTOM_MODIFIER}>✎ Custom formula…</option>
+    </select>
+  )
+}
+
+function SortableWorkflowStep({ sortKey, index, step }: { sortKey: string; index: number; step: { kind: 'LaborRate' | 'MachineRate'; name: string; row: RateRow } }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: sortKey })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <li ref={setNodeRef} style={style} className="flex items-center gap-2 rounded-md border border-gray-100 bg-white px-2 py-1.5">
+      <button {...attributes} {...listeners} type="button" className="cursor-grab text-gray-300 hover:text-gray-500 p-0.5 shrink-0" title="Drag to reorder"><GripIcon /></button>
+      <span className="text-[11px] font-mono font-semibold text-gray-400 w-5 shrink-0">{index + 1}.</span>
+      <input type="checkbox" checked readOnly className="accent-purple-600 h-4 w-4 shrink-0" />
+      <TypeBadge kind={step.kind} />
+      <span className="text-sm font-medium text-gray-800 truncate flex-1 min-w-0">{step.name}</span>
+      <span className="ml-auto text-[11px] text-gray-500 flex items-center gap-2 shrink-0">
+        <span>{step.row.formula ?? '—'}</span>
+        <span className="text-gray-400">×</span>
+        <span className="tabular-nums">{step.row.multiplier}</span>
+        {step.row.charge_per_li_unit && <span className="text-amber-600">Per Qty</span>}
+      </span>
+    </li>
   )
 }
 
@@ -1006,28 +1107,237 @@ function SortableModifierRow({ row, onUpdate, onDelete }: { row: ModifierRow; on
 }
 
 // ============================================================
-// Inline forms
+// Modal dialogs for "+ Add New"
 // ============================================================
 
-function AddCategoryForm({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (name: string) => void }) {
+function Modal({ title, onClose, children, widthClass }: { title: string; onClose: () => void; children: React.ReactNode; widthClass?: string }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className={`bg-white rounded-lg shadow-xl ${widthClass ?? 'max-w-lg'} w-full max-h-[90vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
+          <h3 className="text-sm font-bold uppercase tracking-wider text-gray-700">{title}</h3>
+          <button onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><XIcon /></button>
+        </div>
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function ModalField({ label, required, children, className }: { label: string; required?: boolean; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
+      {children}
+    </div>
+  )
+}
+
+function ModalButtons({ onCancel, submitLabel }: { onCancel: () => void; submitLabel?: string }) {
+  return (
+    <div className="flex gap-2 justify-end pt-2 border-t border-gray-100 mt-2">
+      <button type="button" onClick={onCancel} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm">Cancel</button>
+      <button type="submit" className="rounded bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">{submitLabel ?? 'Save'}</button>
+    </div>
+  )
+}
+
+function AddMaterialCategoryModal({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (name: string, description: string | null) => void }) {
   const [name, setName] = useState('')
-  return (<form onSubmit={(e: React.FormEvent) => { e.preventDefault(); onSubmit(name) }} className="bg-gray-50 border border-dashed border-gray-300 rounded p-3 space-y-2"><input className={inputCls} placeholder="Category name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} autoFocus /><div className="flex gap-2"><button type="submit" className="rounded bg-qm-lime px-3 py-1 text-xs font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="rounded border border-gray-300 bg-white px-3 py-1 text-xs">Cancel</button></div></form>)
+  const [description, setDescription] = useState('')
+  return (
+    <Modal title="Add New Material Category" onClose={onCancel}>
+      <form onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; onSubmit(name.trim(), description.trim() || null) }} className="space-y-3">
+        <ModalField label="Category Name" required>
+          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </ModalField>
+        <ModalField label="Description">
+          <textarea className={inputCls} rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </ModalField>
+        <ModalButtons onCancel={onCancel} />
+      </form>
+    </Modal>
+  )
 }
-function AddWorkflowForm({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (name: string) => void }) {
+
+function AddWorkflowModal({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (name: string) => void }) {
   const [name, setName] = useState('')
-  return (<form onSubmit={(e: React.FormEvent) => { e.preventDefault(); onSubmit(name) }} className="bg-gray-50 border border-dashed border-gray-300 rounded p-3 mt-2 space-y-2"><input className={inputCls} placeholder="Workflow name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} autoFocus /><div className="flex gap-2"><button type="submit" className="rounded bg-qm-lime px-3 py-1 text-xs font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="rounded border border-gray-300 bg-white px-3 py-1 text-xs">Cancel</button></div></form>)
+  return (
+    <Modal title="Add New Workflow" onClose={onCancel}>
+      <form onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; onSubmit(name.trim()) }} className="space-y-3">
+        <ModalField label="Workflow Name" required>
+          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </ModalField>
+        <ModalButtons onCancel={onCancel} />
+      </form>
+    </Modal>
+  )
 }
-function AddDiscountForm({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (name: string, type: 'Range' | 'Volume' | 'Price') => void }) {
-  const [name, setName] = useState(''); const [type, setType] = useState<'Range' | 'Volume' | 'Price'>('Range')
-  return (<form onSubmit={(e: React.FormEvent) => { e.preventDefault(); onSubmit(name, type) }} className="bg-gray-50 border border-dashed border-gray-300 rounded p-3 mt-2 space-y-2"><input className={inputCls} placeholder="Discount name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} autoFocus /><select className={inputCls} value={type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setType(e.target.value as 'Range' | 'Volume' | 'Price')}><option value="Range">Range</option><option value="Volume">Volume</option><option value="Price">Price</option></select><div className="flex gap-2"><button type="submit" className="rounded bg-qm-lime px-3 py-1 text-xs font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="rounded border border-gray-300 bg-white px-3 py-1 text-xs">Cancel</button></div></form>)
+
+function AddDiscountModal({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (name: string, type: 'Range' | 'Volume' | 'Price') => void }) {
+  const [name, setName] = useState('')
+  const [type, setType] = useState<'Range' | 'Volume' | 'Price'>('Range')
+  const [description, setDescription] = useState('')
+  return (
+    <Modal title="Add New Discount" onClose={onCancel}>
+      <form onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; onSubmit(name.trim(), type) }} className="space-y-3">
+        <ModalField label="Name" required>
+          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </ModalField>
+        <ModalField label="Type">
+          <select className={inputCls} value={type} onChange={(e) => setType(e.target.value as 'Range' | 'Volume' | 'Price')}>
+            <option value="Volume">Volume</option>
+            <option value="Range">Range</option>
+            <option value="Price">Price</option>
+          </select>
+        </ModalField>
+        <ModalField label="Description">
+          <textarea className={inputCls} rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </ModalField>
+        <ModalButtons onCancel={onCancel} />
+      </form>
+    </Modal>
+  )
 }
-function AddModifierForm({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (name: string, type: 'Boolean' | 'Numeric' | 'Range', def: string | null) => void }) {
-  const [name, setName] = useState(''); const [type, setType] = useState<'Boolean' | 'Numeric' | 'Range'>('Boolean'); const [def, setDef] = useState('')
-  return (<form onSubmit={(e: React.FormEvent) => { e.preventDefault(); onSubmit(name, type, def || null) }} className="bg-gray-50 border border-dashed border-gray-300 rounded p-3 mt-2 space-y-2"><input className={inputCls} placeholder="Modifier name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} autoFocus /><div className="grid grid-cols-2 gap-2"><select className={inputCls} value={type} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setType(e.target.value as 'Boolean' | 'Numeric' | 'Range')}><option value="Boolean">Boolean</option><option value="Numeric">Numeric</option><option value="Range">Range</option></select><input className={inputCls} placeholder="Default value" value={def} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDef(e.target.value)} /></div><div className="flex gap-2"><button type="submit" className="rounded bg-qm-lime px-3 py-1 text-xs font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="rounded border border-gray-300 bg-white px-3 py-1 text-xs">Cancel</button></div></form>)
+
+function AddModifierModal({ onCancel, onSubmit }: { onCancel: () => void; onSubmit: (input: { name: string; display_name: string; modifier_type: 'Boolean' | 'Numeric' | 'Range'; default_value: string | null; show_customer: boolean }) => void }) {
+  const [name, setName] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [type, setType] = useState<'Boolean' | 'Numeric' | 'Range'>('Boolean')
+  const [defaultValue, setDefaultValue] = useState('')
+  const [showCustomer, setShowCustomer] = useState(true)
+  return (
+    <Modal title="Add New Modifier" onClose={onCancel}>
+      <form onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; onSubmit({ name: name.trim(), display_name: displayName.trim() || name.trim(), modifier_type: type, default_value: defaultValue.trim() || null, show_customer: showCustomer }) }} className="space-y-3">
+        <ModalField label="Name" required>
+          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="Internal name" />
+        </ModalField>
+        <ModalField label="Display Name">
+          <input className={inputCls} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="What customer sees (defaults to Name)" />
+        </ModalField>
+        <ModalField label="Type">
+          <div className="flex gap-4 text-sm">
+            {(['Boolean', 'Numeric', 'Range'] as const).map((t) => (
+              <label key={t} className="flex items-center gap-1.5">
+                <input type="radio" name="mod-type" checked={type === t} onChange={() => setType(t)} className="accent-qm-lime" />
+                {t}
+              </label>
+            ))}
+          </div>
+        </ModalField>
+        <ModalField label="Default Value">
+          <input className={inputCls} value={defaultValue} onChange={(e) => setDefaultValue(e.target.value)} placeholder={type === 'Boolean' ? 'true or false' : '0'} />
+        </ModalField>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={showCustomer} onChange={(e) => setShowCustomer(e.target.checked)} className="accent-qm-lime" />
+          Show to Customer
+        </label>
+        <ModalButtons onCancel={onCancel} />
+      </form>
+    </Modal>
+  )
 }
-function AddRateForm({ kind, categories, onCancel, onSubmit }: { kind: 'LaborRate' | 'MachineRate'; categories: string[]; onCancel: () => void; onSubmit: (input: { name: string; category: string; cost: number; markup: number }) => void }) {
-  const [name, setName] = useState(''); const [category, setCategory] = useState(''); const [cost, setCost] = useState('0'); const [markup, setMarkup] = useState('1')
-  return (<form onSubmit={(e: React.FormEvent) => { e.preventDefault(); onSubmit({ name, category, cost: parseFloat(cost) || 0, markup: parseFloat(markup) || 1 }) }} className="bg-gray-50 border border-dashed border-gray-300 rounded p-3 mt-2 space-y-2"><input className={inputCls} placeholder={`${kind === 'LaborRate' ? 'Labor' : 'Machine'} rate name`} value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} autoFocus /><input className={inputCls} placeholder="Category" value={category} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCategory(e.target.value)} list={`rate-cat-${kind}`} /><datalist id={`rate-cat-${kind}`}>{categories.map((c) => <option key={c} value={c} />)}</datalist><div className="grid grid-cols-2 gap-2"><label className="text-[11px] text-gray-500">Cost ($)<input className={inputCls} type="number" step="0.01" value={cost} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCost(e.target.value)} /></label><label className="text-[11px] text-gray-500">Markup (x)<input className={inputCls} type="number" step="0.01" value={markup} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMarkup(e.target.value)} /></label></div><div className="flex gap-2"><button type="submit" className="rounded bg-qm-lime px-3 py-1 text-xs font-semibold text-white">Save</button><button type="button" onClick={onCancel} className="rounded border border-gray-300 bg-white px-3 py-1 text-xs">Cancel</button></div></form>)
+
+const PROD_RATE_UNIT_OPTIONS = ['per hour', 'per minute', 'per sq ft']
+function AddRateModal({ kind, categories, onCancel, onSubmit }: { kind: 'LaborRate' | 'MachineRate'; categories: string[]; onCancel: () => void; onSubmit: (input: CreateRateFormInput) => void }) {
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
+  const [cost, setCost] = useState('0')
+  const [markup, setMarkup] = useState('1')
+  const [formula, setFormula] = useState('Area')
+  const [prodRate, setProdRate] = useState('')
+  const [prodRateUnit, setProdRateUnit] = useState(PROD_RATE_UNIT_OPTIONS[0])
+  const [setupCharge, setSetupCharge] = useState('')
+  const [description, setDescription] = useState('')
+  const [showInternal, setShowInternal] = useState(false)
+  const [equipmentName, setEquipmentName] = useState('')
+  const [replacementValue, setReplacementValue] = useState('')
+  const [hoursPerYear, setHoursPerYear] = useState('')
+  const isMachine = kind === 'MachineRate'
+  return (
+    <Modal title={`Add New ${isMachine ? 'Machine' : 'Labor'} Rate`} onClose={onCancel} widthClass="max-w-2xl">
+      <form onSubmit={(e) => {
+        e.preventDefault()
+        if (!name.trim()) return
+        const yearlyHours = parseFloat(hoursPerYear) || 0
+        onSubmit({
+          name: (isMachine && equipmentName.trim()) ? `${equipmentName.trim()} — ${name.trim()}` : name.trim(),
+          category: category.trim() || null,
+          cost: parseFloat(cost) || 0,
+          markup: parseFloat(markup) || 1,
+          formula: formula === 'None' ? null : formula,
+          production_rate: prodRate ? parseFloat(prodRate) : null,
+          production_rate_units: prodRate ? prodRateUnit : null,
+          setup_charge: setupCharge ? parseFloat(setupCharge) : null,
+          description: description.trim() || null,
+          show_internal: showInternal,
+          ...(isMachine ? {
+            equipment_replacement_value: replacementValue ? parseFloat(replacementValue) : null,
+            monthly_operating_hours: yearlyHours > 0 ? yearlyHours / 12 : null,
+          } : {}),
+        })
+      }} className="space-y-3">
+        <ModalField label="Name" required>
+          <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </ModalField>
+        {isMachine && (
+          <ModalField label="Equipment / Machine Name">
+            <input className={inputCls} value={equipmentName} onChange={(e) => setEquipmentName(e.target.value)} placeholder="Printer model, etc." />
+          </ModalField>
+        )}
+        <ModalField label="Category">
+          <input className={inputCls} value={category} onChange={(e) => setCategory(e.target.value)} list={`modal-rate-cat-${kind}`} />
+          <datalist id={`modal-rate-cat-${kind}`}>{categories.map((c) => <option key={c} value={c} />)}</datalist>
+        </ModalField>
+        <div className="grid grid-cols-2 gap-3">
+          <ModalField label="Cost per hour ($)">
+            <input type="number" step="0.01" className={inputCls} value={cost} onChange={(e) => setCost(e.target.value)} />
+          </ModalField>
+          <ModalField label="Markup (x)">
+            <input type="number" step="0.01" className={inputCls} value={markup} onChange={(e) => setMarkup(e.target.value)} />
+          </ModalField>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <ModalField label="Formula">
+            <select className={inputCls} value={formula} onChange={(e) => setFormula(e.target.value)}>
+              {FORMULA_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </ModalField>
+          <ModalField label="Setup Charge ($)">
+            <input type="number" step="0.01" className={inputCls} value={setupCharge} onChange={(e) => setSetupCharge(e.target.value)} />
+          </ModalField>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <ModalField label="Production Rate">
+            <input type="number" step="0.01" className={inputCls} value={prodRate} onChange={(e) => setProdRate(e.target.value)} />
+          </ModalField>
+          <ModalField label="Production Rate Unit">
+            <select className={inputCls} value={prodRateUnit} onChange={(e) => setProdRateUnit(e.target.value)}>
+              {PROD_RATE_UNIT_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </ModalField>
+        </div>
+        {isMachine && (
+          <div className="grid grid-cols-2 gap-3">
+            <ModalField label="Replacement Value ($)">
+              <input type="number" step="0.01" className={inputCls} value={replacementValue} onChange={(e) => setReplacementValue(e.target.value)} />
+            </ModalField>
+            <ModalField label="Hours per Year">
+              <input type="number" step="1" className={inputCls} value={hoursPerYear} onChange={(e) => setHoursPerYear(e.target.value)} />
+            </ModalField>
+          </div>
+        )}
+        <ModalField label="Description / Notes">
+          <textarea className={inputCls} rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </ModalField>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={showInternal} onChange={(e) => setShowInternal(e.target.checked)} className="accent-qm-lime" />
+          Show Internal
+        </label>
+        <ModalButtons onCancel={onCancel} />
+      </form>
+    </Modal>
+  )
 }
 
 // ============================================================
@@ -1070,7 +1380,7 @@ function LeftCheckRow({ rowKey, reviewed, onToggle, onCopy, children }: { rowKey
 }
 
 function KV({ k, v }: { k: string; v: string | null | undefined }) {
-  return (<div className="flex items-center gap-2"><span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 w-32 shrink-0">{k}</span><span className="text-sm text-gray-800 truncate">{v ?? '—'}</span></div>)
+  return (<div className="flex items-start gap-2"><span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 w-32 shrink-0 pt-0.5">{k}</span><span className="text-xs text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{v ?? '—'}</span></div>)
 }
 function RightSection({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (<div className="rounded-lg border border-gray-200 bg-white"><div className="flex items-center justify-between border-b border-gray-100 px-3 py-2"><h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">{title}</h3>{action}</div><div className="p-3 space-y-2">{children}</div></div>)
@@ -1107,3 +1417,185 @@ function XIcon() { return (<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0
 function PlusIcon() { return (<svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.4} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>) }
 function GripIcon() { return (<svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 4a1 1 0 110 2 1 1 0 010-2zM7 9a1 1 0 110 2 1 1 0 010-2zM7 14a1 1 0 110 2 1 1 0 010-2zM13 4a1 1 0 110 2 1 1 0 010-2zM13 9a1 1 0 110 2 1 1 0 010-2zM13 14a1 1 0 110 2 1 1 0 010-2z" /></svg>) }
 function TrashIcon() { return (<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>) }
+function CalculatorIcon() { return (<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75 18 18m0 0 2.25 2.25M18 18l2.25-2.25M18 18l-2.25 2.25M4.5 3.75h15a.75.75 0 0 1 .75.75v15a.75.75 0 0 1-.75.75h-15a.75.75 0 0 1-.75-.75v-15a.75.75 0 0 1 .75-.75Zm3 3h9v3h-9v-3Z" /></svg>) }
+
+// ============================================================
+// CheckPricingPanel (FIX 6)
+// ============================================================
+
+type PricingBreakdown = { name: string; item_type: string; formula: string; cost_cents: number; price_cents: number; in_base: boolean; inactive?: boolean; inactive_reason?: string }
+type PricingResponse = { unit_price_cents: number; total_price_cents: number; breakdown: PricingBreakdown[]; original_unit_price_cents?: number; discount_percent?: number; discount_type?: string; error?: string }
+
+function money(cents: number) { return `$${(cents / 100).toFixed(2)}` }
+
+function CheckPricingPanel({ productId, modifiers }: { productId: string; modifiers: ModifierRow[] }) {
+  const [width, setWidth] = useState<string>('24')
+  const [height, setHeight] = useState<string>('36')
+  const [quantity, setQuantity] = useState<string>('1')
+  const [selected, setSelected] = useState<Record<string, boolean | number>>({})
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<PricingResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleCalculate() {
+    setLoading(true); setError(null); setResult(null)
+    try {
+      const res = await fetch('/api/pricing', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: productId,
+          width_inches: parseFloat(width) || 0,
+          height_inches: parseFloat(height) || 0,
+          quantity: parseInt(quantity) || 1,
+          selected_modifiers: selected,
+        }),
+      })
+      const data = (await res.json()) as PricingResponse
+      if (!res.ok || data.error) setError(data.error ?? 'Pricing request failed')
+      else setResult(data)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Pricing request failed')
+    } finally { setLoading(false) }
+  }
+
+  const qty = parseInt(quantity) || 1
+  const totalCost = result?.breakdown.reduce((s, b) => s + (b.inactive ? 0 : b.cost_cents), 0) ?? 0
+  const totalSell = result?.unit_price_cents ?? 0
+  const margin = totalSell > 0 ? Math.max(0, Math.min(100, ((totalSell - totalCost) / totalSell) * 100)) : 0
+
+  const byCategory = { Material: 0, Labor: 0, Machine: 0, Other: 0 }
+  if (result) for (const b of result.breakdown) {
+    if (b.inactive) continue
+    if (b.item_type === 'Material') byCategory.Material += b.cost_cents
+    else if (b.item_type === 'LaborRate') byCategory.Labor += b.cost_cents
+    else if (b.item_type === 'MachineRate') byCategory.Machine += b.cost_cents
+    else byCategory.Other += b.cost_cents
+  }
+  const catTotal = byCategory.Material + byCategory.Labor + byCategory.Machine + byCategory.Other || 1
+  const pct = (v: number) => ((v / catTotal) * 100).toFixed(1)
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white border-l-4 border-l-amber-500">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
+        <CalculatorIcon />
+        <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-700">Check Pricing</h3>
+      </div>
+      <div className="p-4 space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <FieldRow label="Width (in)">
+            <input type="number" step="0.01" min={0} className={inputCls} value={width} onChange={(e) => setWidth(e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Height (in)">
+            <input type="number" step="0.01" min={0} className={inputCls} value={height} onChange={(e) => setHeight(e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Quantity">
+            <input type="number" step="1" min={1} className={inputCls} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          </FieldRow>
+          <div className="flex items-end">
+            <button type="button" onClick={handleCalculate} disabled={loading} className="inline-flex w-full items-center justify-center rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+              {loading ? 'Calculating…' : 'Calculate Price'}
+            </button>
+          </div>
+        </div>
+
+        {modifiers.length > 0 && (
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Modifier Simulation</div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {modifiers.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 rounded border border-gray-100 px-2 py-1.5">
+                  <span className="text-xs font-medium text-gray-700 truncate flex-1" title={m.display_name}>{m.display_name}</span>
+                  {m.modifier_type === 'Boolean' ? (
+                    <label className="inline-flex items-center gap-1 text-[11px]">
+                      <input type="checkbox" checked={!!selected[m.modifier_id]} onChange={(e) => setSelected((p) => ({ ...p, [m.modifier_id]: e.target.checked }))} className="accent-qm-lime" />
+                      {selected[m.modifier_id] ? 'on' : 'off'}
+                    </label>
+                  ) : (
+                    <input type="number" step="0.01" className="h-7 w-20 rounded border border-gray-200 px-1.5 text-xs tabular-nums" value={typeof selected[m.modifier_id] === 'number' ? String(selected[m.modifier_id]) : ''} onChange={(e) => setSelected((p) => ({ ...p, [m.modifier_id]: parseFloat(e.target.value) || 0 }))} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+        {result && (
+          <>
+            <div className="overflow-x-auto rounded border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Item</th>
+                    <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Type</th>
+                    <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Formula</th>
+                    <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Unit Cost</th>
+                    <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Total Cost</th>
+                    <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Sell Price</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {result.breakdown.length === 0 ? (
+                    <tr><td colSpan={6} className="px-3 py-4 text-center text-gray-400 italic">No recipe items — add rates above.</td></tr>
+                  ) : result.breakdown.map((b, i) => {
+                    const unitCost = qty > 0 ? b.cost_cents / qty : b.cost_cents
+                    return (
+                      <tr key={i} className={b.inactive ? 'text-gray-400 italic' : ''}>
+                        <td className="px-2 py-1.5 font-medium">{b.name}{b.inactive && <span className="ml-2 inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-gray-500">inactive</span>}</td>
+                        <td className="px-2 py-1.5">{b.item_type}</td>
+                        <td className="px-2 py-1.5">{b.formula}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{money(unitCost)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{money(b.cost_cents)}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{money(b.price_cents)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50 font-semibold">
+                  <tr>
+                    <td className="px-2 py-2" colSpan={3}>Totals (per unit)</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(qty > 0 ? totalCost / qty : totalCost)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(totalCost)}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(totalSell)}</td>
+                  </tr>
+                  <tr className="text-qm-black">
+                    <td className="px-2 py-2" colSpan={5}>Order Total × {qty} | Margin</td>
+                    <td className="px-2 py-2 text-right tabular-nums text-qm-lime-dark">{money(result.total_price_cents)} • {margin.toFixed(1)}%</td>
+                  </tr>
+                  {result.discount_percent != null && result.discount_percent > 0 && (
+                    <tr className="text-xs text-gray-500">
+                      <td colSpan={6} className="px-2 py-1.5">{result.discount_type} discount: {result.discount_percent}%{result.original_unit_price_cents != null && <> (was {money(result.original_unit_price_cents)} / unit)</>}</td>
+                    </tr>
+                  )}
+                </tfoot>
+              </table>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">Cost Breakdown</div>
+              <div className="flex h-6 overflow-hidden rounded border border-gray-200">
+                {byCategory.Material > 0 && <div className="bg-emerald-400 text-[10px] text-white flex items-center justify-center" style={{ width: `${pct(byCategory.Material)}%` }} title={`Materials ${pct(byCategory.Material)}%`}>{Number(pct(byCategory.Material)) > 8 ? `${pct(byCategory.Material)}%` : ''}</div>}
+                {byCategory.Labor > 0 && <div className="bg-sky-400 text-[10px] text-white flex items-center justify-center" style={{ width: `${pct(byCategory.Labor)}%` }} title={`Labor ${pct(byCategory.Labor)}%`}>{Number(pct(byCategory.Labor)) > 8 ? `${pct(byCategory.Labor)}%` : ''}</div>}
+                {byCategory.Machine > 0 && <div className="bg-violet-400 text-[10px] text-white flex items-center justify-center" style={{ width: `${pct(byCategory.Machine)}%` }} title={`Machine ${pct(byCategory.Machine)}%`}>{Number(pct(byCategory.Machine)) > 8 ? `${pct(byCategory.Machine)}%` : ''}</div>}
+                {byCategory.Other > 0 && <div className="bg-gray-300 text-[10px] text-gray-700 flex items-center justify-center" style={{ width: `${pct(byCategory.Other)}%` }} title={`Other ${pct(byCategory.Other)}%`}>{Number(pct(byCategory.Other)) > 8 ? `${pct(byCategory.Other)}%` : ''}</div>}
+              </div>
+              <div className="flex gap-3 mt-1 text-[10px] text-gray-500">
+                <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-emerald-400" />Materials</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-sky-400" />Labor</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-violet-400" />Machine</span>
+                {byCategory.Other > 0 && <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-gray-300" />Other</span>}
+              </div>
+            </div>
+          </>
+        )}
+
+        {modifiers.length > 0 && (
+          <div className="text-[10px] text-gray-500 leading-relaxed">
+            No modifier = always charges | Boolean = charges when selected | Numeric = multiplies by value
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

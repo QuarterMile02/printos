@@ -30,6 +30,7 @@ export type MigrateOptionRate = {
   formula: string | null
   multiplier: number
   charge_per_li_unit: boolean
+  include_in_base_price: boolean
   modifier_formula: string | null
   workflow_step: boolean
 }
@@ -139,6 +140,7 @@ async function replaceOptionRates(productId: string, rates: MigrateOptionRate[])
     formula: r.formula,
     multiplier: r.multiplier,
     charge_per_li_unit: r.charge_per_li_unit,
+    include_in_base_price: r.include_in_base_price,
     modifier_formula: r.modifier_formula,
     workflow_step: r.workflow_step,
     sort_order: i,
@@ -309,6 +311,7 @@ export async function publishMigration(
 export async function createMaterialCategory(
   orgId: string,
   name: string,
+  _description?: string | null,
 ): Promise<{ error?: string; row?: { id: string; name: string } }> {
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
@@ -325,9 +328,22 @@ export async function createMaterialCategory(
   return { row: data }
 }
 
+export type CreateLaborRateInput = {
+  name: string
+  category: string | null
+  cost: number
+  markup: number
+  formula?: string | null
+  production_rate?: number | null
+  production_rate_units?: string | null
+  setup_charge?: number | null
+  description?: string | null
+  show_internal?: boolean | null
+}
+
 export async function createLaborRate(
   orgId: string,
-  input: { name: string; category: string | null; cost: number; markup: number },
+  input: CreateLaborRateInput,
 ): Promise<{ error?: string; row?: { id: string; name: string; category: string | null; cost: number; markup: number } }> {
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
@@ -344,6 +360,12 @@ export async function createLaborRate(
       cost: input.cost,
       price: input.cost * input.markup,
       markup: input.markup,
+      formula: input.formula ?? null,
+      production_rate: input.production_rate ?? null,
+      production_rate_units: input.production_rate_units ?? null,
+      setup_charge: input.setup_charge ?? null,
+      description: input.description ?? null,
+      show_internal: input.show_internal ?? null,
       active: true,
       created_by: user.id,
       updated_by: user.id,
@@ -354,9 +376,24 @@ export async function createLaborRate(
   return { row: data }
 }
 
+export type CreateMachineRateInput = {
+  name: string
+  category: string | null
+  cost: number
+  markup: number
+  formula?: string | null
+  production_rate?: number | null
+  production_rate_units?: string | null
+  setup_charge?: number | null
+  description?: string | null
+  show_internal?: boolean | null
+  equipment_replacement_value?: number | null
+  monthly_operating_hours?: number | null
+}
+
 export async function createMachineRate(
   orgId: string,
-  input: { name: string; category: string | null; cost: number; markup: number },
+  input: CreateMachineRateInput,
 ): Promise<{ error?: string; row?: { id: string; name: string; category: string | null; cost: number; markup: number } }> {
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
@@ -373,6 +410,14 @@ export async function createMachineRate(
       cost: input.cost,
       price: input.cost * input.markup,
       markup: input.markup,
+      formula: input.formula ?? null,
+      production_rate: input.production_rate ?? null,
+      production_rate_units: input.production_rate_units ?? null,
+      setup_charge: input.setup_charge ?? null,
+      description: input.description ?? null,
+      show_internal: input.show_internal ?? null,
+      equipment_replacement_value: input.equipment_replacement_value ?? null,
+      monthly_operating_hours: input.monthly_operating_hours ?? null,
       active: true,
       created_by: user.id,
       updated_by: user.id,
@@ -383,9 +428,17 @@ export async function createMachineRate(
   return { row: data }
 }
 
+export type CreateModifierInput = {
+  name: string
+  display_name?: string | null
+  modifier_type: 'Boolean' | 'Numeric' | 'Range'
+  default_value: string | null
+  show_customer?: boolean | null
+}
+
 export async function createModifier(
   orgId: string,
-  input: { name: string; modifier_type: 'Boolean' | 'Numeric' | 'Range'; default_value: string | null },
+  input: CreateModifierInput,
 ): Promise<{ error?: string; row?: { id: string; name: string; display_name: string; modifier_type: string } }> {
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
@@ -399,10 +452,11 @@ export async function createModifier(
     .insert({
       organization_id: orgId,
       name: trimmed,
-      display_name: trimmed,
+      display_name: input.display_name?.trim() || trimmed,
       system_lookup_name: trimmed.replace(/\s+/g, '_'),
       modifier_type: input.modifier_type,
       range_default_value: rangeDefault,
+      show_customer: input.show_customer ?? null,
       active: true,
       created_by: user.id,
       updated_by: user.id,
