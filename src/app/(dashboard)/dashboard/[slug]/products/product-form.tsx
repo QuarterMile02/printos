@@ -14,6 +14,7 @@ import {
   type DropdownItemInput,
   type ProductCustomFieldInput,
 } from './actions'
+import CheckPricingPanel from './check-pricing-panel'
 
 type MaterialOption = Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>
 type LaborRateOption = Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>
@@ -1010,6 +1011,11 @@ export default function ProductForm({
                 </div>
               )}
             </div>
+
+            {/* ---- Check Pricing (edit mode only; requires saved product) ---- */}
+            {!isNew && product && (
+              <CheckPricingPanel productId={product.id} />
+            )}
 
             {/* ---- Section 4: Modifiers ---- */}
             <div className="border-t border-gray-200 pt-6 space-y-3">

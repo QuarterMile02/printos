@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import type { Product, ProductCategory } from '@/types/product-builder'
 import { checkPermission } from '@/lib/check-permission'
 import ProductsListClient, { type ProductRow } from './products-list-client'
 
@@ -31,16 +30,19 @@ export default async function ProductsPage({ params }: PageProps) {
     name: string
     part_number: string | null
     pricing_type: string | null
+    formula: string | null
+    product_type: string | null
     price: number | null
     status: string | null
     active: boolean | null
+    updated_at: string | null
     category?: { name: string } | null
   }
 
   let productRows: ProductDbRow[] = []
   const { data: withCat, error: catErr } = await supabase
     .from('products')
-    .select('id, name, part_number, pricing_type, price, status, active, category:product_categories(name)')
+    .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, updated_at, category:product_categories(name)')
     .eq('organization_id', org.id)
     .order('name', { ascending: true })
 
@@ -50,7 +52,7 @@ export default async function ProductsPage({ params }: PageProps) {
     // category join failed — fetch without it
     const { data: noCat } = await supabase
       .from('products')
-      .select('id, name, part_number, pricing_type, price, status, active')
+      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, updated_at')
       .eq('organization_id', org.id)
       .order('name', { ascending: true })
     productRows = (noCat ?? []) as unknown as ProductDbRow[]
@@ -61,10 +63,13 @@ export default async function ProductsPage({ params }: PageProps) {
     name: p.name,
     part_number: p.part_number,
     category_name: p.category?.name ?? null,
+    product_type: p.product_type,
     pricing_type: (p.pricing_type as ProductRow['pricing_type']) ?? null,
+    formula: p.formula,
     price: p.price != null ? Number(p.price) : null,
     status: (p.status as ProductRow['status']) ?? null,
     active: p.active,
+    updated_at: p.updated_at,
   }))
 
   return (
@@ -109,7 +114,7 @@ export default async function ProductsPage({ params }: PageProps) {
       </div>
 
       {/* Client-side search/filter + table */}
-      <ProductsListClient products={products} orgSlug={slug} canSeePricing={canSeePricing} />
+      <ProductsListClient products={products} orgSlug={slug} orgId={org.id} canSeePricing={canSeePricing} />
     </div>
   )
 }

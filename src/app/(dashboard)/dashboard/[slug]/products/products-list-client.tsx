@@ -1,18 +1,22 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useTransition } from 'react'
 import Link from 'next/link'
 import type { PricingType, ProductStatus } from '@/types/product-builder'
+import { copyProduct } from './actions'
 
 export type ProductRow = {
   id: string
   name: string
   part_number: string | null
   category_name: string | null
+  product_type: string | null
   pricing_type: PricingType | null
+  formula: string | null
   price: number | null
   status: ProductStatus | null
   active: boolean | null
+  updated_at: string | null
 }
 
 const STATUS_STYLES: Record<ProductStatus, string> = {
@@ -34,37 +38,106 @@ function formatPrice(cents: number | null): string {
   return '$' + cents.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-type StatusFilter = 'all' | ProductStatus
-type PricingFilter = 'all' | PricingType
+function formatRelative(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const diff = Date.now() - d.getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+type StatusTab = 'all' | 'published' | 'draft' | 'disabled'
 
 export default function ProductsListClient({
   products,
   orgSlug,
+  orgId,
   canSeePricing,
 }: {
   products: ProductRow[]
   orgSlug: string
+  orgId: string
   canSeePricing: boolean
 }) {
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [pricingFilter, setPricingFilter] = useState<PricingFilter>('all')
+  const [tab, setTab] = useState<StatusTab>('all')
+  const [category, setCategory] = useState<string>('all')
+  const [dept, setDept] = useState<string>('all')
+  const [copyingId, setCopyingId] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
+  void orgId
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of products) if (p.category_name) set.add(p.category_name)
+    return Array.from(set).sort()
+  }, [products])
+
+  const deptOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of products) if (p.product_type) set.add(p.product_type)
+    return Array.from(set).sort()
+  }, [products])
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
     return products.filter((p) => {
-      if (statusFilter !== 'all' && p.status !== statusFilter) return false
-      if (pricingFilter !== 'all' && p.pricing_type !== pricingFilter) return false
+      if (tab === 'published' && p.status !== 'published') return false
+      if (tab === 'draft' && p.status !== 'draft') return false
+      if (tab === 'disabled' && p.status !== 'disabled') return false
+      if (category !== 'all' && p.category_name !== category) return false
+      if (dept !== 'all' && p.product_type !== dept) return false
       if (term) {
-        const hay = `${p.name} ${p.part_number ?? ''} ${p.category_name ?? ''}`.toLowerCase()
+        const hay = `${p.name} ${p.part_number ?? ''} ${p.category_name ?? ''} ${p.product_type ?? ''}`.toLowerCase()
         if (!hay.includes(term)) return false
       }
       return true
     })
-  }, [products, search, statusFilter, pricingFilter])
+  }, [products, search, tab, category, dept])
+
+  const tabCounts = useMemo(() => ({
+    all: products.length,
+    published: products.filter((p) => p.status === 'published').length,
+    draft: products.filter((p) => p.status === 'draft').length,
+    disabled: products.filter((p) => p.status === 'disabled').length,
+  }), [products])
+
+  function handleCopy(id: string) {
+    setCopyingId(id)
+    startTransition(async () => {
+      const result = await copyProduct(id, orgId, orgSlug)
+      if (result?.error) {
+        alert(result.error)
+        setCopyingId(null)
+      }
+    })
+  }
 
   return (
     <>
+      {/* Status tabs */}
+      <div className="mb-4 flex gap-1 border-b border-gray-200">
+        {(['all', 'published', 'draft', 'disabled'] as StatusTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-semibold capitalize border-b-2 -mb-px transition-colors ${
+              tab === t ? 'border-qm-lime text-qm-lime' : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
+          >
+            {t === 'all' ? 'All' : t === 'published' ? 'Active' : t === 'draft' ? 'Draft' : 'Disabled'}
+            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+          </button>
+        ))}
+      </div>
+
       {/* Search + Filters */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
@@ -80,26 +153,20 @@ export default function ProductsListClient({
           />
         </div>
         <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
         >
-          <option value="all">All statuses</option>
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-          <option value="disabled">Disabled</option>
-          <option value="archived">Archived</option>
+          <option value="all">All categories</option>
+          {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select
-          value={pricingFilter}
-          onChange={(e) => setPricingFilter(e.target.value as PricingFilter)}
+          value={dept}
+          onChange={(e) => setDept(e.target.value)}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
         >
-          <option value="all">All pricing types</option>
-          <option value="Formula">Formula</option>
-          <option value="Basic">Basic</option>
-          <option value="Grid">Grid</option>
-          <option value="Cost Plus">Cost Plus</option>
+          <option value="all">All departments</option>
+          {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
       </div>
 
@@ -125,20 +192,23 @@ export default function ProductsListClient({
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Category</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Pricing Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Pricing</th>
                 {canSeePricing && (
                   <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
                 )}
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Updated</th>
+                <th className="px-4 py-3 w-16"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((p) => {
-                const href = `/dashboard/${orgSlug}/products/${p.id}`
+                const editHref = `/dashboard/${orgSlug}/products/${p.id}/edit`
                 return (
                   <tr key={p.id} className="hover:bg-gray-50">
                     <td className="whitespace-nowrap">
-                      <Link href={href} className="block px-6 py-4">
+                      <Link href={editHref} className="block px-6 py-4">
                         <div className="text-sm font-semibold text-qm-black">{p.name}</div>
                         {p.part_number && (
                           <div className="text-xs text-qm-gray">{p.part_number}</div>
@@ -146,24 +216,36 @@ export default function ProductsListClient({
                       </Link>
                     </td>
                     <td className="whitespace-nowrap">
-                      <Link href={href} className="block px-6 py-4 text-sm text-gray-500">
+                      <Link href={editHref} className="block px-6 py-4 text-sm text-gray-500">
                         {p.category_name ?? <span className="text-gray-300">—</span>}
                       </Link>
                     </td>
                     <td className="whitespace-nowrap">
-                      <Link href={href} className="block px-6 py-4 text-sm text-gray-500">
-                        {p.pricing_type ?? <span className="text-gray-300">—</span>}
+                      <Link href={editHref} className="block px-6 py-4 text-sm text-gray-500">
+                        {p.product_type ?? <span className="text-gray-300">—</span>}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <Link href={editHref} className="block px-6 py-4 text-sm text-gray-500">
+                        {p.pricing_type ? (
+                          <span>
+                            {p.pricing_type}
+                            {p.pricing_type === 'Formula' && p.formula ? ` · ${p.formula}` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </Link>
                     </td>
                     {canSeePricing && (
                       <td className="whitespace-nowrap">
-                        <Link href={href} className="block px-6 py-4 text-sm font-medium text-qm-black text-right">
+                        <Link href={editHref} className="block px-6 py-4 text-sm font-medium text-qm-black text-right">
                           {formatPrice(p.price)}
                         </Link>
                       </td>
                     )}
                     <td className="whitespace-nowrap">
-                      <Link href={href} className="block px-6 py-4">
+                      <Link href={editHref} className="block px-6 py-4">
                         {p.status ? (
                           <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>
                             {STATUS_LABELS[p.status]}
@@ -172,6 +254,31 @@ export default function ProductsListClient({
                           <span className="text-gray-300 text-xs">—</span>
                         )}
                       </Link>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <Link href={editHref} className="block px-6 py-4 text-xs text-qm-gray">
+                        {formatRelative(p.updated_at)}
+                      </Link>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(p.id)}
+                        disabled={isPending && copyingId === p.id}
+                        title="Duplicate product"
+                        className="rounded p-1.5 text-qm-gray hover:bg-qm-lime-light hover:text-qm-lime-dark disabled:opacity-40"
+                      >
+                        {isPending && copyingId === p.id ? (
+                          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                            <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" className="opacity-75" />
+                          </svg>
+                        ) : (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+                          </svg>
+                        )}
+                      </button>
                     </td>
                   </tr>
                 )

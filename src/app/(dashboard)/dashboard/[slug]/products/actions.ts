@@ -368,3 +368,107 @@ export async function createProductAndRedirect(
   }
   return result
 }
+
+export async function copyProduct(
+  sourceId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string; id?: string }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!membership) return { error: 'You are not a member of this organization.' }
+  if (membership.role === 'viewer') return { error: 'Viewers cannot create products.' }
+
+  const service = createServiceClient()
+
+  // Load source product
+  const { data: srcRow, error: srcErr } = await service
+    .from('products')
+    .select('*')
+    .eq('id', sourceId)
+    .eq('organization_id', orgId)
+    .single()
+  if (srcErr || !srcRow) return { error: srcErr?.message ?? 'Source product not found.' }
+  const src = srcRow as Record<string, unknown> & { id: string; name: string }
+
+  // Strip immutable/generated fields, force draft
+  const {
+    id: _id,
+    created_at: _ca,
+    created_by: _cb,
+    updated_at: _ua,
+    updated_by: _ub,
+    published: _pub,
+    published_at: _pat,
+    published_by: _pby,
+    ...copyable
+  } = src
+  void _id; void _ca; void _cb; void _ua; void _ub; void _pub; void _pat; void _pby
+
+  const { data: inserted, error: insErr } = await service
+    .from('products')
+    .insert({
+      ...copyable,
+      name: `${src.name} (Copy)`,
+      status: 'draft',
+      active: false,
+      published: false,
+      published_at: null,
+      published_by: null,
+      created_by: user.id,
+      updated_by: user.id,
+    })
+    .select('id')
+    .single() as { data: { id: string } | null; error: { message: string } | null }
+
+  if (insErr || !inserted) return { error: insErr?.message ?? 'Failed to copy product.' }
+
+  // Copy default items
+  const { data: items } = await service
+    .from('product_default_items')
+    .select('*')
+    .eq('product_id', sourceId)
+    .eq('organization_id', orgId)
+
+  if (items && items.length > 0) {
+    const rows = (items as Record<string, unknown>[]).map((it) => {
+      const { id: _iid, created_at: _ic, updated_at: _iu, product_id: _ip, ...rest } = it
+      void _iid; void _ic; void _iu; void _ip
+      return { ...rest, product_id: inserted.id, organization_id: orgId }
+    })
+    await service.from('product_default_items').insert(rows)
+  }
+
+  // Copy product_modifiers
+  const { data: mods } = await service
+    .from('product_modifiers')
+    .select('*')
+    .eq('product_id', sourceId)
+    .eq('organization_id', orgId)
+  if (mods && mods.length > 0) {
+    const rows = (mods as Record<string, unknown>[]).map((m) => {
+      const { id: _mid, created_at: _mc, product_id: _mp, ...rest } = m
+      void _mid; void _mc; void _mp
+      return { ...rest, product_id: inserted.id, organization_id: orgId }
+    })
+    await service.from('product_modifiers').insert(rows)
+  }
+
+  // Copy product_custom_fields
+  const { data: cfs } = await service
+    .from('product_custom_fields')
+    .select('*')
+    .eq('product_id', sourceId)
+    .eq('organization_id', orgId)
+  if (cfs && cfs.length > 0) {
+    const rows = (cfs as Record<string, unknown>[]).map((f) => {
+      const { id: _fid, created_at: _fc, product_id: _fp, ...rest } = f
+      void _fid; void _fc; void _fp
+      return { ...rest, product_id: inserted.id, organization_id: orgId }
+    })
+    await service.from('product_custom_fields').insert(rows)
+  }
+
+  revalidatePath(`/dashboard/${orgSlug}/products`)
+  redirect(`/dashboard/${orgSlug}/products/${inserted.id}/edit`)
+}
