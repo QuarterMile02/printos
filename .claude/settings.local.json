@@ -30,7 +30,11 @@
       "Bash(gh api:*)",
       "Bash(npm list:*)",
       "Bash(rm \"src/app/\\(dashboard\\)/dashboard/[slug]/settings/discounts/loading.tsx\")",
-      "Bash(mkdir -p \"src/app/\\(dashboard\\)/dashboard/[slug]/settings/discounts/[id]\")"
+      "Bash(mkdir -p \"src/app/\\(dashboard\\)/dashboard/[slug]/settings/discounts/[id]\")",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(cat)",
+      "Read(//tmp/**)"
     ]
   }
 }

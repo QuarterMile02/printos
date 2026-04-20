@@ -76,7 +76,7 @@ export async function inviteMember(
 
   if (insertError) return { error: insertError.message }
 
-  revalidatePath(`/dashboard/${orgSlug}/team`)
+  revalidatePath(`/dashboard/${orgSlug}/team-members`)
   return {}
 }
 
@@ -144,7 +144,7 @@ export async function updateMemberProfile(
 
   if (error) return { error: error.message }
 
-  revalidatePath(`/dashboard/${orgSlug}/team`)
+  revalidatePath(`/dashboard/${orgSlug}/team-members`)
   return {}
 }
 
@@ -215,7 +215,7 @@ export async function setPermissionOverride(
     )
 
   if (error) return { error: error.message }
-  revalidatePath(`/dashboard/${orgSlug}/team`)
+  revalidatePath(`/dashboard/${orgSlug}/team-members`)
   return {}
 }
 
@@ -248,6 +248,6 @@ export async function removePermissionOverride(
     .eq('permission_key', permissionKey)
 
   if (error) return { error: error.message }
-  revalidatePath(`/dashboard/${orgSlug}/team`)
+  revalidatePath(`/dashboard/${orgSlug}/team-members`)
   return {}
 }
