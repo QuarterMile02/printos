@@ -542,11 +542,11 @@ export default function MigrateClient({
         </div>
       </div>
 
-      {/* FIX 2: Two-column body — flex row, 40/60 split, each column independently scrollable */}
+      {/* Two-column body — flex row, 30/70 split, each column independently scrollable */}
       <div className="flex-1 flex flex-row min-h-0 gap-4 p-4 overflow-hidden">
 
-        {/* LEFT 40% — independently scrollable */}
-        <div className="w-[40%] shrink-0 min-h-0 overflow-y-auto pr-1 space-y-3">
+        {/* LEFT 30% — independently scrollable */}
+        <div className="w-[30%] shrink-0 min-h-0 overflow-y-auto pr-1 space-y-3">
           <SectionHeaderLeft />
           {!hasShopvox && (
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
@@ -681,7 +681,7 @@ export default function MigrateClient({
           )}
         </div>
 
-        {/* RIGHT 60% — independently scrollable */}
+        {/* RIGHT 70% — independently scrollable */}
         <div className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1 space-y-4">
           <SectionHeaderRight />
 
@@ -948,7 +948,14 @@ function RateTable({ kind, rows, ratesById, onUpdate, onDelete, sensors, onDragE
   return (
     <div className="divide-y divide-gray-100 rounded border border-gray-100">
       <div className={`${GRID} bg-gray-50 text-[10px] font-medium uppercase tracking-wider text-gray-500 border-b`}>
-        <span className="text-center" title="Show as workflow step">☑</span><span /><span>Name</span><span>Formula</span><span>Mult</span><span className="text-center">Qty</span><span>Modifier</span><span />
+        <span className="text-center" title="Show as workflow step">☑</span>
+        <span className="text-center" title="Drag to reorder">⠿</span>
+        <span>Name</span>
+        <span>Formula</span>
+        <span>Mult</span>
+        <span className="text-center">Qty</span>
+        <span>Modifier</span>
+        <span className="text-center" title="Delete">✕</span>
       </div>
       {rows.length === 0 ? (
         <div className="py-4 text-center text-xs text-gray-400 italic">{emptyText ?? 'No rates yet.'}</div>
