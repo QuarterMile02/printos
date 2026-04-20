@@ -46,3 +46,11 @@ next-env.d.ts
 .vercel
 
 Docs/
+
+# ShopVOX extractor — local state, debug captures, logged-in session
+scripts/.shopvox-session/
+scripts/shopvox-debug/
+scripts/shopvox-extract-progress.json
+scripts/shopvox-extract-errors.json
+data/
+
