@@ -23,6 +23,17 @@ export type MigrateDefaultItem = {
   overrides_material_category_id: string | null
 }
 
+export type MigrateOptionRate = {
+  rate_type: 'labor_rate' | 'machine_rate'
+  rate_id: string
+  category: string | null
+  formula: string | null
+  multiplier: number
+  charge_per_li_unit: boolean
+  modifier_formula: string | null
+  workflow_step: boolean
+}
+
 export type MigrateModifier = {
   modifier_id: string
   is_required: boolean
@@ -66,6 +77,7 @@ export type MigrateBundle = {
   basic: MigrateBasic
   pricing: MigratePricing
   defaultItems: MigrateDefaultItem[]
+  optionRates: MigrateOptionRate[]
   modifiers: MigrateModifier[]
   dropdownMenus: MigrateDropdownMenu[]
 }
@@ -81,6 +93,10 @@ async function getMembership(orgId: string) {
     .eq('user_id', user.id)
     .maybeSingle() as { data: { role: OrgRole } | null; error: unknown }
   return { user, membership }
+}
+
+function canEdit(role: OrgRole | undefined | null) {
+  return role && role !== 'viewer'
 }
 
 async function replaceDefaultItems(productId: string, orgId: string, items: MigrateDefaultItem[]) {
@@ -109,6 +125,25 @@ async function replaceDefaultItems(productId: string, orgId: string, items: Migr
     sort_order: i,
   }))
   await service.from('product_default_items').insert(rows)
+}
+
+async function replaceOptionRates(productId: string, rates: MigrateOptionRate[]) {
+  const service = createServiceClient()
+  await service.from('product_option_rates').delete().eq('product_id', productId)
+  if (rates.length === 0) return
+  const rows = rates.map((r, i) => ({
+    product_id: productId,
+    rate_type: r.rate_type,
+    rate_id: r.rate_id,
+    category: r.category,
+    formula: r.formula,
+    multiplier: r.multiplier,
+    charge_per_li_unit: r.charge_per_li_unit,
+    modifier_formula: r.modifier_formula,
+    workflow_step: r.workflow_step,
+    sort_order: i,
+  }))
+  await service.from('product_option_rates').insert(rows)
 }
 
 async function replaceProductModifiers(productId: string, orgId: string, modifiers: MigrateModifier[]) {
@@ -182,8 +217,7 @@ export async function saveMigrationDraft(
 ): Promise<{ error?: string }> {
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
-  if (!membership) return { error: 'You are not a member of this organization.' }
-  if (membership.role === 'viewer') return { error: 'Viewers cannot edit products.' }
+  if (!canEdit(membership?.role)) return { error: 'You do not have permission to edit this product.' }
 
   const service = createServiceClient()
   const { error } = await service
@@ -209,6 +243,7 @@ export async function saveMigrationDraft(
   if (error) return { error: error.message }
 
   await replaceDefaultItems(productId, orgId, bundle.defaultItems)
+  await replaceOptionRates(productId, bundle.optionRates)
   await replaceProductModifiers(productId, orgId, bundle.modifiers)
   await replaceDropdownMenus(productId, orgId, bundle.dropdownMenus)
 
@@ -226,8 +261,7 @@ export async function publishMigration(
 ): Promise<{ error?: string }> {
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
-  if (!membership) return { error: 'You are not a member of this organization.' }
-  if (membership.role === 'viewer') return { error: 'Viewers cannot publish products.' }
+  if (!canEdit(membership?.role)) return { error: 'You do not have permission to publish this product.' }
 
   if (!bundle.basic.name.trim()) return { error: 'Name is required to publish.' }
 
@@ -260,6 +294,7 @@ export async function publishMigration(
   if (error) return { error: error.message }
 
   await replaceDefaultItems(productId, orgId, bundle.defaultItems)
+  await replaceOptionRates(productId, bundle.optionRates)
   await replaceProductModifiers(productId, orgId, bundle.modifiers)
   await replaceDropdownMenus(productId, orgId, bundle.dropdownMenus)
 
@@ -267,4 +302,164 @@ export async function publishMigration(
   revalidatePath(`/dashboard/${orgSlug}/products/${productId}`)
   revalidatePath(`/dashboard/${orgSlug}/products/${productId}/migrate`)
   return {}
+}
+
+// ---- Inline "Add New" creators ---------------------------------------------
+
+export async function createMaterialCategory(
+  orgId: string,
+  name: string,
+): Promise<{ error?: string; row?: { id: string; name: string } }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!canEdit(membership?.role)) return { error: 'No permission.' }
+  const trimmed = name.trim()
+  if (!trimmed) return { error: 'Name is required.' }
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('material_categories')
+    .insert({ organization_id: orgId, name: trimmed })
+    .select('id, name')
+    .single() as { data: { id: string; name: string } | null; error: { message: string } | null }
+  if (error || !data) return { error: error?.message ?? 'Failed to create category.' }
+  return { row: data }
+}
+
+export async function createLaborRate(
+  orgId: string,
+  input: { name: string; category: string | null; cost: number; markup: number },
+): Promise<{ error?: string; row?: { id: string; name: string; category: string | null; cost: number; markup: number } }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!canEdit(membership?.role)) return { error: 'No permission.' }
+  const trimmed = input.name.trim()
+  if (!trimmed) return { error: 'Name is required.' }
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('labor_rates')
+    .insert({
+      organization_id: orgId,
+      name: trimmed,
+      category: input.category?.trim() || null,
+      cost: input.cost,
+      price: input.cost * input.markup,
+      markup: input.markup,
+      active: true,
+      created_by: user.id,
+      updated_by: user.id,
+    })
+    .select('id, name, category, cost, markup')
+    .single() as { data: { id: string; name: string; category: string | null; cost: number; markup: number } | null; error: { message: string } | null }
+  if (error || !data) return { error: error?.message ?? 'Failed to create labor rate.' }
+  return { row: data }
+}
+
+export async function createMachineRate(
+  orgId: string,
+  input: { name: string; category: string | null; cost: number; markup: number },
+): Promise<{ error?: string; row?: { id: string; name: string; category: string | null; cost: number; markup: number } }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!canEdit(membership?.role)) return { error: 'No permission.' }
+  const trimmed = input.name.trim()
+  if (!trimmed) return { error: 'Name is required.' }
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('machine_rates')
+    .insert({
+      organization_id: orgId,
+      name: trimmed,
+      category: input.category?.trim() || null,
+      cost: input.cost,
+      price: input.cost * input.markup,
+      markup: input.markup,
+      active: true,
+      created_by: user.id,
+      updated_by: user.id,
+    })
+    .select('id, name, category, cost, markup')
+    .single() as { data: { id: string; name: string; category: string | null; cost: number; markup: number } | null; error: { message: string } | null }
+  if (error || !data) return { error: error?.message ?? 'Failed to create machine rate.' }
+  return { row: data }
+}
+
+export async function createModifier(
+  orgId: string,
+  input: { name: string; modifier_type: 'Boolean' | 'Numeric' | 'Range'; default_value: string | null },
+): Promise<{ error?: string; row?: { id: string; name: string; display_name: string; modifier_type: string } }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!canEdit(membership?.role)) return { error: 'No permission.' }
+  const trimmed = input.name.trim()
+  if (!trimmed) return { error: 'Name is required.' }
+  const service = createServiceClient()
+  const rangeDefault = input.modifier_type === 'Range' && input.default_value ? Number(input.default_value) : null
+  const { data, error } = await service
+    .from('modifiers')
+    .insert({
+      organization_id: orgId,
+      name: trimmed,
+      display_name: trimmed,
+      system_lookup_name: trimmed.replace(/\s+/g, '_'),
+      modifier_type: input.modifier_type,
+      range_default_value: rangeDefault,
+      active: true,
+      created_by: user.id,
+      updated_by: user.id,
+    })
+    .select('id, name, display_name, modifier_type')
+    .single() as { data: { id: string; name: string; display_name: string; modifier_type: string } | null; error: { message: string } | null }
+  if (error || !data) return { error: error?.message ?? 'Failed to create modifier.' }
+  return { row: data }
+}
+
+export async function createDiscount(
+  orgId: string,
+  input: { name: string; discount_type: 'Range' | 'Volume' | 'Price' },
+): Promise<{ error?: string; row?: { id: string; name: string; discount_type: string } }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!canEdit(membership?.role)) return { error: 'No permission.' }
+  const trimmed = input.name.trim()
+  if (!trimmed) return { error: 'Name is required.' }
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('discounts')
+    .insert({
+      organization_id: orgId,
+      name: trimmed,
+      discount_type: input.discount_type,
+      applies_to: 'Product',
+      discount_by: 'Percentage',
+      active: true,
+      created_by: user.id,
+    })
+    .select('id, name, discount_type')
+    .single() as { data: { id: string; name: string; discount_type: string } | null; error: { message: string } | null }
+  if (error || !data) return { error: error?.message ?? 'Failed to create discount.' }
+  return { row: data }
+}
+
+export async function createWorkflow(
+  orgId: string,
+  input: { name: string },
+): Promise<{ error?: string; row?: { id: string; name: string } }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!canEdit(membership?.role)) return { error: 'No permission.' }
+  const trimmed = input.name.trim()
+  if (!trimmed) return { error: 'Name is required.' }
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('workflow_templates')
+    .insert({
+      organization_id: orgId,
+      name: trimmed,
+      active: true,
+      created_by: user.id,
+    })
+    .select('id, name')
+    .single() as { data: { id: string; name: string } | null; error: { message: string } | null }
+  if (error || !data) return { error: error?.message ?? 'Failed to create workflow.' }
+  return { row: data }
 }

@@ -7,6 +7,7 @@ import type {
 import MigrateClient, {
   type ExistingDropdownMenu, type ShopvoxData,
   type MaterialOption, type LaborRateOption, type MachineRateOption,
+  type ExistingOptionRate,
 } from './migrate-client'
 
 export const dynamic = 'force-dynamic'
@@ -43,6 +44,7 @@ export default async function MigrateProductPage({ params }: PageProps) {
     machineRatesRes,
     modifiersRes,
     defaultItemsRes,
+    optionRatesRes,
     productModifiersRes,
     dropdownMenusRes,
     dropdownItemsRes,
@@ -50,12 +52,13 @@ export default async function MigrateProductPage({ params }: PageProps) {
     supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
     supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
     supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('materials').select('id, name, category_id, multiplier').eq('organization_id', org.id).eq('active', true).order('name'),
+    supabase.from('materials').select('id, name, category_id, multiplier, wastage_markup').eq('organization_id', org.id).eq('active', true).order('name'),
     supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name'),
-    supabase.from('labor_rates').select('id, name').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('machine_rates').select('id, name').eq('organization_id', org.id).eq('active', true).order('name'),
+    supabase.from('labor_rates').select('id, name, category, cost, markup').eq('organization_id', org.id).eq('active', true).order('name'),
+    supabase.from('machine_rates').select('id, name, category, cost, markup').eq('organization_id', org.id).eq('active', true).order('name'),
     supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name'),
     supabase.from('product_default_items').select('*').eq('product_id', id).order('sort_order'),
+    supabase.from('product_option_rates').select('*').eq('product_id', id).order('sort_order'),
     supabase.from('product_modifiers').select('*').eq('product_id', id).order('sort_order'),
     supabase.from('product_dropdown_menus').select('*').eq('product_id', id).order('sort_order'),
     supabase.from('product_dropdown_items').select('*'),
@@ -107,6 +110,7 @@ export default async function MigrateProductPage({ params }: PageProps) {
       machineRates={(machineRatesRes.data ?? []) as MachineRateOption[]}
       modifiersList={(modifiersRes.data ?? []) as Modifier[]}
       existingDefaultItems={(defaultItemsRes.data ?? []) as ProductDefaultItem[]}
+      existingOptionRates={(optionRatesRes.data ?? []) as ExistingOptionRate[]}
       existingModifiers={(productModifiersRes.data ?? []) as ProductModifier[]}
       existingDropdownMenus={existingDropdownMenus}
     />
