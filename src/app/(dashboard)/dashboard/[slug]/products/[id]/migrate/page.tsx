@@ -2,10 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type {
   Product, ProductCategory, WorkflowTemplate, Discount,
-  Material, LaborRate, MachineRate, Modifier,
-  ProductDefaultItem, ProductModifier,
+  Modifier, ProductDefaultItem, ProductModifier, MaterialCategory,
 } from '@/types/product-builder'
-import MigrateClient, { type ExistingDropdownMenu, type ShopvoxData } from './migrate-client'
+import MigrateClient, {
+  type ExistingDropdownMenu, type ShopvoxData,
+  type MaterialOption, type LaborRateOption, type MachineRateOption,
+} from './migrate-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +38,7 @@ export default async function MigrateProductPage({ params }: PageProps) {
     workflowsRes,
     discountsRes,
     materialsRes,
+    materialCategoriesRes,
     laborRatesRes,
     machineRatesRes,
     modifiersRes,
@@ -47,7 +50,8 @@ export default async function MigrateProductPage({ params }: PageProps) {
     supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
     supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
     supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('materials').select('id, name').eq('organization_id', org.id).eq('active', true).order('name'),
+    supabase.from('materials').select('id, name, category_id, multiplier').eq('organization_id', org.id).eq('active', true).order('name'),
+    supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name'),
     supabase.from('labor_rates').select('id, name').eq('organization_id', org.id).eq('active', true).order('name'),
     supabase.from('machine_rates').select('id, name').eq('organization_id', org.id).eq('active', true).order('name'),
     supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name'),
@@ -97,9 +101,10 @@ export default async function MigrateProductPage({ params }: PageProps) {
       categories={(categoriesRes.data ?? []) as ProductCategory[]}
       workflows={(workflowsRes.data ?? []) as WorkflowTemplate[]}
       discounts={(discountsRes.data ?? []) as Discount[]}
-      materials={(materialsRes.data ?? []) as Pick<Material, 'id' | 'name'>[]}
-      laborRates={(laborRatesRes.data ?? []) as Pick<LaborRate, 'id' | 'name'>[]}
-      machineRates={(machineRatesRes.data ?? []) as Pick<MachineRate, 'id' | 'name'>[]}
+      materials={(materialsRes.data ?? []) as MaterialOption[]}
+      materialCategories={(materialCategoriesRes.data ?? []) as Pick<MaterialCategory, 'id' | 'name'>[]}
+      laborRates={(laborRatesRes.data ?? []) as LaborRateOption[]}
+      machineRates={(machineRatesRes.data ?? []) as MachineRateOption[]}
       modifiersList={(modifiersRes.data ?? []) as Modifier[]}
       existingDefaultItems={(defaultItemsRes.data ?? []) as ProductDefaultItem[]}
       existingModifiers={(productModifiersRes.data ?? []) as ProductModifier[]}

@@ -193,6 +193,8 @@ export interface ProductDefaultItem {
   multiplier: number | null; fixed_quantity: number | null; percentage_of_base: number | null
   is_optional: boolean | null; is_required: boolean | null; sort_order: number | null
   overrides_material_category_id: string | null
+  workflow_step: boolean | null; modifier_formula: string | null
+  wastage_percent: number | null; item_markup: number | null
   created_at: string; updated_at: string
 }
 

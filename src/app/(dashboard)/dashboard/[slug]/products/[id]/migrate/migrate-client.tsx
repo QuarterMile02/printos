@@ -13,7 +13,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type {
   Product, ProductCategory, WorkflowTemplate, Discount,
-  Material, LaborRate, MachineRate, Modifier,
+  Material, Modifier, MaterialCategory,
   ProductDefaultItem, ProductModifier,
 } from '@/types/product-builder'
 import {
@@ -69,9 +69,9 @@ export type ExistingDropdownMenu = {
   }[]
 }
 
-type MaterialOption = Pick<Material, 'id' | 'name'>
-type LaborRateOption = Pick<LaborRate, 'id' | 'name'>
-type MachineRateOption = Pick<MachineRate, 'id' | 'name'>
+export type MaterialOption = Pick<Material, 'id' | 'name' | 'category_id' | 'multiplier'>
+export type LaborRateOption = { id: string; name: string }
+export type MachineRateOption = { id: string; name: string }
 
 type Props = {
   orgId: string
@@ -84,6 +84,7 @@ type Props = {
   workflows: WorkflowTemplate[]
   discounts: Discount[]
   materials: MaterialOption[]
+  materialCategories: Pick<MaterialCategory, 'id' | 'name'>[]
   laborRates: LaborRateOption[]
   machineRates: MachineRateOption[]
   modifiersList: Modifier[]
@@ -92,15 +93,37 @@ type Props = {
   existingDropdownMenus: ExistingDropdownMenu[]
 }
 
-// ---- Enriched rows carry an id + display for React keys and UI ----
-type DefaultItemRow = MigrateDefaultItem & {
+// ---- Row types ----
+type MaterialRow = {
   id: string
-  display_name: string
-  matched: boolean // true when the row is linked to a real DB record
+  material_id: string | null
+  custom_item_name: string | null
+  category_id: string | null
+  system_formula: string | null
+  wastage_percent: number
+  multiplier: number
+  charge_per_li_unit: boolean
+  item_markup: number
 }
 
-type ModifierRow = MigrateModifier & {
+type RateRow = {
   id: string
+  kind: 'LaborRate' | 'MachineRate'
+  labor_rate_id: string | null
+  machine_rate_id: string | null
+  custom_item_name: string | null
+  system_formula: string | null
+  multiplier: number
+  charge_per_li_unit: boolean
+  modifier_formula: string | null
+  workflow_step: boolean
+}
+
+type ModifierRow = {
+  id: string
+  modifier_id: string
+  is_required: boolean
+  default_value: string | null
   display_name: string
   modifier_type: string
 }
@@ -114,8 +137,6 @@ type DropdownItemRow = {
   charge_per_li_unit: boolean
   is_optional: boolean
   id: string
-  display_name: string
-  matched: boolean
 }
 
 type DropdownMenuRow = {
@@ -125,6 +146,7 @@ type DropdownMenuRow = {
   items: DropdownItemRow[]
 }
 
+const FORMULA_OPTIONS = ['Area', 'Perimeter', 'Height', 'Width', 'Unit', 'None']
 const PRICING_FORMULA_OPTIONS = ['Area', 'Perimeter', 'Width', 'Height', 'Unit']
 const UNIT_OPTIONS = ['Each', 'Sqft', 'Roll', 'Sheet', 'Unit', 'Feet', 'Inch', 'Yard', 'Hr']
 
@@ -141,7 +163,7 @@ function lcMap<T extends { id: string; name: string }>(rows: T[]) {
 export default function MigrateClient({
   orgId, orgName, orgSlug, product, shopvoxData, migrationStatus,
   categories, workflows, discounts,
-  materials, laborRates, machineRates, modifiersList,
+  materials, materialCategories, laborRates, machineRates, modifiersList,
   existingDefaultItems, existingModifiers, existingDropdownMenus,
 }: Props) {
   const router = useRouter()
@@ -149,7 +171,6 @@ export default function MigrateClient({
   const [toast, setToast] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
-  // Lookup maps (case-insensitive by name)
   const materialByName = useMemo(() => lcMap(materials), [materials])
   const laborByName = useMemo(() => lcMap(laborRates), [laborRates])
   const machineByName = useMemo(() => lcMap(machineRates), [machineRates])
@@ -161,9 +182,9 @@ export default function MigrateClient({
   const materialById = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials])
   const laborById = useMemo(() => new Map(laborRates.map((l) => [l.id, l])), [laborRates])
   const machineById = useMemo(() => new Map(machineRates.map((m) => [m.id, m])), [machineRates])
+  const materialCatById = useMemo(() => new Map(materialCategories.map((c) => [c.id, c])), [materialCategories])
   const modifierById = useMemo(() => new Map(modifiersList.map((m) => [m.id, m])), [modifiersList])
   const modifierByName = useMemo(() => {
-    // keyed by system_lookup_name OR display_name lowercased
     const m = new Map<string, Modifier>()
     for (const mod of modifiersList) {
       if (mod.system_lookup_name) m.set(mod.system_lookup_name.toLowerCase().trim(), mod)
@@ -173,20 +194,7 @@ export default function MigrateClient({
     return m
   }, [modifiersList])
 
-  function lookupItemName(row: MigrateDefaultItem): string {
-    if (row.item_type === 'Material' && row.material_id) return materialById.get(row.material_id)?.name ?? 'Unknown material'
-    if (row.item_type === 'LaborRate' && row.labor_rate_id) return laborById.get(row.labor_rate_id)?.name ?? 'Unknown labor rate'
-    if (row.item_type === 'MachineRate' && row.machine_rate_id) return machineById.get(row.machine_rate_id)?.name ?? 'Unknown machine rate'
-    return row.custom_item_name ?? 'Custom'
-  }
-  function lookupDropdownItemName(row: DropdownItemRow): string {
-    if (row.item_type === 'Material' && row.material_id) return materialById.get(row.material_id)?.name ?? '—'
-    if (row.item_type === 'LaborRate' && row.labor_rate_id) return laborById.get(row.labor_rate_id)?.name ?? '—'
-    if (row.item_type === 'MachineRate' && row.machine_rate_id) return machineById.get(row.machine_rate_id)?.name ?? '—'
-    return '—'
-  }
-
-  // ---- Initial state hydrated from existing PrintOS rows ----
+  // ---- State ----
   type BasicState = {
     name: string
     description: string
@@ -219,25 +227,57 @@ export default function MigrateClient({
     range_discount_id: product.range_discount_id,
   })
 
-  const [defaultItems, setDefaultItems] = useState<DefaultItemRow[]>(() =>
-    existingDefaultItems.map((r) => {
-      const base: MigrateDefaultItem = {
-        item_type: (r.item_type as MigrateDefaultItem['item_type']) ?? 'Material',
-        material_id: r.material_id,
+  const [materialRows, setMaterialRows] = useState<MaterialRow[]>(() =>
+    existingDefaultItems
+      .filter((r) => r.item_type === 'Material')
+      .map((r) => {
+        const mat = r.material_id ? materialById.get(r.material_id) : undefined
+        return {
+          id: uid(),
+          material_id: r.material_id,
+          custom_item_name: r.custom_item_name,
+          category_id: r.overrides_material_category_id ?? mat?.category_id ?? null,
+          system_formula: r.system_formula,
+          wastage_percent: r.wastage_percent ?? 0,
+          multiplier: r.multiplier ?? 1,
+          charge_per_li_unit: r.charge_per_li_unit ?? false,
+          item_markup: r.item_markup ?? mat?.multiplier ?? 1,
+        }
+      })
+  )
+
+  const [laborRateRows, setLaborRateRows] = useState<RateRow[]>(() =>
+    existingDefaultItems
+      .filter((r) => r.item_type === 'LaborRate')
+      .map((r) => ({
+        id: uid(),
+        kind: 'LaborRate' as const,
         labor_rate_id: r.labor_rate_id,
+        machine_rate_id: null,
+        custom_item_name: r.custom_item_name,
+        system_formula: r.system_formula,
+        multiplier: r.multiplier ?? 1,
+        charge_per_li_unit: r.charge_per_li_unit ?? false,
+        modifier_formula: r.modifier_formula ?? r.menu_name ?? null,
+        workflow_step: r.workflow_step ?? false,
+      }))
+  )
+
+  const [machineRateRows, setMachineRateRows] = useState<RateRow[]>(() =>
+    existingDefaultItems
+      .filter((r) => r.item_type === 'MachineRate')
+      .map((r) => ({
+        id: uid(),
+        kind: 'MachineRate' as const,
+        labor_rate_id: null,
         machine_rate_id: r.machine_rate_id,
         custom_item_name: r.custom_item_name,
         system_formula: r.system_formula,
         multiplier: r.multiplier ?? 1,
         charge_per_li_unit: r.charge_per_li_unit ?? false,
-        include_in_base_price: r.include_in_base_price ?? true,
-        menu_name: r.menu_name, // reused to store modifier expression
-        is_optional: r.is_optional ?? false,
-      }
-      const display = lookupItemName(base)
-      const matched = !!(base.material_id || base.labor_rate_id || base.machine_rate_id)
-      return { ...base, id: uid(), display_name: display, matched }
-    })
+        modifier_formula: r.modifier_formula ?? r.menu_name ?? null,
+        workflow_step: r.workflow_step ?? false,
+      }))
   )
 
   const [modifierRows, setModifierRows] = useState<ModifierRow[]>(() =>
@@ -261,16 +301,7 @@ export default function MigrateClient({
       id: uid(),
       menu_name: menu.menu_name,
       is_optional: menu.is_optional,
-      items: menu.items.map((i) => {
-        const row: DropdownItemRow = {
-          ...i,
-          id: uid(),
-          display_name: '',
-          matched: !!(i.material_id || i.labor_rate_id || i.machine_rate_id),
-        }
-        row.display_name = lookupDropdownItemName(row)
-        return row
-      }),
+      items: menu.items.map((i) => ({ ...i, id: uid() })),
     }))
   )
 
@@ -316,31 +347,17 @@ export default function MigrateClient({
 
   function copyShopvoxModifier(m: NonNullable<ShopvoxData['modifiers']>[number]) {
     const match = modifierByName.get(m.name.toLowerCase().trim())
-    if (!match) {
-      showToast(`No match in DB for modifier "${m.name}"`)
-      return
-    }
-    if (modifierRows.some((r) => r.modifier_id === match.id)) {
-      showToast(`"${match.display_name}" is already added`)
-      return
-    }
-    setModifierRows((rows) => [
-      ...rows,
-      {
-        id: uid(),
-        modifier_id: match.id,
-        is_required: false,
-        default_value: null,
-        display_name: match.display_name,
-        modifier_type: match.modifier_type,
-      },
-    ])
+    if (!match) { showToast(`No match in DB for modifier "${m.name}"`); return }
+    if (modifierRows.some((r) => r.modifier_id === match.id)) { showToast(`"${match.display_name}" already added`); return }
+    setModifierRows((rows) => [...rows, {
+      id: uid(), modifier_id: match.id, is_required: false, default_value: null,
+      display_name: match.display_name, modifier_type: match.modifier_type,
+    }])
   }
 
   function copyAllShopvoxModifiers() {
     const list = shopvoxData?.modifiers ?? []
-    let added = 0
-    let missing = 0
+    let added = 0, missing = 0
     setModifierRows((rows) => {
       const next = [...rows]
       const existingIds = new Set(rows.map((r) => r.modifier_id))
@@ -350,12 +367,8 @@ export default function MigrateClient({
         if (existingIds.has(match.id)) continue
         existingIds.add(match.id)
         next.push({
-          id: uid(),
-          modifier_id: match.id,
-          is_required: false,
-          default_value: null,
-          display_name: match.display_name,
-          modifier_type: match.modifier_type,
+          id: uid(), modifier_id: match.id, is_required: false, default_value: null,
+          display_name: match.display_name, modifier_type: match.modifier_type,
         })
         added++
       }
@@ -365,10 +378,7 @@ export default function MigrateClient({
   }
 
   function copyShopvoxDropdown(m: NonNullable<ShopvoxData['dropdown_menus']>[number]) {
-    setDropdownMenus((menus) => [
-      ...menus,
-      { id: uid(), menu_name: m.name, is_optional: m.optional ?? false, items: [] },
-    ])
+    setDropdownMenus((menus) => [...menus, { id: uid(), menu_name: m.name, is_optional: m.optional ?? false, items: [] }])
     showToast(`Added menu "${m.name}"`)
   }
 
@@ -381,78 +391,90 @@ export default function MigrateClient({
     showToast(`Added ${list.length} dropdown menus`)
   }
 
-  function shopvoxItemToRow(it: NonNullable<ShopvoxData['default_items']>[number]): DefaultItemRow {
-    const lookup =
-      it.kind === 'Material' ? materialByName.get(it.name.toLowerCase().trim())
-      : it.kind === 'LaborRate' ? laborByName.get(it.name.toLowerCase().trim())
-      : machineByName.get(it.name.toLowerCase().trim())
-    const base: MigrateDefaultItem = {
-      item_type: it.kind,
-      material_id: it.kind === 'Material' ? (lookup?.id ?? null) : null,
-      labor_rate_id: it.kind === 'LaborRate' ? (lookup?.id ?? null) : null,
-      machine_rate_id: it.kind === 'MachineRate' ? (lookup?.id ?? null) : null,
-      custom_item_name: lookup ? null : it.name,
-      system_formula: it.formula,
-      multiplier: it.multiplier,
-      charge_per_li_unit: it.per_li,
-      include_in_base_price: true,
-      menu_name: it.modifier?.expression ?? null,
-      is_optional: false,
+  function addShopvoxDefaultItem(it: NonNullable<ShopvoxData['default_items']>[number]) {
+    const lcName = it.name.toLowerCase().trim()
+    if (it.kind === 'Material') {
+      const match = materialByName.get(lcName)
+      setMaterialRows((rows) => [...rows, {
+        id: uid(),
+        material_id: match?.id ?? null,
+        custom_item_name: match ? null : it.name,
+        category_id: match?.category_id ?? null,
+        system_formula: it.formula || null,
+        wastage_percent: 0,
+        multiplier: it.multiplier ?? 1,
+        charge_per_li_unit: it.per_li,
+        item_markup: match?.multiplier ?? 1,
+      }])
+    } else if (it.kind === 'LaborRate') {
+      const match = laborByName.get(lcName)
+      setLaborRateRows((rows) => [...rows, {
+        id: uid(), kind: 'LaborRate',
+        labor_rate_id: match?.id ?? null,
+        machine_rate_id: null,
+        custom_item_name: match ? null : it.name,
+        system_formula: it.formula || null,
+        multiplier: it.multiplier ?? 1,
+        charge_per_li_unit: it.per_li,
+        modifier_formula: it.modifier?.expression ?? null,
+        workflow_step: true,
+      }])
+    } else {
+      const match = machineByName.get(lcName)
+      setMachineRateRows((rows) => [...rows, {
+        id: uid(), kind: 'MachineRate',
+        labor_rate_id: null,
+        machine_rate_id: match?.id ?? null,
+        custom_item_name: match ? null : it.name,
+        system_formula: it.formula || null,
+        multiplier: it.multiplier ?? 1,
+        charge_per_li_unit: it.per_li,
+        modifier_formula: it.modifier?.expression ?? null,
+        workflow_step: true,
+      }])
     }
-    return {
-      ...base,
-      id: uid(),
-      display_name: lookup?.name ?? it.name,
-      matched: !!lookup,
-    }
-  }
-
-  function copyShopvoxDefaultItem(it: NonNullable<ShopvoxData['default_items']>[number]) {
-    setDefaultItems((rows) => [...rows, shopvoxItemToRow(it)])
   }
 
   function copyAllShopvoxDefaultItems() {
     const list = shopvoxData?.default_items ?? []
-    setDefaultItems((rows) => [...rows, ...list.map(shopvoxItemToRow)])
-    const missing = list.filter((it) => {
-      const m = it.kind === 'Material' ? materialByName.get(it.name.toLowerCase())
-        : it.kind === 'LaborRate' ? laborByName.get(it.name.toLowerCase())
-        : machineByName.get(it.name.toLowerCase())
-      return !m
-    }).length
-    showToast(`Added ${list.length} items${missing ? `, ${missing} unmatched (custom)` : ''}`)
+    for (const it of list) addShopvoxDefaultItem(it)
+    showToast(`Added ${list.length} items`)
   }
 
-  // ---- Default item row actions ----
+  // ---- Row actions ----
 
-  function updateDefaultItem(id: string, patch: Partial<MigrateDefaultItem>) {
-    setDefaultItems((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  function addBlankMaterial() {
+    setMaterialRows((rows) => [...rows, {
+      id: uid(), material_id: null, custom_item_name: '', category_id: null,
+      system_formula: 'Area', wastage_percent: 0, multiplier: 1,
+      charge_per_li_unit: false, item_markup: 1,
+    }])
+  }
+  function updateMaterial(id: string, patch: Partial<MaterialRow>) {
+    setMaterialRows((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+  function deleteMaterial(id: string) {
+    setMaterialRows((rows) => rows.filter((r) => r.id !== id))
   }
 
-  function deleteDefaultItem(id: string) {
-    setDefaultItems((rows) => rows.filter((r) => r.id !== id))
+  function addBlankRate(kind: 'LaborRate' | 'MachineRate') {
+    const row: RateRow = {
+      id: uid(), kind,
+      labor_rate_id: null, machine_rate_id: null,
+      custom_item_name: '', system_formula: 'Unit',
+      multiplier: 1, charge_per_li_unit: false,
+      modifier_formula: null, workflow_step: false,
+    }
+    if (kind === 'LaborRate') setLaborRateRows((rows) => [...rows, row])
+    else setMachineRateRows((rows) => [...rows, row])
   }
-
-  function addBlankDefaultItem() {
-    setDefaultItems((rows) => [
-      ...rows,
-      {
-        id: uid(),
-        item_type: 'LaborRate',
-        material_id: null,
-        labor_rate_id: null,
-        machine_rate_id: null,
-        custom_item_name: 'New item',
-        system_formula: 'Unit',
-        multiplier: 1,
-        charge_per_li_unit: false,
-        include_in_base_price: true,
-        menu_name: null,
-        is_optional: false,
-        display_name: 'New item',
-        matched: false,
-      },
-    ])
+  function updateRate(kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) {
+    const setter = kind === 'LaborRate' ? setLaborRateRows : setMachineRateRows
+    setter((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+  function deleteRate(kind: 'LaborRate' | 'MachineRate', id: string) {
+    const setter = kind === 'LaborRate' ? setLaborRateRows : setMachineRateRows
+    setter((rows) => rows.filter((r) => r.id !== id))
   }
 
   function updateModifier(id: string, patch: Partial<MigrateModifier>) {
@@ -478,19 +500,88 @@ export default function MigrateClient({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  function onDragEnd(e: DragEndEvent) {
+  function reorder<T extends { id: string }>(rows: T[], active: string, over: string): T[] {
+    const oldIdx = rows.findIndex((r) => r.id === active)
+    const newIdx = rows.findIndex((r) => r.id === over)
+    if (oldIdx < 0 || newIdx < 0) return rows
+    return arrayMove(rows, oldIdx, newIdx)
+  }
+
+  function onLaborDragEnd(e: DragEndEvent) {
     const { active, over } = e
     if (!over || active.id === over.id) return
-    setDefaultItems((rows) => {
-      const oldIdx = rows.findIndex((r) => r.id === active.id)
-      const newIdx = rows.findIndex((r) => r.id === over.id)
-      if (oldIdx < 0 || newIdx < 0) return rows
-      return arrayMove(rows, oldIdx, newIdx)
-    })
+    setLaborRateRows((rows) => reorder(rows, String(active.id), String(over.id)))
+  }
+  function onMachineDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    setMachineRateRows((rows) => reorder(rows, String(active.id), String(over.id)))
+  }
+  function onModifierDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    setModifierRows((rows) => reorder(rows, String(active.id), String(over.id)))
   }
 
   // ---- Build bundle for save/publish ----
   function buildBundle(): MigrateBundle {
+    const defaultItems: MigrateDefaultItem[] = [
+      ...materialRows.map<MigrateDefaultItem>((r) => ({
+        item_type: 'Material',
+        material_id: r.material_id,
+        labor_rate_id: null,
+        machine_rate_id: null,
+        custom_item_name: r.material_id ? null : (r.custom_item_name || null),
+        system_formula: r.system_formula,
+        multiplier: r.multiplier,
+        charge_per_li_unit: r.charge_per_li_unit,
+        include_in_base_price: true,
+        menu_name: null,
+        is_optional: false,
+        workflow_step: false,
+        modifier_formula: null,
+        wastage_percent: r.wastage_percent,
+        item_markup: r.item_markup,
+        overrides_material_category_id: r.category_id,
+      })),
+      ...laborRateRows.map<MigrateDefaultItem>((r) => ({
+        item_type: 'LaborRate',
+        material_id: null,
+        labor_rate_id: r.labor_rate_id,
+        machine_rate_id: null,
+        custom_item_name: r.labor_rate_id ? null : (r.custom_item_name || null),
+        system_formula: r.system_formula,
+        multiplier: r.multiplier,
+        charge_per_li_unit: r.charge_per_li_unit,
+        include_in_base_price: true,
+        menu_name: null,
+        is_optional: false,
+        workflow_step: r.workflow_step,
+        modifier_formula: r.modifier_formula,
+        wastage_percent: null,
+        item_markup: null,
+        overrides_material_category_id: null,
+      })),
+      ...machineRateRows.map<MigrateDefaultItem>((r) => ({
+        item_type: 'MachineRate',
+        material_id: null,
+        labor_rate_id: null,
+        machine_rate_id: r.machine_rate_id,
+        custom_item_name: r.machine_rate_id ? null : (r.custom_item_name || null),
+        system_formula: r.system_formula,
+        multiplier: r.multiplier,
+        charge_per_li_unit: r.charge_per_li_unit,
+        include_in_base_price: true,
+        menu_name: null,
+        is_optional: false,
+        workflow_step: r.workflow_step,
+        modifier_formula: r.modifier_formula,
+        wastage_percent: null,
+        item_markup: null,
+        overrides_material_category_id: null,
+      })),
+    ]
+
     return {
       basic: {
         name: basic.name,
@@ -507,19 +598,7 @@ export default function MigrateClient({
         buying_units: pricing.buying_units,
         range_discount_id: pricing.range_discount_id,
       },
-      defaultItems: defaultItems.map((r) => ({
-        item_type: r.item_type,
-        material_id: r.material_id,
-        labor_rate_id: r.labor_rate_id,
-        machine_rate_id: r.machine_rate_id,
-        custom_item_name: r.custom_item_name,
-        system_formula: r.system_formula,
-        multiplier: r.multiplier,
-        charge_per_li_unit: r.charge_per_li_unit,
-        include_in_base_price: r.include_in_base_price,
-        menu_name: r.menu_name,
-        is_optional: r.is_optional,
-      })),
+      defaultItems,
       modifiers: modifierRows.map((r) => ({
         modifier_id: r.modifier_id,
         is_required: r.is_required,
@@ -549,7 +628,6 @@ export default function MigrateClient({
       else { showToast('Draft saved'); router.refresh() }
     })
   }
-
   function handlePublish() {
     setFormError(null)
     startTransition(async () => {
@@ -558,6 +636,22 @@ export default function MigrateClient({
       else { showToast('Published to PrintOS'); router.refresh() }
     })
   }
+
+  // ---- Workflow Steps preview ----
+  const workflowSteps = useMemo(() => {
+    const steps: { kind: 'LaborRate' | 'MachineRate'; name: string; row: RateRow }[] = []
+    for (const r of laborRateRows) {
+      if (!r.workflow_step) continue
+      const name = r.labor_rate_id ? laborById.get(r.labor_rate_id)?.name ?? 'Unknown labor rate' : (r.custom_item_name || 'Unnamed labor rate')
+      steps.push({ kind: 'LaborRate', name, row: r })
+    }
+    for (const r of machineRateRows) {
+      if (!r.workflow_step) continue
+      const name = r.machine_rate_id ? machineById.get(r.machine_rate_id)?.name ?? 'Unknown machine rate' : (r.custom_item_name || 'Unnamed machine rate')
+      steps.push({ kind: 'MachineRate', name, row: r })
+    }
+    return steps
+  }, [laborRateRows, machineRateRows, laborById, machineById])
 
   // ---- Render ----
 
@@ -568,6 +662,9 @@ export default function MigrateClient({
       : { label: 'ShopVOX Reference', cls: 'bg-gray-100 text-gray-700 border-gray-200' }
 
   const hasShopvox = !!shopvoxData
+  const materialsDatalistId = `materials-dl-${product.id}`
+  const laborDatalistId = `labor-dl-${product.id}`
+  const machineDatalistId = `machine-dl-${product.id}`
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-gray-50">
@@ -576,6 +673,20 @@ export default function MigrateClient({
           <span className="text-sm font-medium text-green-800">{toast}</span>
         </div>
       )}
+
+      {/* Hidden datalists for native searchable dropdowns */}
+      <datalist id={materialsDatalistId}>
+        {materials.map((m) => {
+          const cat = m.category_id ? materialCatById.get(m.category_id)?.name : null
+          return <option key={m.id} value={m.name}>{cat ? `${m.name} — ${cat}` : m.name}</option>
+        })}
+      </datalist>
+      <datalist id={laborDatalistId}>
+        {laborRates.map((l) => <option key={l.id} value={l.name} />)}
+      </datalist>
+      <datalist id={machineDatalistId}>
+        {machineRates.map((m) => <option key={m.id} value={m.name} />)}
+      </datalist>
 
       {/* Top Bar */}
       <div className="sticky top-0 z-40 border-b border-gray-200 bg-white px-6 py-3 shadow-sm">
@@ -596,9 +707,7 @@ export default function MigrateClient({
             <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${statusBadge.cls}`}>
               {statusBadge.label}
             </span>
-            {formError && (
-              <span className="text-xs text-red-600">{formError}</span>
-            )}
+            {formError && (<span className="text-xs text-red-600">{formError}</span>)}
             <button
               onClick={handleSaveDraft}
               disabled={isPending}
@@ -617,9 +726,8 @@ export default function MigrateClient({
         </div>
       </div>
 
-      {/* Two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
-        {/* ---- LEFT: ShopVOX Reference ---- */}
+        {/* ---- LEFT: ShopVOX Reference (unchanged) ---- */}
         <div className="space-y-4">
           <SectionHeaderLeft />
           {!hasShopvox && (
@@ -629,7 +737,6 @@ export default function MigrateClient({
           )}
           {hasShopvox && (
             <>
-              {/* Basic */}
               <LeftSection title="Basic Info" onCopyAll={copyBasic} canCopy>
                 <KV k="Name" v={shopvoxData!.basic?.name} />
                 <KV k="Display Name" v={shopvoxData!.basic?.display_name} />
@@ -639,7 +746,6 @@ export default function MigrateClient({
                 <KV k="Secondary Category" v={shopvoxData!.basic?.secondary_category} />
               </LeftSection>
 
-              {/* Pricing */}
               <LeftSection title="Pricing" onCopyAll={copyPricing} canCopy>
                 <KV k="Pricing Type" v={shopvoxData!.pricing?.pricing_type} />
                 <KV k="Formula" v={shopvoxData!.pricing?.formula} />
@@ -649,7 +755,6 @@ export default function MigrateClient({
                 <KV k="Apply Discounts" v={shopvoxData!.pricing?.apply_discounts ? 'Yes' : 'No'} />
               </LeftSection>
 
-              {/* Modifiers */}
               <LeftSection
                 title={`Modifiers (${shopvoxData!.modifiers?.length ?? 0})`}
                 onCopyAll={copyAllShopvoxModifiers}
@@ -672,7 +777,6 @@ export default function MigrateClient({
                 ))}
               </LeftSection>
 
-              {/* Dropdown Menus */}
               <LeftSection
                 title={`Dropdown Menus (${shopvoxData!.dropdown_menus?.length ?? 0})`}
                 onCopyAll={copyAllShopvoxDropdowns}
@@ -690,14 +794,13 @@ export default function MigrateClient({
                 ))}
               </LeftSection>
 
-              {/* Default Items */}
               <LeftSection
                 title={`Default Items (${shopvoxData!.default_items?.length ?? 0})`}
                 onCopyAll={copyAllShopvoxDefaultItems}
                 canCopy={!!shopvoxData!.default_items?.length}
               >
                 {(shopvoxData!.default_items ?? []).map((it, i) => (
-                  <LeftRow key={i} onCopy={() => copyShopvoxDefaultItem(it)}>
+                  <LeftRow key={i} onCopy={() => addShopvoxDefaultItem(it)}>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-mono text-gray-400 w-6 shrink-0">#{it.idx ?? i + 1}</span>
@@ -714,9 +817,7 @@ export default function MigrateClient({
                           </span>
                         )}
                       </div>
-                      {it.note && (
-                        <div className="text-[11px] italic text-gray-400 pl-8">{it.note}</div>
-                      )}
+                      {it.note && (<div className="text-[11px] italic text-gray-400 pl-8">{it.note}</div>)}
                     </div>
                   </LeftRow>
                 ))}
@@ -729,7 +830,7 @@ export default function MigrateClient({
         <div className="space-y-4">
           <SectionHeaderRight />
 
-          {/* Basic */}
+          {/* Basic Info */}
           <RightSection title="Basic Info">
             <FieldRow label="Name">
               <input className={inputCls} value={basic.name} onChange={(e) => setBasic({ ...basic, name: e.target.value })} />
@@ -804,32 +905,94 @@ export default function MigrateClient({
             </FieldRow>
           </RightSection>
 
+          {/* Materials */}
+          <ColoredSection title={`Materials (${materialRows.length})`} borderColor="border-l-blue-500" action={<AddBtn onClick={addBlankMaterial}>Add Material</AddBtn>}>
+            {materialRows.length === 0 ? (
+              <EmptyState text="No materials yet. Use ← to copy from ShopVOX or click Add Material." />
+            ) : (
+              <TableWrap>
+                <MaterialHeaderRow />
+                {materialRows.map((row) => (
+                  <MaterialRowUI
+                    key={row.id}
+                    row={row}
+                    datalistId={materialsDatalistId}
+                    materialByName={materialByName}
+                    materialById={materialById}
+                    materialCategories={materialCategories}
+                    onUpdate={updateMaterial}
+                    onDelete={deleteMaterial}
+                  />
+                ))}
+              </TableWrap>
+            )}
+          </ColoredSection>
+
+          {/* Labor Rates */}
+          <ColoredSection title={`Labor Rates (${laborRateRows.length})`} borderColor="border-l-green-500" action={<AddBtn onClick={() => addBlankRate('LaborRate')}>Add Labor Rate</AddBtn>}>
+            {laborRateRows.length === 0 ? (
+              <EmptyState text="No labor rates yet." />
+            ) : (
+              <TableWrap>
+                <RateHeaderRow />
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onLaborDragEnd}>
+                  <SortableContext items={laborRateRows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+                    {laborRateRows.map((row) => (
+                      <SortableRateRow
+                        key={row.id} row={row} kind="LaborRate"
+                        datalistId={laborDatalistId}
+                        nameByName={laborByName} nameById={laborById}
+                        onUpdate={updateRate} onDelete={deleteRate}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              </TableWrap>
+            )}
+          </ColoredSection>
+
+          {/* Machine Rates */}
+          <ColoredSection title={`Machine Rates (${machineRateRows.length})`} borderColor="border-l-orange-500" action={<AddBtn onClick={() => addBlankRate('MachineRate')}>Add Machine Rate</AddBtn>}>
+            {machineRateRows.length === 0 ? (
+              <EmptyState text="No machine rates yet." />
+            ) : (
+              <TableWrap>
+                <RateHeaderRow />
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onMachineDragEnd}>
+                  <SortableContext items={machineRateRows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+                    {machineRateRows.map((row) => (
+                      <SortableRateRow
+                        key={row.id} row={row} kind="MachineRate"
+                        datalistId={machineDatalistId}
+                        nameByName={machineByName} nameById={machineById}
+                        onUpdate={updateRate} onDelete={deleteRate}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              </TableWrap>
+            )}
+          </ColoredSection>
+
           {/* Modifiers */}
-          <RightSection title={`Modifiers (${modifierRows.length})`}>
+          <ColoredSection title={`Modifiers (${modifierRows.length})`} borderColor="border-l-purple-500">
             {modifierRows.length === 0 ? (
               <EmptyState text="No modifiers yet. Use ← to copy from ShopVOX." />
             ) : (
-              <div className="space-y-1">
-                {modifierRows.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2 rounded-md border border-gray-100 bg-white px-2 py-1.5">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      m.modifier_type === 'Boolean' ? 'bg-blue-100 text-blue-700' :
-                      m.modifier_type === 'Numeric' ? 'bg-indigo-100 text-indigo-700' :
-                      'bg-purple-100 text-purple-700'
-                    }`}>{m.modifier_type}</span>
-                    <span className="text-sm font-medium text-gray-800 truncate flex-1">{m.display_name}</span>
-                    <label className="flex items-center gap-1 text-[11px] text-gray-500">
-                      <input type="checkbox" checked={m.is_required} onChange={(e) => updateModifier(m.id, { is_required: e.target.checked })} className="accent-qm-lime" />
-                      required
-                    </label>
-                    <button onClick={() => deleteModifier(m.id)} className="rounded p-1 text-red-500 hover:bg-red-50" title="Remove">
-                      <XIcon />
-                    </button>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onModifierDragEnd}>
+                <SortableContext items={modifierRows.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-1">
+                    {modifierRows.map((m) => (
+                      <SortableModifierRow
+                        key={m.id} row={m}
+                        onUpdate={updateModifier} onDelete={deleteModifier}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
+                </SortableContext>
+              </DndContext>
             )}
-          </RightSection>
+          </ColoredSection>
 
           {/* Dropdown Menus */}
           <RightSection title={`Dropdown Menus (${dropdownMenus.length})`} action={<AddBtn onClick={addBlankMenu}>Add Menu</AddBtn>}>
@@ -851,34 +1014,33 @@ export default function MigrateClient({
                       </label>
                       <button onClick={() => deleteMenu(m.id)} className="rounded p-1 text-red-500 hover:bg-red-50"><XIcon /></button>
                     </div>
-                    {m.items.length > 0 && (
-                      <div className="mt-1 pl-2 text-[11px] text-gray-500">{m.items.length} items</div>
-                    )}
+                    {m.items.length > 0 && (<div className="mt-1 pl-2 text-[11px] text-gray-500">{m.items.length} items</div>)}
                   </div>
                 ))}
               </div>
             )}
           </RightSection>
 
-          {/* Default Items — Drag to reorder */}
-          <RightSection title={`Default Items (${defaultItems.length})`} action={<AddBtn onClick={addBlankDefaultItem}>Add Item</AddBtn>}>
-            {defaultItems.length === 0 ? (
-              <EmptyState text="No items yet. Use ← to copy from ShopVOX." />
+          {/* Workflow Steps (auto-generated) */}
+          <RightSection title={`Workflow Steps (${workflowSteps.length})`}>
+            {workflowSteps.length === 0 ? (
+              <EmptyState text="Check the Workflow ☑ box on any Labor or Machine rate to make it a step." />
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                <SortableContext items={defaultItems.map((d) => d.id)} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-1">
-                    {defaultItems.map((row) => (
-                      <SortableDefaultItem
-                        key={row.id}
-                        row={row}
-                        onUpdate={updateDefaultItem}
-                        onDelete={deleteDefaultItem}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
+              <ol className="space-y-1">
+                {workflowSteps.map((s, i) => (
+                  <li key={`${s.kind}-${s.row.id}`} className="flex items-center gap-2 rounded-md border border-gray-100 bg-white px-2 py-1.5">
+                    <span className="text-[11px] font-mono font-semibold text-gray-400 w-6 shrink-0">{i + 1}.</span>
+                    <TypeBadge kind={s.kind} />
+                    <span className="text-sm font-medium text-gray-800 truncate">{s.name}</span>
+                    <span className="ml-auto text-[11px] text-gray-500 flex items-center gap-2">
+                      <span>{s.row.system_formula ?? '—'}</span>
+                      <span className="text-gray-400">×</span>
+                      <span className="tabular-nums">{s.row.multiplier}</span>
+                      {s.row.charge_per_li_unit && <span className="text-amber-600">Per Qty</span>}
+                    </span>
+                  </li>
+                ))}
+              </ol>
             )}
           </RightSection>
         </div>
@@ -887,7 +1049,7 @@ export default function MigrateClient({
   )
 }
 
-// ---- Left column components ----
+// ---- Section headers / shells ----
 
 function SectionHeaderLeft() {
   return (
@@ -909,13 +1071,8 @@ function SectionHeaderRight() {
   )
 }
 
-function LeftSection({
-  title, children, onCopyAll, canCopy,
-}: {
-  title: string
-  children: React.ReactNode
-  onCopyAll: () => void
-  canCopy: boolean
+function LeftSection({ title, children, onCopyAll, canCopy }: {
+  title: string; children: React.ReactNode; onCopyAll: () => void; canCopy: boolean
 }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-[#f8f8f8]">
@@ -939,11 +1096,7 @@ function LeftRow({ onCopy, children }: { onCopy: () => void; children: React.Rea
   return (
     <div className="group flex items-start gap-2 rounded-md border border-transparent bg-white px-2 py-1.5 hover:border-qm-lime hover:shadow-sm transition-all">
       <div className="flex-1 min-w-0">{children}</div>
-      <button
-        onClick={onCopy}
-        className="shrink-0 rounded p-1 text-gray-400 hover:bg-qm-lime hover:text-white transition-colors"
-        title="Copy to PrintOS"
-      >
+      <button onClick={onCopy} className="shrink-0 rounded p-1 text-gray-400 hover:bg-qm-lime hover:text-white transition-colors" title="Copy to PrintOS">
         <ArrowRightIcon />
       </button>
     </div>
@@ -959,15 +1112,7 @@ function KV({ k, v }: { k: string; v: string | null | undefined }) {
   )
 }
 
-// ---- Right column components ----
-
-function RightSection({
-  title, action, children,
-}: {
-  title: string
-  action?: React.ReactNode
-  children: React.ReactNode
-}) {
+function RightSection({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white">
       <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
@@ -975,6 +1120,20 @@ function RightSection({
         {action}
       </div>
       <div className="p-3 space-y-2">{children}</div>
+    </div>
+  )
+}
+
+function ColoredSection({ title, borderColor, action, children }: {
+  title: string; borderColor: string; action?: React.ReactNode; children: React.ReactNode
+}) {
+  return (
+    <div className={`rounded-lg border border-gray-200 bg-white border-l-4 ${borderColor}`}>
+      <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+        <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-700">{title}</h3>
+        {action}
+      </div>
+      <div className="p-2">{children}</div>
     </div>
   )
 }
@@ -1003,87 +1162,274 @@ function EmptyState({ text }: { text: string }) {
   return <div className="rounded-md border border-dashed border-gray-200 py-5 text-center text-xs text-gray-400">{text}</div>
 }
 
-function SortableDefaultItem({
-  row, onUpdate, onDelete,
+function TableWrap({ children }: { children: React.ReactNode }) {
+  return <div className="overflow-x-auto"><div className="min-w-full divide-y divide-gray-100">{children}</div></div>
+}
+
+// ---- Materials table ----
+
+const MATERIAL_GRID = 'grid grid-cols-[minmax(180px,2fr)_minmax(140px,1fr)_96px_72px_72px_48px_72px_36px] items-center gap-1.5 px-2 py-1.5'
+
+function MaterialHeaderRow() {
+  return (
+    <div className={`${MATERIAL_GRID} bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold`}>
+      <span>Name</span>
+      <span>Category</span>
+      <span>Formula</span>
+      <span>Wastage %</span>
+      <span>Multiplier</span>
+      <span className="text-center">Per Qty</span>
+      <span>Markup (x)</span>
+      <span />
+    </div>
+  )
+}
+
+function MaterialRowUI({
+  row, datalistId, materialByName, materialById, materialCategories, onUpdate, onDelete,
 }: {
-  row: DefaultItemRow
-  onUpdate: (id: string, patch: Partial<MigrateDefaultItem>) => void
+  row: MaterialRow
+  datalistId: string
+  materialByName: Map<string, MaterialOption>
+  materialById: Map<string, MaterialOption>
+  materialCategories: Pick<MaterialCategory, 'id' | 'name'>[]
+  onUpdate: (id: string, patch: Partial<MaterialRow>) => void
   onDelete: (id: string) => void
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.id })
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  const name = row.material_id ? materialById.get(row.material_id)?.name ?? '' : (row.custom_item_name ?? '')
+
+  function handleNameChange(value: string) {
+    const match = materialByName.get(value.toLowerCase().trim())
+    if (match) {
+      onUpdate(row.id, {
+        material_id: match.id,
+        custom_item_name: null,
+        category_id: match.category_id ?? row.category_id,
+        item_markup: match.multiplier ?? row.item_markup,
+      })
+    } else {
+      onUpdate(row.id, { material_id: null, custom_item_name: value })
+    }
+  }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-1.5 rounded-md border border-gray-100 bg-white px-2 py-1.5 hover:border-gray-200"
-    >
-      <button
-        {...attributes}
-        {...listeners}
-        className="cursor-grab text-gray-300 hover:text-gray-500 p-0.5"
-        title="Drag to reorder"
-        type="button"
-      >
-        <GripIcon />
-      </button>
-      <TypeBadge kind={row.item_type} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-medium text-gray-800 truncate">{row.display_name}</span>
-          {!row.matched && (
-            <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700" title="No DB match — saved as custom item">
-              unmatched
-            </span>
-          )}
-        </div>
-      </div>
+    <div className={`${MATERIAL_GRID} hover:bg-gray-50 border-b border-gray-100`}>
+      <input
+        className="h-8 rounded border border-gray-200 px-2 text-sm focus:border-qm-lime focus:outline-none"
+        list={datalistId}
+        value={name}
+        onChange={(e) => handleNameChange(e.target.value)}
+        placeholder="Search material..."
+      />
       <select
-        className="w-20 rounded border border-gray-200 px-1 py-0.5 text-xs"
+        className="h-8 rounded border border-gray-200 px-1 text-sm"
+        value={row.category_id ?? ''}
+        onChange={(e) => onUpdate(row.id, { category_id: e.target.value || null })}
+      >
+        <option value="">— None —</option>
+        {materialCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <select
+        className="h-8 rounded border border-gray-200 px-1 text-sm"
         value={row.system_formula ?? ''}
         onChange={(e) => onUpdate(row.id, { system_formula: e.target.value || null })}
       >
         <option value="">—</option>
-        {PRICING_FORMULA_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+        {FORMULA_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
       </select>
       <input
-        className="w-14 rounded border border-gray-200 px-1 py-0.5 text-xs tabular-nums"
-        type="number"
-        step="0.01"
-        value={row.multiplier ?? ''}
-        onChange={(e) => onUpdate(row.id, { multiplier: e.target.value === '' ? null : parseFloat(e.target.value) })}
-        title="Multiplier"
+        type="number" step="0.01"
+        className="h-8 rounded border border-gray-200 px-1 text-sm tabular-nums"
+        value={Number.isFinite(row.wastage_percent) ? row.wastage_percent : 0}
+        onChange={(e) => onUpdate(row.id, { wastage_percent: parseFloat(e.target.value) || 0 })}
       />
-      <label className="flex items-center gap-1 text-[10px] text-gray-500" title="Charges per line-item quantity">
+      <input
+        type="number" step="0.01"
+        className="h-8 rounded border border-gray-200 px-1 text-sm tabular-nums"
+        value={Number.isFinite(row.multiplier) ? row.multiplier : 1}
+        onChange={(e) => onUpdate(row.id, { multiplier: parseFloat(e.target.value) || 0 })}
+      />
+      <label className="flex justify-center">
         <input
           type="checkbox"
           checked={row.charge_per_li_unit}
           onChange={(e) => onUpdate(row.id, { charge_per_li_unit: e.target.checked })}
-          className="accent-qm-lime h-3.5 w-3.5"
+          className="accent-purple-600 h-4 w-4"
         />
-        Qty
       </label>
       <input
-        className="w-36 rounded border border-gray-200 px-1 py-0.5 text-xs font-mono"
-        type="text"
-        placeholder="Modifier / expr"
-        value={row.menu_name ?? ''}
-        onChange={(e) => onUpdate(row.id, { menu_name: e.target.value || null })}
-        title="Modifier name or formula expression"
+        type="number" step="0.01"
+        className="h-8 rounded border border-gray-200 px-1 text-sm tabular-nums"
+        value={Number.isFinite(row.item_markup) ? row.item_markup : 1}
+        onChange={(e) => onUpdate(row.id, { item_markup: parseFloat(e.target.value) || 0 })}
       />
       <button
         onClick={() => onDelete(row.id)}
         className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
         title="Delete"
       >
+        <TrashIcon />
+      </button>
+    </div>
+  )
+}
+
+// ---- Rate (Labor / Machine) table ----
+
+const RATE_GRID = 'grid grid-cols-[24px_minmax(180px,2fr)_96px_72px_48px_minmax(160px,1.5fr)_56px_36px] items-center gap-1.5 px-2 py-1.5'
+
+function RateHeaderRow() {
+  return (
+    <div className={`${RATE_GRID} bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold`}>
+      <span />
+      <span>Name</span>
+      <span>Formula</span>
+      <span>Multiplier</span>
+      <span className="text-center">Per Qty</span>
+      <span>Modifier</span>
+      <span className="text-center">Workflow</span>
+      <span />
+    </div>
+  )
+}
+
+function SortableRateRow({
+  row, kind, datalistId, nameByName, nameById, onUpdate, onDelete,
+}: {
+  row: RateRow
+  kind: 'LaborRate' | 'MachineRate'
+  datalistId: string
+  nameByName: Map<string, { id: string; name: string }>
+  nameById: Map<string, { id: string; name: string }>
+  onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void
+  onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  const idKey = kind === 'LaborRate' ? 'labor_rate_id' : 'machine_rate_id'
+  const currentId = kind === 'LaborRate' ? row.labor_rate_id : row.machine_rate_id
+  const name = currentId ? nameById.get(currentId)?.name ?? '' : (row.custom_item_name ?? '')
+
+  function handleNameChange(value: string) {
+    const match = nameByName.get(value.toLowerCase().trim())
+    if (match) {
+      onUpdate(kind, row.id, { [idKey]: match.id, custom_item_name: null } as Partial<RateRow>)
+    } else {
+      onUpdate(kind, row.id, { [idKey]: null, custom_item_name: value } as Partial<RateRow>)
+    }
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className={`${RATE_GRID} hover:bg-gray-50 border-b border-gray-100`}>
+      <button
+        {...attributes} {...listeners}
+        className="cursor-grab text-gray-300 hover:text-gray-500 p-0.5 justify-self-center"
+        title="Drag to reorder" type="button"
+      >
+        <GripIcon />
+      </button>
+      <input
+        className="h-8 rounded border border-gray-200 px-2 text-sm focus:border-qm-lime focus:outline-none"
+        list={datalistId}
+        value={name}
+        onChange={(e) => handleNameChange(e.target.value)}
+        placeholder={`Search ${kind === 'LaborRate' ? 'labor' : 'machine'}...`}
+      />
+      <select
+        className="h-8 rounded border border-gray-200 px-1 text-sm"
+        value={row.system_formula ?? ''}
+        onChange={(e) => onUpdate(kind, row.id, { system_formula: e.target.value || null })}
+      >
+        <option value="">—</option>
+        {FORMULA_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+      </select>
+      <input
+        type="number" step="0.01"
+        className="h-8 rounded border border-gray-200 px-1 text-sm tabular-nums"
+        value={Number.isFinite(row.multiplier) ? row.multiplier : 1}
+        onChange={(e) => onUpdate(kind, row.id, { multiplier: parseFloat(e.target.value) || 0 })}
+      />
+      <label className="flex justify-center">
+        <input
+          type="checkbox"
+          checked={row.charge_per_li_unit}
+          onChange={(e) => onUpdate(kind, row.id, { charge_per_li_unit: e.target.checked })}
+          className="accent-purple-600 h-4 w-4"
+        />
+      </label>
+      <input
+        type="text"
+        className="h-8 rounded border border-gray-200 px-2 text-sm font-mono"
+        placeholder="Name or ((A)+(B))"
+        value={row.modifier_formula ?? ''}
+        onChange={(e) => onUpdate(kind, row.id, { modifier_formula: e.target.value || null })}
+        title="Modifier name or custom formula expression"
+      />
+      <label className="flex justify-center">
+        <input
+          type="checkbox"
+          checked={row.workflow_step}
+          onChange={(e) => onUpdate(kind, row.id, { workflow_step: e.target.checked })}
+          className="accent-purple-600 h-4 w-4"
+          title="Show as production step on the job board"
+        />
+      </label>
+      <button
+        onClick={() => onDelete(kind, row.id)}
+        className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
+        title="Delete"
+      >
+        <TrashIcon />
+      </button>
+    </div>
+  )
+}
+
+// ---- Sortable modifier row ----
+
+function SortableModifierRow({
+  row, onUpdate, onDelete,
+}: {
+  row: ModifierRow
+  onUpdate: (id: string, patch: Partial<MigrateModifier>) => void
+  onDelete: (id: string) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 rounded-md border border-gray-100 bg-white px-2 py-1.5">
+      <button {...attributes} {...listeners} type="button" className="cursor-grab text-gray-300 hover:text-gray-500 p-0.5" title="Drag to reorder">
+        <GripIcon />
+      </button>
+      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        row.modifier_type === 'Boolean' ? 'bg-blue-100 text-blue-700' :
+        row.modifier_type === 'Numeric' ? 'bg-indigo-100 text-indigo-700' :
+        'bg-purple-100 text-purple-700'
+      }`}>{row.modifier_type}</span>
+      <span className="text-sm font-medium text-gray-800 truncate flex-1">{row.display_name}</span>
+      <input
+        type="text"
+        className="h-7 w-28 rounded border border-gray-200 px-1.5 text-xs"
+        placeholder="Default"
+        value={row.default_value ?? ''}
+        onChange={(e) => onUpdate(row.id, { default_value: e.target.value || null })}
+      />
+      <label className="flex items-center gap-1 text-[11px] text-gray-500">
+        <input
+          type="checkbox" checked={row.is_required}
+          onChange={(e) => onUpdate(row.id, { is_required: e.target.checked })}
+          className="accent-purple-600"
+        />
+        required
+      </label>
+      <button onClick={() => onDelete(row.id)} className="rounded p-1 text-red-500 hover:bg-red-50" title="Remove">
         <XIcon />
       </button>
     </div>
   )
 }
 
-// ---- Icons & helpers ----
+// ---- Icons & constants ----
 
 const inputCls = 'block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
 
@@ -1104,7 +1450,6 @@ function ArrowRightIcon() {
     </svg>
   )
 }
-
 function LockIcon() {
   return (
     <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
@@ -1112,7 +1457,6 @@ function LockIcon() {
     </svg>
   )
 }
-
 function EditIcon() {
   return (
     <svg className="h-4 w-4 text-qm-lime-dark" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
@@ -1120,7 +1464,6 @@ function EditIcon() {
     </svg>
   )
 }
-
 function XIcon() {
   return (
     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
@@ -1128,7 +1471,6 @@ function XIcon() {
     </svg>
   )
 }
-
 function PlusIcon() {
   return (
     <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.4} stroke="currentColor">
@@ -1136,11 +1478,17 @@ function PlusIcon() {
     </svg>
   )
 }
-
 function GripIcon() {
   return (
     <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
       <path d="M7 4a1 1 0 110 2 1 1 0 010-2zM7 9a1 1 0 110 2 1 1 0 010-2zM7 14a1 1 0 110 2 1 1 0 010-2zM13 4a1 1 0 110 2 1 1 0 010-2zM13 9a1 1 0 110 2 1 1 0 010-2zM13 14a1 1 0 110 2 1 1 0 010-2z" />
+    </svg>
+  )
+}
+function TrashIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
     </svg>
   )
 }

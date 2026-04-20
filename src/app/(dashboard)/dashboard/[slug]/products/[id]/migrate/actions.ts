@@ -14,8 +14,13 @@ export type MigrateDefaultItem = {
   multiplier: number | null
   charge_per_li_unit: boolean
   include_in_base_price: boolean
-  menu_name: string | null // reused here to persist modifier expression
+  menu_name: string | null
   is_optional: boolean
+  workflow_step: boolean
+  modifier_formula: string | null
+  wastage_percent: number | null
+  item_markup: number | null
+  overrides_material_category_id: string | null
 }
 
 export type MigrateModifier = {
@@ -96,6 +101,11 @@ async function replaceDefaultItems(productId: string, orgId: string, items: Migr
     include_in_base_price: item.include_in_base_price,
     is_optional: item.is_optional,
     multiplier: item.multiplier,
+    workflow_step: item.workflow_step,
+    modifier_formula: item.modifier_formula,
+    wastage_percent: item.wastage_percent,
+    item_markup: item.item_markup,
+    overrides_material_category_id: item.overrides_material_category_id,
     sort_order: i,
   }))
   await service.from('product_default_items').insert(rows)
