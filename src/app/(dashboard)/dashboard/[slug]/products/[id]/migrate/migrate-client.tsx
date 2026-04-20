@@ -676,24 +676,7 @@ export default function MigrateClient({
                 })}
               </LeftSection>
 
-              {/* 7. Workflow Steps (derived from labor/machine default_items) */}
-              <LeftSection title={`Workflow Steps (${svRates.length})`} onCopyAll={copyAllShopvoxRates} canCopy={svRates.length > 0}>
-                {svRates.length === 0 && <div className="text-xs text-gray-400 italic px-2 py-1">No workflow steps derived.</div>}
-                {svRates.map((it, i) => {
-                  const rKey = `ws:${i}`
-                  const reviewed = reviewedRows.has(rKey)
-                  return (
-                    <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewed} onToggle={() => toggleReviewed(rKey)} onCopy={() => addShopvoxDefaultItem(it)}>
-                      <div className={`flex items-center gap-2 transition-all ${reviewed ? 'line-through text-gray-400' : ''}`}>
-                        <span className="text-[10px] font-mono text-gray-400 w-5 shrink-0">{i + 1}.</span>
-                        <TypeBadge kind={it.kind} />
-                        <span className="text-sm font-medium truncate flex-1">{it.name}</span>
-                        <span className="text-xs text-gray-500 tabular-nums">{it.formula} × {it.multiplier}</span>
-                      </div>
-                    </LeftCheckRow>
-                  )
-                })}
-              </LeftSection>
+
             </>
           )}
         </div>
@@ -955,23 +938,27 @@ function RateSection({ kind, title, borderColor, rows, rates, rateCategories, ra
         </div>
         {showAddForm && <AddRateForm kind={kind} categories={rateCategories} onCancel={() => setShowAddForm(false)} onSubmit={async (input) => { const id = await onCreateRate(input); if (id) setShowAddForm(false) }} />}
       </div>
-      {rows.length === 0 ? <EmptyState text={`No ${title.toLowerCase()} yet. Use search or browse by category above.`} /> : <RateTable kind={kind} rows={rows} ratesById={ratesById} onUpdate={onUpdate} onDelete={onDelete} sensors={sensors} onDragEnd={onDragEnd} />}
+      <RateTable kind={kind} rows={rows} ratesById={ratesById} onUpdate={onUpdate} onDelete={onDelete} sensors={sensors} onDragEnd={onDragEnd} emptyText={`No ${title.toLowerCase()} yet. Use search or browse by category above.`} />
     </ColoredSection>
   )
 }
 
-function RateTable({ kind, rows, ratesById, onUpdate, onDelete, sensors, onDragEnd }: { kind: 'LaborRate' | 'MachineRate'; rows: RateRow[]; ratesById: Map<string, LaborRateOption | MachineRateOption>; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void; sensors: ReturnType<typeof useSensors>; onDragEnd: (e: DragEndEvent) => void }) {
+function RateTable({ kind, rows, ratesById, onUpdate, onDelete, sensors, onDragEnd, emptyText }: { kind: 'LaborRate' | 'MachineRate'; rows: RateRow[]; ratesById: Map<string, LaborRateOption | MachineRateOption>; onUpdate: (kind: 'LaborRate' | 'MachineRate', id: string, patch: Partial<RateRow>) => void; onDelete: (kind: 'LaborRate' | 'MachineRate', id: string) => void; sensors: ReturnType<typeof useSensors>; onDragEnd: (e: DragEndEvent) => void; emptyText?: string }) {
   const GRID = 'grid grid-cols-[28px_24px_minmax(120px,1.5fr)_80px_60px_40px_minmax(120px,1.2fr)_28px] items-center gap-1.5 px-1.5 py-1.5'
   return (
-    <div className="divide-y divide-gray-100">
+    <div className="divide-y divide-gray-100 rounded border border-gray-100">
       <div className={`${GRID} bg-gray-50 text-[10px] font-medium uppercase tracking-wider text-gray-500 border-b`}>
         <span className="text-center" title="Show as workflow step">☑</span><span /><span>Name</span><span>Formula</span><span>Mult</span><span className="text-center">Qty</span><span>Modifier</span><span />
       </div>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-          {rows.map((row: RateRow) => <SortableRateRow key={row.id} row={row} kind={kind} grid={GRID} ratesById={ratesById} onUpdate={onUpdate} onDelete={onDelete} />)}
-        </SortableContext>
-      </DndContext>
+      {rows.length === 0 ? (
+        <div className="py-4 text-center text-xs text-gray-400 italic">{emptyText ?? 'No rates yet.'}</div>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+            {rows.map((row: RateRow) => <SortableRateRow key={row.id} row={row} kind={kind} grid={GRID} ratesById={ratesById} onUpdate={onUpdate} onDelete={onDelete} />)}
+          </SortableContext>
+        </DndContext>
+      )}
     </div>
   )
 }
