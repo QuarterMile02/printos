@@ -42,6 +42,13 @@ const STATUS_LABELS: Record<ProductStatus, string> = {
   archived:  'Archived',
 }
 
+const PRICING_TYPE_STYLES: Record<string, string> = {
+  Formula:     'bg-indigo-50 text-indigo-700 border-indigo-100',
+  Basic:       'bg-sky-50 text-sky-700 border-sky-100',
+  Grid:        'bg-purple-50 text-purple-700 border-purple-100',
+  'Cost Plus': 'bg-amber-50 text-amber-800 border-amber-100',
+}
+
 function formatPrice(cents: number | null): string {
   if (cents == null) return '—'
   return '$' + cents.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -209,19 +216,16 @@ export default function ProductsListClient({
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Migration</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Updated</th>
-                <th className="px-4 py-3 w-16"></th>
+                <th className="px-4 py-3 w-40 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((p) => {
-                const migrationStatus = p.migration_status ?? 'printos_ready'
+                const migrationStatus = p.migration_status ?? 'shopvox_reference'
                 const migrationStyle = MIGRATION_STYLES[migrationStatus]
-                const needsMigration = migrationStatus !== 'printos_ready'
-                const editHref = needsMigration
-                  ? `/dashboard/${orgSlug}/products/${p.id}/migrate`
-                  : `/dashboard/${orgSlug}/products/${p.id}/edit`
+                const editHref = `/dashboard/${orgSlug}/products/${p.id}/migrate`
                 return (
-                  <tr key={p.id} className="hover:bg-gray-50">
+                  <tr key={p.id} className="hover:bg-gray-50 cursor-pointer">
                     <td className="whitespace-nowrap">
                       <Link href={editHref} className="block px-6 py-4">
                         <div className="text-sm font-semibold text-qm-black">{p.name}</div>
@@ -241,14 +245,14 @@ export default function ProductsListClient({
                       </Link>
                     </td>
                     <td className="whitespace-nowrap">
-                      <Link href={editHref} className="block px-6 py-4 text-sm text-gray-500">
+                      <Link href={editHref} className="block px-6 py-4">
                         {p.pricing_type ? (
-                          <span>
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PRICING_TYPE_STYLES[p.pricing_type] ?? 'bg-gray-50 text-gray-600 border-gray-100'}`}>
                             {p.pricing_type}
                             {p.pricing_type === 'Formula' && p.formula ? ` · ${p.formula}` : ''}
                           </span>
                         ) : (
-                          <span className="text-gray-300">—</span>
+                          <span className="text-gray-300 text-xs">—</span>
                         )}
                       </Link>
                     </td>
@@ -275,9 +279,6 @@ export default function ProductsListClient({
                         <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${migrationStyle.cls}`}>
                           {migrationStyle.label}
                         </span>
-                        {needsMigration && (
-                          <span className="ml-2 text-[11px] font-semibold text-qm-lime">Migrate →</span>
-                        )}
                       </Link>
                     </td>
                     <td className="whitespace-nowrap">
@@ -285,25 +286,37 @@ export default function ProductsListClient({
                         {formatRelative(p.updated_at)}
                       </Link>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(p.id)}
-                        disabled={isPending && copyingId === p.id}
-                        title="Duplicate product"
-                        className="rounded p-1.5 text-qm-gray hover:bg-qm-lime-light hover:text-qm-lime-dark disabled:opacity-40"
-                      >
-                        {isPending && copyingId === p.id ? (
-                          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
-                            <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" className="opacity-75" />
+                    <td className="whitespace-nowrap px-4 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={editHref}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 rounded-md bg-qm-lime px-2.5 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+                        >
+                          Migrate
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
                           </svg>
-                        ) : (
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
-                          </svg>
-                        )}
-                      </button>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleCopy(p.id) }}
+                          disabled={isPending && copyingId === p.id}
+                          title="Duplicate product"
+                          className="rounded p-1.5 text-qm-gray hover:bg-qm-lime-light hover:text-qm-lime-dark disabled:opacity-40"
+                        >
+                          {isPending && copyingId === p.id ? (
+                            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                              <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" className="opacity-75" />
+                            </svg>
+                          ) : (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useTransition } from 'react'
+import React, { useState, useMemo, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -282,6 +282,9 @@ export default function MigrateClient({
   const [dropdownMenus, setDropdownMenus] = useState<DropdownMenuRow[]>(() =>
     existingDropdownMenus.map((menu) => ({ id: uid(), menu_name: menu.menu_name, is_optional: menu.is_optional, items: menu.items.map((i) => ({ ...i, id: uid() })) }))
   )
+
+  // Left panel tab: Reference (read-only) | Quote Preview (interactive ShopVOX quoting)
+  const [leftMode, setLeftMode] = useState<'reference' | 'preview'>('reference')
 
   // FIX 1: Universal reviewed checkboxes for every left panel row
   const [reviewedRows, setReviewedRows] = useState<Set<string>>(new Set())
@@ -601,13 +604,16 @@ export default function MigrateClient({
 
         {/* LEFT 30% — independently scrollable */}
         <div className="w-[30%] shrink-0 min-h-0 overflow-y-auto pr-1 space-y-3">
-          <SectionHeaderLeft />
+          <LeftTabBar mode={leftMode} setMode={setLeftMode} />
           {!hasShopvox && (
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
               No ShopVOX reference data saved for this product.
             </div>
           )}
-          {hasShopvox && (
+          {hasShopvox && leftMode === 'preview' && (
+            <QuotePreviewPanel productId={product.id} shopvoxData={shopvoxData!} />
+          )}
+          {hasShopvox && leftMode === 'reference' && (
             <>
               {/* 1. Basic Info */}
               <LeftSection title="Basic Info" onCopyAll={copyBasic} canCopy>
@@ -1353,7 +1359,28 @@ function SelectWithAdd({ value, onChange, options, placeholder, addLabel, render
 // Section shells
 // ============================================================
 
-function SectionHeaderLeft() { return (<div className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2.5 border border-gray-200"><LockIcon /><h2 className="text-sm font-bold uppercase tracking-wider text-gray-600">ShopVOX Reference</h2><span className="ml-auto text-[10px] text-gray-400 uppercase tracking-wider">Read-only</span></div>) }
+function LeftTabBar({ mode, setMode }: { mode: 'reference' | 'preview'; setMode: (m: 'reference' | 'preview') => void }) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1 border border-gray-200">
+      <button
+        type="button"
+        onClick={() => setMode('reference')}
+        className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors ${mode === 'reference' ? 'bg-white text-gray-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+      >
+        <LockIcon />
+        Reference
+      </button>
+      <button
+        type="button"
+        onClick={() => setMode('preview')}
+        className={`flex-1 flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors ${mode === 'preview' ? 'bg-white text-qm-lime-dark shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+      >
+        <CalculatorIcon />
+        Quote Preview
+      </button>
+    </div>
+  )
+}
 function SectionHeaderRight() { return (<div className="flex items-center gap-2 rounded-lg bg-qm-lime-light border border-qm-lime px-4 py-2.5"><EditIcon /><h2 className="text-sm font-bold uppercase tracking-wider text-qm-lime-dark">PrintOS Builder</h2><span className="ml-auto text-[10px] text-qm-lime-dark/70 uppercase tracking-wider">Editable</span></div>) }
 
 function LeftSection({ title, children, onCopyAll, canCopy }: { title: string; children: React.ReactNode; onCopyAll: () => void; canCopy: boolean }) {
@@ -1595,6 +1622,285 @@ function CheckPricingPanel({ productId, modifiers }: { productId: string; modifi
             No modifier = always charges | Boolean = charges when selected | Numeric = multiplies by value
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// QuotePreviewPanel — left panel interactive ShopVOX quoting form
+// ============================================================
+
+type ShopvoxQuoteBreakdown = {
+  idx: number
+  name: string
+  kind: 'Material' | 'LaborRate' | 'MachineRate'
+  formula: string
+  multiplier: number
+  charge_qty: number
+  rate_cost_cents: number
+  rate_sell_cents: number
+  total_cost_cents: number
+  total_sell_cents: number
+  inactive: boolean
+  inactive_reason: string | null
+  rate_found: boolean
+  modifier_expression: string | null
+}
+
+type ShopvoxQuoteResponse = {
+  breakdown: ShopvoxQuoteBreakdown[]
+  total_cost_cents: number
+  total_sell_cents: number
+  original_total_sell_cents?: number
+  discount_percent?: number
+  discount_type?: string
+  margin_pct: number
+  breakdown_by_kind: Record<'Material' | 'LaborRate' | 'MachineRate', number>
+  warning?: string
+  error?: string
+}
+
+function QuotePreviewPanel({ productId, shopvoxData }: { productId: string; shopvoxData: ShopvoxData }) {
+  const formula = shopvoxData.pricing?.formula ?? 'Area'
+  const needsWidth = formula === 'Area' || formula === 'Perimeter' || formula === 'Width'
+  const needsHeight = formula === 'Area' || formula === 'Perimeter' || formula === 'Height'
+
+  const [width, setWidth] = useState('24')
+  const [height, setHeight] = useState('36')
+  const [quantity, setQuantity] = useState('1')
+  const [modifierValues, setModifierValues] = useState<Record<string, boolean | number>>(() => {
+    const init: Record<string, boolean | number> = {}
+    for (const m of (shopvoxData.modifiers ?? [])) {
+      if (m.type === 'Boolean') init[m.name] = !!m.default
+      else {
+        const n = typeof m.default === 'number' ? m.default : typeof m.default === 'string' ? parseFloat(m.default) || 0 : 0
+        init[m.name] = n
+      }
+    }
+    return init
+  })
+  const [dropdownSelections, setDropdownSelections] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<ShopvoxQuoteResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const hasRecipe = (shopvoxData.default_items ?? []).length > 0
+  const modifiers = shopvoxData.modifiers ?? []
+  const dropdowns = shopvoxData.dropdown_menus ?? []
+
+  const setModValue = useCallback((name: string, v: boolean | number) => {
+    setModifierValues((prev) => ({ ...prev, [name]: v }))
+  }, [])
+
+  async function handleCalculate() {
+    setLoading(true); setError(null); setResult(null)
+    try {
+      const res = await fetch('/api/pricing/shopvox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: productId,
+          width_inches: parseFloat(width) || 0,
+          height_inches: parseFloat(height) || 0,
+          quantity: parseInt(quantity) || 1,
+          modifier_values: modifierValues,
+        }),
+      })
+      const data = (await res.json()) as ShopvoxQuoteResponse
+      if (!res.ok || data.error) setError(data.error ?? 'Pricing request failed')
+      else setResult(data)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Pricing request failed')
+    } finally { setLoading(false) }
+  }
+
+  const kindTotals = result?.breakdown_by_kind ?? { Material: 0, LaborRate: 0, MachineRate: 0 }
+  const kindTotal = kindTotals.Material + kindTotals.LaborRate + kindTotals.MachineRate || 1
+  const pct = (v: number) => ((v / kindTotal) * 100)
+
+  return (
+    <div className="space-y-3">
+      {!hasRecipe && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+          Recipe not yet extracted — use the <span className="font-semibold">Reference</span> tab to see available data.
+        </div>
+      )}
+
+      {/* A — Dimensions */}
+      <div className="rounded-lg border border-gray-200 bg-white">
+        <div className="bg-gray-50 border-b border-gray-200 px-3 py-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Dimensions</h3>
+        </div>
+        <div className="p-3 grid grid-cols-2 gap-2">
+          {needsWidth && (
+            <FieldRow label="Width (in)">
+              <input type="number" step="0.01" min={0} className={inputCls} value={width} onChange={(e) => setWidth(e.target.value)} />
+            </FieldRow>
+          )}
+          {needsHeight && (
+            <FieldRow label="Height (in)">
+              <input type="number" step="0.01" min={0} className={inputCls} value={height} onChange={(e) => setHeight(e.target.value)} />
+            </FieldRow>
+          )}
+          {!needsWidth && !needsHeight && (
+            <div className="col-span-2 text-[11px] italic text-gray-500 px-1 py-1">
+              Formula = {formula}. No dimensions needed.
+            </div>
+          )}
+          <FieldRow label="Quantity">
+            <input type="number" step="1" min={1} className={inputCls} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          </FieldRow>
+        </div>
+      </div>
+
+      {/* B — Dropdown Menus */}
+      {dropdowns.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white">
+          <div className="bg-gray-50 border-b border-gray-200 px-3 py-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Dropdown Menus ({dropdowns.length})</h3>
+          </div>
+          <div className="p-3 space-y-2">
+            {dropdowns.map((m, i) => (
+              <div key={`${m.name}-${i}`}>
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                  {m.name}{m.optional && <span className="ml-1 text-gray-400 normal-case font-normal">(optional)</span>}
+                </label>
+                <select
+                  className={inputCls}
+                  value={dropdownSelections[m.name] ?? ''}
+                  onChange={(e) => setDropdownSelections((p) => ({ ...p, [m.name]: e.target.value }))}
+                >
+                  <option value="">{m.optional ? '— None —' : `Select ${m.kind}…`}</option>
+                  <option disabled>— items not extracted yet —</option>
+                </select>
+              </div>
+            ))}
+            <div className="text-[10px] italic text-gray-400 leading-relaxed">
+              Dropdown item lists are not yet present in shopvox_data; selections don&apos;t influence pricing for now.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* C — Modifiers */}
+      {modifiers.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white">
+          <div className="bg-gray-50 border-b border-gray-200 px-3 py-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Modifiers ({modifiers.length})</h3>
+          </div>
+          <div className="p-3 space-y-1.5">
+            {modifiers.map((m, i) => (
+              <div key={`${m.name}-${i}`} className="flex items-center gap-2 rounded border border-gray-100 px-2 py-1.5">
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0 ${m.type === 'Boolean' ? 'bg-blue-100 text-blue-700' : m.type === 'Numeric' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'}`}>{m.type}</span>
+                <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{m.name}</span>
+                {m.type === 'Boolean' ? (
+                  <label className="inline-flex items-center gap-1 text-[11px] shrink-0">
+                    <input type="checkbox" checked={!!modifierValues[m.name]} onChange={(e) => setModValue(m.name, e.target.checked)} className="accent-qm-lime" />
+                    {modifierValues[m.name] ? 'on' : 'off'}
+                  </label>
+                ) : (
+                  <input
+                    type="number" step="0.01"
+                    className="h-7 w-20 rounded border border-gray-200 px-1.5 text-xs tabular-nums shrink-0"
+                    value={typeof modifierValues[m.name] === 'number' ? String(modifierValues[m.name]) : ''}
+                    onChange={(e) => setModValue(m.name, parseFloat(e.target.value) || 0)}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* E — Check Pricing */}
+      <div className="rounded-lg border border-gray-200 bg-white border-l-4 border-l-qm-lime">
+        <div className="flex items-center gap-2 bg-gray-50 border-b border-gray-200 px-3 py-2">
+          <CalculatorIcon />
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-700">Check Pricing</h3>
+        </div>
+        <div className="p-3 space-y-3">
+          <button type="button" onClick={handleCalculate} disabled={loading || !hasRecipe} className="w-full rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+            {loading ? 'Calculating…' : 'Calculate'}
+          </button>
+
+          {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+          {result?.warning && <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{result.warning}</div>}
+
+          {result && result.breakdown.length > 0 && (
+            <>
+              <div className="overflow-x-auto rounded border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-200 text-[11px]">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-1.5 py-1 text-left font-medium uppercase tracking-wide text-gray-500">#</th>
+                      <th className="px-1.5 py-1 text-left font-medium uppercase tracking-wide text-gray-500">Item</th>
+                      <th className="px-1.5 py-1 text-left font-medium uppercase tracking-wide text-gray-500">Status</th>
+                      <th className="px-1.5 py-1 text-right font-medium uppercase tracking-wide text-gray-500">Qty</th>
+                      <th className="px-1.5 py-1 text-right font-medium uppercase tracking-wide text-gray-500">Cost</th>
+                      <th className="px-1.5 py-1 text-right font-medium uppercase tracking-wide text-gray-500">Sell</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {result.breakdown.map((b) => (
+                      <tr key={b.idx} className={b.inactive ? 'text-gray-400 italic' : ''}>
+                        <td className="px-1.5 py-1 tabular-nums">{b.idx}</td>
+                        <td className="px-1.5 py-1 max-w-[180px]">
+                          <div className="flex flex-col">
+                            <span className="text-[11px] font-medium truncate" title={b.name}>{b.name}</span>
+                            <span className="text-[9px] text-gray-400">{b.kind} · {b.formula} · × {b.multiplier}</span>
+                            {!b.rate_found && <span className="text-[9px] text-red-500">rate not found</span>}
+                          </div>
+                        </td>
+                        <td className="px-1.5 py-1">
+                          {b.inactive ? (
+                            <span className="inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-500" title={b.inactive_reason ?? ''}>Inactive</span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-green-700">Active</span>
+                          )}
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{b.charge_qty.toFixed(2)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{money(b.total_cost_cents)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{money(b.total_sell_cents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 font-semibold">
+                    <tr>
+                      <td className="px-1.5 py-1.5" colSpan={4}>Total</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums">{money(result.total_cost_cents)}</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums">{money(result.total_sell_cents)}</td>
+                    </tr>
+                    <tr className="text-qm-lime-dark">
+                      <td className="px-1.5 py-1.5" colSpan={5}>Margin</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums">{result.margin_pct.toFixed(1)}%</td>
+                    </tr>
+                    {result.discount_percent != null && result.discount_percent > 0 && (
+                      <tr className="text-[10px] text-gray-500">
+                        <td colSpan={6} className="px-1.5 py-1">{result.discount_type} discount: {result.discount_percent}%{result.original_total_sell_cents != null && <> (was {money(result.original_total_sell_cents)})</>}</td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Price breakdown bar */}
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">Cost by Kind</div>
+                <div className="flex h-5 overflow-hidden rounded border border-gray-200">
+                  {kindTotals.Material > 0 && <div className="bg-emerald-400 text-[9px] text-white flex items-center justify-center" style={{ width: `${pct(kindTotals.Material)}%` }} title={`Materials ${pct(kindTotals.Material).toFixed(1)}%`}>{pct(kindTotals.Material) > 10 ? `${pct(kindTotals.Material).toFixed(0)}%` : ''}</div>}
+                  {kindTotals.LaborRate > 0 && <div className="bg-sky-400 text-[9px] text-white flex items-center justify-center" style={{ width: `${pct(kindTotals.LaborRate)}%` }} title={`Labor ${pct(kindTotals.LaborRate).toFixed(1)}%`}>{pct(kindTotals.LaborRate) > 10 ? `${pct(kindTotals.LaborRate).toFixed(0)}%` : ''}</div>}
+                  {kindTotals.MachineRate > 0 && <div className="bg-violet-400 text-[9px] text-white flex items-center justify-center" style={{ width: `${pct(kindTotals.MachineRate)}%` }} title={`Machine ${pct(kindTotals.MachineRate).toFixed(1)}%`}>{pct(kindTotals.MachineRate) > 10 ? `${pct(kindTotals.MachineRate).toFixed(0)}%` : ''}</div>}
+                </div>
+                <div className="flex gap-3 mt-1 text-[9px] text-gray-500">
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-emerald-400" />Materials</span>
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-sky-400" />Labor</span>
+                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-violet-400" />Machine</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
