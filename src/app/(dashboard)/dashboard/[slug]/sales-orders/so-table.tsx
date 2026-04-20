@@ -38,10 +38,12 @@ export default function SalesOrderTable({
   salesOrders,
   orgSlug,
   activeFilter,
+  canSeePricing,
 }: {
   salesOrders: SoRow[]
   orgSlug: string
   activeFilter: string
+  canSeePricing: boolean
 }) {
   const router = useRouter()
   const [rows] = useState(salesOrders)
@@ -92,7 +94,9 @@ export default function SalesOrderTable({
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">#</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Title</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Customer</th>
-                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
+                {canSeePricing && (
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Created</th>
               </tr>
@@ -115,9 +119,11 @@ export default function SalesOrderTable({
                       ? `${so.customer.first_name} ${so.customer.last_name}${so.customer.company_name ? ` (${so.customer.company_name})` : ''}`
                       : <span className="text-gray-300">&mdash;</span>}
                   </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 text-right font-medium">
-                    ${formatCents(so.total)}
-                  </td>
+                  {canSeePricing && (
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 text-right font-medium">
+                      ${formatCents(so.total)}
+                    </td>
+                  )}
                   <td className="whitespace-nowrap px-6 py-4">
                     <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${SO_STATUS_STYLES[so.status]}`}>
                       {SO_STATUS_LABELS[so.status]}

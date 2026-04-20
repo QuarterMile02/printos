@@ -1,12 +1,17 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { JobStatus, JobFlag } from '@/types/database'
+import type { Role, Tier } from '@/lib/permissions'
 import KanbanBoard, { type JobCard } from './kanban-board'
 
-type PageProps = { params: Promise<{ slug: string }> }
+type PageProps = {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ department?: string }>
+}
 
-export default async function JobsPage({ params }: PageProps) {
+export default async function JobsPage({ params, searchParams }: PageProps) {
   const { slug } = await params
+  const { department: departmentParam } = await searchParams
   const supabase = await createClient()
 
   // Fetch org — RLS ensures user is a member
@@ -19,6 +24,57 @@ export default async function JobsPage({ params }: PageProps) {
 
   if (!org) notFound()
 
+  // Load user profile (role/tier/departments) for filtering
+  const { data: { user } } = await supabase.auth.getUser()
+  const service = createServiceClient()
+  type ProfileRow = { role: Role; tier: Tier; departments: string[] }
+  const { data: profile } = user
+    ? await service
+        .from('profiles')
+        .select('role, tier, departments')
+        .eq('id', user.id)
+        .maybeSingle() as { data: ProfileRow | null; error: unknown }
+    : { data: null }
+
+  // Load departments for this org (for dropdown options)
+  type DeptRow = { code: string; name: string }
+  let allDepartments: DeptRow[] = []
+  try {
+    const { data } = await service
+      .from('departments')
+      .select('code, name')
+      .eq('organization_id', org.id)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }) as { data: DeptRow[] | null; error: unknown }
+    allDepartments = (data ?? []).filter((d) => !!d.code)
+  } catch { /* departments table may not exist */ }
+
+  // Resolve which departments this user is scoped to. Staff tier is locked
+  // to their profile.departments; lead/manager/sales/accounting/owner can
+  // override via ?department=…
+  const role = profile?.role ?? null
+  const tier = profile?.tier ?? null
+  const profileDepts = profile?.departments ?? []
+
+  const canSeeAllDepartments =
+    role === 'owner' || role === 'sales' || role === 'accounting' || tier === 'manager'
+  const canChangeFilter =
+    canSeeAllDepartments || tier === 'lead'
+
+  // ?department=all => no filter (only allowed for those who can change filter).
+  // ?department=<code> => only allowed if canChangeFilter and (manager/owner/sales/accounting or in profileDepts).
+  // otherwise → restricted to profileDepts (staff/lead default), or all for canSeeAllDepartments.
+  let activeDepartments: string[] | null = null // null = no filter
+  if (canSeeAllDepartments && (!departmentParam || departmentParam === 'all')) {
+    activeDepartments = null
+  } else if (canChangeFilter && departmentParam && departmentParam !== 'all') {
+    activeDepartments = [departmentParam]
+  } else if (canChangeFilter && departmentParam === 'all') {
+    activeDepartments = null
+  } else {
+    activeDepartments = profileDepts.length > 0 ? profileDepts : null
+  }
+
   // Fetch jobs with joined customer data
   type JobRow = {
     id: string
@@ -30,6 +86,7 @@ export default async function JobsPage({ params }: PageProps) {
     customer_id: string | null
     source_quote_id: string | null
     assigned_to: string | null
+    department: string | null
     customers: {
       first_name: string
       last_name: string
@@ -37,13 +94,30 @@ export default async function JobsPage({ params }: PageProps) {
     } | null
   }
 
-  const { data: jobRows } = await supabase
+  let jobQuery = supabase
     .from('jobs')
-    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, customers(first_name, last_name, company_name)')
+    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, department, customers(first_name, last_name, company_name)')
     .eq('organization_id', org.id)
-    .order('job_number', { ascending: false }) as { data: JobRow[] | null; error: unknown }
 
-  const allJobs = jobRows ?? []
+  if (activeDepartments && activeDepartments.length > 0) {
+    jobQuery = jobQuery.in('department', activeDepartments)
+  }
+
+  let jobRowsData: JobRow[] | null = null
+  const jobRes = await jobQuery.order('job_number', { ascending: false }) as { data: JobRow[] | null; error: { message: string } | null }
+  if (jobRes.error?.message?.includes('department')) {
+    // department column not yet added — fall back without it
+    const fallback = await supabase
+      .from('jobs')
+      .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, customers(first_name, last_name, company_name)')
+      .eq('organization_id', org.id)
+      .order('job_number', { ascending: false })
+    jobRowsData = ((fallback.data ?? []) as Omit<JobRow, 'department'>[]).map((j) => ({ ...j, department: null }))
+  } else {
+    jobRowsData = jobRes.data
+  }
+
+  const allJobs = jobRowsData ?? []
 
   // Fetch first line item per quote for product/dimension info
   const quoteIds = [...new Set(allJobs.map(j => j.source_quote_id).filter(Boolean) as string[])]
@@ -87,6 +161,7 @@ export default async function JobsPage({ params }: PageProps) {
       height: li?.height ?? null,
       quantity: li?.quantity ?? null,
       assigned_initials: r.assigned_to ? initialsMap.get(r.assigned_to) ?? null : null,
+      department: r.department ?? null,
     }
   })
 
@@ -126,7 +201,16 @@ export default async function JobsPage({ params }: PageProps) {
           </div>
         </div>
       ) : (
-        <KanbanBoard jobs={jobs} orgId={org.id} orgSlug={org.slug} />
+        <KanbanBoard
+          jobs={jobs}
+          orgId={org.id}
+          orgSlug={org.slug}
+          allDepartments={allDepartments}
+          activeDepartments={activeDepartments}
+          canChangeFilter={canChangeFilter}
+          canSeeAllDepartments={canSeeAllDepartments}
+          currentFilter={departmentParam ?? (canSeeAllDepartments ? 'all' : '')}
+        />
       )}
     </div>
   )

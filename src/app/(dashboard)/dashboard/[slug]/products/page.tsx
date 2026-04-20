@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { Product, ProductCategory } from '@/types/product-builder'
+import { checkPermission } from '@/lib/check-permission'
 import ProductsListClient, { type ProductRow } from './products-list-client'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,8 @@ export default async function ProductsPage({ params }: PageProps) {
     .maybeSingle() as { data: OrgRow | null; error: unknown }
 
   if (!org) notFound()
+
+  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
   // Fetch products — try with category join, fall back without
   type ProductDbRow = {
@@ -106,7 +109,7 @@ export default async function ProductsPage({ params }: PageProps) {
       </div>
 
       {/* Client-side search/filter + table */}
-      <ProductsListClient products={products} orgSlug={slug} />
+      <ProductsListClient products={products} orgSlug={slug} canSeePricing={canSeePricing} />
     </div>
   )
 }

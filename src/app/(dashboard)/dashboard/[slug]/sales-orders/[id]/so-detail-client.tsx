@@ -66,6 +66,7 @@ type Props = {
   salesOrder: SalesOrder
   parentQuote: QuoteRef | null
   jobs: Job[]
+  canSeePricing: boolean
 }
 
 const MANUAL_STATUSES: { value: SalesOrderStatus; label: string }[] = [
@@ -82,7 +83,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 }
 
 export default function SoDetailClient({
-  orgId, orgSlug, salesOrder, parentQuote, jobs,
+  orgId, orgSlug, salesOrder, parentQuote, jobs, canSeePricing,
 }: Props) {
   const [isPending, startTransition] = useTransition()
   const [status, setStatus] = useState<SalesOrderStatus>(salesOrder.status)
@@ -155,12 +156,14 @@ export default function SoDetailClient({
 
         {/* Details grid */}
         <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          <div>
-            <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Total</span>
-            <span className="mt-1 block text-lg font-extrabold tabular-nums text-gray-900">
-              ${formatCents(salesOrder.total)}
-            </span>
-          </div>
+          {canSeePricing && (
+            <div>
+              <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Total</span>
+              <span className="mt-1 block text-lg font-extrabold tabular-nums text-gray-900">
+                ${formatCents(salesOrder.total)}
+              </span>
+            </div>
+          )}
           {parentQuote && (
             <div>
               <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">From Quote</span>

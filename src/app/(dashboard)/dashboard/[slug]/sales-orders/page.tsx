@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { SalesOrderStatus } from '@/types/database'
+import { checkPermission } from '@/lib/check-permission'
 import SalesOrderTable from './so-table'
 
 type PageProps = {
@@ -21,6 +22,8 @@ export default async function SalesOrdersPage({ params, searchParams }: PageProp
     .eq('slug', slug)
     .maybeSingle() as { data: OrgRow | null; error: unknown }
   if (!org) notFound()
+
+  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
   type SoRow = {
     id: string
@@ -80,6 +83,7 @@ export default async function SalesOrdersPage({ params, searchParams }: PageProp
         salesOrders={salesOrders}
         orgSlug={slug}
         activeFilter={filterStatus ?? 'all'}
+        canSeePricing={canSeePricing}
       />
     </div>
   )

@@ -2,6 +2,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { logActivity } from '@/lib/logActivity'
 
 export async function uploadProof(formData: FormData) {
   const jobId = formData.get('jobId') as string
@@ -52,7 +53,7 @@ export async function uploadProof(formData: FormData) {
   const fileUrl = urlData.publicUrl
 
   // Insert record
-  const { error: dbErr } = await service.from('proof_versions').insert({
+  const { data: proofRow, error: dbErr } = await service.from('proof_versions').insert({
     job_id: jobId,
     organization_id: orgId,
     file_url: fileUrl,
@@ -60,11 +61,22 @@ export async function uploadProof(formData: FormData) {
     version_number: nextVersion,
     uploaded_by: user.id,
     status: 'pending',
-  })
+  }).select('id').single() as { data: { id: string } | null; error: { message: string } | null }
 
   if (dbErr) {
     console.error('[uploadProof] DB error:', dbErr.message)
     throw new Error(`Save failed: ${dbErr.message}`)
+  }
+
+  if (proofRow?.id) {
+    await logActivity({
+      org_id: orgId,
+      user_id: user.id,
+      entity_type: 'proof',
+      entity_id: proofRow.id,
+      action: 'proof_sent',
+      metadata: { job_id: jobId, version: nextVersion, file_name: file.name },
+    })
   }
 
   redirect(`/dashboard/${orgSlug}/jobs/${jobId}`)
@@ -84,9 +96,23 @@ export async function updateProofStatus(formData: FormData) {
   const orgSlug = formData.get('orgSlug') as string
   const newStatus = formData.get('status') as string
 
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
   const service = createServiceClient()
 
   await service.from('proof_versions').update({ status: newStatus }).eq('id', proofId)
+
+  if (user && newStatus === 'approved') {
+    await logActivity({
+      org_id: orgId,
+      user_id: user.id,
+      entity_type: 'proof',
+      entity_id: proofId,
+      action: 'proof_approved',
+      metadata: { job_id: jobId },
+    })
+  }
 
   // If approved, advance job to next stage
   if (newStatus === 'approved') {
@@ -103,6 +129,19 @@ export async function updateProofStatus(formData: FormData) {
           status: nextStatus,
           updated_at: new Date().toISOString(),
         }).eq('id', jobId).eq('organization_id', orgId)
+
+        if (user) {
+          await logActivity({
+            org_id: orgId,
+            user_id: user.id,
+            entity_type: 'job',
+            entity_id: jobId,
+            action: 'stage_entered',
+            from_value: currentStatus,
+            to_value: nextStatus,
+            metadata: { triggered_by: 'proof_approved' },
+          })
+        }
       }
     }
   }

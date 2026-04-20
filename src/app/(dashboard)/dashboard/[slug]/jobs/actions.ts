@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import type { JobStatus, JobFlag, OrgRole } from '@/types/database'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtml } from '@/app/actions/email-signature'
+import { logActivity } from '@/lib/logActivity'
 
 const VALID_STATUSES: JobStatus[] = [
   'new', 'in_progress', 'proof_review', 'ready_for_pickup', 'completed',
@@ -76,6 +77,15 @@ export async function updateJobStatus(
   if (membership.role === 'viewer') return { error: 'Viewers cannot update jobs.' }
 
   const service = createServiceClient()
+
+  // Read previous status for stage_exited/stage_entered events
+  const { data: prev } = await service
+    .from('jobs')
+    .select('status')
+    .eq('id', jobId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as { data: { status: JobStatus } | null; error: unknown }
+
   const { error: updateError } = await service
     .from('jobs')
     .update({ status })
@@ -83,6 +93,27 @@ export async function updateJobStatus(
     .eq('organization_id', orgId)
 
   if (updateError) return { error: updateError.message }
+
+  if (prev?.status && prev.status !== status) {
+    await logActivity({
+      org_id: orgId,
+      user_id: user.id,
+      entity_type: 'job',
+      entity_id: jobId,
+      action: 'stage_exited',
+      from_value: prev.status,
+      to_value: status,
+    })
+  }
+  await logActivity({
+    org_id: orgId,
+    user_id: user.id,
+    entity_type: 'job',
+    entity_id: jobId,
+    action: 'stage_entered',
+    from_value: prev?.status,
+    to_value: status,
+  })
 
   // Notify customer when job is ready for pickup
   let notifiedJobNumber: number | undefined

@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { OrgRole, SalesOrderStatus } from '@/types/database'
+import { logActivity } from '@/lib/logActivity'
 
 const ALLOWED_STATUSES: SalesOrderStatus[] = [
   'completed', 'hold', 'no_charge', 'no_charge_approved', 'void',
@@ -33,6 +34,15 @@ export async function updateSalesOrderStatus(
   if (membership.role === 'viewer') return { error: 'Viewers cannot update sales orders.' }
 
   const service = createServiceClient()
+
+  // Read previous status for activity log
+  const { data: prevSo } = await service
+    .from('sales_orders')
+    .select('status')
+    .eq('id', soId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as { data: { status: SalesOrderStatus } | null; error: unknown }
+
   const { error } = await service
     .from('sales_orders')
     .update({ status, updated_at: new Date().toISOString() })
@@ -40,6 +50,16 @@ export async function updateSalesOrderStatus(
     .eq('organization_id', orgId)
 
   if (error) return { error: error.message }
+
+  await logActivity({
+    org_id: orgId,
+    user_id: user.id,
+    entity_type: 'sales_order',
+    entity_id: soId,
+    action: 'status_changed',
+    from_value: prevSo?.status,
+    to_value: status,
+  })
 
   // Auto-create invoice when SO is completed
   if (status === 'completed') {
@@ -81,7 +101,7 @@ export async function updateSalesOrderStatus(
           const dueDate = new Date()
           dueDate.setDate(dueDate.getDate() + 30) // Net 30
 
-          await service.from('invoices').insert({
+          const { data: newInvoice } = await service.from('invoices').insert({
             organization_id: orgId,
             sales_order_id: soId,
             customer_id: so.customer_id,
@@ -91,7 +111,18 @@ export async function updateSalesOrderStatus(
             balance_due: total,
             due_date: dueDate.toISOString().slice(0, 10),
             status: 'draft',
-          })
+          }).select('id').single() as { data: { id: string } | null; error: unknown }
+
+          if (newInvoice?.id) {
+            await logActivity({
+              org_id: orgId,
+              user_id: user.id,
+              entity_type: 'invoice',
+              entity_id: newInvoice.id,
+              action: 'created',
+              metadata: { sales_order_id: soId, total },
+            })
+          }
 
           revalidatePath(`/dashboard/${orgSlug}/invoices`)
         }

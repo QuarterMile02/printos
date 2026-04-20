@@ -1,6 +1,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +56,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
       </div>
     )
   }
+
+  const { allowed: canSeePricing } = org ? await checkPermission(org.id, 'quotes.see_pricing') : { allowed: false }
 
   // Category name
   let categoryName: string | null = null
@@ -166,8 +169,9 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
       </div>
 
       {/* Pricing + Details side by side */}
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className={`mt-6 grid grid-cols-1 ${canSeePricing ? 'md:grid-cols-2' : ''} gap-6`}>
         {/* Pricing */}
+        {canSeePricing && (
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Pricing</h2>
           <div className="space-y-3 text-sm">
@@ -214,6 +218,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
             </div>
           </div>
         </div>
+        )}
 
         {/* Details */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">

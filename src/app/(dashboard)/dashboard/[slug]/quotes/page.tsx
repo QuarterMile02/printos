@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { QuoteStatus } from '@/types/database'
+import { checkPermission } from '@/lib/check-permission'
 import QuoteTable, { type QuoteRow } from './quote-table'
 
 type PageProps = {
@@ -23,6 +24,8 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
     .maybeSingle() as { data: OrgRow | null; error: unknown }
 
   if (!org) notFound()
+
+  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
   // Fetch quotes with joined customer data
   type QuoteDbRow = {
@@ -123,7 +126,7 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
       {/* Content — always render the table so the filter tabs stay visible
           even when the current filter has zero matches. The table renders
           its own empty state. */}
-      <QuoteTable quotes={quotes} orgId={org.id} orgSlug={org.slug} activeFilter={statusFilter ?? 'all'} />
+      <QuoteTable quotes={quotes} orgId={org.id} orgSlug={org.slug} activeFilter={statusFilter ?? 'all'} canSeePricing={canSeePricing} />
     </div>
   )
 }

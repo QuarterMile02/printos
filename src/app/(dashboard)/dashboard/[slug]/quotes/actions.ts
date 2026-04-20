@@ -6,6 +6,7 @@ import type { OrgRole, QuoteStatus } from '@/types/database'
 import { TAX_RATE } from './format'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtml } from '@/app/actions/email-signature'
+import { logActivity } from '@/lib/logActivity'
 
 type ServiceClient = ReturnType<typeof createServiceClient>
 
@@ -178,6 +179,15 @@ export async function updateQuoteStatus(
   if (membership.role === 'viewer') return { error: 'Viewers cannot update quotes.' }
 
   const service = createServiceClient()
+
+  // Read previous status for activity log
+  const { data: prev } = await service
+    .from('quotes')
+    .select('status')
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as { data: { status: QuoteStatus } | null; error: unknown }
+
   const { error: updateError } = await service
     .from('quotes')
     .update({ status })
@@ -185,6 +195,16 @@ export async function updateQuoteStatus(
     .eq('organization_id', orgId)
 
   if (updateError) return { error: updateError.message }
+
+  await logActivity({
+    org_id: orgId,
+    user_id: user.id,
+    entity_type: 'quote',
+    entity_id: quoteId,
+    action: 'status_changed',
+    from_value: prev?.status,
+    to_value: status,
+  })
 
   // Auto-create job when quote is approved
   let jobCreated: number | undefined
@@ -702,6 +722,17 @@ export async function sendQuoteSmsAndDeliver(
 
   if (error) return { error: error.message }
 
+  await logActivity({
+    org_id: orgId,
+    user_id: ctx.user.id,
+    entity_type: 'quote',
+    entity_id: quoteId,
+    action: 'status_changed',
+    from_value: 'draft',
+    to_value: 'delivered',
+    metadata: { via: 'sms' },
+  })
+
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   revalidatePath(`/dashboard/${orgSlug}/quotes`)
   return {}
@@ -732,6 +763,17 @@ export async function sendQuoteEmailAndDeliver(
 
   if (error) return { error: error.message }
 
+  await logActivity({
+    org_id: orgId,
+    user_id: ctx.user.id,
+    entity_type: 'quote',
+    entity_id: quoteId,
+    action: 'status_changed',
+    from_value: 'draft',
+    to_value: 'delivered',
+    metadata: { via: 'email' },
+  })
+
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   revalidatePath(`/dashboard/${orgSlug}/quotes`)
   return {}
@@ -759,6 +801,15 @@ export async function sendForReviewAndUpdate(
     .in('status', ['delivered', 'draft'])
 
   if (error) return { error: error.message }
+
+  await logActivity({
+    org_id: orgId,
+    user_id: ctx.user.id,
+    entity_type: 'quote',
+    entity_id: quoteId,
+    action: 'status_changed',
+    to_value: 'customer_review',
+  })
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   revalidatePath(`/dashboard/${orgSlug}/quotes`)
@@ -991,6 +1042,25 @@ export async function convertQuoteToSalesOrder(
     } else if (linkResult.error) {
       return { error: `Failed to link quote: ${linkResult.error.message}` }
     }
+
+    // Activity log: SO created + quote converted
+    await logActivity({
+      org_id: orgId,
+      user_id: ctx.user.id,
+      entity_type: 'sales_order',
+      entity_id: so.id,
+      action: 'created',
+      metadata: { so_number: so.so_number, quote_id: quoteId },
+    })
+    await logActivity({
+      org_id: orgId,
+      user_id: ctx.user.id,
+      entity_type: 'quote',
+      entity_id: quoteId,
+      action: 'converted_to_so',
+      to_value: `SO-${String(so.so_number).padStart(4, '0')}`,
+      metadata: { sales_order_id: so.id },
+    })
 
     revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
     revalidatePath(`/dashboard/${orgSlug}/quotes`)

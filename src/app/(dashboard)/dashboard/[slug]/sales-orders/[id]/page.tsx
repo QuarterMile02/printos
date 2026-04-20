@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import type { SalesOrderStatus, JobStatus } from '@/types/database'
+import { checkPermission } from '@/lib/check-permission'
 import SoDetailClient from './so-detail-client'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
@@ -50,6 +51,8 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
     .maybeSingle() as { data: SoRow | null; error: unknown }
 
   if (!so) notFound()
+
+  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
   // Fetch parent quote info if linked
   type QuoteRef = { id: string; quote_number: number; title: string; created_at: string }
@@ -110,6 +113,7 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
           status: j.status,
           due_date: j.due_date,
         }))}
+        canSeePricing={canSeePricing}
       />
     </div>
   )

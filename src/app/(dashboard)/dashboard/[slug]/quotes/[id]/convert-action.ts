@@ -1,7 +1,8 @@
 'use server'
 
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { logActivity } from '@/lib/logActivity'
 
 export async function convertToSalesOrder(formData: FormData) {
   const quoteId = formData.get('quoteId') as string
@@ -46,6 +47,34 @@ export async function convertToSalesOrder(formData: FormData) {
 
   // Update quote status to ordered and link SO
   const soId = (so as Record<string, unknown>).id as string
+  const soNumber = (so as Record<string, unknown>).so_number as number
+
+  // Activity log: SO created + quote converted
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      await logActivity({
+        org_id: orgId,
+        user_id: user.id,
+        entity_type: 'sales_order',
+        entity_id: soId,
+        action: 'created',
+        metadata: { so_number: soNumber, quote_id: quoteId },
+      })
+      await logActivity({
+        org_id: orgId,
+        user_id: user.id,
+        entity_type: 'quote',
+        entity_id: quoteId,
+        action: 'converted_to_so',
+        to_value: `SO-${String(soNumber).padStart(4, '0')}`,
+        metadata: { sales_order_id: soId },
+      })
+    }
+  } catch (err) {
+    console.error('[convertToSalesOrder] logActivity failed:', err)
+  }
   const { error: updateErr } = await service
     .from('quotes')
     .update({ status: 'ordered', converted_to_so_id: soId })

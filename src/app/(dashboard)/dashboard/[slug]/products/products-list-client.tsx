@@ -40,9 +40,11 @@ type PricingFilter = 'all' | PricingType
 export default function ProductsListClient({
   products,
   orgSlug,
+  canSeePricing,
 }: {
   products: ProductRow[]
   orgSlug: string
+  canSeePricing: boolean
 }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -124,7 +126,9 @@ export default function ProductsListClient({
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Category</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Pricing Type</th>
-                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
+                {canSeePricing && (
+                  <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
               </tr>
             </thead>
@@ -151,11 +155,13 @@ export default function ProductsListClient({
                         {p.pricing_type ?? <span className="text-gray-300">—</span>}
                       </Link>
                     </td>
-                    <td className="whitespace-nowrap">
-                      <Link href={href} className="block px-6 py-4 text-sm font-medium text-qm-black text-right">
-                        {formatPrice(p.price)}
-                      </Link>
-                    </td>
+                    {canSeePricing && (
+                      <td className="whitespace-nowrap">
+                        <Link href={href} className="block px-6 py-4 text-sm font-medium text-qm-black text-right">
+                          {formatPrice(p.price)}
+                        </Link>
+                      </td>
+                    )}
                     <td className="whitespace-nowrap">
                       <Link href={href} className="block px-6 py-4">
                         {p.status ? (

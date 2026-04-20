@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { OrgRole, JobStatus, JobFlag, QuoteStatus } from '@/types/database'
+import { checkPermission } from '@/lib/check-permission'
 import { QUOTE_STATUS_STYLES } from './quotes/format'
 
 const ROLE_STYLES: Record<OrgRole, string> = {
@@ -79,6 +80,7 @@ export default async function OrgDashboardPage({ params }: PageProps) {
     .single() as { data: MemberRow | null; error: unknown }
 
   const role = membership?.role ?? 'viewer'
+  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
   // Fetch counts and data
   type JobRow = {
@@ -527,7 +529,9 @@ export default async function OrgDashboardPage({ params }: PageProps) {
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">#</th>
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Title</th>
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Customer</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
+                      {canSeePricing && (
+                        <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
+                      )}
                       <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Days Old</th>
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Flags</th>
@@ -543,7 +547,9 @@ export default async function OrgDashboardPage({ params }: PageProps) {
                             ? `${q.customers.first_name} ${q.customers.last_name}${q.customers.company_name ? ` (${q.customers.company_name})` : ''}`
                             : <span className="text-gray-300">—</span>}
                         </td>
-                        <td className="whitespace-nowrap px-6 py-3 text-sm font-medium text-qm-black text-right">${formatCents(q.total)}</td>
+                        {canSeePricing && (
+                          <td className="whitespace-nowrap px-6 py-3 text-sm font-medium text-qm-black text-right">${formatCents(q.total)}</td>
+                        )}
                         <td className="whitespace-nowrap px-6 py-3 text-right">
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
                             q.days >= 14
@@ -832,7 +838,7 @@ export default async function OrgDashboardPage({ params }: PageProps) {
           </div>
           <p className="text-3xl font-extrabold text-qm-black">{allQuotes.length}</p>
           <p className="mt-1 text-sm text-qm-gray">
-            ${formatCents(quoteTotalValue)} total value
+            {canSeePricing ? `$${formatCents(quoteTotalValue)} total value` : `${openQuotes.length} open`}
           </p>
         </a>
 

@@ -192,11 +192,13 @@ export default function QuoteTable({
   orgId,
   orgSlug,
   activeFilter,
+  canSeePricing,
 }: {
   quotes: QuoteRow[]
   orgId: string
   orgSlug: string
   activeFilter: string
+  canSeePricing: boolean
 }) {
   const router = useRouter()
   const [rows] = useState(quotes)
@@ -293,9 +295,11 @@ export default function QuoteTable({
             <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
               Customer
             </th>
-            <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
-              Total
-            </th>
+            {canSeePricing && (
+              <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                Total
+              </th>
+            )}
             <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
               Status
             </th>
@@ -322,9 +326,11 @@ export default function QuoteTable({
                   ? `${quote.customer.first_name} ${quote.customer.last_name}${quote.customer.company_name ? ` (${quote.customer.company_name})` : ''}`
                   : <span className="text-gray-300">—</span>}
               </td>
-              <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 text-right font-medium">
-                ${formatCents(quote.total)}
-              </td>
+              {canSeePricing && (
+                <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 text-right font-medium">
+                  ${formatCents(quote.total)}
+                </td>
+              )}
               <td className="whitespace-nowrap px-6 py-4">
                 <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${QUOTE_STATUS_STYLES[quote.status]}`}>
                   {QUOTE_STATUS_LABELS[quote.status]}

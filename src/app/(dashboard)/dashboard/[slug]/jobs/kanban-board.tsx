@@ -1,6 +1,7 @@
 'use client'
 
 import { useTransition, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { updateJobStatus } from './actions'
 import type { JobStatus, JobFlag } from '@/types/database'
 
@@ -21,7 +22,10 @@ export type JobCard = {
   height: number | null
   quantity: number | null
   assigned_initials: string | null
+  department: string | null
 }
+
+type DeptOption = { code: string; name: string }
 
 type Column = {
   status: JobStatus
@@ -219,10 +223,35 @@ type Props = {
   jobs: JobCard[]
   orgId: string
   orgSlug: string
+  allDepartments: DeptOption[]
+  activeDepartments: string[] | null
+  canChangeFilter: boolean
+  canSeeAllDepartments: boolean
+  currentFilter: string
 }
 
-export default function KanbanBoard({ jobs, orgId, orgSlug }: Props) {
+export default function KanbanBoard({
+  jobs, orgId, orgSlug,
+  allDepartments, activeDepartments, canChangeFilter, canSeeAllDepartments, currentFilter,
+}: Props) {
+  const router = useRouter()
   const [toast, setToast] = useState<{ message: string; key: number } | null>(null)
+
+  const deptLabelMap = new Map(allDepartments.map((d) => [d.code, d.name]))
+  const activeLabels = activeDepartments
+    ? activeDepartments.map((code) => deptLabelMap.get(code) ?? code)
+    : []
+  const filterIsActive = activeDepartments !== null && activeDepartments.length > 0
+
+  function handleFilterChange(value: string) {
+    const url = new URL(window.location.href)
+    if (!value || value === 'all') {
+      url.searchParams.delete('department')
+    } else {
+      url.searchParams.set('department', value)
+    }
+    router.push(url.pathname + url.search)
+  }
 
   function showToast(message: string) {
     setToast({ message, key: Date.now() })
@@ -246,6 +275,32 @@ export default function KanbanBoard({ jobs, orgId, orgSlug }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+      )}
+
+      {/* Department filter bar */}
+      {(filterIsActive || canChangeFilter) && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {filterIsActive && (
+            <div className="inline-flex items-center gap-2 rounded-full border border-qm-lime bg-qm-lime-light px-3 py-1 text-xs font-semibold text-qm-lime-dark">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
+              </svg>
+              Showing: {activeLabels.join(', ')}
+            </div>
+          )}
+          {canChangeFilter && (
+            <select
+              value={currentFilter}
+              onChange={(e) => handleFilterChange(e.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            >
+              {canSeeAllDepartments && <option value="all">All Departments</option>}
+              {allDepartments.map((d) => (
+                <option key={d.code} value={d.code}>{d.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       )}
 
