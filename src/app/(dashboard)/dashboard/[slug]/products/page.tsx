@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
 import ProductsListClient, { type ProductRow } from './products-list-client'
+import BulkImportShopvoxButton from './bulk-import-shopvox-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,6 +94,7 @@ export default async function ProductsPage({ params }: PageProps) {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <BulkImportShopvoxButton orgId={org.id} />
             <Link
               href={`/dashboard/${slug}/products/import`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-qm-black hover:bg-gray-50 transition-colors"
