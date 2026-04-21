@@ -47,32 +47,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     }
   }
 
-  // IIF export data
-  const customerName = inv.customers
-    ? `${inv.customers.first_name} ${inv.customers.last_name}${inv.customers.company_name ? `:${inv.customers.company_name}` : ''}`
-    : 'Customer'
-  const invDate = new Date(inv.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-  const dueDate = inv.due_date
-    ? new Date(inv.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-    : invDate
   const invNum = formatInvNumber(inv.invoice_number, inv.created_at)
-
-  // Build IIF content
-  const iifLines = [
-    '!TRNS\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO',
-    '!SPL\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO',
-    '!ENDTRNS',
-    `TRNS\tInvoice\t${invDate}\tAccounts Receivable\t${customerName}\t${(inv.total / 100).toFixed(2)}\t${invNum}\t`,
-  ]
-  for (const li of lineItems) {
-    iifLines.push(`SPL\tInvoice\t${invDate}\tSales\t${customerName}\t-${(li.total_price / 100).toFixed(2)}\t${invNum}\t${li.description}`)
-  }
-  if (inv.tax_total > 0) {
-    iifLines.push(`SPL\tInvoice\t${invDate}\tSales Tax Payable\t${customerName}\t-${(inv.tax_total / 100).toFixed(2)}\t${invNum}\tSales Tax`)
-  }
-  iifLines.push('ENDTRNS')
-  const iifContent = iifLines.join('\n')
-  const iifDataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(iifContent)}`
 
   return (
     <div className="p-8 max-w-4xl">
@@ -102,11 +77,10 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
               {INV_STATUS_LABELS[inv.status] ?? inv.status}
             </span>
             <a
-              href={iifDataUrl}
-              download={`${invNum}.iif`}
+              href={`/api/invoices/${inv.id}/export-iif`}
               className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
             >
-              Export IIF
+              Export to QuickBooks
             </a>
           </div>
         </div>

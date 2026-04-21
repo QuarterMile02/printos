@@ -384,6 +384,102 @@ export default function MigrateClient({
   }
 
   function copyAllShopvoxDefaultItems() { for (const it of (shopvoxData?.default_items ?? [])) addShopvoxDefaultItem(it); showToast(`Added items`) }
+
+  // "Import from ShopVOX" — bulk-populates the whole right panel from
+  // shopvox_data in a single click. Replaces (doesn't append) existing
+  // builder rows, with a confirm if anything is already populated.
+  function handleImportFromShopvox() {
+    if (!shopvoxData) return
+
+    const hasExistingData =
+      modifierRows.length > 0 ||
+      dropdownMenus.length > 0 ||
+      materialRows.length > 0 ||
+      laborRateRows.length > 0 ||
+      machineRateRows.length > 0
+
+    if (hasExistingData) {
+      const ok = window.confirm('This will replace your current recipe with ShopVOX data. Continue?')
+      if (!ok) return
+    }
+
+    // Modifiers — match shopvox name against the DB modifiers catalog.
+    const newModifierRows: ModifierRow[] = []
+    const seenModifiers = new Set<string>()
+    for (const m of (shopvoxData.modifiers ?? [])) {
+      const match = modifierByName.get(m.name.toLowerCase().trim())
+      if (!match || seenModifiers.has(match.id)) continue
+      seenModifiers.add(match.id)
+      newModifierRows.push({
+        id: uid(),
+        modifier_id: match.id,
+        is_required: false,
+        default_value: m.default != null ? String(m.default) : null,
+        display_name: match.display_name,
+        modifier_type: match.modifier_type,
+      })
+    }
+
+    // Dropdown menus — is_optional true if explicit flag OR name has "(Optional)".
+    const newDropdownMenus: DropdownMenuRow[] = (shopvoxData.dropdown_menus ?? []).map((m) => ({
+      id: uid(),
+      menu_name: m.name,
+      is_optional: (m.optional ?? false) || /\(optional\)/i.test(m.name),
+      items: [] as DropdownItemRow[],
+    }))
+
+    // Default items — split by kind into materials / labor / machine.
+    const newMaterials: MaterialRow[] = []
+    const newLabor: RateRow[] = []
+    const newMachine: RateRow[] = []
+    const seenLaborIds = new Set<string>()
+    const seenMachineIds = new Set<string>()
+    let defaultItemCount = 0
+    for (const it of (shopvoxData.default_items ?? [])) {
+      const lcName = it.name.toLowerCase().trim()
+      if (it.kind === 'Material') {
+        const match = materialByName.get(lcName)
+        newMaterials.push({
+          id: uid(),
+          category_id: match?.category_id ?? null,
+          wastage_percent: 0,
+          item_markup: match?.multiplier ?? 1,
+        })
+        defaultItemCount++
+      } else if (it.kind === 'LaborRate') {
+        const match = laborRates.find((l: LaborRateOption) => l.name.toLowerCase().trim() === lcName)
+        if (!match || seenLaborIds.has(match.id)) continue
+        seenLaborIds.add(match.id)
+        newLabor.push({
+          id: uid(), rate_id: match.id,
+          formula: it.formula || 'Area', multiplier: it.multiplier ?? 1,
+          charge_per_li_unit: it.per_li, include_in_base_price: false,
+          modifier_formula: it.modifier?.expression ?? null, workflow_step: true,
+        })
+        defaultItemCount++
+      } else if (it.kind === 'MachineRate') {
+        const match = machineRates.find((mm: MachineRateOption) => mm.name.toLowerCase().trim() === lcName)
+        if (!match || seenMachineIds.has(match.id)) continue
+        seenMachineIds.add(match.id)
+        newMachine.push({
+          id: uid(), rate_id: match.id,
+          formula: it.formula || 'Area', multiplier: it.multiplier ?? 1,
+          charge_per_li_unit: it.per_li, include_in_base_price: false,
+          modifier_formula: it.modifier?.expression ?? null, workflow_step: true,
+        })
+        defaultItemCount++
+      }
+    }
+
+    // Apply — replaces, doesn't append.
+    setModifierRows(newModifierRows)
+    setDropdownMenus(newDropdownMenus)
+    setMaterialRows(newMaterials)
+    setLaborRateRows(newLabor)
+    setMachineRateRows(newMachine)
+
+    showToast(`Imported ${newModifierRows.length} modifiers, ${newDropdownMenus.length} dropdowns, ${defaultItemCount} default items — review and save`)
+  }
   // FIX 6: Copy All for Materials section
   function copyAllShopvoxMaterials() { const list = (shopvoxData?.default_items ?? []).filter((it) => it.kind === 'Material'); for (const it of list) addShopvoxDefaultItem(it); showToast(`Added ${list.length} materials`) }
   // FIX 6: Copy All for Rates sections
@@ -744,6 +840,16 @@ export default function MigrateClient({
         {/* RIGHT 70% — independently scrollable */}
         <div className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1 space-y-4">
           <SectionHeaderRight />
+
+          {hasShopvox && (
+            <button
+              type="button"
+              onClick={handleImportFromShopvox}
+              className="w-full rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110"
+            >
+              Import from ShopVOX
+            </button>
+          )}
 
           {/* 1. Basic Info */}
           <RightSection title="Basic Info">
