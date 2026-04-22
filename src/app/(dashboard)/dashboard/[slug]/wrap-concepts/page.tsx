@@ -2,6 +2,14 @@
 
 import { useCallback, useRef, useState } from 'react'
 
+// Enforced concept order sent with every request. Claude must produce
+// exactly these three concept types in this order.
+const CONCEPT_BRIEFS = [
+  'Concept 1: MUST be a partial wrap — doors and rear only, not full coverage.',
+  'Concept 2: Full wrap, bold and graphic with strong color blocks.',
+  'Concept 3: Full wrap, premium/complex with maximum visual impact.',
+]
+
 // ── Types ────────────────────────────────────────────────────────────
 
 type UploadedFile = {
@@ -283,9 +291,7 @@ export default function WrapConceptsPage() {
   const [bizType, setBizType] = useState('')
   const [phone, setPhone] = useState('')
   const [website, setWebsite] = useState('')
-  const [color1, setColor1] = useState('#93ca3b')
-  const [color2, setColor2] = useState('#ee2b7b')
-  const [color3, setColor3] = useState('#1a1a1a')
+  const [brandColors, setBrandColors] = useState('')
   const [styleNotes, setStyleNotes] = useState('')
 
   // Step 3
@@ -320,10 +326,11 @@ export default function WrapConceptsPage() {
           vehicle,
           bizName,
           bizType,
-          colors: [color1, color2, color3].filter(Boolean),
+          colors: brandColors,
           style: styleNotes,
           phone,
           website,
+          conceptBriefs: CONCEPT_BRIEFS,
         }),
       })
       const briefData = (await briefRes.json()) as { concepts?: WrapConcept[]; error?: string }
@@ -346,12 +353,14 @@ export default function WrapConceptsPage() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                endpoint: 'fal-ai/flux/dev/image-to-image',
+                endpoint: 'fal-ai/flux-pro/kontext',
                 body: {
-                  prompt: initial[i].concept.fal_prompt,
                   image_url: `data:image/jpeg;base64,${stripDataPrefix(vehicleDataUrl)}`,
-                  strength: 0.75,
+                  prompt: initial[i].concept.fal_prompt,
+                  strength: 0.85,
                   num_images: 1,
+                  output_format: 'jpeg',
+                  enable_safety_checker: false,
                 },
               }),
             })
@@ -484,27 +493,16 @@ export default function WrapConceptsPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Brand colors</label>
-            <div className="flex flex-wrap gap-4">
-              {[
-                { v: color1, set: setColor1, label: 'Primary' },
-                { v: color2, set: setColor2, label: 'Secondary' },
-                { v: color3, set: setColor3, label: 'Accent' },
-              ].map((c) => (
-                <div key={c.label} className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={c.v}
-                    onChange={(e) => c.set(e.target.value)}
-                    className="h-10 w-14 cursor-pointer rounded border border-gray-300"
-                  />
-                  <div>
-                    <div className="text-xs font-semibold text-qm-black">{c.label}</div>
-                    <div className="text-[10px] font-mono text-gray-500">{c.v}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Brand colors</label>
+            <input
+              className={`mt-1 ${inputCls}`}
+              value={brandColors}
+              onChange={(e) => setBrandColors(e.target.value)}
+              placeholder="e.g. Green #93ca3b and Fuchsia #ee2b7b"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Describe the brand palette however you like — include hex codes if you have them.
+            </p>
           </div>
 
           <div>

@@ -9,10 +9,11 @@ type Body = {
   vehicle?: string           // e.g. "2022 Ford F-150 Lariat"
   bizName?: string
   bizType?: string           // e.g. "Plumbing", "Landscaping"
-  colors?: string[]          // brand colors as hex strings
+  colors?: string | string[] // free-text description OR array of hex strings
   style?: string             // free-text style notes
   phone?: string
   website?: string
+  conceptBriefs?: string[]   // ordered list of constraints for each concept
 }
 
 type WrapConcept = {
@@ -54,9 +55,13 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json()) as Body
-    const { vehicleB64, logoB64, vehicle, bizName, bizType, colors, style, phone, website } = body
+    const { vehicleB64, logoB64, vehicle, bizName, bizType, colors, style, phone, website, conceptBriefs } = body
 
-    const colorList = (colors ?? []).filter((c) => typeof c === 'string' && c.trim()).slice(0, 6)
+    // Normalize colors: accept either an array of hex strings OR a raw
+    // free-text description (e.g. "Green #93ca3b and Fuchsia #ee2b7b").
+    const colorsDisplay = Array.isArray(colors)
+      ? colors.filter((c) => typeof c === 'string' && c.trim()).slice(0, 6).join(', ')
+      : (typeof colors === 'string' ? colors.trim() : '')
 
     // Build the user message: vehicle image (required), logo image (optional), text brief.
     const userContent: Array<
@@ -73,8 +78,12 @@ export async function POST(req: NextRequest) {
       userContent.push({ type: 'image', source: { type: 'base64', media_type: l.media_type, data: l.data } })
     }
 
+    const briefs = (conceptBriefs ?? []).filter((s) => typeof s === 'string' && s.trim())
+
     const promptLines = [
-      'Generate THREE distinct vehicle-wrap design concepts for the project below.',
+      'Generate THREE vehicle-wrap design concepts for the project below.',
+      'The order of concepts is FIXED — produce them in exactly the order listed',
+      'under CONCEPT ORDER. Each concept must satisfy its constraint.',
       '',
       'PROJECT BRIEF',
       vehicle ? `- Vehicle: ${vehicle}` : null,
@@ -82,16 +91,40 @@ export async function POST(req: NextRequest) {
       bizType ? `- Industry: ${bizType}` : null,
       phone ? `- Phone: ${phone}` : null,
       website ? `- Website: ${website}` : null,
-      colorList.length ? `- Brand colors: ${colorList.join(', ')}` : null,
+      colorsDisplay ? `- Brand colors: ${colorsDisplay}` : null,
       style ? `- Style notes: ${style}` : null,
       '',
+      briefs.length ? 'CONCEPT ORDER (produce in this exact order)' : null,
+      ...briefs.map((b, i) => `- #${i + 1}: ${b}`),
+      briefs.length ? '' : null,
       'REQUIREMENTS',
-      '- Produce three clearly different concepts (varying color emphasis, layout, mood).',
-      '- For each concept, write a detailed image-generation prompt that describes the',
-      '  vehicle wrap exactly as it should look, including color placement, logo location,',
-      '  contact info placement, and overall composition. The prompt will be sent to an',
-      '  image-to-image model along with the vehicle photo, so phrase it as a description',
-      '  of the final wrapped vehicle.',
+      '- The three concepts array must be ordered to match CONCEPT ORDER above.',
+      '- Each fal_prompt is sent to FLUX Kontext (image editing), NOT a text-to-image',
+      '  model. Phrase each fal_prompt as a list of EDITS to apply to the provided',
+      '  vehicle photo — not as a description of a new scene. Preserve the car shape,',
+      '  angle, perspective, and background exactly.',
+      '- Kontext prompt structure — each fal_prompt should:',
+      '    • Start with a directive like "Apply a vinyl wrap to this vehicle." or',
+      '      "Apply a partial vinyl wrap to this vehicle (doors and rear only)."',
+      '    • Explicitly state "Keep the exact car shape, angle, perspective, and',
+      '      background." so Kontext preserves the source photo.',
+      '    • Describe body color changes per panel (e.g. "Change the doors to matte',
+      '      black"). For partial wraps, name the panels that stay factory paint.',
+      '    • Describe graphics by placement + style + color (e.g. "Add a diagonal',
+      '      lime-green geometric stripe across the rear quarter panel").',
+      '    • Describe logo placement + size + color (e.g. "Place the business logo',
+      '      in white on the rear doors, roughly 18 inches wide").',
+      '    • Describe contact-info placement (phone, website) if any, with panel +',
+      '      text color.',
+      '    • End with a short photorealism hint: "Clean, crisp vinyl finish, no',
+      '      wrinkles, commercial-quality wrap application."',
+      '- Example fal_prompt shape:',
+      '  "Apply a full vinyl wrap to this vehicle. Keep the exact car shape, angle,',
+      '  perspective, and background. Change the body to deep navy #1a2b4c. Add a',
+      '  lime-green (#93ca3b) diagonal stripe running from the front fender to the',
+      '  rear quarter panel. Place the business logo in white on both rear doors.',
+      '  Add the phone number in white along the bottom of the driver-side rear',
+      '  door. Clean, crisp vinyl finish, no wrinkles, commercial-quality wrap."',
       '- Keep material recommendations realistic (e.g., 3M IJ180Cv3, Avery MPI 1105,',
       '  Oracal 3951RA).',
       '',
