@@ -42,8 +42,10 @@ function stripDataPrefix(s: string): { media_type: string; data: string } {
   return { media_type: 'image/jpeg', data: s }
 }
 
-// Best-effort website fetch (5s budget). Returns ~3KB of stripped text or
-// null on any error. Skip non-http(s) schemes so we don't try file:// etc.
+// Structured website fetch (5s budget). Pulls title, meta description,
+// h1–h3 headings, image alt text, inline colors, and any sentence that
+// contains wrap/fleet/brand/vehicle/sign/commercial/logo/color/design.
+// Returns a ~3000-char summary or null on any error.
 async function fetchWebsiteContext(rawUrl: string): Promise<string | null> {
   try {
     let url = rawUrl.trim()
@@ -61,28 +63,75 @@ async function fetchWebsiteContext(rawUrl: string): Promise<string | null> {
         headers: { 'User-Agent': 'PrintOS-WrapConcepts/1.0' },
       })
       if (!res.ok) return null
-      const html = (await res.text()).slice(0, 50000)
-      const title = html.match(/<title[^>]*>([\s\S]{0,200}?)<\/title>/i)?.[1]?.trim() ?? ''
+      const html = (await res.text()).slice(0, 80000)
+
+      const titleMatch = html.match(/<title[^>]*>([\s\S]{0,200}?)<\/title>/i)?.[1]?.trim() ?? ''
       const metaDesc = html.match(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']{0,500})["']/i)?.[1]?.trim() ?? ''
       const ogDesc = html.match(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']{0,500})["']/i)?.[1]?.trim() ?? ''
+      const themeColor = html.match(/<meta[^>]+name=["']theme-color["'][^>]*content=["']([^"']+)["']/i)?.[1]?.trim() ?? ''
+
+      const headings: string[] = []
+      for (const tag of ['h1', 'h2', 'h3']) {
+        const re = new RegExp(`<${tag}[^>]*>([\\s\\S]{0,250}?)</${tag}>`, 'gi')
+        let m: RegExpExecArray | null
+        while ((m = re.exec(html)) !== null) {
+          const t = m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+          if (t && t.length > 1) headings.push(`${tag}: ${t}`)
+          if (headings.length >= 40) break
+        }
+      }
+
+      const alts: string[] = []
+      const altRe = /<img[^>]+alt=["']([^"']{2,200})["']/gi
+      let am: RegExpExecArray | null
+      while ((am = altRe.exec(html)) !== null) {
+        const a = am[1].replace(/\s+/g, ' ').trim()
+        if (a) alts.push(a)
+        if (alts.length >= 25) break
+      }
+
+      const colorSet = new Set<string>()
+      for (const m of html.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) colorSet.add(m[0])
+      for (const m of html.matchAll(/rgb\([^)]{1,60}\)/gi)) colorSet.add(m[0])
+      for (const m of html.matchAll(/rgba\([^)]{1,80}\)/gi)) colorSet.add(m[0])
+      if (themeColor) colorSet.add(themeColor)
+      const colors = Array.from(colorSet).slice(0, 30)
+
       const stripped = html
         .replace(/<script[\s\S]*?<\/script>/gi, ' ')
         .replace(/<style[\s\S]*?<\/style>/gi, ' ')
         .replace(/<[^>]+>/g, ' ')
         .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&#x27;|&apos;/g, "'")
+        .replace(/&quot;/g, '"')
         .replace(/\s+/g, ' ')
         .trim()
-        .slice(0, 2500)
+
+      const keywordsRe = /\b(wrap|fleet|brand|vehicle|sign|commercial|logo|color|colour|design)\b/i
+      const keywordLines = stripped
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 20 && s.length < 280 && keywordsRe.test(s))
+        .slice(0, 15)
+
       const parts: string[] = []
-      if (title) parts.push(`Title: ${title}`)
+      if (titleMatch) parts.push(`Title: ${titleMatch}`)
       if (metaDesc) parts.push(`Meta description: ${metaDesc}`)
       if (ogDesc && ogDesc !== metaDesc) parts.push(`OG description: ${ogDesc}`)
-      if (stripped) parts.push(`Body excerpt: ${stripped}`)
-      return parts.length > 0 ? parts.join('\n') : null
+      if (headings.length) parts.push(`Headings:\n  - ${headings.join('\n  - ')}`)
+      if (alts.length) parts.push(`Image alts:\n  - ${alts.join('\n  - ')}`)
+      if (colors.length) parts.push(`Color values found: ${colors.join(', ')}`)
+      if (keywordLines.length) parts.push(`Key sentences (wrap/brand/vehicle/etc):\n  - ${keywordLines.join('\n  - ')}`)
+      if (stripped) parts.push(`Body excerpt: ${stripped.slice(0, 1500)}`)
+
+      const joined = parts.join('\n\n').slice(0, 3000)
+      return joined.length > 0 ? joined : null
     } finally {
       clearTimeout(timer)
     }
-  } catch {
+  } catch (e) {
+    console.error('[claude-proxy] fetchWebsiteContext error:', e instanceof Error ? e.message : e)
     return null
   }
 }
@@ -101,6 +150,111 @@ function extractJson(text: string): unknown | null {
   }
 }
 
+type BrandAnalysis = {
+  logoColors: string[]
+  logoDescription: string
+  logoIconDescription: string
+  fontStyle: string
+  brandPersonality: string
+  websitePrimaryServices: string[]
+  websiteColorTheme: string
+  vehicleBaseColor: string
+  vehicleType: string
+}
+
+// First-pass Claude call: analyze the logo, vehicle, and website context
+// and return a structured BrandAnalysis object. Used to enrich the main
+// concept-generation prompt with specific, accurate brand details.
+async function analyzeBrand(
+  apiKey: string,
+  args: {
+    vehicleB64?: string
+    logoB64?: string
+    websiteContext: string | null
+    vehicle?: string
+    bizName?: string
+    bizType?: string
+    colorsText: string
+  },
+): Promise<BrandAnalysis | null> {
+  const content: Array<
+    | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+    | { type: 'text'; text: string }
+  > = []
+
+  if (args.vehicleB64) {
+    const v = stripDataPrefix(args.vehicleB64)
+    content.push({ type: 'image', source: { type: 'base64', media_type: v.media_type, data: v.data } })
+  }
+  if (args.logoB64) {
+    const l = stripDataPrefix(args.logoB64)
+    content.push({ type: 'image', source: { type: 'base64', media_type: l.media_type, data: l.data } })
+  }
+
+  const lines: (string | null)[] = [
+    'Analyze the images and brand details below. Return ONLY a JSON object matching the schema at the bottom — no prose, no markdown fences.',
+    '',
+    'Image order: first image is the VEHICLE photo, second (if present) is the LOGO.',
+    '',
+    'INPUTS',
+    args.vehicle ? `- Vehicle description: ${args.vehicle}` : null,
+    args.bizName ? `- Business name: ${args.bizName}` : null,
+    args.bizType ? `- Industry: ${args.bizType}` : null,
+    args.colorsText ? `- Stated brand colors: ${args.colorsText}` : null,
+    '',
+    args.websiteContext ? 'WEBSITE CONTEXT' : null,
+    args.websiteContext,
+    args.websiteContext ? '' : null,
+    'SCHEMA (return ONLY this JSON object):',
+    '{',
+    '  "logoColors": ["#hex", ...],            // 2–5 dominant hex colors pulled from the logo',
+    '  "logoDescription": "string",             // overall visual description of the logo',
+    '  "logoIconDescription": "string",         // specific shapes, icons, or marks (e.g. "circular Q mark with swoosh lines")',
+    '  "fontStyle": "string",                    // e.g. "bold condensed sans-serif, all-caps"',
+    '  "brandPersonality": "string",             // e.g. "energetic, technical, trustworthy"',
+    '  "websitePrimaryServices": ["string", ...], // 2–5 services inferred from the site',
+    '  "websiteColorTheme": "string",            // e.g. "navy + white with orange accents"',
+    '  "vehicleBaseColor": "string",             // exact color of the vehicle body in the photo',
+    '  "vehicleType": "string"                    // e.g. "crew-cab pickup truck, silver"',
+    '}',
+  ]
+  content.push({ type: 'text', text: lines.filter((s): s is string => s != null).join('\n') })
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1200,
+        system:
+          'You are a brand analyst. You study logos, vehicles, and business context, then return precise structured analysis. Be specific (exact hex colors, exact vehicle type). Respond ONLY with the JSON object requested. No prose, no markdown fences.',
+        messages: [{ role: 'user', content }],
+      }),
+    })
+    if (!res.ok) {
+      const errText = await res.text()
+      console.error('[claude-proxy] analyzeBrand HTTP', res.status, errText.slice(0, 500))
+      return null
+    }
+    const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> }
+    const textBlock = (data.content ?? []).find((b) => b.type === 'text')?.text ?? ''
+    const parsed = extractJson(textBlock) as BrandAnalysis | null
+    if (!parsed) {
+      console.error('[claude-proxy] analyzeBrand returned non-JSON:', textBlock.slice(0, 800))
+      return null
+    }
+    return parsed
+  } catch (e) {
+    console.error('[claude-proxy] analyzeBrand exception:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const key = process.env.ANTHROPIC_API_KEY
@@ -114,14 +268,31 @@ export async function POST(req: NextRequest) {
       imageryStyle, imageryOther, artStyle, artOther, keyFocus, keyOther, inspiration, avoid,
     } = body
 
-    // Best-effort site fetch — runs in parallel with prompt assembly via await.
+    // Best-effort site fetch — used below AND passed into the analysis pass.
     const websiteContext = website ? await fetchWebsiteContext(website) : null
+    console.log(
+      '[claude-proxy] Website context:',
+      websiteContext ? `(${websiteContext.length} chars)\n${websiteContext}` : '(none)',
+    )
 
     // Normalize colors: accept either an array of hex strings OR a raw
     // free-text description (e.g. "Green #93ca3b and Fuchsia #ee2b7b").
     const colorsDisplay = Array.isArray(colors)
       ? colors.filter((c) => typeof c === 'string' && c.trim()).slice(0, 6).join(', ')
       : (typeof colors === 'string' ? colors.trim() : '')
+
+    // Pass 1 — brand analysis. Returns structured details about the logo,
+    // vehicle, and website that we inject into the main generation prompt.
+    const brandAnalysis = await analyzeBrand(key, {
+      vehicleB64,
+      logoB64,
+      websiteContext,
+      vehicle,
+      bizName,
+      bizType,
+      colorsText: colorsDisplay,
+    })
+    console.log('[claude-proxy] Brand analysis:', JSON.stringify(brandAnalysis, null, 2))
 
     // Build the user message: vehicle image (required), logo image (optional), text brief.
     const userContent: Array<
@@ -169,9 +340,22 @@ export async function POST(req: NextRequest) {
       '',
       logoB64 ? 'LOGO CONTEXT' : null,
       logoB64
-        ? '- The customer has uploaded their logo. Study it carefully — extract the dominant colors, any icons or symbols, font style, and overall brand personality. Every concept MUST incorporate these logo elements. Reference specific logo colors by hex code in your fal_prompt.'
+        ? "- The customer uploaded their logo as a BASE64 image. You can see it in the conversation. Study it carefully and extract:\n  • The exact dominant colors with hex codes\n  • The icon/symbol style (circular Q mark with swoosh lines for QMI, etc)\n  • Font style and weight\n  • Overall brand personality\nThen in EVERY concept's fal_prompt, describe the logo elements in detail so FLUX Kontext can recreate them accurately on the vehicle. Do NOT say 'place the logo' — instead describe exactly what the logo looks like visually so the AI can render it."
         : null,
       logoB64 ? '' : null,
+      brandAnalysis ? 'BRAND ANALYSIS (auto-generated from logo + vehicle + website)' : null,
+      brandAnalysis && brandAnalysis.logoColors?.length
+        ? `- Logo colors: ${brandAnalysis.logoColors.join(', ')}` : null,
+      brandAnalysis?.logoDescription ? `- Logo overall: ${brandAnalysis.logoDescription}` : null,
+      brandAnalysis?.logoIconDescription ? `- Logo icon/mark: ${brandAnalysis.logoIconDescription}` : null,
+      brandAnalysis?.fontStyle ? `- Logo font style: ${brandAnalysis.fontStyle}` : null,
+      brandAnalysis?.brandPersonality ? `- Brand personality: ${brandAnalysis.brandPersonality}` : null,
+      brandAnalysis && brandAnalysis.websitePrimaryServices?.length
+        ? `- Primary services (from site): ${brandAnalysis.websitePrimaryServices.join(', ')}` : null,
+      brandAnalysis?.websiteColorTheme ? `- Website color theme: ${brandAnalysis.websiteColorTheme}` : null,
+      brandAnalysis?.vehicleBaseColor ? `- Vehicle base color: ${brandAnalysis.vehicleBaseColor}` : null,
+      brandAnalysis?.vehicleType ? `- Vehicle type: ${brandAnalysis.vehicleType}` : null,
+      brandAnalysis ? '' : null,
       hasDesignPrefs ? 'DESIGN PREFERENCES' : null,
       imageryItems.length ? `- Imagery style: ${imageryItems.join('; ')}` : null,
       artItems.length ? `- Art style: ${artItems.join('; ')}` : null,
@@ -228,7 +412,9 @@ export async function POST(req: NextRequest) {
       '}',
     ].filter((s): s is string => s != null)
 
-    userContent.push({ type: 'text', text: promptLines.join('\n') })
+    const finalUserPrompt = promptLines.join('\n')
+    userContent.push({ type: 'text', text: finalUserPrompt })
+    console.log('[claude-proxy] Final user prompt to Claude:\n' + finalUserPrompt)
 
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
