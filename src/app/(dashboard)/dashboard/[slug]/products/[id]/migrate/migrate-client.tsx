@@ -480,10 +480,6 @@ export default function MigrateClient({
 
     showToast(`Imported ${newModifierRows.length} modifiers, ${newDropdownMenus.length} dropdowns, ${defaultItemCount} default items — review and save`)
   }
-  // FIX 6: Copy All for Materials section
-  function copyAllShopvoxMaterials() { const list = (shopvoxData?.default_items ?? []).filter((it) => it.kind === 'Material'); for (const it of list) addShopvoxDefaultItem(it); showToast(`Added ${list.length} materials`) }
-  // FIX 6: Copy All for Rates sections
-  function copyAllShopvoxRates() { const list = (shopvoxData?.default_items ?? []).filter((it) => it.kind !== 'Material'); for (const it of list) addShopvoxDefaultItem(it); showToast(`Added ${list.length} rates`) }
 
   // ---- Row actions ----
   function addBlankMaterial() { setMaterialRows((rows: MaterialRow[]) => [...rows, { id: uid(), category_id: null, wastage_percent: 0, item_markup: 1 }]) }
@@ -654,10 +650,6 @@ export default function MigrateClient({
       : { label: 'ShopVOX Reference', cls: 'bg-gray-100 text-gray-700 border-gray-200' }
 
   const hasShopvox = !!shopvoxData
-  // FIX 6: derived left panel data
-  const svMaterials = (shopvoxData?.default_items ?? []).filter((it) => it.kind === 'Material')
-  const svRates = (shopvoxData?.default_items ?? []).filter((it) => it.kind !== 'Material')
-
   return (
     // FIX 2: flex col container, full viewport height minus header
     <div className="flex flex-col bg-gray-50 overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
@@ -782,33 +774,17 @@ export default function MigrateClient({
                 })}
               </LeftSection>
 
-              {/* 5. Materials (from default_items where kind=Material) */}
-              <LeftSection title={`Materials (${svMaterials.length})`} onCopyAll={copyAllShopvoxMaterials} canCopy={svMaterials.length > 0}>
-                {svMaterials.length === 0 && <div className="text-xs text-gray-400 italic px-2 py-1">No material items in default items.</div>}
-                {svMaterials.map((it, i) => {
-                  const rKey = `mat:${i}`
-                  return (
-                    <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewedRows.has(rKey)} onToggle={() => toggleReviewed(rKey)} onCopy={() => addShopvoxDefaultItem(it)}>
-                      <div className="flex items-start gap-1.5">
-                        <TypeBadge kind="Material" />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed block">{it.name}</span>
-                          <div className="flex gap-2 flex-wrap text-xs text-gray-500">
-                            <span className="break-words">Formula: {it.formula}</span>
-                            <span>× {it.multiplier}</span>
-                            {it.per_li && <span className="text-amber-600">Per LI</span>}
-                          </div>
-                        </div>
-                      </div>
-                    </LeftCheckRow>
-                  )
-                })}
-              </LeftSection>
-
-              {/* 6. Labor & Machine Rates (default_items) */}
-              <LeftSection title={`Labor & Machine Rates (${svRates.length})`} onCopyAll={copyAllShopvoxRates} canCopy={svRates.length > 0}>
-                {svRates.length === 0 && <div className="text-xs text-gray-400 italic px-2 py-1">No labor/machine items in default items.</div>}
-                {svRates.map((it, i) => {
+              {/* 5. Default Items — all items from shopvox_data.default_items
+                    regardless of kind (Material / LaborRate / MachineRate) */}
+              <LeftSection
+                title={`Default Items (${(shopvoxData!.default_items ?? []).length})`}
+                onCopyAll={copyAllShopvoxDefaultItems}
+                canCopy={(shopvoxData!.default_items ?? []).length > 0}
+              >
+                {(shopvoxData!.default_items ?? []).length === 0 && (
+                  <div className="text-xs text-gray-400 italic px-2 py-1">No default items.</div>
+                )}
+                {(shopvoxData!.default_items ?? []).map((it, i) => {
                   const rKey = `di:${i}`
                   const reviewed = reviewedRows.has(rKey)
                   return (
@@ -831,8 +807,6 @@ export default function MigrateClient({
                   )
                 })}
               </LeftSection>
-
-
             </>
           )}
         </div>
