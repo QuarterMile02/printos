@@ -217,8 +217,10 @@ function ConceptCard({ card }: { card: ConceptCardState }) {
           <img src={imageUrl} alt={concept.concept_name} className="h-full w-full object-cover" />
         )}
         {!loading && !imageUrl && error && (
-          <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-xs text-qm-fuchsia">
-            {error}
+          <div className="absolute inset-0 overflow-auto p-3">
+            <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-snug text-qm-fuchsia">
+              {error}
+            </pre>
           </div>
         )}
       </div>
@@ -353,9 +355,28 @@ export default function WrapConceptsPage() {
                 },
               }),
             })
-            const data = await res.json() as { images?: Array<{ url: string }>; error?: string }
+            const data = await res.json() as {
+              images?: Array<{ url: string }>
+              error?: string
+              status?: number
+              elapsed_ms?: number
+              fal_response?: unknown
+              raw?: string
+            }
             const url = data.images?.[0]?.url ?? null
-            setCards((prev) => prev.map((p, j) => j === i ? { ...p, loading: false, imageUrl: url, error: url ? null : (data.error ?? 'No image returned') } : p))
+            let errMsg: string | null = null
+            if (!url) {
+              const parts: string[] = []
+              parts.push(data.error ?? `fal-proxy HTTP ${res.status}`)
+              if (data.status && data.status !== res.status) parts.push(`(fal.ai status ${data.status})`)
+              const detail = data.fal_response ?? data.raw ?? null
+              if (detail != null) {
+                const asStr = typeof detail === 'string' ? detail : JSON.stringify(detail, null, 2)
+                parts.push(asStr)
+              }
+              errMsg = parts.join('\n')
+            }
+            setCards((prev) => prev.map((p, j) => j === i ? { ...p, loading: false, imageUrl: url, error: errMsg } : p))
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e)
             setCards((prev) => prev.map((p, j) => j === i ? { ...p, loading: false, error: msg } : p))
