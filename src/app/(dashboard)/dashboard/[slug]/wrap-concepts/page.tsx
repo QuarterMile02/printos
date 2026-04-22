@@ -86,11 +86,12 @@ function stripDataPrefix(dataUrl: string): string {
 
 // ── Sub-components ───────────────────────────────────────────────────
 
-function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
-  const steps: { n: 1 | 2 | 3; label: string }[] = [
+function StepIndicator({ step }: { step: 1 | 2 | 3 | 4 }) {
+  const steps: { n: 1 | 2 | 3 | 4; label: string }[] = [
     { n: 1, label: 'Vehicle & Assets' },
-    { n: 2, label: 'Business Info' },
-    { n: 3, label: 'Generate' },
+    { n: 2, label: 'Design Direction' },
+    { n: 3, label: 'Business Info' },
+    { n: 4, label: 'Generate' },
   ]
   return (
     <div className="flex items-center gap-3">
@@ -204,6 +205,55 @@ function DropZone({ label, accept = 'image/*', multiple = true, compress = false
   )
 }
 
+type CheckboxGroupProps = {
+  label: string
+  options: string[]
+  selected: Set<string>
+  onToggle: (option: string) => void
+  otherText: string
+  onOtherChange: (text: string) => void
+}
+
+function CheckboxGroup({ label, options, selected, onToggle, otherText, onOtherChange }: CheckboxGroupProps) {
+  const otherChecked = selected.has('Other')
+  return (
+    <div>
+      <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-gray-500">{label}</label>
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {options.map((opt) => (
+          <label key={opt} className="flex items-center gap-2 text-sm text-qm-black">
+            <input
+              type="checkbox"
+              checked={selected.has(opt)}
+              onChange={() => onToggle(opt)}
+              className="h-4 w-4 rounded border-gray-300 accent-qm-lime"
+            />
+            <span>{opt}</span>
+          </label>
+        ))}
+        <label className="flex items-center gap-2 text-sm text-qm-black sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={otherChecked}
+            onChange={() => onToggle('Other')}
+            className="h-4 w-4 rounded border-gray-300 accent-qm-lime"
+          />
+          <span className="shrink-0">Other:</span>
+          {otherChecked && (
+            <input
+              type="text"
+              value={otherText}
+              onChange={(e) => onOtherChange(e.target.value)}
+              placeholder="your own option"
+              className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            />
+          )}
+        </label>
+      </div>
+    </div>
+  )
+}
+
 function ConceptCard({ card }: { card: ConceptCardState }) {
   const { concept, imageUrl, loading, error } = card
   return (
@@ -277,8 +327,38 @@ function ConceptCard({ card }: { card: ConceptCardState }) {
 
 // ── Main page ────────────────────────────────────────────────────────
 
+const IMAGERY_OPTIONS = [
+  'Vehicle only — clean, no added imagery',
+  'Industry tools or equipment',
+  'People at work',
+  'Nature or outdoor scenes',
+  'Urban or city environment',
+  'Abstract shapes',
+]
+const ART_OPTIONS = [
+  'Photorealistic',
+  'Bold geometric / graphic',
+  'Illustrated / cartoon',
+  'Vector art',
+  'Gradient / color fade',
+  'Minimalist / clean',
+]
+const FOCUS_OPTIONS = [
+  'Logo must be prominent',
+  'Phone number large and readable',
+  'Website URL visible',
+  'Tagline or slogan',
+  'Equal balance of all elements',
+]
+
+function toggleInSet(set: Set<string>, item: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(item)) next.delete(item); else next.add(item)
+  return next
+}
+
 export default function WrapConceptsPage() {
-  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
 
   // Step 1
   const [vehicle, setVehicle] = useState('')
@@ -286,7 +366,17 @@ export default function WrapConceptsPage() {
   const [logoFiles, setLogoFiles] = useState<UploadedFile[]>([])
   const [extraFiles, setExtraFiles] = useState<UploadedFile[]>([])
 
-  // Step 2
+  // Step 2 — Design Direction
+  const [imagerySel, setImagerySel] = useState<Set<string>>(new Set())
+  const [imageryOther, setImageryOther] = useState('')
+  const [artSel, setArtSel] = useState<Set<string>>(new Set())
+  const [artOther, setArtOther] = useState('')
+  const [focusSel, setFocusSel] = useState<Set<string>>(new Set())
+  const [focusOther, setFocusOther] = useState('')
+  const [inspiration, setInspiration] = useState('')
+  const [avoid, setAvoid] = useState('')
+
+  // Step 3 — Business Info
   const [bizName, setBizName] = useState('')
   const [bizType, setBizType] = useState('')
   const [phone, setPhone] = useState('')
@@ -294,7 +384,7 @@ export default function WrapConceptsPage() {
   const [brandColors, setBrandColors] = useState('')
   const [styleNotes, setStyleNotes] = useState('')
 
-  // Step 3
+  // Step 4 — Generate
   const [cards, setCards] = useState<ConceptCardState[]>([])
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefError, setBriefError] = useState<string | null>(null)
@@ -307,7 +397,8 @@ export default function WrapConceptsPage() {
   const delExtra = useCallback((id: string) => setExtraFiles((p) => p.filter((x) => x.id !== id)), [])
 
   const canAdvanceStep1 = vehicle.trim().length > 0 && vehicleFiles.length > 0
-  const canAdvanceStep2 = bizName.trim().length > 0
+  const canAdvanceStep2 = true // Design Direction is optional
+  const canAdvanceStep3 = bizName.trim().length > 0
 
   async function generateConcepts() {
     setBriefLoading(true)
@@ -331,6 +422,14 @@ export default function WrapConceptsPage() {
           phone,
           website,
           conceptBriefs: CONCEPT_BRIEFS,
+          imageryStyle: Array.from(imagerySel),
+          imageryOther,
+          artStyle: Array.from(artSel),
+          artOther,
+          keyFocus: Array.from(focusSel),
+          keyOther: focusOther,
+          inspiration,
+          avoid,
         }),
       })
       const briefData = (await briefRes.json()) as { concepts?: WrapConcept[]; error?: string }
@@ -401,8 +500,9 @@ export default function WrapConceptsPage() {
 
   async function handleNext() {
     if (step === 1) setStep(2)
-    else if (step === 2) {
-      setStep(3)
+    else if (step === 2) setStep(3)
+    else if (step === 3) {
+      setStep(4)
       await generateConcepts()
     }
   }
@@ -410,6 +510,7 @@ export default function WrapConceptsPage() {
   function handleBack() {
     if (step === 2) setStep(1)
     else if (step === 3) setStep(2)
+    else if (step === 4) setStep(3)
   }
 
   const inputCls = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
@@ -470,8 +571,58 @@ export default function WrapConceptsPage() {
         </div>
       )}
 
-      {/* ── Step 2 ───────────────────────────────────────────── */}
+      {/* ── Step 2 — Design Direction ────────────────────────── */}
       {step === 2 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-6">
+          <CheckboxGroup
+            label="Imagery style (select all that apply)"
+            options={IMAGERY_OPTIONS}
+            selected={imagerySel}
+            onToggle={(o) => setImagerySel((s) => toggleInSet(s, o))}
+            otherText={imageryOther}
+            onOtherChange={setImageryOther}
+          />
+          <CheckboxGroup
+            label="Art style (select all that apply)"
+            options={ART_OPTIONS}
+            selected={artSel}
+            onToggle={(o) => setArtSel((s) => toggleInSet(s, o))}
+            otherText={artOther}
+            onOtherChange={setArtOther}
+          />
+          <CheckboxGroup
+            label="Key focus (select all that apply)"
+            options={FOCUS_OPTIONS}
+            selected={focusSel}
+            onToggle={(o) => setFocusSel((s) => toggleInSet(s, o))}
+            otherText={focusOther}
+            onOtherChange={setFocusOther}
+          />
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">Inspiration</label>
+            <textarea
+              className={`mt-1 ${inputCls}`}
+              rows={3}
+              value={inspiration}
+              onChange={(e) => setInspiration(e.target.value)}
+              placeholder="Describe any wraps or designs you like, or what you want people to feel when they see this vehicle."
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-500">What to avoid</label>
+            <textarea
+              className={`mt-1 ${inputCls}`}
+              rows={3}
+              value={avoid}
+              onChange={(e) => setAvoid(e.target.value)}
+              placeholder="Any colors, styles, or elements you do NOT want."
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 3 — Business Info ───────────────────────────── */}
+      {step === 3 && (
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
@@ -518,8 +669,8 @@ export default function WrapConceptsPage() {
         </div>
       )}
 
-      {/* ── Step 3 ───────────────────────────────────────────── */}
-      {step === 3 && (
+      {/* ── Step 4 — Generate ────────────────────────────────── */}
+      {step === 4 && (
         <div className="space-y-6">
           {briefLoading && cards.length === 0 && (
             <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white p-12">
@@ -569,14 +720,18 @@ export default function WrapConceptsPage() {
         >
           Back
         </button>
-        {step < 3 ? (
+        {step < 4 ? (
           <button
             type="button"
             onClick={handleNext}
-            disabled={(step === 1 && !canAdvanceStep1) || (step === 2 && !canAdvanceStep2)}
+            disabled={
+              (step === 1 && !canAdvanceStep1) ||
+              (step === 2 && !canAdvanceStep2) ||
+              (step === 3 && !canAdvanceStep3)
+            }
             className="rounded-md bg-qm-lime px-6 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {step === 2 ? 'Generate concepts' : 'Next'}
+            {step === 3 ? 'Generate concepts' : 'Next'}
           </button>
         ) : (
           <button
