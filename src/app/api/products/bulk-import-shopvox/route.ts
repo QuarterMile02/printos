@@ -140,9 +140,12 @@ export async function POST(request: NextRequest) {
           })
         }
 
-        // 2. product_default_items — Material rows only (labor/machine go to
-        //    product_option_rates). material_id is null, category is stored
-        //    in overrides_material_category_id (matches the per-product UI).
+        // 2. product_default_items — ALL items (Material + LaborRate +
+        //    MachineRate) regardless of catalog match. FK columns are set
+        //    when a name match exists, custom_item_name preserves the
+        //    source ShopVOX name on every row.
+        //    Labor/machine ALSO write to product_option_rates so the
+        //    per-product migrate UI's labor/machine sections stay populated.
         const defaultItemRows: Array<Record<string, unknown>> = []
         const optionRateRows: Array<Record<string, unknown>> = []
         const seenLabor = new Set<string>()
@@ -155,18 +158,18 @@ export async function POST(request: NextRequest) {
               organization_id: orgId,
               product_id: p.id,
               item_type: 'Material',
-              material_id: null,
+              material_id: match?.id ?? null,
               labor_rate_id: null,
               machine_rate_id: null,
-              custom_item_name: null,
+              custom_item_name: it.name ?? null,
               menu_name: null,
-              system_formula: null,
-              charge_per_li_unit: false,
+              system_formula: it.formula ?? null,
+              charge_per_li_unit: !!it.per_li,
               include_in_base_price: true,
               is_optional: false,
-              multiplier: 1,
+              multiplier: it.multiplier ?? 1,
               workflow_step: false,
-              modifier_formula: null,
+              modifier_formula: it.modifier?.expression ?? null,
               wastage_percent: 0,
               item_markup: match?.multiplier ?? 1,
               overrides_material_category_id: match?.category_id ?? null,
@@ -174,38 +177,82 @@ export async function POST(request: NextRequest) {
             })
           } else if (it.kind === 'LaborRate') {
             const match = laborByName.get(key)
-            if (!match || seenLabor.has(match.id)) continue
-            seenLabor.add(match.id)
-            optionRateRows.push({
+            defaultItemRows.push({
+              organization_id: orgId,
               product_id: p.id,
-              rate_type: 'labor_rate',
-              rate_id: match.id,
-              category: match.category,
-              formula: it.formula ?? 'Area',
-              multiplier: it.multiplier ?? 1,
+              item_type: 'LaborRate',
+              material_id: null,
+              labor_rate_id: match?.id ?? null,
+              machine_rate_id: null,
+              custom_item_name: it.name ?? null,
+              menu_name: null,
+              system_formula: it.formula ?? null,
               charge_per_li_unit: !!it.per_li,
               include_in_base_price: false,
-              modifier_formula: it.modifier?.expression ?? null,
+              is_optional: false,
+              multiplier: it.multiplier ?? 1,
               workflow_step: true,
-              sort_order: optionRateRows.length,
+              modifier_formula: it.modifier?.expression ?? null,
+              wastage_percent: null,
+              item_markup: null,
+              overrides_material_category_id: null,
+              sort_order: defaultItemRows.length,
             })
+            if (match && !seenLabor.has(match.id)) {
+              seenLabor.add(match.id)
+              optionRateRows.push({
+                product_id: p.id,
+                rate_type: 'labor_rate',
+                rate_id: match.id,
+                category: match.category,
+                formula: it.formula ?? 'Area',
+                multiplier: it.multiplier ?? 1,
+                charge_per_li_unit: !!it.per_li,
+                include_in_base_price: false,
+                modifier_formula: it.modifier?.expression ?? null,
+                workflow_step: true,
+                sort_order: optionRateRows.length,
+              })
+            }
           } else if (it.kind === 'MachineRate') {
             const match = machineByName.get(key)
-            if (!match || seenMachine.has(match.id)) continue
-            seenMachine.add(match.id)
-            optionRateRows.push({
+            defaultItemRows.push({
+              organization_id: orgId,
               product_id: p.id,
-              rate_type: 'machine_rate',
-              rate_id: match.id,
-              category: match.category,
-              formula: it.formula ?? 'Area',
-              multiplier: it.multiplier ?? 1,
+              item_type: 'MachineRate',
+              material_id: null,
+              labor_rate_id: null,
+              machine_rate_id: match?.id ?? null,
+              custom_item_name: it.name ?? null,
+              menu_name: null,
+              system_formula: it.formula ?? null,
               charge_per_li_unit: !!it.per_li,
               include_in_base_price: false,
-              modifier_formula: it.modifier?.expression ?? null,
+              is_optional: false,
+              multiplier: it.multiplier ?? 1,
               workflow_step: true,
-              sort_order: optionRateRows.length,
+              modifier_formula: it.modifier?.expression ?? null,
+              wastage_percent: null,
+              item_markup: null,
+              overrides_material_category_id: null,
+              sort_order: defaultItemRows.length,
             })
+            if (match && !seenMachine.has(match.id)) {
+              seenMachine.add(match.id)
+              optionRateRows.push({
+                product_id: p.id,
+                rate_type: 'machine_rate',
+                rate_id: match.id,
+                category: match.category,
+                formula: it.formula ?? 'Area',
+                multiplier: it.multiplier ?? 1,
+                charge_per_li_unit: !!it.per_li,
+                include_in_base_price: false,
+                modifier_formula: it.modifier?.expression ?? null,
+                workflow_step: true,
+                sort_order: optionRateRows.length,
+              })
+            }
           }
         }
 
