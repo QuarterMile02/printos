@@ -6,9 +6,13 @@ export const dynamic = 'force-dynamic'
 
 type ShopvoxModifier = { name: string; type: string; default?: unknown }
 type ShopvoxDropdown = { name: string; kind?: string; category?: string | null; optional?: boolean | null }
+// The browser extractor writes `item_type`; the older Playwright
+// extractor wrote `kind`. Accept both; we normalize to one local var
+// at the top of the loop.
 type ShopvoxDefaultItem = {
   name: string
-  kind: 'Material' | 'LaborRate' | 'MachineRate'
+  kind?: 'Material' | 'LaborRate' | 'MachineRate'
+  item_type?: 'Material' | 'LaborRate' | 'MachineRate'
   formula?: string | null
   multiplier?: number | null
   per_li?: boolean | null
@@ -152,7 +156,10 @@ export async function POST(request: NextRequest) {
         const seenMachine = new Set<string>()
         for (const it of (sv.default_items ?? [])) {
           const key = lc(it.name)
-          if (it.kind === 'Material') {
+          // Normalize: browser extractor writes `item_type`, Playwright
+          // extractor wrote `kind`. Either one is the discriminator.
+          const kind = it.kind ?? it.item_type
+          if (kind === 'Material') {
             const match = materialByName.get(key)
             defaultItemRows.push({
               organization_id: orgId,
@@ -175,7 +182,7 @@ export async function POST(request: NextRequest) {
               overrides_material_category_id: match?.category_id ?? null,
               sort_order: defaultItemRows.length,
             })
-          } else if (it.kind === 'LaborRate') {
+          } else if (kind === 'LaborRate') {
             const match = laborByName.get(key)
             defaultItemRows.push({
               organization_id: orgId,
@@ -214,7 +221,7 @@ export async function POST(request: NextRequest) {
                 sort_order: optionRateRows.length,
               })
             }
-          } else if (it.kind === 'MachineRate') {
+          } else if (kind === 'MachineRate') {
             const match = machineByName.get(key)
             defaultItemRows.push({
               organization_id: orgId,
