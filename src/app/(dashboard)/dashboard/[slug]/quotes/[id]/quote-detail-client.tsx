@@ -128,6 +128,17 @@ export default function QuoteDetailClient({
   const [newModifiers, setNewModifiers] = useState<ModifierDef[]>([])
   const [newModifierValues, setNewModifierValues] = useState<Record<string, boolean | number>>({})
 
+  // Smart material engine preview — populated once a product + dims are entered.
+  type MaterialPreview = {
+    selected_material_name: string | null
+    roll_width_inches: number | null
+    assigned_printer: 'Epson' | 'Swiss Q' | null
+    material_used_sqft: number
+    no_material_found?: boolean
+    reason?: string | null
+  }
+  const [materialPreview, setMaterialPreview] = useState<MaterialPreview | null>(null)
+
   const [status, setStatus] = useState<QuoteStatus>(quote.status)
   const [items, setItems] = useState<LineItem[]>(lineItems)
   const [title, setTitle] = useState(quote.title)
@@ -199,6 +210,27 @@ export default function QuoteDetailClient({
     }, 300) // debounce 300ms
     return () => { cancelled = true; clearTimeout(timer) }
   }, [newProductId, newWidth, newHeight, newQty, newModifierValues])
+
+  // Smart material engine preview — same trigger as pricing recalc, separate endpoint.
+  useEffect(() => {
+    if (!newProductId) { setMaterialPreview(null); return }
+    const w = Number(newWidth) || 0
+    const h = Number(newHeight) || 0
+    const q = Number(newQty) || 1
+    if (w <= 0 || h <= 0) { setMaterialPreview(null); return }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      fetch('/api/material-selection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: newProductId, org_id: orgId, width_inches: w, height_inches: h, quantity: q }),
+      })
+        .then((res) => res.json())
+        .then((data: MaterialPreview) => { if (!cancelled) setMaterialPreview(data) })
+        .catch(() => {})
+    }, 300)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [newProductId, newWidth, newHeight, newQty, orgId])
 
   const subtotal = useMemo(() => items.reduce((s, i) => s + i.total_price, 0), [items])
   const taxableTotal = useMemo(
@@ -674,6 +706,31 @@ export default function QuoteDetailClient({
                 className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
               />
             </div>
+
+            {/* Smart material preview — non-binding, just informs the rep. */}
+            {materialPreview && !materialPreview.no_material_found && materialPreview.selected_material_name && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs">
+                {materialPreview.assigned_printer && (
+                  <span
+                    className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      materialPreview.assigned_printer === 'Swiss Q' ? 'bg-qm-fuchsia text-white' : 'bg-[#1A1A1A] text-white'
+                    }`}
+                  >
+                    {materialPreview.assigned_printer}
+                  </span>
+                )}
+                <span className="font-semibold text-gray-700">{materialPreview.selected_material_name}</span>
+                {materialPreview.roll_width_inches != null && (
+                  <span className="text-gray-500">{materialPreview.roll_width_inches}″ roll</span>
+                )}
+                <span className="ml-auto tabular-nums text-gray-500">{materialPreview.material_used_sqft.toFixed(2)} sq ft</span>
+              </div>
+            )}
+            {materialPreview?.no_material_found && (
+              <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                No roll material match — {materialPreview.reason ?? 'check the product recipe.'}
+              </p>
+            )}
 
             {/* Modifiers / Options */}
             {newModifiers.length > 0 && (

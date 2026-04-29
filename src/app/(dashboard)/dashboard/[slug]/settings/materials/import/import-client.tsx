@@ -8,7 +8,12 @@ import {
   resolveHeaders, buildRow, buildHeaderMappingPreview,
   type MaterialImportRow,
 } from '@/lib/material-import-mapper'
-import { importMaterialsBatch, revalidateMaterialsList, type ImportBatchResult } from './actions'
+import {
+  importMaterialsBatch, revalidateMaterialsList,
+  detectMaterialConflicts, applyMaterialImport,
+  type ImportBatchResult, type MaterialConflict, type ImportDecision,
+} from './actions'
+import ImportConflictModal, { type ConflictRow } from '@/components/import-conflict-modal'
 
 const BATCH_SIZE = 50
 
@@ -34,6 +39,16 @@ export default function ImportClient({ orgId, orgSlug }: { orgId: string; orgSlu
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [summary, setSummary] = useState<ImportBatchResult | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  // Conflict-modal state. Set when detectMaterialConflicts returns
+  // matches; cleared after the user resolves or cancels. cleanRows /
+  // conflictRowMap / fieldDefs are stashed here so applyMaterialImport
+  // can be called with the same payload after resolution.
+  const [conflictModal, setConflictModal] = useState<{
+    conflicts: ConflictRow[]
+    cleanRows: MaterialImportRow[]
+    conflictRowMap: Record<string, MaterialImportRow>
+  } | null>(null)
 
   const previewRows = useMemo(() => parsed?.rows.slice(0, 10) ?? [], [parsed])
   const mappingPreview = useMemo(
@@ -91,16 +106,62 @@ export default function ImportClient({ orgId, orgSlug }: { orgId: string; orgSlu
   }
 
   // ── Import ───────────────────────────────────────────────────────────────
+  // Two-step flow:
+  //   1. Detect conflicts up front. If any names already exist, open
+  //      the modal and let the user pick Skip / Replace / Keep Both.
+  //   2. After resolution (or immediately, if no conflicts), apply.
   function startImport() {
     if (!parsed) return
     setPhase('importing')
     setProgress({ done: 0, total: parsed.rows.length })
-    const aggregate: ImportBatchResult = { imported: 0, skipped: 0, errors: [] }
 
     startTransition(async () => {
-      for (let start = 0; start < parsed.rows.length; start += BATCH_SIZE) {
-        const batch = parsed.rows.slice(start, start + BATCH_SIZE)
-        const csvRowOfFirst = start + 2 // +1 to skip header, +1 for 1-indexing
+      const detect = await detectMaterialConflicts(orgId, parsed.rows)
+      if (detect.error) {
+        setSummary({ imported: 0, replaced: 0, skipped: 0, errors: [{ row: 0, name: '(detect)', message: detect.error }] })
+        setPhase('done')
+        return
+      }
+
+      const conflicts = detect.conflicts ?? []
+      const cleanRows = detect.cleanRows ?? []
+      const conflictRowMap = detect.conflictRowMap ?? {}
+      const diffFields = detect.diffFields ?? []
+
+      // No conflicts → straight to apply with empty decisions.
+      if (conflicts.length === 0) {
+        await runApply(cleanRows, conflictRowMap, {})
+        return
+      }
+
+      // Open modal. runApply is invoked from onResolve after user decides.
+      const modalRows: ConflictRow[] = conflicts.map((c: MaterialConflict) => ({
+        conflict_key: c.conflict_key,
+        display_name: c.display_name,
+        fields: diffFields.map((f) => ({
+          label: f.label,
+          existing: c.existing[f.key] ?? null,
+          incoming: c.incoming[f.key] ?? null,
+        })),
+      }))
+      setConflictModal({ conflicts: modalRows, cleanRows, conflictRowMap })
+    })
+  }
+
+  async function runApply(
+    cleanRows: MaterialImportRow[],
+    conflictRowMap: Record<string, MaterialImportRow>,
+    decisions: Record<string, ImportDecision>,
+  ) {
+    const aggregate: ImportBatchResult = { imported: 0, replaced: 0, skipped: 0, errors: [] }
+    setProgress({ done: 0, total: cleanRows.length + Object.keys(decisions).length })
+
+    // Path A: only clean rows + zero conflict decisions → keep batched
+    // path (handles big CSVs well).
+    if (Object.keys(decisions).length === 0) {
+      for (let start = 0; start < cleanRows.length; start += BATCH_SIZE) {
+        const batch = cleanRows.slice(start, start + BATCH_SIZE)
+        const csvRowOfFirst = start + 2
         const res = await importMaterialsBatch(orgId, orgSlug, batch, csvRowOfFirst)
         if (res.error) {
           aggregate.errors.push({ row: csvRowOfFirst, name: '(batch)', message: res.error })
@@ -109,12 +170,40 @@ export default function ImportClient({ orgId, orgSlug }: { orgId: string; orgSlu
           aggregate.skipped += res.result.skipped
           aggregate.errors.push(...res.result.errors)
         }
-        setProgress({ done: Math.min(start + batch.length, parsed.rows.length), total: parsed.rows.length })
+        setProgress({ done: Math.min(start + batch.length, cleanRows.length), total: cleanRows.length })
       }
-      await revalidateMaterialsList(orgSlug)
-      setSummary(aggregate)
-      setPhase('done')
+    } else {
+      // Path B: applyMaterialImport handles inserts + updates + renames
+      // in one round-trip. Used whenever conflicts were resolved.
+      const res = await applyMaterialImport(orgId, orgSlug, cleanRows, conflictRowMap, decisions)
+      if (res.error) {
+        aggregate.errors.push({ row: 0, name: '(apply)', message: res.error })
+      } else if (res.result) {
+        aggregate.imported += res.result.imported
+        aggregate.replaced += res.result.replaced
+        aggregate.skipped += res.result.skipped
+        aggregate.errors.push(...res.result.errors)
+      }
+      setProgress({ done: aggregate.imported + aggregate.replaced + aggregate.skipped, total: cleanRows.length + Object.keys(decisions).length })
+    }
+
+    await revalidateMaterialsList(orgSlug)
+    setSummary(aggregate)
+    setPhase('done')
+  }
+
+  function onResolveConflicts(decisions: Record<string, ImportDecision>) {
+    if (!conflictModal) return
+    const { cleanRows, conflictRowMap } = conflictModal
+    setConflictModal(null)
+    startTransition(async () => {
+      await runApply(cleanRows, conflictRowMap, decisions)
     })
+  }
+
+  function onCancelConflicts() {
+    setConflictModal(null)
+    setPhase('preview')
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -300,14 +389,18 @@ export default function ImportClient({ orgId, orgSlug }: { orgId: string; orgSlu
       {/* Phase: done — summary */}
       {phase === 'done' && summary && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-center">
-              <p className="text-xs font-bold uppercase tracking-wider text-green-700">Imported</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-green-700">Added</p>
               <p className="mt-1 text-3xl font-extrabold text-green-800">{summary.imported.toLocaleString()}</p>
             </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-center">
-              <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Skipped (duplicates)</p>
-              <p className="mt-1 text-3xl font-extrabold text-amber-800">{summary.skipped.toLocaleString()}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Replaced</p>
+              <p className="mt-1 text-3xl font-extrabold text-amber-800">{summary.replaced.toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-center">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-600">Skipped</p>
+              <p className="mt-1 text-3xl font-extrabold text-gray-700">{summary.skipped.toLocaleString()}</p>
             </div>
             <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-center">
               <p className="text-xs font-bold uppercase tracking-wider text-red-700">Errors</p>
@@ -357,6 +450,14 @@ export default function ImportClient({ orgId, orgSlug }: { orgId: string; orgSlu
           </div>
         </div>
       )}
+
+      <ImportConflictModal
+        open={conflictModal !== null}
+        conflicts={conflictModal?.conflicts ?? []}
+        entityLabel="material"
+        onCancel={onCancelConflicts}
+        onResolve={onResolveConflicts}
+      />
     </>
   )
 }

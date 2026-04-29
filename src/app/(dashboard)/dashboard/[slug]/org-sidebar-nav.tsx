@@ -50,6 +50,22 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  // Reports — gated to owner/sales/accounting via the showReports prop
+  // below. Uses an inline SVG (matches lucide-react's BarChart2 design)
+  // to stay consistent with the rest of the sidebar; the codebase
+  // doesn't ship lucide-react and adding a dep for one icon isn't worth it.
+  {
+    label: 'Reports',
+    href: '/reports',
+    requires: 'reports' as const,
+    icon: (
+      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <line x1="18" y1="20" x2="18" y2="10" strokeLinecap="round" />
+        <line x1="12" y1="20" x2="12" y2="4"  strokeLinecap="round" />
+        <line x1="6"  y1="20" x2="6"  y2="14" strokeLinecap="round" />
+      </svg>
+    ),
+  },
   {
     label: 'Customers',
     href: '/customers',
@@ -159,12 +175,17 @@ type Props = {
   slug: string
   email: string
   signOutAction: () => Promise<void>
+  showReports?: boolean
 }
 
-export function OrgSidebarNav({ slug, email, signOutAction }: Props) {
+export function OrgSidebarNav({ slug, email, signOutAction, showReports = false }: Props) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const basePath = `/dashboard/${slug}`
+  const visibleNav = NAV_ITEMS.filter((item) => {
+    if ('requires' in item && item.requires === 'reports') return showReports
+    return true
+  })
 
   // Close on navigation
   useEffect(() => {
@@ -220,7 +241,7 @@ export function OrgSidebarNav({ slug, email, signOutAction }: Props) {
 
         {/* Nav links */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          {NAV_ITEMS.map((item) => {
+          {visibleNav.map((item) => {
             const href = basePath + item.href
             const isActive =
               item.href === ''

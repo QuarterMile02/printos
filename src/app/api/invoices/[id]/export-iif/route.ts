@@ -106,7 +106,8 @@ export async function GET(
       }
     }
 
-    // 3. Per-line income account from products.income_account (fallback "Sales:Signs")
+    // 3. Per-line income account from products.income_account (fallback to
+    // qb_settings.default_income_account, which is "Sales" for QMI's COA).
     const productIds = Array.from(new Set(lineItems.map((l) => l.product_id).filter(Boolean))) as string[]
     const incomeAccountById = new Map<string, string>()
     if (productIds.length > 0) {
@@ -120,7 +121,28 @@ export async function GET(
         }
       }
     }
-    const DEFAULT_INCOME_ACCOUNT = 'Sales:Signs'
+
+    // 3b. Load org-level QB account names. qb_settings may not be applied
+    // yet; fall back to QMI's hardcoded chart-of-accounts strings so the
+    // export still produces a valid IIF that matches QB Desktop exactly.
+    type QbSettingsRow = {
+      ar_account: string | null
+      default_income_account: string | null
+      tax_payable_account: string | null
+    }
+    let qbSettings: QbSettingsRow | null = null
+    try {
+      const { data } = await service
+        .from('qb_settings')
+        .select('ar_account, default_income_account, tax_payable_account')
+        .eq('organization_id', inv.organization_id)
+        .maybeSingle() as { data: QbSettingsRow | null; error: unknown }
+      qbSettings = data
+    } catch { /* qb_settings table not applied — use defaults */ }
+
+    const AR_ACCOUNT = qbSettings?.ar_account?.trim() || 'Accounts Receivable'
+    const DEFAULT_INCOME_ACCOUNT = qbSettings?.default_income_account?.trim() || 'Sales'
+    const TAX_PAYABLE_ACCOUNT = qbSettings?.tax_payable_account?.trim() || 'Sales tax'
 
     // 4. Build IIF content
     const cust = customerName(inv.customers)
@@ -144,7 +166,7 @@ export async function GET(
         '',                           // TRNSID — let QB assign
         TRNSTYPE,
         dateStr,
-        'Accounts Receivable',
+        AR_ACCOUNT,
         iif(cust),
         totalDollars,
         iif(invNumStr),
@@ -177,7 +199,10 @@ export async function GET(
       )
     }
 
-    // Tax split (if any) — negative, into a Sales-Tax Payable account
+    // Tax split (if any) — negative, into the QB sales-tax payable account.
+    // QMI's COA uses "Sales tax" (account 2010). Freight is intentionally
+    // omitted: the spec says no QB account is mapped for freight, so we
+    // don't emit an SPL line for it even when the invoice has a freight charge.
     if (inv.tax_total > 0) {
       lines.push(
         [
@@ -185,7 +210,7 @@ export async function GET(
           '',
           TRNSTYPE,
           dateStr,
-          'Sales Tax Payable',
+          TAX_PAYABLE_ACCOUNT,
           iif(cust),
           (-(inv.tax_total / 100)).toFixed(2),
           'Sales Tax',

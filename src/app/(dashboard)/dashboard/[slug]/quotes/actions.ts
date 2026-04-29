@@ -7,6 +7,12 @@ import { TAX_RATE } from './format'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
+import {
+  selectMaterial,
+  isBannerProduct,
+  getProductMaterialCategories,
+  type MaterialSelectionResult,
+} from '@/lib/material-selection/smart-material-engine'
 
 type ServiceClient = ReturnType<typeof createServiceClient>
 
@@ -44,6 +50,74 @@ async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promi
     .from('quotes')
     .update({ subtotal, tax_total: tax, total })
     .eq('id', quoteId)
+}
+
+// Runs the smart material engine for every line item on a quote that has
+// a roll-material product, then writes the per-line-item results onto
+// the job's material_selection jsonb column and denormalizes the first
+// non-null assigned_printer onto jobs.assigned_printer for fast filtering.
+//
+// Failures are swallowed and logged — material selection is best-effort
+// and shouldn't block job creation. The job page degrades gracefully
+// when material_selection is null.
+async function runMaterialSelectionForJob(
+  service: ServiceClient,
+  jobId: string,
+  quoteId: string,
+  orgId: string,
+): Promise<void> {
+  try {
+    type Row = {
+      id: string
+      product_id: string | null
+      width: number | null
+      height: number | null
+      quantity: number | null
+      products: { name: string; product_categories: { name: string } | null } | null
+    }
+    const { data: rows } = await service
+      .from('quote_line_items')
+      .select(`
+        id, product_id, width, height, quantity,
+        products(name, product_categories(name))
+      `)
+      .eq('quote_id', quoteId)
+      .order('sort_order', { ascending: true }) as { data: Row[] | null; error: unknown }
+
+    const lineResults: ({ line_item_id: string } & MaterialSelectionResult)[] = []
+    let firstPrinter: 'Epson' | 'Swiss Q' | null = null
+
+    for (const r of rows ?? []) {
+      if (!r.product_id) continue
+      const w = Number(r.width ?? 0)
+      const h = Number(r.height ?? 0)
+      if (!(w > 0 && h > 0)) continue
+
+      const allowed = await getProductMaterialCategories(service, r.product_id)
+      const result = await selectMaterial(service, {
+        organization_id: orgId,
+        width_inches: w,
+        height_inches: h,
+        quantity: Math.max(1, Number(r.quantity ?? 1)),
+        is_banner: isBannerProduct(r.products?.name, r.products?.product_categories?.name),
+        allowed_material_category_ids: allowed,
+      })
+      lineResults.push({ line_item_id: r.id, ...result })
+      if (firstPrinter == null && result.assigned_printer) firstPrinter = result.assigned_printer
+    }
+
+    if (lineResults.length === 0) return
+
+    await service
+      .from('jobs')
+      .update({
+        material_selection: { line_items: lineResults, computed_at: new Date().toISOString() },
+        assigned_printer: firstPrinter,
+      })
+      .eq('id', jobId)
+  } catch (err) {
+    console.error('[runMaterialSelectionForJob] failed for job', jobId, err)
+  }
 }
 
 export type DeliveryMethod = 'email' | 'sms' | 'both'
@@ -235,12 +309,14 @@ export async function updateQuoteStatus(
             status: 'new' as const,
             source_quote_id: quoteId,
           })
-          .select('job_number')
-          .single() as { data: { job_number: number } | null; error: unknown }
+          .select('id, job_number')
+          .single() as { data: { id: string; job_number: number } | null; error: unknown }
 
         if (newJob) {
           jobCreated = newJob.job_number
+          await runMaterialSelectionForJob(service, newJob.id, quoteId, orgId)
           revalidatePath(`/dashboard/${orgSlug}/jobs`)
+          revalidatePath(`/dashboard/${orgSlug}/jobs/${newJob.id}`)
         }
       }
     }

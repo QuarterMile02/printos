@@ -55,7 +55,20 @@ export interface LaborRate {
   sop_url: string | null; video_url: string | null; used_in_products: Json
   department_id: string | null; cloned_from_machine_rate_id: string | null
   profit_margin_pct: number | null; active: boolean | null
+  category: string | null; subcategory: string | null
+  material_category_ids: string[] | null
+  operator_attendance_percent: number | null
+  prod_rate_units: string | null
+  pricing_table: PricingTableRow[] | null
   created_at: string; created_by: string | null; updated_at: string; updated_by: string | null
+}
+
+export interface PricingTableRow {
+  thickness_min: number
+  thickness_max: number
+  simple_rate: number
+  moderate_rate: number
+  complex_rate: number
 }
 
 export interface MachineRate {
@@ -76,6 +89,12 @@ export interface MachineRate {
   sop_url: string | null; video_url: string | null
   department_id: string | null; cloned_from_labor_rate_id: string | null
   profit_margin_pct: number | null; active: boolean | null
+  category: string | null; subcategory: string | null
+  material_category_ids: string[] | null
+  linked_labor_rate_id: string | null
+  production_mins_per_sqft: number | null
+  prod_rate_units: string | null
+  pricing_table: PricingTableRow[] | null
   created_at: string; created_by: string | null; updated_at: string; updated_by: string | null
 }
 
