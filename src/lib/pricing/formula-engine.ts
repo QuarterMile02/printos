@@ -20,6 +20,10 @@ export type LineBreakdown = {
   in_base: boolean
   inactive?: boolean
   inactive_reason?: string
+  // For modifier-direct rows or option-rate rows gated by a modifier_formula,
+  // the modifier this row is attributable to. Lets the client surface a
+  // per-modifier price hint without re-running the engine.
+  modifier_id?: string
 }
 
 export type PricingResult = {
@@ -112,7 +116,11 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
       rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
   }
 
-  // 4. Load product modifiers + modifier definitions
+  // 4. Load product modifiers + modifier definitions.
+  // modifierMap is keyed by BOTH modifier id and system_lookup_name so callers
+  // sending either kind of key resolve. The quote builder client currently
+  // sends system_lookup_name keys; saved line_items.modifier_values follow the
+  // same convention.
   const { data: pmRows } = await service
     .from('product_modifiers')
     .select('modifier_id')
@@ -120,11 +128,15 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   const modifierIds = ((pmRows ?? []) as { modifier_id: string | null }[])
     .map(r => r.modifier_id).filter(Boolean) as string[]
 
-  const modifierMap = new Map<string, { name: string; modifier_type: string }>()
+  type ModEntry = { id: string; name: string; system_lookup_name: string | null; modifier_type: string }
+  const modifierMap = new Map<string, ModEntry>()
   if (modifierIds.length > 0) {
-    const { data } = await service.from('modifiers').select('id, display_name, modifier_type').in('id', modifierIds)
-    for (const m of (data ?? []) as { id: string; display_name: string; modifier_type: string }[])
-      modifierMap.set(m.id, { name: m.display_name, modifier_type: m.modifier_type })
+    const { data } = await service.from('modifiers').select('id, system_lookup_name, display_name, modifier_type').in('id', modifierIds)
+    for (const m of (data ?? []) as { id: string; system_lookup_name: string | null; display_name: string; modifier_type: string }[]) {
+      const entry: ModEntry = { id: m.id, name: m.display_name, system_lookup_name: m.system_lookup_name, modifier_type: m.modifier_type }
+      modifierMap.set(m.id, entry)
+      if (m.system_lookup_name) modifierMap.set(m.system_lookup_name, entry)
+    }
   }
 
   // 5. Calculate each recipe item
@@ -261,9 +273,11 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
 
   const selectedMods = input.selected_modifiers ?? {}
   const modifierValueByName = new Map<string, boolean | number>()
-  for (const [modId, value] of Object.entries(selectedMods)) {
-    const mod = modifierMap.get(modId)
-    if (mod) modifierValueByName.set(mod.name, value)
+  for (const [key, value] of Object.entries(selectedMods)) {
+    const mod = modifierMap.get(key)
+    if (!mod) continue
+    modifierValueByName.set(mod.name, value)
+    if (mod.system_lookup_name) modifierValueByName.set(mod.system_lookup_name, value)
   }
 
   for (const r of optionRates) {
@@ -294,7 +308,10 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     // Boolean modifier: only charges when selected. Numeric modifier: multiplies by value.
     let inactive = false
     let inactiveReason: string | undefined
+    let gatedModifierId: string | undefined
     if (r.modifier_formula && modifierValueByName.size > 0) {
+      const gatedMod = modifierMap.get(r.modifier_formula)
+      if (gatedMod) gatedModifierId = gatedMod.id
       const direct = modifierValueByName.get(r.modifier_formula)
       if (direct !== undefined) {
         if (typeof direct === 'boolean') {
@@ -318,6 +335,7 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
       in_base: r.include_in_base_price ?? false,
       inactive,
       inactive_reason: inactiveReason,
+      modifier_id: gatedModifierId,
     })
     if (!inactive) {
       totalCostCents += costCents
@@ -326,8 +344,8 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   }
 
   // 7. Apply modifier charges
-  for (const [modId, value] of Object.entries(selectedMods)) {
-    const mod = modifierMap.get(modId)
+  for (const [key, value] of Object.entries(selectedMods)) {
+    const mod = modifierMap.get(key)
     if (!mod) continue
 
     if (mod.modifier_type === 'Boolean' && value === true) {
@@ -340,6 +358,7 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
         cost_cents: 0,
         price_cents: 0,
         in_base: false,
+        modifier_id: mod.id,
       })
     } else if (mod.modifier_type === 'Numeric' && typeof value === 'number') {
       const addCents = Math.round(value * 100)
@@ -350,6 +369,7 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
         cost_cents: addCents,
         price_cents: addCents,
         in_base: false,
+        modifier_id: mod.id,
       })
       totalCostCents += addCents
     }

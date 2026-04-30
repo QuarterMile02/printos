@@ -118,13 +118,29 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     total_price: number
     taxable: boolean | null
     sort_order: number | null
+    modifier_values: Record<string, boolean | number> | null
   }
 
-  const { data: lineItems } = await supabase
-    .from('quote_line_items')
-    .select('id, product_id, description, width, height, quantity, unit_price, discount_percent, total_price, taxable, sort_order')
-    .eq('quote_id', id)
-    .order('sort_order', { ascending: true }) as { data: LineItemRow[] | null; error: unknown }
+  // modifier_values is a jsonb column added in migration 030. Fall back to
+  // a fetch without it if the column doesn't exist yet on the live DB.
+  let lineItems: LineItemRow[] | null = null
+  {
+    const { data, error } = await supabase
+      .from('quote_line_items')
+      .select('id, product_id, description, width, height, quantity, unit_price, discount_percent, total_price, taxable, sort_order, modifier_values')
+      .eq('quote_id', id)
+      .order('sort_order', { ascending: true }) as { data: LineItemRow[] | null; error: { message?: string } | null }
+    if (data) {
+      lineItems = data
+    } else if (error?.message?.includes('modifier_values')) {
+      const { data: legacy } = await supabase
+        .from('quote_line_items')
+        .select('id, product_id, description, width, height, quantity, unit_price, discount_percent, total_price, taxable, sort_order')
+        .eq('quote_id', id)
+        .order('sort_order', { ascending: true }) as { data: Omit<LineItemRow, 'modifier_values'>[] | null; error: unknown }
+      lineItems = (legacy ?? []).map((li) => ({ ...li, modifier_values: null }))
+    }
+  }
 
   // Products for the line item picker (edit mode).
   type ProductOption = { id: string; name: string; formula: string | null }
@@ -212,6 +228,22 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     // email_templates table may not exist yet — skip
   }
 
+  // Fetch modifier definitions for the org so saved modifier_values on
+  // line items render with display names and types. Always fetched so
+  // freshly-added line items show chips without a page refresh.
+  type ModifierDefRow = {
+    id: string
+    system_lookup_name: string | null
+    display_name: string
+    modifier_type: string
+    units: string | null
+  }
+  const { data: modRows } = await supabase
+    .from('modifiers')
+    .select('id, system_lookup_name, display_name, modifier_type, units')
+    .eq('organization_id', org.id) as { data: ModifierDefRow[] | null; error: unknown }
+  const modifierDefs: ModifierDefRow[] = modRows ?? []
+
   // Check if user can see pricing columns
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
@@ -284,6 +316,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
           taxable: li.taxable !== false,
           sort_order: li.sort_order ?? 0,
           material_name: li.product_id ? materialMap.get(li.product_id) ?? null : null,
+          modifier_values: li.modifier_values ?? undefined,
         }))}
         products={products ?? []}
         salesOrder={salesOrder}
@@ -291,6 +324,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         salesRepName={salesRepName}
         emailTemplates={emailTemplates}
         canSeePricing={canSeePricing}
+        modifierDefs={modifierDefs}
       />
     </div>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { QuoteStatus } from '@/types/database'
 import {
@@ -79,9 +79,18 @@ type LineItem = {
   taxable: boolean
   sort_order: number
   material_name: string | null
+  modifier_values?: Record<string, boolean | number>
 }
 
 type ProductOption = { id: string; name: string; formula: string | null; category?: string | null }
+
+type ModifierDefSummary = {
+  id: string
+  system_lookup_name: string | null
+  display_name: string
+  modifier_type: string
+  units: string | null
+}
 
 type Props = {
   orgId: string
@@ -94,6 +103,7 @@ type Props = {
   salesRepName: string | null
   emailTemplates: EmailTemplate[]
   canSeePricing: boolean
+  modifierDefs: ModifierDefSummary[]
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -107,7 +117,7 @@ function dollarsToCents(s: string): number {
 }
 
 export default function QuoteDetailClient({
-  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing,
+  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing, modifierDefs,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -130,6 +140,9 @@ export default function QuoteDetailClient({
   const [isPricingLoading, setIsPricingLoading] = useState(false)
   const [newModifiers, setNewModifiers] = useState<ModifierDef[]>([])
   const [newModifierValues, setNewModifierValues] = useState<Record<string, boolean | number>>({})
+  // modifier_id → cents contribution to the unit price, surfaced from the
+  // /api/pricing breakdown so the user sees a "+$X.XX" hint per modifier.
+  const [modifierPriceDeltas, setModifierPriceDeltas] = useState<Record<string, number>>({})
 
   // Smart material engine preview — populated once a product + dims are entered.
   type MaterialPreview = {
@@ -175,6 +188,45 @@ export default function QuoteDetailClient({
     const qty = Math.max(1, parseInt(newQty, 10) || 1)
     return qty * dollarsToCents(newUnitPrice)
   }, [newQty, newUnitPrice])
+
+  // Index modifier defs by both modifier_id and system_lookup_name so saved
+  // line_items.modifier_values (keyed by system_lookup_name) and pricing
+  // breakdown rows (keyed by modifier_id) both resolve to a display def.
+  const modifierDefMap = useMemo(() => {
+    const m = new Map<string, ModifierDefSummary>()
+    for (const d of modifierDefs) {
+      m.set(d.id, d)
+      if (d.system_lookup_name) m.set(d.system_lookup_name, d)
+    }
+    return m
+  }, [modifierDefs])
+
+  function renderItemModifierChips(item: LineItem): React.ReactNode {
+    const values = item.modifier_values
+    if (!values || Object.keys(values).length === 0) return null
+    const chips: React.ReactNode[] = []
+    for (const [key, val] of Object.entries(values)) {
+      const def = modifierDefMap.get(key)
+      if (!def) continue
+      if (def.modifier_type === 'Boolean') {
+        if (val === true) {
+          chips.push(
+            <span key={key} className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">
+              {def.display_name}
+            </span>,
+          )
+        }
+      } else if (typeof val === 'number' && val !== 0) {
+        chips.push(
+          <span key={key} className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700 tabular-nums">
+            {def.display_name}: {val}{def.units ? ` ${def.units}` : ''}
+          </span>,
+        )
+      }
+    }
+    if (chips.length === 0) return null
+    return <div className="flex flex-wrap gap-1.5">{chips}</div>
+  }
 
   // Load modifiers when product changes — uses API route (not server action)
   useEffect(() => {
@@ -226,6 +278,15 @@ export default function QuoteDetailClient({
           if (cancelled) return
           if (data.unit_price_cents) {
             setNewUnitPrice((data.unit_price_cents / 100).toFixed(2))
+          }
+          if (Array.isArray(data.breakdown)) {
+            const deltas: Record<string, number> = {}
+            for (const row of data.breakdown as Array<{ modifier_id?: string; price_cents?: number }>) {
+              if (row.modifier_id && typeof row.price_cents === 'number' && row.price_cents > 0) {
+                deltas[row.modifier_id] = (deltas[row.modifier_id] ?? 0) + row.price_cents
+              }
+            }
+            setModifierPriceDeltas(deltas)
           }
         })
         .catch(() => {})
@@ -311,6 +372,7 @@ export default function QuoteDetailClient({
     setNewQty('1')
     setNewModifiers([])
     setNewModifierValues({})
+    setModifierPriceDeltas({})
     setNewUnitPrice('')
     setIsPricingLoading(false)
     setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
@@ -367,6 +429,7 @@ export default function QuoteDetailClient({
           taxable: true,
           sort_order: cur.length,
           material_name: null,
+          modifier_values: Object.keys(newModifierValues).length > 0 ? { ...newModifierValues } : undefined,
         },
       ])
       setShowAddForm(false)
@@ -811,6 +874,7 @@ export default function QuoteDetailClient({
                     const val = newModifierValues[key]
 
                     if (mod.modifier_type === 'Boolean') {
+                      const delta = modifierPriceDeltas[mod.id] ?? 0
                       return (
                         <label key={mod.id} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input
@@ -820,6 +884,9 @@ export default function QuoteDetailClient({
                             className="h-4 w-4 rounded border-gray-300 accent-qm-lime"
                           />
                           <span className="text-gray-700">{mod.display_name}</span>
+                          {canSeePricing && delta > 0 && val === true && (
+                            <span className="text-[11px] text-gray-500 tabular-nums">+${formatCents(delta)}</span>
+                          )}
                           {mod.show_customer && (
                             <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
@@ -835,6 +902,7 @@ export default function QuoteDetailClient({
                       const max = mod.range_max_value ?? 100
                       const step = mod.range_step_interval ?? 1
                       const numVal = typeof val === 'number' ? val : mod.range_default_value ?? min
+                      const delta = modifierPriceDeltas[mod.id] ?? 0
                       return (
                         <div key={mod.id}>
                           <div className="flex items-center justify-between">
@@ -850,14 +918,20 @@ export default function QuoteDetailClient({
                             onChange={(e) => setNewModifierValues(prev => ({ ...prev, [key]: Number(e.target.value) }))}
                             className="mt-1 w-full accent-qm-lime"
                           />
-                          {mod.show_customer && (
-                            <span className="text-xs text-gray-400">Visible to customer</span>
-                          )}
+                          <div className="flex items-center justify-between">
+                            {mod.show_customer ? (
+                              <span className="text-xs text-gray-400">Visible to customer</span>
+                            ) : <span />}
+                            {canSeePricing && delta > 0 && (
+                              <span className="text-[11px] text-gray-500 tabular-nums">+${formatCents(delta)}</span>
+                            )}
+                          </div>
                         </div>
                       )
                     }
 
                     // Numeric
+                    const delta = modifierPriceDeltas[mod.id] ?? 0
                     return (
                       <div key={mod.id}>
                         <label className="block text-xs text-gray-700">
@@ -877,6 +951,9 @@ export default function QuoteDetailClient({
                           onChange={(e) => setNewModifierValues(prev => ({ ...prev, [key]: Number(e.target.value) }))}
                           className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
+                        {canSeePricing && delta > 0 && (
+                          <span className="mt-1 block text-[11px] text-gray-500 tabular-nums">+${formatCents(delta)}</span>
+                        )}
                       </div>
                     )
                   })}
@@ -934,8 +1011,10 @@ export default function QuoteDetailClient({
                   const product = item.product_id ? productMap.get(item.product_id) : null
                   const usesDims = productUsesDimensions(product?.formula)
                   const isLast = idx === items.length - 1
+                  const chips = renderItemModifierChips(item)
                   return (
-                    <tr key={item.id} ref={isLast ? lastItemRef : undefined}>
+                    <Fragment key={item.id}>
+                    <tr ref={isLast ? lastItemRef : undefined}>
                       <td className="px-3 py-2">
                         <select
                           value={item.product_id ?? ''}
@@ -1053,6 +1132,12 @@ export default function QuoteDetailClient({
                         </button>
                       </td>
                     </tr>
+                    {chips && (
+                      <tr className="bg-gray-50/40">
+                        <td colSpan={canSeePricing ? 9 : 5} className="px-3 pb-2 pt-0">{chips}</td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -1096,22 +1181,32 @@ export default function QuoteDetailClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-3 text-sm text-gray-900">{item.description}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {item.width != null && item.height != null
-                        ? `${item.width}" \u00d7 ${item.height}"`
-                        : <span className="text-gray-300">&mdash;</span>}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">{item.quantity}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {item.material_name ?? <span className="text-gray-300">&mdash;</span>}
-                    </td>
-                    {canSeePricing && <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(item.unit_price)}</td>}
-                    {canSeePricing && <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(item.total_price)}</td>}
-                  </tr>
-                ))}
+                {items.map((item) => {
+                  const chips = renderItemModifierChips(item)
+                  return (
+                    <Fragment key={item.id}>
+                      <tr>
+                        <td className="px-4 py-3 text-sm text-gray-900">{item.description}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {item.width != null && item.height != null
+                            ? `${item.width}" \u00d7 ${item.height}"`
+                            : <span className="text-gray-300">&mdash;</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">{item.quantity}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {item.material_name ?? <span className="text-gray-300">&mdash;</span>}
+                        </td>
+                        {canSeePricing && <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(item.unit_price)}</td>}
+                        {canSeePricing && <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(item.total_price)}</td>}
+                      </tr>
+                      {chips && (
+                        <tr>
+                          <td colSpan={canSeePricing ? 6 : 4} className="px-4 pb-3 pt-0">{chips}</td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
               {canSeePricing && (
                 <tfoot className="bg-gray-50">
