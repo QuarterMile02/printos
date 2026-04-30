@@ -81,7 +81,7 @@ type LineItem = {
   material_name: string | null
 }
 
-type ProductOption = { id: string; name: string; formula: string | null }
+type ProductOption = { id: string; name: string; formula: string | null; category?: string | null }
 
 type Props = {
   orgId: string
@@ -120,11 +120,14 @@ export default function QuoteDetailClient({
 
   // New line item draft state
   const [newProductId, setNewProductId] = useState<string>('')
+  const [productQuery, setProductQuery] = useState('')
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false)
   const [newDescription, setNewDescription] = useState('')
   const [newWidth, setNewWidth] = useState('')
   const [newHeight, setNewHeight] = useState('')
   const [newQty, setNewQty] = useState('1')
   const [newUnitPrice, setNewUnitPrice] = useState('')
+  const [isPricingLoading, setIsPricingLoading] = useState(false)
   const [newModifiers, setNewModifiers] = useState<ModifierDef[]>([])
   const [newModifierValues, setNewModifierValues] = useState<Record<string, boolean | number>>({})
 
@@ -157,6 +160,21 @@ export default function QuoteDetailClient({
     for (const p of products) m.set(p.id, p)
     return m
   }, [products])
+
+  const filteredProducts = useMemo(() => {
+    const q = productQuery.trim().toLowerCase()
+    const list = q
+      ? products.filter((p) => p.name.toLowerCase().includes(q))
+      : products
+    return list.slice(0, 50)
+  }, [products, productQuery])
+
+  const newSelectedProduct = newProductId ? productMap.get(newProductId) : null
+  const newProductUsesDims = newSelectedProduct ? productUsesDimensions(newSelectedProduct.formula) : false
+  const newLineTotalCents = useMemo(() => {
+    const qty = Math.max(1, parseInt(newQty, 10) || 1)
+    return qty * dollarsToCents(newUnitPrice)
+  }, [newQty, newUnitPrice])
 
   // Load modifiers when product changes — uses API route (not server action)
   useEffect(() => {
@@ -191,9 +209,13 @@ export default function QuoteDetailClient({
     const w = Number(newWidth) || 0
     const h = Number(newHeight) || 0
     const q = Number(newQty) || 1
-    if (w <= 0 && h <= 0) return // skip if no dimensions entered yet
+    const product = productMap.get(newProductId)
+    const usesDims = productUsesDimensions(product?.formula)
+    if (usesDims && w <= 0 && h <= 0) return // for dimensional products, wait until at least one dim is entered
     let cancelled = false
     const timer = setTimeout(() => {
+      if (cancelled) return
+      setIsPricingLoading(true)
       fetch('/api/pricing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -207,9 +229,12 @@ export default function QuoteDetailClient({
           }
         })
         .catch(() => {})
-    }, 300) // debounce 300ms
+        .finally(() => {
+          if (!cancelled) setIsPricingLoading(false)
+        })
+    }, 400) // debounce 400ms
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [newProductId, newWidth, newHeight, newQty, newModifierValues])
+  }, [newProductId, newWidth, newHeight, newQty, newModifierValues, productMap])
 
   // Smart material engine preview — same trigger as pricing recalc, separate endpoint.
   useEffect(() => {
@@ -278,6 +303,8 @@ export default function QuoteDetailClient({
   function handleShowAddForm() {
     setShowAddForm(true)
     setNewProductId('')
+    setProductQuery('')
+    setProductDropdownOpen(false)
     setNewDescription('')
     setNewWidth('')
     setNewHeight('')
@@ -285,6 +312,7 @@ export default function QuoteDetailClient({
     setNewModifiers([])
     setNewModifierValues({})
     setNewUnitPrice('')
+    setIsPricingLoading(false)
     setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100)
   }
 
@@ -630,49 +658,74 @@ export default function QuoteDetailClient({
           <div ref={addFormRef} className="border-b border-gray-200 bg-gray-50 px-6 py-4">
             <h3 className="mb-3 text-sm font-semibold text-gray-700">New Line Item</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              <div className="col-span-2 sm:col-span-3 lg:col-span-2">
+              <div className="col-span-2 sm:col-span-3 lg:col-span-2 relative">
                 <label className="block text-xs font-medium text-gray-500">Product</label>
-                <select
-                  value={newProductId}
+                <input
+                  type="text"
+                  value={productQuery}
                   onChange={(e) => {
-                    const pid = e.target.value
-                    setNewProductId(pid)
-                    const p = productMap.get(pid)
-                    if (p) setNewDescription(p.name)
-                    // Modifiers + pricing loaded via useEffect watching newProductId
+                    setProductQuery(e.target.value)
+                    if (newProductId) setNewProductId('')
+                    setProductDropdownOpen(true)
                   }}
+                  onFocus={() => setProductDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setProductDropdownOpen(false), 150)}
+                  placeholder="Search product&hellip;"
                   className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                >
-                  <option value="">&mdash; select product &mdash;</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500">Width (in)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={newWidth}
-                  onChange={(e) => setNewWidth(e.target.value)}
-                  placeholder="0"
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                 />
+                {productDropdownOpen && (
+                  <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                    {filteredProducts.length === 0 ? (
+                      <li className="px-3 py-2 text-sm text-gray-500">No products match</li>
+                    ) : (
+                      filteredProducts.map((p) => (
+                        <li
+                          key={p.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            setNewProductId(p.id)
+                            setProductQuery(p.name)
+                            setNewDescription(p.name)
+                            setProductDropdownOpen(false)
+                          }}
+                          className="cursor-pointer px-3 py-2 text-sm hover:bg-gray-100"
+                        >
+                          <span className="text-gray-900">{p.name}</span>
+                          {p.category ? <span className="text-gray-500"> &mdash; {p.category}</span> : null}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500">Height (in)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={newHeight}
-                  onChange={(e) => setNewHeight(e.target.value)}
-                  placeholder="0"
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                />
-              </div>
+              {newProductUsesDims && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Width (in)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={newWidth}
+                      onChange={(e) => setNewWidth(e.target.value)}
+                      placeholder="0"
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Height (in)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={newHeight}
+                      onChange={(e) => setNewHeight(e.target.value)}
+                      placeholder="0"
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                    />
+                  </div>
+                </>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-500">Qty</label>
                 <input
@@ -683,19 +736,35 @@ export default function QuoteDetailClient({
                   className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500">Unit Price</label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={newUnitPrice}
-                  onChange={(e) => setNewUnitPrice(e.target.value)}
-                  placeholder="0.00"
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                />
-              </div>
+              {canSeePricing && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">Unit Price</label>
+                  <div className="relative mt-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={newUnitPrice}
+                      onChange={(e) => setNewUnitPrice(e.target.value)}
+                      placeholder="0.00"
+                      className="block w-full rounded-md border border-gray-300 px-2 py-1.5 pr-7 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                    />
+                    {isPricingLoading && (
+                      <svg className="pointer-events-none absolute inset-y-0 right-2 my-auto h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24" aria-label="Calculating price">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
+            {canSeePricing && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Line Total</span>
+                <span className="text-sm font-semibold text-gray-900 tabular-nums">${formatCents(newLineTotalCents)}</span>
+              </div>
+            )}
             <div className="mt-3">
               <label className="block text-xs font-medium text-gray-500">Description</label>
               <input
