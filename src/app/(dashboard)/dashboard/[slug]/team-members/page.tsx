@@ -58,25 +58,61 @@ export default async function TeamPage({ params }: PageProps) {
   const currentRole = currentMembership?.role ?? 'viewer'
   const canInvite = currentRole === 'owner' || currentRole === 'admin'
 
-  // Fetch members with profile data (via RLS — members can view other members)
-  type MemberRow = { id: string; user_id: string; role: OrgRole; created_at: string; profiles: { full_name: string | null; role: string | null; tier: string | null; departments: string[] | null; title: string | null; phone: string | null } | null }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('id, user_id, role, created_at, profiles(full_name, role, tier, departments, title, phone)')
-    .eq('organization_id', org.id)
-    .order('created_at', { ascending: true }) as { data: MemberRow[] | null; error: unknown }
+  // Fetch members + profile data + emails in three separate queries, then
+  // stitch them in JS. The previous PostgREST embedded select
+  // `profiles(...)` failed because the only SELECT policy on profiles
+  // (migration 001) is `auth.uid() = id` — the caller can only see their
+  // own profile, which collapses 18 rows of joined data down to one (or
+  // none if the FK chain isn't recognized by PostgREST). Profiles are
+  // fetched via the service client to bypass that policy.
+  type ProfileFields = { full_name: string | null; role: string | null; tier: string | null; departments: string[] | null; title: string | null; phone: string | null }
+  type MemberRow = { id: string; user_id: string; role: OrgRole; created_at: string; profiles: ProfileFields | null }
 
-  const members = memberRows ?? []
-
-  // Use service client to get emails from auth.users for each member
   const service = createServiceClient()
+
+  // 1. organization_members for this org (anon client — RLS allows any
+  //    member to see all rows for orgs they belong to, per 002).
+  type RawMemberRow = { id: string; user_id: string; role: OrgRole; created_at: string }
+  const { data: rawMembers } = await supabase
+    .from('organization_members')
+    .select('id, user_id, role, created_at')
+    .eq('organization_id', org.id)
+    .order('created_at', { ascending: true }) as { data: RawMemberRow[] | null; error: unknown }
+
+  const memberUserIds = (rawMembers ?? []).map((m) => m.user_id)
+
+  // 2. profiles for those user ids — service client to bypass the
+  //    "view your own profile only" RLS policy.
+  const profileMap = new Map<string, ProfileFields>()
+  if (memberUserIds.length > 0) {
+    type ProfileRow = { id: string } & ProfileFields
+    const { data: profileRows } = await service
+      .from('profiles')
+      .select('id, full_name, role, tier, departments, title, phone')
+      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    for (const p of profileRows ?? []) {
+      profileMap.set(p.id, {
+        full_name: p.full_name, role: p.role, tier: p.tier,
+        departments: p.departments, title: p.title, phone: p.phone,
+      })
+    }
+  }
+
+  // 3. emails from auth.users — service-level admin call.
   const emailMap = new Map<string, string>()
-  if (members.length > 0) {
+  if (memberUserIds.length > 0) {
     const { data: { users: authUsers } } = await service.auth.admin.listUsers()
     for (const u of authUsers ?? []) {
       if (u.email) emailMap.set(u.id, u.email)
     }
   }
+
+  // Stitch into the existing MemberRow shape so the render below works
+  // unchanged. `profiles: null` is preserved for ids without a profile.
+  const members: MemberRow[] = (rawMembers ?? []).map((m) => ({
+    id: m.id, user_id: m.user_id, role: m.role, created_at: m.created_at,
+    profiles: profileMap.get(m.user_id) ?? null,
+  }))
 
   // Fetch departments for the selector
   type DeptRow = { id: string; name: string; code: string | null }
