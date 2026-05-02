@@ -233,6 +233,36 @@ export async function saveContact(
   return { id: contactId }
 }
 
+export async function setPrimaryContact(
+  contactId: string,
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const { allowed } = await checkPermission(orgId, 'customers.edit')
+  if (!allowed) return { error: 'You do not have permission to edit contacts.' }
+
+  const service = createServiceClient()
+
+  // Clear all primaries for this customer, then set the target — two atomic steps.
+  const { error: clearErr } = await service
+    .from('customer_contacts')
+    .update({ is_primary: false })
+    .eq('customer_id', customerId)
+    .eq('organization_id', orgId)
+  if (clearErr) return { error: clearErr.message }
+
+  const { error: setErr } = await service
+    .from('customer_contacts')
+    .update({ is_primary: true })
+    .eq('id', contactId)
+    .eq('customer_id', customerId)
+  if (setErr) return { error: setErr.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  return {}
+}
+
 export async function deleteContact(
   contactId: string,
   customerId: string,

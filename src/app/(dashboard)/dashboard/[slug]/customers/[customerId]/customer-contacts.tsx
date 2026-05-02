@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { saveContact, deleteContact, type ContactInput } from '../actions'
+import { saveContact, deleteContact, setPrimaryContact, type ContactInput } from '../actions'
 
 type ContactRow = {
   id: string; full_name: string; first_name: string | null; last_name: string | null
@@ -112,6 +112,10 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deletePending, startDeleteTransition] = useTransition()
 
+  const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null)
+  const [primaryError, setPrimaryError] = useState<string | null>(null)
+  const [primaryPending, startPrimaryTransition] = useTransition()
+
   function startEdit(c: ContactRow) {
     setEditingId(c.id)
     setEditDraft({
@@ -181,6 +185,25 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
       if (res.error) { setDeleteError(res.error); setDeletingId(null); return }
       setContacts((cs) => cs.filter((c) => c.id !== id))
       setDeletingId(null)
+    })
+  }
+
+  function handleSetPrimary(id: string) {
+    setSettingPrimaryId(id)
+    setPrimaryError(null)
+    startPrimaryTransition(async () => {
+      const res = await setPrimaryContact(id, customerId, orgId, orgSlug)
+      if (res.error) { setPrimaryError(res.error); setSettingPrimaryId(null); return }
+      setContacts((cs) =>
+        cs
+          .map((c): ContactRow => ({ ...c, is_primary: c.id === id }))
+          .sort((a, b) => {
+            if ((b.is_primary ? 1 : 0) !== (a.is_primary ? 1 : 0))
+              return (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0)
+            return a.full_name.localeCompare(b.full_name)
+          })
+      )
+      setSettingPrimaryId(null)
     })
   }
 
@@ -260,8 +283,21 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                   {deleteError && deletingId === c.id && (
                     <p className="text-xs text-red-600 mt-1">{deleteError}</p>
                   )}
+                  {primaryError && settingPrimaryId === c.id && (
+                    <p className="text-xs text-red-600 mt-1">{primaryError}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {!c.is_primary && (
+                    <button
+                      onClick={() => handleSetPrimary(c.id)}
+                      disabled={primaryPending && settingPrimaryId === c.id}
+                      className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-qm-lime-light hover:text-qm-lime-dark hover:border-qm-lime transition-colors disabled:opacity-40"
+                      title="Set as primary contact"
+                    >
+                      {primaryPending && settingPrimaryId === c.id ? '…' : 'Set Primary'}
+                    </button>
+                  )}
                   <button
                     onClick={() => startEdit(c)}
                     className="rounded-md border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-100 hover:text-qm-black transition-colors"
