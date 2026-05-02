@@ -389,11 +389,9 @@ export default function QuoteDetailClient({
     const h = newHeight ? Number(newHeight) : null
     const desc = newDescription.trim() || (newProductId ? productMap.get(newProductId)?.name ?? 'Custom Item' : 'Custom Item')
 
-    // Sqft pricing: W * H / 144 * Qty * UnitPrice; flat if no dimensions
-    const hasDims = w && w > 0 && h && h > 0
-    const totalCents = hasDims
-      ? Math.round((w * h / 144) * qty * unitPriceCents)
-      : qty * unitPriceCents
+    // /api/pricing already returns an area-adjusted unit_price, so the
+    // line total is just unit_price × qty regardless of dimensions.
+    const totalCents = qty * unitPriceCents
 
     console.log('[handleSaveNewItem] values:', { desc, w, h, qty, unitPriceCents, totalCents, productId: newProductId || null })
 
