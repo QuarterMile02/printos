@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type { JobStatus, QuoteStatus } from '@/types/database'
 import CustomerDetailClient from './customer-detail-client'
+import CustomerContactsSection from './customer-contacts'
 import { QUOTE_STATUS_STYLES } from '../../quotes/format'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
@@ -13,15 +14,11 @@ const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   proof_review: 'bg-qm-gray-light text-qm-gray', ready_for_pickup: 'bg-qm-black/5 text-qm-black',
   completed: 'bg-qm-lime-light text-qm-lime',
 }
-// QUOTE_STATUS_COLORS now lives in quotes/format.ts so all 12 Phase 8
-// statuses share the same palette. Re-aliased here to keep the rest of
-// this file's references unchanged.
 const QUOTE_STATUS_COLORS: Record<QuoteStatus, string> = QUOTE_STATUS_STYLES
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
-
 function formatCents(cents: number): string {
   return (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -41,29 +38,58 @@ export default async function CustomerDetailPage({ params }: PageProps) {
   type CustomerRow = {
     id: string; first_name: string; last_name: string; company_name: string | null
     email: string | null; phone: string | null; notes: string | null; created_at: string
+    legal_name: string | null; sales_rep: string | null; industry: string | null
+    lead_source: string | null; customer_group: string | null; status: string | null
+    is_active: boolean | null
+    street: string | null; street2: string | null
+    city: string | null; state: string | null; zip: string | null
+    secondary_street: string | null; secondary_city: string | null
+    secondary_state: string | null; secondary_zip: string | null
+    terms: string | null; taxable: boolean | null; tax_exempt_code: string | null
+    tax_exempt_expires: string | null; credit_limit: number | null
+    pricing_level: string | null; discount_percent: number | null
+    website: string | null; allow_credit_card_payments: boolean | null
+    background_info: string | null; special_notes: string | null
   }
   const { data: customer } = await supabase
     .from('customers')
-    .select('id, first_name, last_name, company_name, email, phone, notes, created_at')
+    .select(`id, first_name, last_name, company_name, email, phone, notes, created_at,
+      legal_name, sales_rep, industry, lead_source, customer_group, status, is_active,
+      street, street2, city, state, zip,
+      secondary_street, secondary_city, secondary_state, secondary_zip,
+      terms, taxable, tax_exempt_code, tax_exempt_expires, credit_limit,
+      pricing_level, discount_percent, website, allow_credit_card_payments,
+      background_info, special_notes`)
     .eq('id', customerId).eq('organization_id', org.id)
     .maybeSingle() as { data: CustomerRow | null; error: unknown }
   if (!customer) notFound()
 
-  // Fetch jobs for this customer
+  type ContactRow = {
+    id: string; full_name: string; first_name: string | null; last_name: string | null
+    email: string | null; email2: string | null; phone: string | null
+    phone2: string | null; phone_ext: string | null; title: string | null
+    is_primary: boolean | null; is_ap_contact: boolean | null; is_active: boolean | null
+  }
+  const { data: contactRows } = await supabase
+    .from('customer_contacts')
+    .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active')
+    .eq('customer_id', customerId)
+    .eq('organization_id', org.id)
+    .order('is_primary', { ascending: false })
+    .order('full_name', { ascending: true }) as { data: ContactRow[] | null; error: unknown }
+
   type JobRow = { id: string; job_number: number; title: string; status: JobStatus; created_at: string }
   const { data: jobRows } = await supabase
     .from('jobs').select('id, job_number, title, status, created_at')
     .eq('organization_id', org.id).eq('customer_id', customerId)
     .order('created_at', { ascending: false }) as { data: JobRow[] | null; error: unknown }
 
-  // Fetch quotes for this customer
   type QuoteRow = { id: string; quote_number: number; title: string; status: QuoteStatus; created_at: string }
   const { data: quoteRows } = await supabase
     .from('quotes').select('id, quote_number, title, status, created_at')
     .eq('organization_id', org.id).eq('customer_id', customerId)
     .order('created_at', { ascending: false }) as { data: QuoteRow[] | null; error: unknown }
 
-  // Fetch quote line item totals
   type LineItemRow = { quote_id: string; quantity: number; unit_price: number }
   const quoteIds = (quoteRows ?? []).map((q) => q.id)
   const perQuoteTotals = new Map<string, number>()
@@ -71,9 +97,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     const { data: items } = await supabase
       .from('quote_line_items').select('quote_id, quantity, unit_price')
       .in('quote_id', quoteIds) as { data: LineItemRow[] | null; error: unknown }
-    for (const item of items ?? []) {
+    for (const item of items ?? [])
       perQuoteTotals.set(item.quote_id, (perQuoteTotals.get(item.quote_id) ?? 0) + item.quantity * item.unit_price)
-    }
   }
 
   const jobs = jobRows ?? []
@@ -81,7 +106,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
   return (
     <div className="p-8 max-w-4xl">
-      {/* Breadcrumbs + Back */}
+      {/* Breadcrumbs */}
       <div className="mb-6">
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
           <a href="/dashboard" className="hover:text-gray-700">Dashboard</a>
@@ -100,7 +125,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         </a>
       </div>
 
-      {/* Customer header */}
+      {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-extrabold text-qm-black">{customer.first_name} {customer.last_name}</h1>
         {customer.company_name && <p className="text-sm text-qm-gray mt-1">{customer.company_name}</p>}
@@ -125,7 +150,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         </div>
       </div>
 
-      {/* Editable fields + Notes — client component */}
+      {/* Editable cards — Customer Details, Address, Account Info, Notes */}
       <CustomerDetailClient
         customerId={customer.id}
         orgId={org.id}
@@ -137,11 +162,46 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           email: customer.email,
           phone: customer.phone,
           notes: customer.notes,
+          legal_name: customer.legal_name,
+          sales_rep: customer.sales_rep,
+          industry: customer.industry,
+          lead_source: customer.lead_source,
+          customer_group: customer.customer_group,
+          status: customer.status,
+          is_active: customer.is_active,
+          street: customer.street,
+          street2: customer.street2,
+          city: customer.city,
+          state: customer.state,
+          zip: customer.zip,
+          secondary_street: customer.secondary_street,
+          secondary_city: customer.secondary_city,
+          secondary_state: customer.secondary_state,
+          secondary_zip: customer.secondary_zip,
+          terms: customer.terms,
+          taxable: customer.taxable,
+          tax_exempt_code: customer.tax_exempt_code,
+          tax_exempt_expires: customer.tax_exempt_expires,
+          credit_limit: customer.credit_limit,
+          pricing_level: customer.pricing_level,
+          discount_percent: customer.discount_percent,
+          website: customer.website,
+          allow_credit_card_payments: customer.allow_credit_card_payments,
+          background_info: customer.background_info,
+          special_notes: customer.special_notes,
         }}
       />
 
+      {/* Contacts */}
+      <CustomerContactsSection
+        customerId={customer.id}
+        orgId={org.id}
+        orgSlug={slug}
+        initialContacts={contactRows ?? []}
+      />
+
       {/* Jobs */}
-      <div className="mt-8 rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2 className="text-base font-bold text-qm-black">Jobs</h2>
           <span className="text-xs font-medium text-qm-gray">{jobs.length}</span>
@@ -155,9 +215,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-xs font-semibold text-qm-gray">#{j.job_number}</span>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${JOB_STATUS_COLORS[j.status]}`}>
-                      {JOB_STATUS_LABELS[j.status]}
-                    </span>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${JOB_STATUS_COLORS[j.status]}`}>{JOB_STATUS_LABELS[j.status]}</span>
                   </div>
                   <p className="text-sm font-medium text-qm-black truncate">{j.title}</p>
                 </div>
@@ -183,9 +241,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-xs font-semibold text-qm-gray">Q-{q.quote_number}</span>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${QUOTE_STATUS_COLORS[q.status]}`}>
-                      {q.status}
-                    </span>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${QUOTE_STATUS_COLORS[q.status]}`}>{q.status}</span>
                   </div>
                   <p className="text-sm font-medium text-qm-black truncate">{q.title}</p>
                 </div>

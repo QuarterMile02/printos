@@ -178,6 +178,37 @@ export interface Database {
           email: string | null
           phone: string | null
           notes: string | null
+          // address
+          street: string | null
+          street2: string | null
+          city: string | null
+          state: string | null
+          zip: string | null
+          secondary_street: string | null
+          secondary_city: string | null
+          secondary_state: string | null
+          secondary_zip: string | null
+          // account / lifecycle
+          status: string | null
+          industry: string | null
+          lead_source: string | null
+          sales_rep: string | null
+          customer_group: string | null
+          legal_name: string | null
+          website: string | null
+          pricing_level: string | null
+          is_active: boolean | null
+          allow_credit_card_payments: boolean | null
+          // tax + finance
+          taxable: boolean | null
+          tax_exempt_code: string | null
+          tax_exempt_expires: string | null
+          terms: string | null
+          credit_limit: number | null
+          discount_percent: number | null
+          // notes
+          background_info: string | null
+          special_notes: string | null
           created_at: string
           updated_at: string
         }
@@ -190,18 +221,67 @@ export interface Database {
           email?: string | null
           phone?: string | null
           notes?: string | null
+          street?: string | null; street2?: string | null
+          city?: string | null; state?: string | null; zip?: string | null
+          secondary_street?: string | null; secondary_city?: string | null
+          secondary_state?: string | null; secondary_zip?: string | null
+          status?: string | null
+          industry?: string | null; lead_source?: string | null
+          sales_rep?: string | null; customer_group?: string | null
+          legal_name?: string | null; website?: string | null
+          pricing_level?: string | null
+          is_active?: boolean | null
+          allow_credit_card_payments?: boolean | null
+          taxable?: boolean | null
+          tax_exempt_code?: string | null; tax_exempt_expires?: string | null
+          terms?: string | null; credit_limit?: number | null
+          discount_percent?: number | null
+          background_info?: string | null; special_notes?: string | null
           created_at?: string
           updated_at?: string
         }
-        Update: {
-          first_name?: string
-          last_name?: string
-          company_name?: string | null
+        Update: Partial<Omit<Database['public']['Tables']['customers']['Insert'], 'id' | 'organization_id' | 'created_at'>>
+      }
+      customer_contacts: {
+        Row: {
+          id: string
+          customer_id: string
+          organization_id: string
+          full_name: string
+          first_name: string | null
+          last_name: string | null
+          email: string | null
+          email2: string | null
+          phone: string | null
+          phone2: string | null
+          phone_ext: string | null
+          title: string | null
+          is_primary: boolean | null
+          is_ap_contact: boolean | null
+          is_active: boolean | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          customer_id: string
+          organization_id: string
+          full_name: string
+          first_name?: string | null
+          last_name?: string | null
           email?: string | null
+          email2?: string | null
           phone?: string | null
-          notes?: string | null
+          phone2?: string | null
+          phone_ext?: string | null
+          title?: string | null
+          is_primary?: boolean | null
+          is_ap_contact?: boolean | null
+          is_active?: boolean | null
+          created_at?: string
           updated_at?: string
         }
+        Update: Partial<Omit<Database['public']['Tables']['customer_contacts']['Insert'], 'id' | 'customer_id' | 'organization_id' | 'created_at'>>
       }
       quotes: {
         Row: {
