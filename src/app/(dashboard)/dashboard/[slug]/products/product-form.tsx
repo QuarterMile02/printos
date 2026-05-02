@@ -4,7 +4,7 @@ import { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type {
   Product, ProductCategory, WorkflowTemplate, ProductStatus,
-  PricingFormula, Discount, Material, LaborRate, MachineRate, Modifier,
+  Discount, Material, LaborRate, MachineRate, Modifier,
   ProductDefaultItem, ProductModifier, ProductCustomField,
 } from '@/types/product-builder'
 import {
@@ -32,7 +32,6 @@ type Props = {
   product: Product | null
   categories: ProductCategory[]
   workflows: WorkflowTemplate[]
-  pricingFormulas: PricingFormula[]
   discounts: Discount[]
   materials: MaterialOption[]
   laborRates: LaborRateOption[]
@@ -42,6 +41,7 @@ type Props = {
   existingModifiers: ProductModifier[]
   existingDropdownMenus: ExistingDropdownMenu[]
   existingCustomFields: ProductCustomField[]
+  secondaryCategoryOptions: string[]
 }
 
 type TabKey = 'basic' | 'advanced' | 'pricing' | 'custom-fields'
@@ -65,6 +65,42 @@ const COMPLEXITY_LABELS: Record<number, string> = {
 }
 
 const UNIT_OPTIONS = ['Each', 'Sqft', 'Roll', 'Sheet', 'Unit', 'Feet', 'Inch', 'Yard', 'Hr']
+
+const PRODUCT_TYPE_OPTIONS = [
+  'Large Format Printing',
+  'Commercial Printing',
+  'Vehicle Wraps',
+  'Channel Letters / Fabrication',
+  'Installation',
+  'Service / Repair',
+  'Digital Marketing',
+  'Digital Screens',
+  'Trade Show / Events',
+  'Flags & Banners',
+  'Accessories',
+  'Other',
+]
+
+// 15 ShopVOX dimension-capture formulas. The `value` is what gets saved to
+// products.formula (a plain text column); the engine in src/lib/pricing/formula-engine.ts
+// switches on these names to compute the per-unit multiplier.
+const FORMULA_OPTIONS: { value: string; label: string }[] = [
+  { value: 'Area',                              label: 'Area (W × H, sq ft)' },
+  { value: 'Area_in_sqyd',                      label: 'Area (W × H, sq yards)' },
+  { value: 'Total_Area',                        label: 'Total Area (user enters sq ft)' },
+  { value: 'Perimeter',                         label: 'Perimeter (linear ft)' },
+  { value: 'Perimeter_in_yards',                label: 'Perimeter (yards)' },
+  { value: 'Width',                             label: 'Width (linear ft)' },
+  { value: 'Width_in_yards',                    label: 'Width (yards)' },
+  { value: 'Height',                            label: 'Height (linear ft)' },
+  { value: 'Height_in_yards',                   label: 'Height (yards)' },
+  { value: 'Length_in_yards',                   label: 'Length (yards)' },
+  { value: 'Volume',                            label: 'Volume (W × H × D, cu in)' },
+  { value: 'Board_Feet',                        label: 'Board Feet (W × H × T ÷ 144)' },
+  { value: 'Cylindrical_Surface_Area',          label: 'Cylindrical Surface Area (sq in)' },
+  { value: 'Cylindrical_Surface_Area_in_sqyd',  label: 'Cylindrical Surface Area (sq yards)' },
+  { value: 'Unit',                              label: 'Unit (per each)' },
+]
 
 // ---- Client-side enriched row types (include display labels) ----
 type RecipeRow = DefaultItemInput & { display_name: string }
@@ -127,9 +163,10 @@ function toFormData(p: Product): ProductFormData {
 
 export default function ProductForm({
   orgId, orgSlug, product,
-  categories, workflows, pricingFormulas, discounts,
+  categories, workflows, discounts,
   materials, laborRates, machineRates, modifiersList,
   existingDefaultItems, existingModifiers, existingDropdownMenus, existingCustomFields,
+  secondaryCategoryOptions,
 }: Props) {
   const router = useRouter()
   const isNew = product === null
@@ -562,7 +599,10 @@ export default function ProductForm({
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Type / Unit of Business">
-                <input type="text" value={form.product_type ?? ''} onChange={(e) => setForm({ ...form, product_type: e.target.value || null })} className={inputClass} placeholder="e.g. Large Format Print" />
+                <select value={form.product_type ?? ''} onChange={(e) => setForm({ ...form, product_type: e.target.value || null })} className={inputClass}>
+                  <option value="">— Select a type —</option>
+                  {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
               </Field>
               <Field label="Workflow Template">
                 <select value={form.workflow_template_id ?? ''} onChange={(e) => setForm({ ...form, workflow_template_id: e.target.value || null })} className={inputClass}>
@@ -579,7 +619,16 @@ export default function ProductForm({
                 </select>
               </Field>
               <Field label="Secondary Category">
-                <input type="text" value={form.secondary_category ?? ''} onChange={(e) => setForm({ ...form, secondary_category: e.target.value || null })} className={inputClass} placeholder="Optional" />
+                <select value={form.secondary_category ?? ''} onChange={(e) => setForm({ ...form, secondary_category: e.target.value || null })} className={inputClass}>
+                  <option value="">—</option>
+                  {(() => {
+                    const current = form.secondary_category
+                    const opts = current && !secondaryCategoryOptions.includes(current)
+                      ? [...secondaryCategoryOptions, current].sort()
+                      : secondaryCategoryOptions
+                    return opts.map((c) => <option key={c} value={c}>{c}</option>)
+                  })()}
+                </select>
               </Field>
             </div>
             <Field label="Product Image URL">
@@ -699,9 +748,14 @@ export default function ProductForm({
                     <Field label="Formula">
                       <select value={form.formula ?? ''} onChange={(e) => setForm({ ...form, formula: e.target.value || null })} className={inputClass}>
                         <option value="">— Select a formula —</option>
-                        {pricingFormulas.map((pf) => (
-                          <option key={pf.id} value={pf.name}>{pf.name} ({pf.uom})</option>
-                        ))}
+                        {(() => {
+                          const current = form.formula
+                          const known = FORMULA_OPTIONS.some((o) => o.value === current)
+                          const opts: { value: string; label: string }[] = current && !known
+                            ? [...FORMULA_OPTIONS, { value: current, label: `${current} (legacy)` }]
+                            : FORMULA_OPTIONS
+                          return opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)
+                        })()}
                       </select>
                     </Field>
                     <Field label="Pricing Method">
@@ -789,13 +843,13 @@ export default function ProductForm({
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Volume Discount">
                   <select value={form.volume_discount_id ?? ''} onChange={(e) => setForm({ ...form, volume_discount_id: e.target.value || null })} className={inputClass}>
-                    <option value="">—</option>
+                    <option value="">No volume discount</option>
                     {discounts.filter((d) => d.discount_type === 'Volume').map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </Field>
                 <Field label="Range Discount">
                   <select value={form.range_discount_id ?? ''} onChange={(e) => setForm({ ...form, range_discount_id: e.target.value || null })} className={inputClass}>
-                    <option value="">—</option>
+                    <option value="">No range discount</option>
                     {discounts.filter((d) => d.discount_type === 'Range').map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </Field>

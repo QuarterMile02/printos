@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import type {
-  Product, ProductCategory, WorkflowTemplate, PricingFormula, Discount,
+  Product, ProductCategory, WorkflowTemplate, Discount,
   Material, LaborRate, MachineRate, Modifier,
   ProductDefaultItem, ProductModifier, ProductCustomField,
 } from '@/types/product-builder'
@@ -37,7 +37,6 @@ export default async function EditProductPage({ params }: PageProps) {
   const [
     categoriesRes,
     workflowsRes,
-    pricingFormulasRes,
     discountsRes,
     materialsRes,
     laborRatesRes,
@@ -48,10 +47,10 @@ export default async function EditProductPage({ params }: PageProps) {
     dropdownMenusRes,
     dropdownItemsRes,
     customFieldsRes,
+    secondaryCategoriesRes,
   ] = await Promise.all([
     supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
     supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('pricing_formulas').select('*').or(`organization_id.eq.${org.id},is_system.eq.true`).order('name'),
     supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
     supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name'),
     supabase.from('labor_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name'),
@@ -62,7 +61,14 @@ export default async function EditProductPage({ params }: PageProps) {
     supabase.from('product_dropdown_menus').select('*').eq('product_id', id).order('sort_order'),
     supabase.from('product_dropdown_items').select('*'),
     supabase.from('product_custom_fields').select('*').eq('product_id', id).order('sort_order'),
+    supabase.from('products').select('secondary_category').eq('organization_id', org.id).not('secondary_category', 'is', null),
   ])
+
+  const secondaryCategoryOptions = Array.from(
+    new Set(((secondaryCategoriesRes.data ?? []) as { secondary_category: string | null }[])
+      .map((r) => r.secondary_category)
+      .filter((v): v is string => Boolean(v && v.trim())))
+  ).sort((a, b) => a.localeCompare(b))
 
   const menus = (dropdownMenusRes.data ?? []) as { id: string; menu_name: string; is_optional: boolean | null }[]
   const items = (dropdownItemsRes.data ?? []) as {
@@ -101,7 +107,6 @@ export default async function EditProductPage({ params }: PageProps) {
         product={productRow}
         categories={(categoriesRes.data ?? []) as ProductCategory[]}
         workflows={(workflowsRes.data ?? []) as WorkflowTemplate[]}
-        pricingFormulas={(pricingFormulasRes.data ?? []) as PricingFormula[]}
         discounts={(discountsRes.data ?? []) as Discount[]}
         materials={(materialsRes.data ?? []) as Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>[]}
         laborRates={(laborRatesRes.data ?? []) as Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
@@ -111,6 +116,7 @@ export default async function EditProductPage({ params }: PageProps) {
         existingModifiers={(productModifiersRes.data ?? []) as ProductModifier[]}
         existingDropdownMenus={existingDropdownMenus}
         existingCustomFields={(customFieldsRes.data ?? []) as ProductCustomField[]}
+        secondaryCategoryOptions={secondaryCategoryOptions}
       />
     </div>
   )

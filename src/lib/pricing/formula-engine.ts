@@ -45,13 +45,29 @@ function formulaMultiplier(
   qty: number,
 ): number {
   switch (formula) {
-    case 'Area':      return (widthIn * heightIn) / 144 // sq ft
-    case 'Perimeter': return (2 * (widthIn + heightIn)) / 12 // linear ft
-    case 'Width':     return widthIn / 12 // linear ft
-    case 'Height':    return heightIn / 12 // linear ft
-    case 'Unit':      return 1
-    case 'Fixed Qty': return 1
-    default:          return 1
+    // Area
+    case 'Area':                              return (widthIn * heightIn) / 144                     // sq ft
+    case 'Total_Area':                        return (widthIn * heightIn) / 144                     // sq ft (user-entered totals come pre-multiplied via width)
+    case 'Area_in_sqyd':                      return (widthIn / 36) * (heightIn / 36)               // sq yd
+    // Perimeter
+    case 'Perimeter':                         return (2 * (widthIn + heightIn)) / 12                // linear ft
+    case 'Perimeter_in_yards':                return (2 * (widthIn + heightIn)) / 36                // yards
+    // Single-dimension
+    case 'Width':                             return widthIn / 12                                   // linear ft
+    case 'Width_in_yards':                    return widthIn / 36                                   // yards
+    case 'Height':                            return heightIn / 12                                  // linear ft
+    case 'Height_in_yards':                   return heightIn / 36                                  // yards
+    case 'Length_in_yards':                   return widthIn / 36                                   // yards (length captured in width input)
+    // Volume / board feet — depth/thickness not captured in this engine; treat thickness=1 inch
+    case 'Volume':                            return widthIn * heightIn                             // cu in (depth=1)
+    case 'Board_Feet':                        return (widthIn * heightIn) / 144                     // bd ft (thickness=1)
+    // Cylindrical — treat width as radius, height as height
+    case 'Cylindrical_Surface_Area':          return 2 * Math.PI * (widthIn / 2) * heightIn         // sq in
+    case 'Cylindrical_Surface_Area_in_sqyd':  return (2 * Math.PI * (widthIn / 2) * heightIn) / 1296 // sq yd
+    // Per-each
+    case 'Unit':                              return 1
+    case 'Fixed Qty':                         return 1
+    default:                                  return 1
   }
 }
 
