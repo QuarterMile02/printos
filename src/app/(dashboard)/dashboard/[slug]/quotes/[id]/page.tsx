@@ -246,6 +246,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   // Check if user can see pricing columns
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
+  const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
   return (
     <div className="p-8 max-w-6xl">
@@ -324,6 +325,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         salesRepName={salesRepName}
         emailTemplates={emailTemplates}
         canSeePricing={canSeePricing}
+        canExportPdf={canExportPdf}
         modifierDefs={modifierDefs}
       />
     </div>
