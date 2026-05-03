@@ -262,6 +262,91 @@ export async function updateJobFlag(
   return {}
 }
 
+const VALID_DEPTS = [
+  'large_format', 'commercial_print', 'vehicle_wrap', 'channel_letters',
+  'fabrication', 'installation', 'service_repair', 'digital_marketing', 'digital_screens',
+] as const
+
+export async function updateJobDepartment(
+  jobId: string,
+  orgId: string,
+  orgSlug: string,
+  department: string | null,
+): Promise<{ error?: string }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!membership) return { error: 'You are not a member of this organization.' }
+
+  if (department !== null && !(VALID_DEPTS as readonly string[]).includes(department)) {
+    return { error: 'Invalid department.' }
+  }
+
+  const service = createServiceClient()
+  const { error: updateError } = await service
+    .from('jobs')
+    .update({ department })
+    .eq('id', jobId)
+    .eq('organization_id', orgId)
+
+  if (updateError) return { error: updateError.message }
+
+  await logActivity({
+    org_id: orgId,
+    user_id: user.id,
+    entity_type: 'job',
+    entity_id: jobId,
+    action: 'department_changed',
+    to_value: department ?? 'unassigned',
+  })
+
+  revalidatePath(`/dashboard/${orgSlug}/jobs`)
+  revalidatePath(`/dashboard/${orgSlug}/jobs/${jobId}`)
+  return {}
+}
+
+export async function toggleWorkflowStep(
+  jobId: string,
+  orgId: string,
+  stepId: string | null,
+  stepName: string,
+  sortOrder: number,
+  checked: boolean,
+): Promise<{ error?: string }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!membership) return { error: 'You are not a member of this organization.' }
+
+  const service = createServiceClient()
+
+  if (checked) {
+    const { error } = await service
+      .from('jobs_workflow_progress')
+      .upsert(
+        {
+          job_id: jobId,
+          organization_id: orgId,
+          step_id: stepId,
+          step_name: stepName,
+          sort_order: sortOrder,
+          checked_by: user.id,
+          checked_at: new Date().toISOString(),
+        },
+        { onConflict: 'job_id,step_name' },
+      )
+    if (error) return { error: error.message }
+  } else {
+    const { error } = await service
+      .from('jobs_workflow_progress')
+      .delete()
+      .eq('job_id', jobId)
+      .eq('step_name', stepName)
+      .eq('organization_id', orgId)
+    if (error) return { error: error.message }
+  }
+
+  return {}
+}
+
 export async function markLabelPrinted(
   jobId: string,
   orgId: string,

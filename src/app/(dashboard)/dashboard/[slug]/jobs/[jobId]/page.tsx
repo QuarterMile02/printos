@@ -1,8 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { uploadProof, updateProofStatus } from './proof-actions'
 import { generateQRDataUrl } from '@/lib/qr'
 import PrintLabelButton from './print-label-button'
+import DepartmentSelect from './department-select'
+import WorkflowChecklist, { type WorkflowStep, type WorkflowProgress } from './workflow-checklist'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,10 +61,11 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     material_selection: { line_items?: MaterialLine[]; computed_at?: string } | null
     assigned_printer: string | null
     label_printed_at: string | null
+    department: string | null
   }
 
   let job: JobShape | null = null
-  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, label_printed_at, customers(first_name, last_name, company_name, email, phone)'
+  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, label_printed_at, department, customers(first_name, last_name, company_name, email, phone)'
   const { data: jobRow1, error: jobErr1 } = await supabase
     .from('jobs')
     .select(fullSelect)
@@ -77,9 +81,77 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
       .eq('id', jobId)
       .eq('organization_id', org.id)
       .single()
-    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer' | 'label_printed_at'>), material_selection: null, assigned_printer: null, label_printed_at: null }
+    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer' | 'label_printed_at' | 'department'>), material_selection: null, assigned_printer: null, label_printed_at: null, department: null }
   }
   if (!job) return <div className="p-8 text-red-600">Job not found</div>
+
+  // Permission: who can assign department
+  const { allowed: canAssignDepartment } = await checkPermission(org.id, 'jobs.assign_department')
+
+  // Workflow steps: product_default_items where workflow_step=true for this job's products
+  const service = createServiceClient()
+  const workflowSteps: WorkflowStep[] = []
+  const workflowProgress: WorkflowProgress[] = []
+
+  if (job.source_quote_id) {
+    // 1. Get product_ids from quote line items
+    type LiProd = { product_id: string | null }
+    const { data: liRows } = await service
+      .from('quote_line_items')
+      .select('product_id')
+      .eq('quote_id', job.source_quote_id)
+      .not('product_id', 'is', null) as { data: LiProd[] | null; error: unknown }
+
+    const productIds = [...new Set((liRows ?? []).map((r) => r.product_id).filter(Boolean) as string[])]
+
+    if (productIds.length > 0) {
+      // 2. Fetch workflow steps from product_default_items
+      type PdiRow = {
+        id: string; item_type: string; custom_item_name: string | null; sort_order: number
+        materials: { name: string } | null
+        labor_rates: { name: string } | null
+        machine_rates: { name: string } | null
+      }
+      const { data: pdiRows } = await service
+        .from('product_default_items')
+        .select('id, item_type, custom_item_name, sort_order, materials(name), labor_rates(name), machine_rates(name)')
+        .in('product_id', productIds)
+        .eq('workflow_step', true)
+        .order('sort_order') as { data: PdiRow[] | null; error: unknown }
+
+      for (const r of pdiRows ?? []) {
+        let name = r.custom_item_name
+        if (!name && r.item_type === 'Material')     name = r.materials?.name ?? null
+        if (!name && r.item_type === 'LaborRate')    name = r.labor_rates?.name ?? null
+        if (!name && r.item_type === 'MachineRate')  name = r.machine_rates?.name ?? null
+        workflowSteps.push({ id: r.id, name: name ?? 'Step', sortOrder: r.sort_order })
+      }
+    }
+
+    // 3. Fetch existing progress for this job
+    type ProgRow = { step_name: string; checked_by: string | null; checked_at: string | null }
+    const { data: progRows } = await service
+      .from('jobs_workflow_progress')
+      .select('step_name, checked_by, checked_at')
+      .eq('job_id', jobId) as { data: ProgRow[] | null; error: unknown }
+
+    // Resolve checked_by user names
+    const checkerIds = [...new Set((progRows ?? []).map((p) => p.checked_by).filter(Boolean) as string[])]
+    const nameMap = new Map<string, string>()
+    if (checkerIds.length > 0) {
+      const { data: profiles } = await service
+        .from('profiles').select('id, full_name').in('id', checkerIds) as { data: { id: string; full_name: string | null }[] | null; error: unknown }
+      for (const p of profiles ?? []) if (p.full_name) nameMap.set(p.id, p.full_name)
+    }
+
+    for (const p of progRows ?? []) {
+      workflowProgress.push({
+        stepName: p.step_name,
+        checkedByName: p.checked_by ? (nameMap.get(p.checked_by) ?? null) : null,
+        checkedAt: p.checked_at,
+      })
+    }
+  }
 
   // Source quote
   let sourceQuoteNum: number | null = null
@@ -239,6 +311,16 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
               </Link>
             </div>
           )}
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-1">Department</span>
+            <DepartmentSelect
+              jobId={job.id}
+              orgId={org.id}
+              orgSlug={slug}
+              currentDepartment={job.department}
+              canAssign={canAssignDepartment}
+            />
+          </div>
         </div>
       </div>
 
@@ -256,6 +338,18 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
           ))}
         </div>
       </div>
+
+      {/* Workflow Steps checklist — only shown when the job has flagged steps */}
+      {workflowSteps.length > 0 && (
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <WorkflowChecklist
+            jobId={job.id}
+            orgId={org.id}
+            steps={workflowSteps}
+            progress={workflowProgress}
+          />
+        </div>
+      )}
 
       {/* Production Setup — output of the Smart Material Selection Engine.
           One card per quote line item that resolved to a roll material. */}

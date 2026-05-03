@@ -6,26 +6,31 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import WidgetCard from './widget-card'
 
-// Maps assigned_printer values → display department names.
-// Extend as QMI adds printers/departments.
-const PRINTER_TO_DEPT: Record<string, string> = {
-  'large_format': 'Large Format',
-  'commercial':   'Commercial Print',
-  'installation': 'Installation',
-  'design':       'Design',
-  'digital':      'Digital',
-  'fabrication':  'Fabrication',
+// Display labels for all 9 standard department codes + legacy assigned_printer fallbacks.
+const DEPT_LABELS: Record<string, string> = {
+  large_format:      'Large Format',
+  commercial_print:  'Commercial Print',
+  vehicle_wrap:      'Vehicle Wrap',
+  channel_letters:   'Channel Letters',
+  fabrication:       'Fabrication',
+  installation:      'Installation',
+  service_repair:    'Service & Repair',
+  digital_marketing: 'Digital Marketing',
+  digital_screens:   'Digital Screens',
+  // Legacy assigned_printer values kept as fallback
+  commercial:        'Commercial Print',
+  design:            'Design',
+  digital:           'Digital Marketing',
 }
 
 type DeptCount = { name: string; count: number; key: string }
-
 type Props = { orgId: string; orgSlug: string }
 
 export default function DepartmentQueueWidget({ orgId, orgSlug }: Props) {
   const router = useRouter()
-  const [data, setData]     = useState<DeptCount[]>([])
+  const [data, setData]       = useState<DeptCount[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState(false)
+  const [error, setError]     = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -33,20 +38,21 @@ export default function DepartmentQueueWidget({ orgId, orgSlug }: Props) {
       setLoading(true); setError(false)
       try {
         const sb = createClient()
-        type JobQRow = { assigned_printer: string | null; status: string }
+        type JobQRow = { department: string | null; assigned_printer: string | null; status: string }
         const { data: rows, error: err } = await sb
           .from('jobs')
-          .select('assigned_printer, status')
+          .select('department, assigned_printer, status')
           .eq('organization_id', orgId)
           .in('status', ['new', 'in_progress']) as { data: JobQRow[] | null; error: unknown }
 
         if (cancelled) return
         if (err) { setError(true); setLoading(false); return }
 
-        // Group by assigned_printer (or 'unassigned')
+        // Prefer jobs.department; fall back to assigned_printer for legacy rows
         const counts = new Map<string, number>()
         for (const r of rows ?? []) {
-          const key = r.assigned_printer?.trim().toLowerCase() ?? 'unassigned'
+          const raw = r.department ?? r.assigned_printer?.trim().toLowerCase()
+          const key = raw ?? 'unassigned'
           counts.set(key, (counts.get(key) ?? 0) + 1)
         }
 
@@ -54,7 +60,7 @@ export default function DepartmentQueueWidget({ orgId, orgSlug }: Props) {
           .sort((a, b) => b[1] - a[1])
           .map(([key, count]) => ({
             key,
-            name: PRINTER_TO_DEPT[key] ?? (key.charAt(0).toUpperCase() + key.slice(1)),
+            name: DEPT_LABELS[key] ?? (key.charAt(0).toUpperCase() + key.slice(1)),
             count,
           }))
 
@@ -93,7 +99,7 @@ export default function DepartmentQueueWidget({ orgId, orgSlug }: Props) {
             }}
           >
             <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11 }} />
+            <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} />
             <Tooltip
               formatter={(v) => {
                 const n = v as number | undefined

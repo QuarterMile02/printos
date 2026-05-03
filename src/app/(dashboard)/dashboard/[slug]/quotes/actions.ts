@@ -314,6 +314,36 @@ export async function updateQuoteStatus(
 
         if (newJob) {
           jobCreated = newJob.job_number
+
+          // Auto-assign department from the first line item's product category
+          try {
+            type LiRow = { product_id: string | null }
+            const { data: liRows } = await service
+              .from('quote_line_items')
+              .select('product_id')
+              .eq('quote_id', quoteId)
+              .not('product_id', 'is', null)
+              .order('sort_order')
+              .limit(5) as { data: LiRow[] | null; error: unknown }
+
+            const productIds = (liRows ?? []).map((r) => r.product_id).filter(Boolean) as string[]
+            if (productIds.length > 0) {
+              type ProdRow = { id: string; product_categories: { primary_department: string | null } | null }
+              const { data: prodRows } = await service
+                .from('products')
+                .select('id, product_categories(primary_department)')
+                .in('id', productIds) as { data: ProdRow[] | null; error: unknown }
+
+              const dept = (prodRows ?? [])
+                .map((p) => p.product_categories?.primary_department)
+                .find((d) => !!d) ?? null
+
+              if (dept) {
+                await service.from('jobs').update({ department: dept }).eq('id', newJob.id)
+              }
+            }
+          } catch { /* non-critical — job still created without department */ }
+
           await runMaterialSelectionForJob(service, newJob.id, quoteId, orgId)
           revalidatePath(`/dashboard/${orgSlug}/jobs`)
           revalidatePath(`/dashboard/${orgSlug}/jobs/${newJob.id}`)
