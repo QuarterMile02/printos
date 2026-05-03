@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import MaterialForm from '../material-form'
 import { cloneMaterial, deleteMaterial } from '../actions-sr'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,7 @@ export default async function Page({ params, searchParams }: {
 
   const { data: matRow } = await supabase
     .from('materials')
-    .select('id, name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active, material_type_id, category_id')
+    .select('id, name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active, material_type_id, category_id, current_stock, min_stock_level, reorder_quantity, last_inventory_count_at')
     .eq('id', id)
     .eq('organization_id', org.id)
     .single()
@@ -34,8 +35,12 @@ export default async function Page({ params, searchParams }: {
     preferred_vendor: string | null
     labor_charge: number | null; machine_charge: number | null; setup_charge: number | null
     active: boolean | null; material_type_id: string | null; category_id: string | null
+    current_stock: number | null; min_stock_level: number | null
+    reorder_quantity: number | null; last_inventory_count_at: string | null
   } | null
   if (!m) return <div className="p-8 text-red-600">Material not found</div>
+
+  const { allowed: canEditInventory } = await checkPermission(org.id, 'materials.edit_inventory')
 
   // Type name
   let typeName = '—'
@@ -70,7 +75,7 @@ export default async function Page({ params, searchParams }: {
         <>
           <h1 className="text-2xl font-bold text-gray-900 mb-6">Edit Material</h1>
           <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <MaterialForm material={m} orgId={org.id} orgSlug={slug} />
+            <MaterialForm material={m} orgId={org.id} orgSlug={slug} canEditInventory={canEditInventory} />
           </div>
         </>
       ) : (
@@ -125,6 +130,41 @@ export default async function Page({ params, searchParams }: {
                 <div className="flex justify-between"><dt className="text-gray-500">Labor</dt><dd className="font-medium tabular-nums">${n(m.labor_charge).toFixed(2)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Machine</dt><dd className="font-medium tabular-nums">${n(m.machine_charge).toFixed(2)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Setup</dt><dd className="font-medium tabular-nums">${n(m.setup_charge).toFixed(2)}</dd></div>
+              </dl>
+            </div>
+
+            {/* Inventory */}
+            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm md:col-span-2">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Inventory</h2>
+                {(() => {
+                  const cur = Number(m.current_stock ?? 0)
+                  const min = Number(m.min_stock_level ?? 0)
+                  if (min <= 0) return null
+                  if (cur <= 0) return <span className="inline-flex rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700">Out of Stock</span>
+                  if (cur < min) return <span className="inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Low Stock</span>
+                  return <span className="inline-flex rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">In Stock</span>
+                })()}
+              </div>
+              <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                <div className="flex justify-between sm:flex-col sm:justify-start sm:gap-0.5">
+                  <dt className="text-gray-500">Current Stock</dt>
+                  <dd className="font-semibold tabular-nums text-lg">{Number(m.current_stock ?? 0).toFixed(2)}</dd>
+                </div>
+                <div className="flex justify-between sm:flex-col sm:justify-start sm:gap-0.5">
+                  <dt className="text-gray-500">Min Level</dt>
+                  <dd className="font-medium tabular-nums">{Number(m.min_stock_level ?? 0).toFixed(2)}</dd>
+                </div>
+                <div className="flex justify-between sm:flex-col sm:justify-start sm:gap-0.5">
+                  <dt className="text-gray-500">Reorder Qty</dt>
+                  <dd className="font-medium tabular-nums">{Number(m.reorder_quantity ?? 0).toFixed(2)}</dd>
+                </div>
+                <div className="flex justify-between sm:flex-col sm:justify-start sm:gap-0.5">
+                  <dt className="text-gray-500">Last Count</dt>
+                  <dd className="font-medium">{m.last_inventory_count_at
+                    ? new Date(m.last_inventory_count_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '—'}</dd>
+                </div>
               </dl>
             </div>
           </div>

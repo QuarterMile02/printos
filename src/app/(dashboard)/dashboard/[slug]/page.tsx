@@ -29,6 +29,7 @@ import QuotesPriorityWidget from './_widgets/QuotesPriorityWidget'
 import CollectionCallWidget from './_widgets/CollectionCallWidget'
 import DepartmentQueueWidget from './_widgets/DepartmentQueueWidget'
 import DesignQueueWidget from './_widgets/DesignQueueWidget'
+import LowStockWidget from './_widgets/LowStockWidget'
 import type { DateRangePreset } from '@/lib/reports/report-utils'
 
 export const dynamic = 'force-dynamic'
@@ -101,6 +102,7 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
       case 'collection_calls':    return <CollectionCallWidget service={service} orgId={org!.id} orgSlug={slug} />
       case 'department_queue':    return <DepartmentQueueWidget orgId={org!.id} orgSlug={slug} />
       case 'design_queue':        return <DesignQueueWidget service={service} orgId={org!.id} orgSlug={slug} />
+      case 'low_stock_materials': return <LowStockWidget service={service} orgId={org!.id} orgSlug={slug} />
       default:                    return <WidgetStub title={title} span={span} role={role} />
     }
   }

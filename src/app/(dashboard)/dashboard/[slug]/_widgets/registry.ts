@@ -15,7 +15,7 @@ export type WidgetId =
   // Accounting role
   | 'completed_not_invoiced' | 'collection_calls'
   // Production / installer
-  | 'department_queue'
+  | 'department_queue' | 'low_stock_materials'
   // Designer
   | 'design_queue'
 
@@ -63,8 +63,9 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'completed_not_invoiced', title: 'Completed Jobs Not Invoiced', visibleTo: (r) => isAccounting(r),   span: 6,  built: false },
   { id: 'collection_calls',       title: 'Collection Calls',            visibleTo: (r) => isAccounting(r) || isOwner(r), span: 6, built: true  },
 
-  // ─── Production + Installer (+ owner) ────────────────────────────
-  { id: 'department_queue',    title: 'Department Queue',        visibleTo: (r) => isProductionFloor(r) || isOwner(r), span: 6, built: true  },
+  // ─── Production + Installer (+ owner + accounting) ──────────────
+  { id: 'department_queue',    title: 'Department Queue',        visibleTo: (r) => isProductionFloor(r) || isOwner(r),                     span: 6,  built: true  },
+  { id: 'low_stock_materials', title: 'Low Stock Materials',     visibleTo: (r) => isProductionFloor(r) || isOwner(r) || isAccounting(r),  span: 12, built: true  },
 
   // ─── Designer (+ owner + managers) ───────────────────────────────
   { id: 'design_queue',        title: 'Design Queue',            visibleTo: (r, t) => isDesigner(r) || isOwner(r) || isManagerOrLead(t), span: 12, built: true  },

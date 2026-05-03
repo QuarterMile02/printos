@@ -1,6 +1,7 @@
 'use server'
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { checkPermission } from '@/lib/check-permission'
 import { redirect } from 'next/navigation'
 
 export async function saveMaterial(formData: FormData) {
@@ -29,6 +30,23 @@ export async function saveMaterial(formData: FormData) {
     setup_charge: parseFloat(formData.get('setup_charge') as string) || 0,
     active: formData.get('active') === 'on',
     updated_at: new Date().toISOString(),
+  }
+
+  // Inventory fields — only written if the caller has materials.edit_inventory.
+  // Checked here (server action) regardless of what the form renders,
+  // so direct POST submissions can't bypass the permission gate.
+  if (formData.has('current_stock') || formData.has('min_stock_level') || formData.has('reorder_quantity')) {
+    const { allowed } = await checkPermission(orgId, 'materials.edit_inventory')
+    if (allowed) {
+      const curRaw = formData.get('current_stock') as string | null
+      const minRaw = formData.get('min_stock_level') as string | null
+      const reoRaw = formData.get('reorder_quantity') as string | null
+      if (curRaw !== null) fields.current_stock = parseFloat(curRaw) || 0
+      if (minRaw !== null) fields.min_stock_level = parseFloat(minRaw) || 0
+      if (reoRaw !== null) fields.reorder_quantity = parseFloat(reoRaw) || 0
+      // Stamp the count timestamp whenever stock level is explicitly saved
+      if (curRaw !== null) fields.last_inventory_count_at = new Date().toISOString()
+    }
   }
 
   const service = createServiceClient()

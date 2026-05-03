@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import MaterialForm from '../material-form'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,6 +12,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
   const org = orgRow as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
+
+  const { allowed: canEditInventory } = await checkPermission(org.id, 'materials.edit_inventory')
 
   return (
     <div className="p-8 max-w-4xl">
@@ -25,7 +28,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       <h1 className="text-2xl font-bold text-gray-900 mb-6">New Material</h1>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <MaterialForm material={null} orgId={org.id} orgSlug={slug} />
+        <MaterialForm material={null} orgId={org.id} orgSlug={slug} canEditInventory={canEditInventory} />
       </div>
     </div>
   )
