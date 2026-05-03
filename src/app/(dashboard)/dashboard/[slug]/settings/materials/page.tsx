@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import MaterialsFilter from './materials-filter'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,7 +9,7 @@ type StockStatus = 'ok' | 'low' | 'out'
 function stockStatus(cur: number | null, min: number | null): StockStatus {
   const c = Number(cur ?? 0)
   const m = Number(min ?? 0)
-  if (m <= 0) return 'ok'   // no min set — tracking not configured
+  if (m <= 0) return 'ok'
   if (c <= 0) return 'out'
   if (c < m)  return 'low'
   return 'ok'
@@ -27,117 +28,50 @@ export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ search?: string; low_stock?: string }>
 }) {
-  console.log('[materials/page] render start')
-  let slug = ''
-  try {
-    const p = await params
-    slug = p.slug
-    console.log('[materials/page] slug:', slug)
-  } catch (err) {
-    console.error('[materials/page] CRASH awaiting params:', (err as Error)?.message, (err as Error)?.stack)
-    throw err
-  }
-
+  const { slug } = await params
   const sp = await searchParams
-  const search    = sp.search?.trim().toLowerCase() ?? ''
-  const lowOnly   = sp.low_stock === '1'
+  const search  = sp.search?.trim().toLowerCase() ?? ''
+  const lowOnly = sp.low_stock === '1'
+  const supabase = await createClient()
 
-  let supabase: Awaited<ReturnType<typeof createClient>>
-  try {
-    supabase = await createClient()
-    console.log('[materials/page] supabase client created')
-  } catch (err) {
-    console.error('[materials/page] CRASH createClient:', (err as Error)?.message, (err as Error)?.stack)
-    throw err
-  }
-
-  let org: { id: string; name: string } | null = null
-  try {
-    const { data: orgRow, error: orgErr } = await supabase
-      .from('organizations').select('id, name').eq('slug', slug).single()
-    if (orgErr) console.error('[materials/page] org query error:', orgErr.message, orgErr)
-    org = orgRow as { id: string; name: string } | null
-    console.log('[materials/page] org resolved:', org?.id ?? 'NOT FOUND')
-  } catch (err) {
-    console.error('[materials/page] CRASH org query:', (err as Error)?.message, (err as Error)?.stack)
-    throw err
-  }
-
+  const { data: orgRow } = await supabase
+    .from('organizations').select('id, name').eq('slug', slug).single()
+  const org = orgRow as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
   type MatRow = {
     id: string; name: string
     cost: number | null; price: number | null; selling_units: string | null
     active: boolean | null; material_type_id: string | null
-    current_stock: number | null; min_stock_level: number | null; track_inventory: boolean | null
+    current_stock: number | null; min_stock_level: number | null
   }
 
-  let allRows: MatRow[] = []
-  try {
-    console.log('[materials/page] fetching materials for org:', org.id)
-    const { data: rows, error } = await supabase
-      .from('materials')
-      .select('id, name, cost, price, selling_units, active, material_type_id, current_stock, min_stock_level, track_inventory')
-      .eq('organization_id', org.id)
-      .order('name')
-    if (error) {
-      console.error('[materials/page] materials query error:', error.message, error)
-      // Inventory columns not yet migrated — fall back to basic select
-      if (error.message?.includes('current_stock') || error.message?.includes('min_stock_level')) {
-        console.log('[materials/page] falling back to basic select (missing inventory columns)')
-        const { data: fallback, error: fbErr } = await supabase
-          .from('materials')
-          .select('id, name, cost, price, selling_units, active, material_type_id')
-          .eq('organization_id', org.id)
-          .order('name')
-        if (fbErr) console.error('[materials/page] fallback query error:', fbErr.message, fbErr)
-        allRows = ((fallback ?? []) as Omit<MatRow, 'current_stock' | 'min_stock_level' | 'track_inventory'>[])
-          .map((r) => ({ ...r, current_stock: null, min_stock_level: null, track_inventory: null }))
-      }
-    } else {
-      allRows = (rows ?? []) as MatRow[]
-      console.log('[materials/page] materials fetched, count:', allRows.length)
-    }
-  } catch (err) {
-    console.error('[materials/page] CRASH materials query:', (err as Error)?.message, (err as Error)?.stack)
-    return (
-      <div className="p-8 max-w-6xl">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6">
-          <p className="font-semibold text-red-800">Materials data temporarily unavailable</p>
-          <p className="mt-1 text-sm text-red-600">
-            {(err as Error)?.message ?? 'An unexpected error occurred. Please try again.'}
-          </p>
-        </div>
-      </div>
-    )
-  }
+  const { data: rows } = await supabase
+    .from('materials')
+    .select('id, name, cost, price, selling_units, active, material_type_id, current_stock, min_stock_level')
+    .eq('organization_id', org.id)
+    .order('name')
+  let materials = (rows ?? []) as MatRow[]
 
   // Resolve type names
-  const typeIds = [...new Set(allRows.map(m => m.material_type_id).filter(Boolean) as string[])]
+  const typeIds = [...new Set(materials.map(m => m.material_type_id).filter(Boolean) as string[])]
   const typeMap = new Map<string, string>()
-  try {
-    if (typeIds.length > 0) {
-      console.log('[materials/page] fetching', typeIds.length, 'material types')
-      const { data: types, error: typeErr } = await supabase
-        .from('material_types').select('id, name').in('id', typeIds)
-      if (typeErr) console.error('[materials/page] material_types error:', typeErr.message, typeErr)
-      for (const t of (types ?? []) as { id: string; name: string }[]) typeMap.set(t.id, t.name)
-    }
-  } catch (err) {
-    console.error('[materials/page] CRASH material_types query:', (err as Error)?.message, (err as Error)?.stack)
+  if (typeIds.length > 0) {
+    const { data: types } = await supabase
+      .from('material_types').select('id, name').in('id', typeIds)
+    for (const t of (types ?? []) as { id: string; name: string }[]) typeMap.set(t.id, t.name)
   }
 
-  let materials = allRows
-  if (search)   materials = materials.filter(m => m.name.toLowerCase().includes(search))
-  if (lowOnly)  materials = materials.filter(m => {
-    const st = stockStatus(m.current_stock, m.min_stock_level)
-    return st === 'low' || st === 'out'
-  })
-
-  const lowCount = allRows.filter(m => {
+  const lowCount = materials.filter(m => {
     const st = stockStatus(m.current_stock, m.min_stock_level)
     return st === 'low' || st === 'out'
   }).length
+
+  if (search)  materials = materials.filter(m => m.name.toLowerCase().includes(search))
+  if (lowOnly) materials = materials.filter(m => {
+    const st = stockStatus(m.current_stock, m.min_stock_level)
+    return st === 'low' || st === 'out'
+  })
 
   return (
     <div className="p-8 max-w-6xl">
@@ -163,32 +97,13 @@ export default async function Page({ params, searchParams }: {
         </div>
       </div>
 
-      <form className="mb-4 flex flex-wrap items-center gap-3">
-        <input
-          type="text" name="search" defaultValue={search}
-          placeholder="Search materials…"
-          className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-        />
-        <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 select-none">
-          <input
-            type="checkbox" name="low_stock" value="1"
-            defaultChecked={lowOnly}
-            onChange={(e) => {
-              // submit the form on change via progressive enhancement fallback
-              const form = e.target.closest('form')
-              if (form) form.requestSubmit()
-            }}
-            className="h-4 w-4 rounded border-gray-300 accent-amber-500"
-          />
-          Show low stock only
-          {lowCount > 0 && (
-            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-              {lowCount}
-            </span>
-          )}
-        </label>
-        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Filter</button>
-      </form>
+      {/* Client component owns all event handlers — fixes server/client boundary violation */}
+      <MaterialsFilter
+        search={search}
+        lowOnly={lowOnly}
+        lowCount={lowCount}
+        basePath={`/dashboard/${slug}/settings/materials`}
+      />
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-gray-200">
