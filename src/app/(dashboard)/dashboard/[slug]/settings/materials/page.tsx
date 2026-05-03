@@ -27,14 +27,42 @@ export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ search?: string; low_stock?: string }>
 }) {
-  const { slug } = await params
+  console.log('[materials/page] render start')
+  let slug = ''
+  try {
+    const p = await params
+    slug = p.slug
+    console.log('[materials/page] slug:', slug)
+  } catch (err) {
+    console.error('[materials/page] CRASH awaiting params:', (err as Error)?.message, (err as Error)?.stack)
+    throw err
+  }
+
   const sp = await searchParams
   const search    = sp.search?.trim().toLowerCase() ?? ''
   const lowOnly   = sp.low_stock === '1'
-  const supabase  = await createClient()
 
-  const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
-  const org = orgRow as { id: string; name: string } | null
+  let supabase: Awaited<ReturnType<typeof createClient>>
+  try {
+    supabase = await createClient()
+    console.log('[materials/page] supabase client created')
+  } catch (err) {
+    console.error('[materials/page] CRASH createClient:', (err as Error)?.message, (err as Error)?.stack)
+    throw err
+  }
+
+  let org: { id: string; name: string } | null = null
+  try {
+    const { data: orgRow, error: orgErr } = await supabase
+      .from('organizations').select('id, name').eq('slug', slug).single()
+    if (orgErr) console.error('[materials/page] org query error:', orgErr.message, orgErr)
+    org = orgRow as { id: string; name: string } | null
+    console.log('[materials/page] org resolved:', org?.id ?? 'NOT FOUND')
+  } catch (err) {
+    console.error('[materials/page] CRASH org query:', (err as Error)?.message, (err as Error)?.stack)
+    throw err
+  }
+
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
   type MatRow = {
@@ -46,35 +74,38 @@ export default async function Page({ params, searchParams }: {
 
   let allRows: MatRow[] = []
   try {
+    console.log('[materials/page] fetching materials for org:', org.id)
     const { data: rows, error } = await supabase
       .from('materials')
       .select('id, name, cost, price, selling_units, active, material_type_id, current_stock, min_stock_level, track_inventory')
       .eq('organization_id', org.id)
       .order('name')
     if (error) {
+      console.error('[materials/page] materials query error:', error.message, error)
       // Inventory columns not yet migrated — fall back to basic select
       if (error.message?.includes('current_stock') || error.message?.includes('min_stock_level')) {
-        const { data: fallback } = await supabase
+        console.log('[materials/page] falling back to basic select (missing inventory columns)')
+        const { data: fallback, error: fbErr } = await supabase
           .from('materials')
           .select('id, name, cost, price, selling_units, active, material_type_id')
           .eq('organization_id', org.id)
           .order('name')
+        if (fbErr) console.error('[materials/page] fallback query error:', fbErr.message, fbErr)
         allRows = ((fallback ?? []) as Omit<MatRow, 'current_stock' | 'min_stock_level' | 'track_inventory'>[])
           .map((r) => ({ ...r, current_stock: null, min_stock_level: null, track_inventory: null }))
-      } else {
-        console.error('[materials/page] fetch error:', error.message)
       }
     } else {
       allRows = (rows ?? []) as MatRow[]
+      console.log('[materials/page] materials fetched, count:', allRows.length)
     }
   } catch (err) {
-    console.error('[materials/page] unexpected error:', err)
+    console.error('[materials/page] CRASH materials query:', (err as Error)?.message, (err as Error)?.stack)
     return (
       <div className="p-8 max-w-6xl">
         <div className="rounded-xl border border-red-200 bg-red-50 p-6">
           <p className="font-semibold text-red-800">Materials data temporarily unavailable</p>
           <p className="mt-1 text-sm text-red-600">
-            {err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.'}
+            {(err as Error)?.message ?? 'An unexpected error occurred. Please try again.'}
           </p>
         </div>
       </div>
@@ -84,9 +115,16 @@ export default async function Page({ params, searchParams }: {
   // Resolve type names
   const typeIds = [...new Set(allRows.map(m => m.material_type_id).filter(Boolean) as string[])]
   const typeMap = new Map<string, string>()
-  if (typeIds.length > 0) {
-    const { data: types } = await supabase.from('material_types').select('id, name').in('id', typeIds)
-    for (const t of (types ?? []) as { id: string; name: string }[]) typeMap.set(t.id, t.name)
+  try {
+    if (typeIds.length > 0) {
+      console.log('[materials/page] fetching', typeIds.length, 'material types')
+      const { data: types, error: typeErr } = await supabase
+        .from('material_types').select('id, name').in('id', typeIds)
+      if (typeErr) console.error('[materials/page] material_types error:', typeErr.message, typeErr)
+      for (const t of (types ?? []) as { id: string; name: string }[]) typeMap.set(t.id, t.name)
+    }
+  } catch (err) {
+    console.error('[materials/page] CRASH material_types query:', (err as Error)?.message, (err as Error)?.stack)
   }
 
   let materials = allRows
