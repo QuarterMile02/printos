@@ -73,17 +73,28 @@
     let   lastCount   = countIds()
 
     for (let i = 0; i < MAX_CLICKS; i++) {
-      const btn = getLoadMoreBtn()
-
+      // Button may be absent temporarily while ShopVOX is loading — retry before giving up.
+      let btn = getLoadMoreBtn()
       if (!btn) {
-        log(`  No "Load more" button — list fully loaded after ${i} click(s)`)
-        break
+        let found = false
+        for (let retry = 0; retry < 4; retry++) {
+          log(`  Button not found — retry ${retry + 1}/4 (waiting for slow load…)`)
+          await DELAY(2000)
+          window.scrollTo(0, document.body.scrollHeight)
+          await DELAY(1000)
+          btn = getLoadMoreBtn()
+          if (btn) { found = true; break }
+        }
+        if (!found) {
+          log(`  No "Load more" button after 4 retries — list fully loaded after ${i} click(s)`)
+          break
+        }
       }
 
       btn.scrollIntoView({ block: 'center' })
       await DELAY(300)
       btn.click()
-      await DELAY(1500)   // wait for /companies API response + React render
+      await DELAY(2500)   // increased: give slow loads time to finish
 
       const current = countIds()
       log(`  Click ${i + 1}: ${current} customers in DOM`)
