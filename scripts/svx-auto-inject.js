@@ -4,23 +4,54 @@
 // visits each customer page, expands the Contacts section, scrapes all contacts,
 // then advances to the next customer.
 //
+// STORAGE KEYS (must match across all svx scripts):
+//   svx_queue          — array of customer UUIDs (set by Phase 1, read-only here)
+//   svx_contacts       — accumulated contact objects
+//   svx_progress       — { index: N } current position in queue
+//   svx_scraper_active — '1' while scraper is running
+//
 // USAGE
 //   1. Run shopvox-extract-contacts.js Phase 1 first to populate svx_queue
 //   2. Navigate to https://express.shopvox.com/customers
 //   3. Paste this script → Enter
 //
-// ABORT:   localStorage.removeItem('svx_inject'); reload
+// ABORT:   localStorage.removeItem('svx_progress'); localStorage.removeItem('svx_scraper_active'); reload
 // RESUME:  paste script again — picks up from saved index
+// CHECK:   JSON.parse(localStorage.getItem('svx_contacts') || '[]').length
 
 ;(async function svxAutoInject() {
-  const DELAY  = (ms) => new Promise((r) => setTimeout(r, ms))
-  const LS_Q   = 'svx_queue'
-  const LS_INJ = 'svx_inject'   // { index, results }
+  const DELAY = (ms) => new Promise((r) => setTimeout(r, ms))
+
+  // ── Storage keys ─────────────────────────────────────────────────────────────
+  const LS_QUEUE    = 'svx_queue'
+  const LS_CONTACTS = 'svx_contacts'
+  const LS_PROGRESS = 'svx_progress'
+  const LS_ACTIVE   = 'svx_scraper_active'
 
   function log(msg, style = 'color:#06c;font-weight:bold') {
     console.log('%c' + msg, style)
   }
   function warn(msg) { console.warn('[svx-inject] ' + msg) }
+
+  // ── Persistent save helpers ───────────────────────────────────────────────────
+
+  function saveContacts(contacts) {
+    try {
+      localStorage.setItem(LS_CONTACTS, JSON.stringify(contacts))
+      console.log(`[svx-inject] svx_contacts saved — ${contacts.length} total`)
+    } catch (e) {
+      console.error('[svx-inject] FAILED to save svx_contacts:', e.message, e)
+    }
+  }
+
+  function saveProgress(index) {
+    try {
+      localStorage.setItem(LS_PROGRESS, JSON.stringify({ index }))
+      console.log(`[svx-inject] svx_progress saved — index ${index}`)
+    } catch (e) {
+      console.error('[svx-inject] FAILED to save svx_progress:', e.message, e)
+    }
+  }
 
   function downloadJson(data, filename) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -63,7 +94,6 @@
         ?.textContent ?? ''
     ).trim()
 
-    // Collect all contact cards / rows rendered after "Show All" was clicked
     const contactSelectors = [
       '[data-testid="contact-row"]',
       '.contact-row',
@@ -78,7 +108,6 @@
     }
 
     if (rows.length === 0) {
-      // Fallback: scrape email addresses visible in page text
       const emails = [
         ...document.body.innerText.matchAll(/[\w.+-]+@[\w.-]+\.\w{2,}/g),
       ].map((m) => m[0])
@@ -87,12 +116,12 @@
 
     return rows
       .map((row) => {
-        const cells   = Array.from(row.querySelectorAll('td')).map((c) => c.innerText.trim())
-        const text    = row.innerText.trim()
-        const email   = (text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/) || [])[0] ?? null
-        const phone   = (text.match(/\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/) || [])[0] ?? null
-        const name    = cells[0] ?? null
-        const parts   = name?.split(' ') ?? []
+        const cells  = Array.from(row.querySelectorAll('td')).map((c) => c.innerText.trim())
+        const text   = row.innerText.trim()
+        const email  = (text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/) || [])[0] ?? null
+        const phone  = (text.match(/\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/) || [])[0] ?? null
+        const name   = cells[0] ?? null
+        const parts  = name?.split(' ') ?? []
         return {
           customerId,
           company_name: company,
@@ -115,7 +144,6 @@
     history.pushState(null, '', url)
     window.dispatchEvent(new PopStateEvent('popstate'))
 
-    // Wait for the page to show the customer UUID in the URL and some content
     const deadline = Date.now() + 12000
     while (Date.now() < deadline) {
       if (
@@ -129,57 +157,61 @@
 
   // ── Main loop ─────────────────────────────────────────────────────────────────
 
-  const queue = JSON.parse(localStorage.getItem(LS_Q) || 'null')
+  const queue = JSON.parse(localStorage.getItem(LS_QUEUE) || 'null')
   if (!queue || queue.length === 0) {
     warn('svx_queue is empty — run shopvox-extract-contacts.js Phase 1 first')
     return
   }
 
-  let state = JSON.parse(localStorage.getItem(LS_INJ) || 'null')
-  if (!state) {
-    state = { index: 0, results: [] }
-  } else {
-    log(`▶ Resuming from ${state.index}/${queue.length} (${state.results.length} contacts so far)`)
+  // Load existing progress
+  const savedProgress = JSON.parse(localStorage.getItem(LS_PROGRESS) || 'null')
+  let index    = savedProgress?.index ?? 0
+  let contacts = JSON.parse(localStorage.getItem(LS_CONTACTS) || '[]')
+
+  if (index > 0) {
+    log(`▶ Resuming from customer ${index + 1}/${queue.length} (${contacts.length} contacts saved so far)`)
   }
 
-  while (state.index < queue.length) {
-    const uuid = queue[state.index]
-    log(`[${state.index + 1}/${queue.length}] ${uuid}`, 'color:#888')
+  // Mark scraper as active
+  localStorage.setItem(LS_ACTIVE, '1')
+
+  while (index < queue.length) {
+    const uuid = queue[index]
+    log(`[${index + 1}/${queue.length}] ${uuid}`, 'color:#888')
 
     const ok = await navigateTo(uuid)
     if (!ok) {
-      warn(`  SPA nav timed out — falling back to full reload`)
-      localStorage.setItem(LS_INJ, JSON.stringify(state))
+      warn('  SPA nav timed out — falling back to full reload')
+      saveProgress(index)
+      localStorage.setItem(LS_ACTIVE, '1')
       window.location.href = `${window.location.origin}/customers/${uuid}`
       return
     }
 
-    await DELAY(600)   // let React settle before looking for Show All
+    await DELAY(600)
 
-    // processAndAdvance is the continuation after the optional Show All click
-    async function processAndAdvance() {
-      await DELAY(200)
-      const contacts = extractContacts(uuid)
-      state.results.push(...contacts)
-      if (contacts.length) log(`  ✓ ${contacts.length} contact(s)`)
-      state.index++
-      localStorage.setItem(LS_INJ, JSON.stringify(state))
-    }
-
-    // Click "Show All" only for the Contacts section, then wait for render
     const clicked = clickShowAllContacts()
     if (clicked) {
       await DELAY(1500)
     }
-    await processAndAdvance()
+
+    await DELAY(200)
+    const newContacts = extractContacts(uuid)
+    contacts.push(...newContacts)
+    if (newContacts.length) log(`  ✓ ${newContacts.length} contact(s) — ${contacts.length} total`)
+
+    index++
+    saveProgress(index)
+    saveContacts(contacts)
 
     await DELAY(300)
   }
 
+  localStorage.removeItem(LS_ACTIVE)
+
   log(
-    `✓ Done — ${state.results.length} contacts across ${queue.length} customers`,
+    `✓ Done — ${contacts.length} contacts across ${queue.length} customers`,
     'color:#0a7;font-weight:bold;font-size:14px',
   )
-  downloadJson({ contacts: state.results }, `shopvox-contacts-${new Date().toISOString().slice(0, 10)}.json`)
-  localStorage.removeItem(LS_INJ)
+  downloadJson({ contacts }, `shopvox-contacts-${new Date().toISOString().slice(0, 10)}.json`)
 })()
