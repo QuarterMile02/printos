@@ -1,0 +1,76 @@
+{
+  "orphans": [
+    {
+      "shopvoxId": "types",
+      "shopvoxName": "Product Types",
+      "shopvoxUrl": "https://express.shopvox.com/settings/products/types",
+      "extractedAt": "2026-04-21T05:08:24.535Z",
+      "data": {
+        "pricing": {},
+        "modifiers": [],
+        "dropdown_menus": [],
+        "default_items": []
+      }
+    },
+    {
+      "shopvoxId": "types",
+      "shopvoxName": "Product Types",
+      "shopvoxUrl": "https://express.shopvox.com/settings/products/types",
+      "extractedAt": "2026-04-21T05:25:18.689Z",
+      "data": {
+        "pricing": {},
+        "modifiers": [],
+        "dropdown_menus": [],
+        "default_items": []
+      }
+    },
+    {
+      "shopvoxId": "70260076-a659-463b-951e-7119265f9fab",
+      "shopvoxName": "Banner",
+      "shopvoxUrl": "https://express.shopvox.com/settings/products/70260076-a659-463b-951e-7119265f9fab",
+      "extractedAt": "2026-04-21T05:30:06.588Z",
+      "data": {
+        "pricing": {},
+        "modifiers": [],
+        "dropdown_menus": [],
+        "default_items": []
+      }
+    },
+    {
+      "shopvoxId": "70260076-a659-463b-951e-7119265f9fab",
+      "shopvoxName": "Banner",
+      "shopvoxUrl": "https://express.shopvox.com/settings/products/70260076-a659-463b-951e-7119265f9fab",
+      "extractedAt": "2026-04-21T05:38:21.571Z",
+      "data": {
+        "pricing": {},
+        "modifiers": [],
+        "dropdown_menus": [],
+        "default_items": []
+      }
+    },
+    {
+      "shopvoxId": "70260076-a659-463b-951e-7119265f9fab",
+      "shopvoxName": "Banner",
+      "shopvoxUrl": "https://express.shopvox.com/settings/products/70260076-a659-463b-951e-7119265f9fab",
+      "extractedAt": "2026-04-21T05:44:17.321Z",
+      "data": {
+        "pricing": {},
+        "modifiers": [],
+        "dropdown_menus": [],
+        "default_items": []
+      }
+    },
+    {
+      "shopvoxId": "70260076-a659-463b-951e-7119265f9fab",
+      "shopvoxName": "Banner",
+      "shopvoxUrl": "https://express.shopvox.com/settings/products/70260076-a659-463b-951e-7119265f9fab",
+      "extractedAt": "2026-04-21T05:49:12.212Z",
+      "data": {
+        "pricing": {},
+        "modifiers": [],
+        "dropdown_menus": [],
+        "default_items": []
+      }
+    }
+  ]
+}
