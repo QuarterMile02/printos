@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { uploadProof, updateProofStatus } from './proof-actions'
 import { generateQRDataUrl } from '@/lib/qr'
+import PrintLabelButton from './print-label-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,10 +57,11 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     customers: { first_name: string; last_name: string; company_name: string | null; email: string | null; phone: string | null } | null
     material_selection: { line_items?: MaterialLine[]; computed_at?: string } | null
     assigned_printer: string | null
+    label_printed_at: string | null
   }
 
   let job: JobShape | null = null
-  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, customers(first_name, last_name, company_name, email, phone)'
+  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, label_printed_at, customers(first_name, last_name, company_name, email, phone)'
   const { data: jobRow1, error: jobErr1 } = await supabase
     .from('jobs')
     .select(fullSelect)
@@ -75,7 +77,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
       .eq('id', jobId)
       .eq('organization_id', org.id)
       .single()
-    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer'>), material_selection: null, assigned_printer: null }
+    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer' | 'label_printed_at'>), material_selection: null, assigned_printer: null, label_printed_at: null }
   }
   if (!job) return <div className="p-8 text-red-600">Job not found</div>
 
@@ -204,9 +206,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
               </p>
             )}
           </div>
-          <div className="text-right text-sm text-gray-500">
-            <p>Created {fmtDate(job.created_at)}</p>
-            {job.due_date && <p className="mt-1 font-semibold text-gray-700">Due {fmtDate(job.due_date)}</p>}
+          <div className="flex flex-col items-end gap-2">
+            <div className="text-right text-sm text-gray-500">
+              <p>Created {fmtDate(job.created_at)}</p>
+              {job.due_date && <p className="mt-1 font-semibold text-gray-700">Due {fmtDate(job.due_date)}</p>}
+            </div>
+            <PrintLabelButton jobId={job.id} orgId={org.id} labelPrintedAt={job.label_printed_at} />
           </div>
         </div>
 

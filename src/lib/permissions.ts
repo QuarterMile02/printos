@@ -29,6 +29,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     '*': true,
   },
   sales: {
+    'jobs.print_label': true,
     'dashboard.overview': true,
     'dashboard.revenue': true,
     'dashboard.job_queue': true,
@@ -95,6 +96,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'settings.email_signature.own': true,
   },
   production: {
+    'jobs.print_label': true,
     'dashboard.overview': true,
     'dashboard.job_queue': true,
     'dashboard.metrics.own': true,
@@ -116,6 +118,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'settings.email_signature.own': true,
   },
   installer: {
+    'jobs.print_label': true,
     'dashboard.overview': true,
     'dashboard.job_queue': true,
     'dashboard.metrics.own': true,

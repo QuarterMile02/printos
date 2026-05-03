@@ -107,9 +107,12 @@ type CardProps = {
   job: JobCard
   orgId: string
   orgSlug: string
+  printMode: boolean
+  selected: boolean
+  onToggleSelect: (id: string) => void
 }
 
-function JobCardItem({ job, orgId, orgSlug, onNotified }: CardProps & { onNotified: (msg: string) => void }) {
+function JobCardItem({ job, orgId, orgSlug, onNotified, printMode, selected, onToggleSelect }: CardProps & { onNotified: (msg: string) => void }) {
   const [isPending, startTransition] = useTransition()
   const [optimisticStatus, setOptimisticStatus] = useState<JobStatus>(job.status)
 
@@ -128,10 +131,9 @@ function JobCardItem({ job, orgId, orgSlug, onNotified }: CardProps & { onNotifi
   const overdue = job.due_date ? isOverdue(job.due_date, optimisticStatus) : false
   const dueSoon = job.due_date ? isDueSoon(job.due_date, optimisticStatus) : false
 
-  // Priority: file_error (red+blink) > help_needed (amber) > due soon (amber) > completed (green) > default
-  const isFileError = job.flag === 'file_error'
+  const isFileError  = job.flag === 'file_error'
   const isHelpNeeded = job.flag === 'help_needed'
-  const isCompleted = optimisticStatus === 'completed'
+  const isCompleted  = optimisticStatus === 'completed'
 
   let borderClass = 'border'
   if (isFileError) borderClass = 'border-2 border-red-500 animate-pulse'
@@ -147,6 +149,42 @@ function JobCardItem({ job, orgId, orgSlug, onNotified }: CardProps & { onNotifi
       ? 'bg-amber-50 text-amber-700'
       : 'bg-gray-50 text-gray-500'
 
+  // ── Print-mode: selectable card, no navigation ───────────────────────────────
+  if (printMode) {
+    return (
+      <div
+        onClick={() => onToggleSelect(job.id)}
+        className={`cursor-pointer select-none rounded-lg ${borderClass} bg-white p-3 shadow-sm transition-all
+          ${selected ? 'ring-2 ring-qm-lime ring-offset-1' : 'hover:shadow-md'}`}
+      >
+        <div className="flex items-start justify-between mb-1.5">
+          <span className="text-xs font-semibold text-gray-400">#{job.job_number}</span>
+          <input
+            type="checkbox"
+            checked={selected}
+            readOnly
+            className="h-4 w-4 rounded border-gray-300 accent-qm-lime pointer-events-none"
+          />
+        </div>
+        <p className="text-sm font-medium text-gray-900 leading-snug mb-1">{job.title}</p>
+        {job.customer && (
+          <p className="text-xs text-gray-500">
+            {job.customer.first_name} {job.customer.last_name}
+            {job.customer.company_name && (
+              <span className="text-gray-400"> &middot; {job.customer.company_name}</span>
+            )}
+          </p>
+        )}
+        {job.due_date && (
+          <div className={`mt-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${dueDateStyle}`}>
+            {overdue ? 'Overdue' : dueSoon ? 'Due today' : formatDueDate(job.due_date)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Normal mode ───────────────────────────────────────────────────────────────
   return (
     <a href={detailHref} className={`block rounded-lg ${borderClass} bg-white p-3 shadow-sm transition-all hover:shadow-md ${isPending ? 'opacity-60' : ''}`}>
       {/* Top row: job number + assigned initials */}
@@ -236,6 +274,8 @@ export default function KanbanBoard({
 }: Props) {
   const router = useRouter()
   const [toast, setToast] = useState<{ message: string; key: number } | null>(null)
+  const [printMode, setPrintMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const deptLabelMap = new Map(allDepartments.map((d) => [d.code, d.name]))
   const activeLabels = activeDepartments
@@ -258,6 +298,25 @@ export default function KanbanBoard({
     setTimeout(() => setToast(null), 5000)
   }
 
+  function togglePrintMode() {
+    setPrintMode((v) => !v)
+    setSelectedIds(new Set())
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function printSelected() {
+    const ids = [...selectedIds].join(',')
+    window.open(`/api/jobs/labels?ids=${ids}`, '_blank')
+  }
+
   return (
     <>
       {/* Toast notification */}
@@ -277,6 +336,29 @@ export default function KanbanBoard({
           </button>
         </div>
       )}
+
+      {/* Toolbar: department filter + print-mode toggle */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        {/* Print mode toggle */}
+        <button
+          onClick={togglePrintMode}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition
+            ${printMode
+              ? 'border-qm-lime bg-qm-lime-light text-qm-lime-dark'
+              : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+        >
+          <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.054 48.054 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" />
+          </svg>
+          {printMode ? 'Exit Print Mode' : 'Print Labels'}
+        </button>
+
+        {printMode && (
+          <span className="text-xs text-gray-500">
+            Click cards to select, then print
+          </span>
+        )}
+      </div>
 
       {/* Department filter bar */}
       {(filterIsActive || canChangeFilter) && (
@@ -301,6 +383,30 @@ export default function KanbanBoard({
               ))}
             </select>
           )}
+        </div>
+      )}
+
+      {/* Floating print action bar */}
+      {printMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-qm-lime bg-white px-5 py-3 shadow-xl">
+          <span className="text-sm font-semibold text-gray-700">
+            {selectedIds.size} job{selectedIds.size !== 1 ? 's' : ''} selected
+          </span>
+          <button
+            onClick={printSelected}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-1.5 text-sm font-bold text-white shadow hover:brightness-105 transition"
+          >
+            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.054 48.054 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" />
+            </svg>
+            Print {selectedIds.size} Label{selectedIds.size !== 1 ? 's' : ''}
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
+          >
+            Clear
+          </button>
         </div>
       )}
 
@@ -330,6 +436,9 @@ export default function KanbanBoard({
                       orgId={orgId}
                       orgSlug={orgSlug}
                       onNotified={showToast}
+                      printMode={printMode}
+                      selected={selectedIds.has(job.id)}
+                      onToggleSelect={toggleSelect}
                     />
                   ))
                 )}

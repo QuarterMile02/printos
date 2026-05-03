@@ -262,6 +262,25 @@ export async function updateJobFlag(
   return {}
 }
 
+export async function markLabelPrinted(
+  jobId: string,
+  orgId: string,
+): Promise<{ error?: string }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!membership) return { error: 'You are not a member of this organization.' }
+
+  const service = createServiceClient()
+  const { error: updateError } = await service
+    .from('jobs')
+    .update({ label_printed_at: new Date().toISOString() })
+    .eq('id', jobId)
+    .eq('organization_id', orgId)
+
+  if (updateError) return { error: updateError.message }
+  return {}
+}
+
 export async function updateJobDescription(
   jobId: string,
   orgId: string,
