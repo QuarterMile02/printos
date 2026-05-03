@@ -49,76 +49,82 @@
   await waitForPageReady()
   await DELAY(500)   // extra settle time for lazy-loaded contact sections
 
-  // ── 4. Click "Show All" for Contacts section only ────────────────────────────
-  // Two "Show All" buttons exist (Contacts + Addresses).
-  // Match by span text, walk to button parent, guard on section containing "Contacts".
-  function clickShowAllContacts() {
+  // ── 4. Expand all contacts: "Show All" then "Load N Remaining" ──────────────
+  async function expandAllContacts() {
+    // Step 1: click "Show All" (guarded to Contacts section only)
     const showAllSpan = [...document.querySelectorAll('span')]
       .find((s) => s.textContent.trim() === 'Show All')
     const showAllBtn = showAllSpan?.closest('button')
     const section    = showAllSpan?.closest('section, div[class*="Contact"], div')
     if (showAllSpan && showAllBtn && section?.textContent.includes('Contacts')) {
       showAllBtn.click()
-      return true
+      console.log('[svx-inject] "Show All" clicked')
+      await DELAY(1500)
     }
-    return false
+
+    // Step 2: click "Load N Remaining Contacts" until it disappears
+    // Loop up to 5× for very large contact lists
+    for (let i = 0; i < 5; i++) {
+      const loadMoreSpan = [...document.querySelectorAll('span')]
+        .find((s) => /^Load \d+ Remaining Contacts?$/i.test(s.textContent.trim()))
+      if (!loadMoreSpan) break
+      const loadMoreBtn = loadMoreSpan.closest('button')
+      if (!loadMoreBtn) break
+      loadMoreBtn.scrollIntoView({ block: 'center' })
+      await DELAY(300)
+      loadMoreBtn.click()
+      console.log(`[svx-inject] "Load Remaining" click ${i + 1} — waiting for render`)
+      await DELAY(2000)
+    }
   }
 
-  const clicked = clickShowAllContacts()
-  if (clicked) {
-    console.log('[svx-inject] "Show All" clicked — waiting for contacts to render')
-    await DELAY(1500)
-  }
-
-  // ── 5. Extract contacts from this page ────────────────────────────────────────
+  // ── 5. Extract contacts using confirmed DOM structure (div.ml4 names) ─────────
   function extractContacts(customerId) {
-    const company = (
-      document.querySelector('h1, [data-testid="customer-name"], .customer-name')
-        ?.textContent ?? ''
-    ).trim()
+    const company = document.querySelector('h1')?.textContent.trim() ?? ''
 
-    const selectors = [
-      '[data-testid="contact-row"]',
-      '.contact-row',
-      '[data-section="contacts"] tr',
-      '#contacts-section tr',
-      'table[aria-label*="contact" i] tr',
-    ]
-    let rows = []
-    for (const sel of selectors) {
-      rows = Array.from(document.querySelectorAll(sel))
-      if (rows.length > 0) break
-    }
+    const nameDivs   = [...document.querySelectorAll('div.ml4')]
+    const contacts   = []
 
-    if (rows.length === 0) {
-      // Fallback: pull email addresses from visible page text
-      const emails = [...document.body.innerText.matchAll(/[\w.+-]+@[\w.-]+\.\w{2,}/g)]
-        .map((m) => m[0])
-      return emails.map((email) => ({ customerId, company_name: company, email }))
-    }
+    for (const nameDiv of nameDivs) {
+      const name = nameDiv.textContent.trim()
+      if (!name || name.length < 2 || name.length > 80) continue
 
-    return rows
-      .map((row) => {
-        const cells = Array.from(row.querySelectorAll('td')).map((c) => c.innerText.trim())
-        const text  = row.innerText.trim()
-        const email = (text.match(/[\w.+-]+@[\w.-]+\.\w{2,}/) || [])[0] ?? null
-        const phone = (text.match(/\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/) || [])[0] ?? null
-        const name  = cells[0] ?? null
-        const parts = name?.split(' ') ?? []
-        return {
-          customerId,
-          company_name: company,
-          full_name:    name,
-          first_name:   parts[0] ?? null,
-          last_name:    parts.slice(1).join(' ') || null,
-          title:        cells[1] ?? null,
-          email,
-          phone,
-          is_primary:   /primary|main/i.test(text),
-        }
+      // Walk up to the enclosing contact row
+      const row = nameDiv.closest('tr, [class*="row" i], [class*="contact" i]')
+               ?? nameDiv.parentElement?.parentElement
+      if (!row) continue
+
+      const rowText = row.innerText ?? ''
+      const email   = (rowText.match(/[\w.+-]+@[\w.-]+\.\w{2,}/) || [])[0] ?? null
+      const phone   = (rowText.match(/\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}/) || [])[0] ?? null
+
+      // Skip UI labels: only keep rows that have an email, phone, or a known role label
+      if (!email && !phone && !/Primary|Account Payable/i.test(rowText)) continue
+
+      const parts = name.split(' ')
+      contacts.push({
+        customerId,
+        company_name: company,
+        full_name:    name,
+        first_name:   parts[0] ?? null,
+        last_name:    parts.slice(1).join(' ') || null,
+        email,
+        phone,
+        is_primary:   /primary/i.test(rowText),
+        is_ap:        /account payable/i.test(rowText),
       })
-      .filter((c) => c.email || c.phone || c.full_name)
+    }
+
+    // Dedupe by full_name
+    const seen = new Set()
+    return contacts.filter((c) => {
+      if (seen.has(c.full_name)) return false
+      seen.add(c.full_name)
+      return true
+    })
   }
+
+  await expandAllContacts()
 
   const newContacts = extractContacts(uuid)
   console.log(`[svx-inject] extracted ${newContacts.length} contact(s) from ${uuid}`)
