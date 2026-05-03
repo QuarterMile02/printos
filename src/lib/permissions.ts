@@ -197,6 +197,7 @@ export const TIER_UPGRADES: Record<Tier, Record<string, boolean>> = {
     'jobs.view_dept_all': true,
     'jobs.reassign_dept': true,
     'dashboard.dept_metrics': true,
+    'dashboard.customize': true,   // leads can reorder/add/remove widgets
   },
   manager: {
     'jobs.view_dept_all': true,
@@ -207,6 +208,7 @@ export const TIER_UPGRADES: Record<Tier, Record<string, boolean>> = {
     'dashboard.all_metrics': true,
     'reports.jobs': true,
     'permission_overrides.grant': true,
+    'dashboard.customize': true,   // managers can reorder/add/remove widgets
   },
 }
 

@@ -1,20 +1,17 @@
-// New role-based dashboard. Replaces the legacy 938-line page that
-// rendered the same view for every user. The layout is driven by
-// _widgets/registry.ts — each role+tier gets a filtered widget list,
-// rendered into a 12-col grid.
-//
-// Customization (drag to reorder, add/remove widgets) ships next turn.
-// The dashboard_layouts table from migration 039 already exists for it.
-//
-// Built widgets land server-side; stubs use the shared WidgetStub. When
-// a widget is upgraded, replace its stub case with the real component
-// and flip `built: true` in the registry.
-
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { hasPermission, type Role, type Tier } from '@/lib/permissions'
-import { visibleWidgetsFor, canCustomizeDashboard, type WidgetId } from './_widgets/registry'
-import { WidgetStub } from './_widgets/widget-card'
+import { checkPermission } from '@/lib/check-permission'
+import { WIDGETS, type WidgetId } from './_widgets/registry'
+import {
+  resolveWidgetOrder,
+  widgetOrderToConfig,
+  WIDGET_META,
+  type WidgetConfig,
+} from '@/lib/dashboard/widget-registry'
+import DashboardGrid from './_widgets/dashboard-grid'
+
+// Widget components
 import AlertBar from './_widgets/alert-bar'
 import QuickCreate from './_widgets/quick-create'
 import MyJobAssignments from './_widgets/my-job-assignments'
@@ -30,6 +27,7 @@ import CollectionCallWidget from './_widgets/CollectionCallWidget'
 import DepartmentQueueWidget from './_widgets/DepartmentQueueWidget'
 import DesignQueueWidget from './_widgets/DesignQueueWidget'
 import LowStockWidget from './_widgets/LowStockWidget'
+import { WidgetStub } from './_widgets/widget-card'
 import type { DateRangePreset } from '@/lib/reports/report-utils'
 
 export const dynamic = 'force-dynamic'
@@ -52,8 +50,7 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
     .from('organizations').select('id, name').eq('slug', slug).maybeSingle() as { data: { id: string; name: string } | null; error: unknown }
   if (!org) notFound()
 
-  // Resolve role + tier. Profile may not have a row yet for orgs where
-  // the trigger missed; fall back to org_members so we don't crash.
+  // Resolve role + tier (profile → fallback to org_members)
   let role: Role = 'production'
   let tier: Tier = 'staff'
   let displayName: string | null = null
@@ -73,20 +70,40 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
     if (mem && (mem.role === 'owner' || mem.role === 'admin')) { role = 'owner'; tier = 'manager' }
   }
 
-  const canCreateQuotes = hasPermission({ role, tier }, [], 'quotes.create')
+  // Permission: staff never see Edit Layout button
+  const { allowed: canCustomize } = await checkPermission(org.id, 'dashboard.customize')
+  const canCreateQuotes    = hasPermission({ role, tier }, [], 'quotes.create')
   const canCreateCustomers = hasPermission({ role, tier }, [], 'customers.create')
 
-  // BI Stats searchParams (preset + count/value mode). Defaulted here
-  // so the widget always has a deterministic state on first load.
   const biPreset = (sp.bi_preset as DateRangePreset) ?? 'this_month'
   const biMode: 'count' | 'value' = sp.bi_mode === 'value' ? 'value' : 'count'
 
-  const widgets = visibleWidgetsFor(role, tier)
-  const showCustomize = canCustomizeDashboard(role, tier)
+  // Load saved layout for this user+org
+  type LayoutRow = { widget_config: WidgetConfig }
+  const { data: layoutRow } = await service
+    .from('dashboard_layouts')
+    .select('widget_config')
+    .eq('user_id', user.id)
+    .eq('organization_id', org.id)
+    .maybeSingle() as { data: LayoutRow | null; error: unknown }
 
-  // Render each widget by id. Stubs flow through WidgetStub so the slot
-  // is still reserved — making it obvious what's wired vs. queued.
-  function renderWidget(id: WidgetId, span: number, title: string) {
+  const savedConfig = layoutRow?.widget_config ?? null
+
+  // Merge saved config against role defaults → final ordered ID list
+  const orderedIds = resolveWidgetOrder(role, tier, savedConfig)
+
+  // Widgets the user's role allows but aren't currently in their layout
+  const orderedSet    = new Set(orderedIds)
+  const availableToAdd = Object.keys(WIDGET_META).filter(
+    (id) =>
+      !orderedSet.has(id) &&
+      WIDGET_META[id]?.visibleTo(role, tier) &&
+      // Only offer built widgets in the catalog
+      (WIDGETS.find((w) => w.id === id)?.built ?? false),
+  )
+
+  // ── Render each widget by id ─────────────────────────────────────────────
+  function renderWidget(id: WidgetId) {
     switch (id) {
       case 'alert_bar':           return <AlertBar service={service} orgId={org!.id} orgSlug={slug} />
       case 'quick_create':        return <QuickCreate orgSlug={slug} role={role} canCreateQuotes={canCreateQuotes} canCreateCustomers={canCreateCustomers} />
@@ -103,40 +120,62 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
       case 'department_queue':    return <DepartmentQueueWidget orgId={org!.id} orgSlug={slug} />
       case 'design_queue':        return <DesignQueueWidget service={service} orgId={org!.id} orgSlug={slug} />
       case 'low_stock_materials': return <LowStockWidget service={service} orgId={org!.id} orgSlug={slug} />
-      default:                    return <WidgetStub title={title} span={span} role={role} />
+      default: {
+        const def = WIDGETS.find((w) => w.id === id)
+        return <WidgetStub title={def?.title ?? id} span={def?.span ?? 12} role={role} />
+      }
     }
+  }
+
+  // Build widgetMap: pre-render each visible widget server-side
+  const widgetMap: Record<string, React.ReactNode> = {}
+  for (const id of orderedIds) {
+    widgetMap[id] = renderWidget(id as WidgetId)
+  }
+
+  // ── Persist the resolved default on first visit so re-order has a baseline
+  // Only write if there's no saved row yet — avoids overwriting on every load.
+  if (!layoutRow) {
+    const defaultConfig = widgetOrderToConfig(orderedIds)
+    // Best-effort, non-blocking. Failures are silent — layout still renders.
+    void service.from('dashboard_layouts').upsert(
+      {
+        user_id: user.id,
+        organization_id: org.id,
+        widget_config: defaultConfig,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,organization_id' },
+    )
   }
 
   return (
     <div className="p-8 max-w-7xl">
+      {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-extrabold text-[#1A1A1A]">
             {displayName ? `Welcome back, ${displayName.split(' ')[0]}` : 'Dashboard'}
           </h1>
           <p className="mt-1 text-sm text-gray-600">
-            <span className="font-semibold capitalize">{role}</span> · <span className="capitalize">{tier}</span> · {org.name}
+            <span className="font-semibold capitalize">{role}</span>
+            {' · '}
+            <span className="capitalize">{tier}</span>
+            {' · '}
+            {org.name}
           </p>
         </div>
-        {showCustomize && (
-          <button
-            type="button"
-            disabled
-            title="Customization UI lands next dashboard pass"
-            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-500 disabled:cursor-not-allowed"
-          >
-            + Add Widget
-          </button>
-        )}
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
-        {widgets.map((w) => (
-          <div key={w.id} className={`col-span-12 ${w.span === 6 ? 'lg:col-span-6' : 'lg:col-span-12'}`}>
-            {renderWidget(w.id, w.span, w.title)}
-          </div>
-        ))}
-      </div>
+      {/* Grid — client handles drag, add/remove, save */}
+      <DashboardGrid
+        widgetMap={widgetMap}
+        orderedIds={orderedIds}
+        availableToAdd={availableToAdd}
+        canCustomize={canCustomize}
+        orgId={org.id}
+        orgSlug={slug}
+      />
     </div>
   )
 }
