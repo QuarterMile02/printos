@@ -37,36 +37,67 @@ export default async function Page({ params, searchParams }: {
   const org = orgRow as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const { data: rows } = await supabase
-    .from('materials')
-    .select('id, name, cost, price, selling_units, active, material_type_id, current_stock, min_stock_level, track_inventory')
-    .eq('organization_id', org.id)
-    .order('name')
-
   type MatRow = {
     id: string; name: string
     cost: number | null; price: number | null; selling_units: string | null
     active: boolean | null; material_type_id: string | null
     current_stock: number | null; min_stock_level: number | null; track_inventory: boolean | null
   }
-  let materials = (rows ?? []) as MatRow[]
+
+  let allRows: MatRow[] = []
+  try {
+    const { data: rows, error } = await supabase
+      .from('materials')
+      .select('id, name, cost, price, selling_units, active, material_type_id, current_stock, min_stock_level, track_inventory')
+      .eq('organization_id', org.id)
+      .order('name')
+    if (error) {
+      // Inventory columns not yet migrated — fall back to basic select
+      if (error.message?.includes('current_stock') || error.message?.includes('min_stock_level')) {
+        const { data: fallback } = await supabase
+          .from('materials')
+          .select('id, name, cost, price, selling_units, active, material_type_id')
+          .eq('organization_id', org.id)
+          .order('name')
+        allRows = ((fallback ?? []) as Omit<MatRow, 'current_stock' | 'min_stock_level' | 'track_inventory'>[])
+          .map((r) => ({ ...r, current_stock: null, min_stock_level: null, track_inventory: null }))
+      } else {
+        console.error('[materials/page] fetch error:', error.message)
+      }
+    } else {
+      allRows = (rows ?? []) as MatRow[]
+    }
+  } catch (err) {
+    console.error('[materials/page] unexpected error:', err)
+    return (
+      <div className="p-8 max-w-6xl">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6">
+          <p className="font-semibold text-red-800">Materials data temporarily unavailable</p>
+          <p className="mt-1 text-sm text-red-600">
+            {err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.'}
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   // Resolve type names
-  const typeIds = [...new Set(materials.map(m => m.material_type_id).filter(Boolean) as string[])]
+  const typeIds = [...new Set(allRows.map(m => m.material_type_id).filter(Boolean) as string[])]
   const typeMap = new Map<string, string>()
   if (typeIds.length > 0) {
     const { data: types } = await supabase.from('material_types').select('id, name').in('id', typeIds)
     for (const t of (types ?? []) as { id: string; name: string }[]) typeMap.set(t.id, t.name)
   }
 
+  let materials = allRows
   if (search)   materials = materials.filter(m => m.name.toLowerCase().includes(search))
   if (lowOnly)  materials = materials.filter(m => {
     const st = stockStatus(m.current_stock, m.min_stock_level)
     return st === 'low' || st === 'out'
   })
 
-  const lowCount = (rows ?? []).filter(m => {
-    const st = stockStatus((m as MatRow).current_stock, (m as MatRow).min_stock_level)
+  const lowCount = allRows.filter(m => {
+    const st = stockStatus(m.current_stock, m.min_stock_level)
     return st === 'low' || st === 'out'
   }).length
 
