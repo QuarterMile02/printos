@@ -178,18 +178,21 @@ for (const c of clean) {
   }
 
   // FIX 3: dedup → UPDATE existing instead of skip
+  // 'pending' means already queued in this run — skip entirely (prevents intra-JSON dupes)
   let existingId = null
   if (email) {
     const key = `${customerId}:${email}`
-    existingId = existingByEmail.get(key) ?? null
-    if (existingId === 'pending') existingId = null   // in-batch, treat as new
-    if (!existingId) existingByEmail.set(key, 'pending')
+    const val = existingByEmail.get(key)
+    if (val === 'pending') continue          // duplicate within JSON file — skip
+    if (val) { existingId = val }            // real DB id → update
+    else { existingByEmail.set(key, 'pending') }
   }
   if (!existingId) {
     const key = `${customerId}:${fullName.toLowerCase()}`
-    existingId = existingByName.get(key) ?? null
-    if (existingId === 'pending') existingId = null
-    if (!existingId) existingByName.set(key, 'pending')
+    const val = existingByName.get(key)
+    if (val === 'pending') continue          // duplicate within JSON file — skip
+    if (val) { existingId = val }            // real DB id → update
+    else { existingByName.set(key, 'pending') }
   }
 
   if (existingId) {
