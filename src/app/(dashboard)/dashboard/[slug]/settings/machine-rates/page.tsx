@@ -57,10 +57,34 @@ type MaterialCategory = { id: string; name: string }
 type LaborRateOption = { id: string; name: string }
 type DiscountOption = { id: string; name: string }
 
-export default async function Page({ params, searchParams }: {
+type PageProps = {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ search?: string; formula?: string; status?: string; edit?: string; add?: string; saved?: string }>
-}) {
+}
+
+export default async function Page(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[machine-rates] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (machine-rates)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && (
+          <>
+            <div style={{ marginTop: '1rem' }}><strong>Stack:</strong></div>
+            <pre style={{ fontSize: '0.75rem', overflowX: 'auto' }}>{stack}</pre>
+          </>
+        )}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const supabase = await createClient()
@@ -82,11 +106,15 @@ export default async function Page({ params, searchParams }: {
     )
   }
 
-  const { data: rows } = await supabase
+  const { data: rows, error: ratesError } = await supabase
     .from('machine_rates')
     .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, labor_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_labor_rate_id, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, calc_equipment_cost, calc_life_expectancy_years, calc_days_per_year, calc_hours_per_day, calc_productivity_percent')
     .eq('organization_id', org.id)
     .order('name')
+  if (ratesError) {
+    console.error('[machine-rates] machine_rates SELECT failed:', ratesError)
+    throw new Error(`machine_rates SELECT failed: ${ratesError.message ?? JSON.stringify(ratesError)}`)
+  }
   let rates = (rows ?? []) as Rate[]
 
   const search = sp.search?.trim().toLowerCase() ?? ''
@@ -105,14 +133,17 @@ export default async function Page({ params, searchParams }: {
   let laborRates: LaborRateOption[] = []
   let discounts: DiscountOption[] = []
   if (isPanelOpen) {
-    const [{ data: mc }, { data: lr }, { data: d }] = await Promise.all([
+    const [mcRes, lrRes, dRes] = await Promise.all([
       supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('labor_rates').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('discounts').select('id, name').eq('organization_id', org.id).order('name'),
     ])
-    materialCategories = (mc ?? []) as MaterialCategory[]
-    laborRates = (lr ?? []) as LaborRateOption[]
-    discounts = (d ?? []) as DiscountOption[]
+    if (mcRes.error) console.error('[machine-rates] material_categories SELECT:', mcRes.error)
+    if (lrRes.error) console.error('[machine-rates] labor_rates SELECT:', lrRes.error)
+    if (dRes.error) console.error('[machine-rates] discounts SELECT:', dRes.error)
+    materialCategories = (mcRes.data ?? []) as MaterialCategory[]
+    laborRates = (lrRes.data ?? []) as LaborRateOption[]
+    discounts = (dRes.data ?? []) as DiscountOption[]
   }
 
   let usedInCount = 0

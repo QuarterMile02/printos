@@ -10,10 +10,34 @@ const UNITS = ['Hr', 'Each', 'Sqft', 'Feet', 'Inch', 'Yard', 'Roll', 'Sheet']
 
 type Rate = { id: string; name: string; external_name: string | null; cost: number | null; price: number | null; markup: number | null; formula: string | null; units: string | null; production_rate: number | null; production_rate_units: string | null; setup_charge: number | null; machine_charge: number | null; other_charge: number | null; include_in_base_price: boolean | null; description: string | null; show_internal: boolean | null; display_name_in_line_item: boolean | null; active: boolean | null }
 
-export default async function Page({ params, searchParams }: {
+type PageProps = {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ search?: string; formula?: string; status?: string; edit?: string; add?: string }>
-}) {
+}
+
+export default async function Page(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[labor-rates] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (labor-rates)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && (
+          <>
+            <div style={{ marginTop: '1rem' }}><strong>Stack:</strong></div>
+            <pre style={{ fontSize: '0.75rem', overflowX: 'auto' }}>{stack}</pre>
+          </>
+        )}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const supabase = await createClient()
@@ -35,11 +59,15 @@ export default async function Page({ params, searchParams }: {
     )
   }
 
-  const { data: rows } = await supabase
+  const { data: rows, error: ratesError } = await supabase
     .from('labor_rates')
     .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, machine_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active')
     .eq('organization_id', org.id)
     .order('name')
+  if (ratesError) {
+    console.error('[labor-rates] labor_rates SELECT failed:', ratesError)
+    throw new Error(`labor_rates SELECT failed: ${ratesError.message ?? JSON.stringify(ratesError)}`)
+  }
   let rates = (rows ?? []) as Rate[]
 
   const search = sp.search?.trim().toLowerCase() ?? ''
