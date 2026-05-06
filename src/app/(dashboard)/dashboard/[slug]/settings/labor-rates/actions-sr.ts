@@ -3,10 +3,25 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
+function numOrNull(v: FormDataEntryValue | null): number | null {
+  if (v == null) return null
+  const s = (v as string).trim()
+  if (s === '') return null
+  const n = parseFloat(s)
+  return isFinite(n) ? n : null
+}
+
+function strOrNull(v: FormDataEntryValue | null): string | null {
+  if (v == null) return null
+  const s = (v as string).trim()
+  return s === '' ? null : s
+}
+
 function parseRate(fd: FormData) {
+  const materialIds = fd.getAll('material_category_ids').map(v => v as string).filter(Boolean)
   return {
     name: fd.get('name') as string,
-    external_name: (fd.get('external_name') as string) || null,
+    external_name: strOrNull(fd.get('external_name')),
     cost: parseFloat(fd.get('cost') as string) || 0,
     price: parseFloat(fd.get('price') as string) || 0,
     markup: (() => { const c = parseFloat(fd.get('cost') as string) || 0; const p = parseFloat(fd.get('price') as string) || 0; return c > 0 ? Math.round((p / c) * 10000) / 10000 : 1 })(),
@@ -16,12 +31,27 @@ function parseRate(fd: FormData) {
     machine_charge: parseFloat(fd.get('machine_charge') as string) || 0,
     other_charge: parseFloat(fd.get('other_charge') as string) || 0,
     include_in_base_price: fd.get('include_in_base_price') === 'on',
-    production_rate: parseFloat(fd.get('production_rate') as string) || null,
-    production_rate_units: (fd.get('production_rate_units') as string) || null,
-    description: (fd.get('description') as string) || null,
+    production_rate: numOrNull(fd.get('production_rate')),
+    production_rate_units: strOrNull(fd.get('production_rate_units')),
+    description: strOrNull(fd.get('description')),
     show_internal: fd.get('show_internal') === 'on',
     display_name_in_line_item: fd.get('display_name_in_line_item') === 'on',
     active: fd.get('active') === 'on',
+    // Migration 046 fields
+    category: strOrNull(fd.get('category')),
+    subcategory: strOrNull(fd.get('subcategory')),
+    material_category_ids: materialIds.length > 0 ? materialIds : null,
+    linked_machine_rate_id: strOrNull(fd.get('linked_machine_rate_id')),
+    operator_attendance_percent: numOrNull(fd.get('operator_attendance_percent')),
+    production_factor: numOrNull(fd.get('production_factor')),
+    production_rate_prompt: strOrNull(fd.get('production_rate_prompt')),
+    production_rate_prompt_detail: strOrNull(fd.get('production_rate_prompt_detail')),
+    margin_width: numOrNull(fd.get('margin_width')),
+    margin_height: numOrNull(fd.get('margin_height')),
+    difficulty: strOrNull(fd.get('difficulty')),
+    per_li_unit: fd.get('per_li_unit') === 'on',
+    cog_account: strOrNull(fd.get('cog_account')),
+    volume_discount_id: strOrNull(fd.get('volume_discount_id')),
     updated_at: new Date().toISOString(),
   }
 }
@@ -33,12 +63,20 @@ export async function saveLaborRate(formData: FormData) {
   const fields = parseRate(formData)
   const service = createServiceClient()
 
+  let savedId = id
   if (id) {
     await service.from('labor_rates').update(fields).eq('id', id)
   } else {
-    await service.from('labor_rates').insert({ ...fields, organization_id: orgId })
+    const { data: inserted } = await service
+      .from('labor_rates')
+      .insert({ ...fields, organization_id: orgId })
+      .select('id')
+      .single()
+    savedId = (inserted as { id: string } | null)?.id ?? null
   }
-  redirect(`/dashboard/${orgSlug}/settings/labor-rates`)
+  redirect(savedId
+    ? `/dashboard/${orgSlug}/settings/labor-rates?edit=${savedId}&saved=1`
+    : `/dashboard/${orgSlug}/settings/labor-rates`)
 }
 
 export async function deleteLaborRate(formData: FormData) {
