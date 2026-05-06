@@ -11,12 +11,20 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   const org = orgRow as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const { data: rows } = await supabase
-    .from('discounts')
-    .select('id, name, discount_type, applies_to, discount_by, active')
-    .eq('organization_id', org.id)
-    .order('name')
-  const discounts = (rows ?? []) as { id: string; name: string; discount_type: string | null; applies_to: string | null; discount_by: string | null; active: boolean | null }[]
+  const [rowsRes, countRes] = await Promise.all([
+    supabase
+      .from('discounts')
+      .select('id, name, discount_type, applies_to, discount_by, active')
+      .eq('organization_id', org.id)
+      .order('name')
+      .limit(1000),
+    supabase
+      .from('discounts')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id),
+  ])
+  const totalCount = countRes.count ?? 0
+  const discounts = (rowsRes.data ?? []) as { id: string; name: string; discount_type: string | null; applies_to: string | null; discount_by: string | null; active: boolean | null }[]
 
   // Get tier counts
   const discountIds = discounts.map(d => d.id)
@@ -37,11 +45,17 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       </div>
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Discounts <span className="text-sm font-normal text-gray-400">({discounts.length})</span></h1>
+        <h1 className="text-2xl font-bold text-gray-900">Discounts <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
         <Link href={`/dashboard/${slug}/settings/discounts/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
           + New Discount
         </Link>
       </div>
+
+      {totalCount > 1000 && (
+        <p className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Showing 1000 of {totalCount} — use search to filter
+        </p>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-gray-200">

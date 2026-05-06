@@ -50,16 +50,27 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
     .eq('organization_id', org.id)
     .order('quote_number', { ascending: false })
 
+  let countQuery = supabase
+    .from('quotes')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', org.id)
+
   // Status filter from ?status=… search param. 'all' (or unset) means no filter.
   if (statusFilter && statusFilter !== 'all') {
     quoteQuery = quoteQuery.eq('status', statusFilter)
+    countQuery = countQuery.eq('status', statusFilter) as typeof countQuery
   }
 
-  const { data: quoteRows } = await quoteQuery as { data: QuoteDbRow[] | null; error: unknown }
+  const [quoteRes, countRes] = await Promise.all([
+    quoteQuery.limit(1000),
+    countQuery,
+  ])
+  const quoteRows = (quoteRes.data ?? []) as QuoteDbRow[]
+  const totalCount = countRes.count ?? 0
 
   // Fetch line item totals per quote
   type LineItemRow = { quote_id: string; quantity: number; unit_price: number }
-  const quoteIds = (quoteRows ?? []).map((q) => q.id)
+  const quoteIds = quoteRows.map((q) => q.id)
 
   let lineItemRows: LineItemRow[] = []
   if (quoteIds.length > 0) {
@@ -76,7 +87,7 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
     totalsMap.set(item.quote_id, (totalsMap.get(item.quote_id) ?? 0) + item.quantity * item.unit_price)
   }
 
-  const quotes: QuoteRow[] = (quoteRows ?? []).map((r) => ({
+  const quotes: QuoteRow[] = quoteRows.map((r) => ({
     id: r.id,
     quote_number: r.quote_number,
     title: r.title,
@@ -92,7 +103,8 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
     } : null,
   }))
 
-  const total = quotes.length
+  const total = totalCount
+  const loadedCount = quotes.length
 
   return (
     <div className="p-8">
@@ -121,6 +133,11 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
             Create Quote
           </Link>
         </div>
+        {loadedCount === 1000 && total > 1000 && (
+          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+            Showing 1000 of {total} — use search/filter to narrow results
+          </p>
+        )}
       </div>
 
       {/* Content — always render the table so the filter tabs stay visible

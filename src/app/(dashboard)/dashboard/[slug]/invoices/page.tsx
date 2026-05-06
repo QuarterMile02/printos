@@ -39,12 +39,20 @@ export default async function Page({ params, searchParams }: PageProps) {
     .eq('organization_id', org.id)
     .order('invoice_number', { ascending: false })
 
+  let countQuery = supabase
+    .from('invoices')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', org.id)
+
   const filter = sp.status
   if (filter && filter !== 'all') {
     query = query.eq('status', filter) as typeof query
+    countQuery = countQuery.eq('status', filter) as typeof countQuery
   }
 
-  const { data: rows } = await query.limit(500)
+  const [rowsRes, countRes] = await Promise.all([query.limit(1000), countQuery])
+  const rows = rowsRes.data
+  const totalCount = countRes.count ?? 0
   const invoices = (rows ?? []) as {
     id: string; invoice_number: number; status: string; total: number; balance_due: number
     due_date: string | null; created_at: string
@@ -61,8 +69,13 @@ export default async function Page({ params, searchParams }: PageProps) {
         </div>
         <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
         <p className="mt-1 text-sm text-gray-500">
-          {invoices.length === 0 ? 'No invoices yet.' : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}`}
+          {totalCount === 0 ? 'No invoices yet.' : `${totalCount} invoice${totalCount === 1 ? '' : 's'}`}
         </p>
+        {invoices.length === 1000 && totalCount > 1000 && (
+          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+            Showing 1000 of {totalCount} — use filter to narrow results
+          </p>
+        )}
       </div>
 
       {/* Filter tabs */}

@@ -42,14 +42,21 @@ export default async function ProductsPage({ params }: PageProps) {
   }
 
   let productRows: ProductDbRow[] = []
-  const { data: withCat, error: catErr } = await supabase
-    .from('products')
-    .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, updated_at, migration_status, category:product_categories(name)')
-    .eq('organization_id', org.id)
-    .order('name', { ascending: true })
-
-  if (withCat && !catErr) {
-    productRows = withCat as unknown as ProductDbRow[]
+  const [withCatRes, countRes] = await Promise.all([
+    supabase
+      .from('products')
+      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, updated_at, migration_status, category:product_categories(name)')
+      .eq('organization_id', org.id)
+      .order('name', { ascending: true })
+      .limit(1000),
+    supabase
+      .from('products')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id),
+  ])
+  const totalCount = countRes.count ?? 0
+  if (withCatRes.data && !withCatRes.error) {
+    productRows = withCatRes.data as unknown as ProductDbRow[]
   } else {
     // category join failed — fetch without it
     const { data: noCat } = await supabase
@@ -57,6 +64,7 @@ export default async function ProductsPage({ params }: PageProps) {
       .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, updated_at, migration_status')
       .eq('organization_id', org.id)
       .order('name', { ascending: true })
+      .limit(1000)
     productRows = (noCat ?? []) as unknown as ProductDbRow[]
   }
 
@@ -90,7 +98,7 @@ export default async function ProductsPage({ params }: PageProps) {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-extrabold text-qm-black">Products</h1>
             <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2.5 py-0.5 text-xs font-semibold text-qm-lime-dark">
-              {products.length}
+              {totalCount}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -116,6 +124,12 @@ export default async function ProductsPage({ params }: PageProps) {
           </div>
         </div>
       </div>
+
+      {products.length === 1000 && totalCount > 1000 && (
+        <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+          Showing 1000 of {totalCount} — use search to filter
+        </p>
+      )}
 
       {/* Client-side search/filter + table */}
       <ProductsListClient products={products} orgSlug={slug} orgId={org.id} canSeePricing={canSeePricing} />

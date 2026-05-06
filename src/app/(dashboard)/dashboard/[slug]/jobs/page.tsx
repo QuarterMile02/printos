@@ -99,22 +99,39 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
     .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, department, customers(first_name, last_name, company_name)')
     .eq('organization_id', org.id)
 
+  let countQuery = supabase
+    .from('jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', org.id)
+
   if (activeDepartments && activeDepartments.length > 0) {
     jobQuery = jobQuery.in('department', activeDepartments)
+    countQuery = countQuery.in('department', activeDepartments) as typeof countQuery
   }
 
   let jobRowsData: JobRow[] | null = null
-  const jobRes = await jobQuery.order('job_number', { ascending: false }) as { data: JobRow[] | null; error: { message: string } | null }
+  let totalCount = 0
+  const jobRes = await jobQuery.order('job_number', { ascending: false }).limit(1000) as { data: JobRow[] | null; error: { message: string } | null }
   if (jobRes.error?.message?.includes('department')) {
     // department column not yet added — fall back without it
-    const fallback = await supabase
-      .from('jobs')
-      .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, customers(first_name, last_name, company_name)')
-      .eq('organization_id', org.id)
-      .order('job_number', { ascending: false })
+    const [fallback, countFb] = await Promise.all([
+      supabase
+        .from('jobs')
+        .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, customers(first_name, last_name, company_name)')
+        .eq('organization_id', org.id)
+        .order('job_number', { ascending: false })
+        .limit(1000),
+      supabase
+        .from('jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', org.id),
+    ])
     jobRowsData = ((fallback.data ?? []) as Omit<JobRow, 'department'>[]).map((j) => ({ ...j, department: null }))
+    totalCount = countFb.count ?? 0
   } else {
     jobRowsData = jobRes.data
+    const cr = await countQuery
+    totalCount = cr.count ?? 0
   }
 
   const allJobs = jobRowsData ?? []
@@ -181,8 +198,13 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {total === 0 ? 'No jobs yet.' : `${total} job${total === 1 ? '' : 's'}`}
+            {totalCount === 0 ? 'No jobs yet.' : `${totalCount} job${totalCount === 1 ? '' : 's'}`}
           </p>
+          {total === 1000 && totalCount > 1000 && (
+            <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+              Showing 1000 of {totalCount} — use department filter to narrow
+            </p>
+          )}
         </div>
       </div>
 

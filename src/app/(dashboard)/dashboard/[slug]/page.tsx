@@ -10,6 +10,7 @@ import {
   type WidgetConfig,
 } from '@/lib/dashboard/widget-registry'
 import DashboardGrid from './_widgets/dashboard-grid'
+import DashboardAlertStrip from './dashboard-alert-strip'
 
 // Widget components
 import AlertBar from './_widgets/alert-bar'
@@ -151,6 +152,9 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
 
   return (
     <div className="p-8 max-w-7xl">
+      {/* Persistent alert strip — hidden when nothing is actionable */}
+      <DashboardAlertStrip service={service} orgId={org.id} orgSlug={slug} />
+
       {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>

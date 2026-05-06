@@ -31,11 +31,20 @@ export default async function CustomersPage({ params }: PageProps) {
     terms: string | null
     created_at: string
   }
-  const { data: customers } = await supabase
-    .from('customers')
-    .select('id, first_name, last_name, company_name, email, phone, city, state, status, terms, created_at')
-    .eq('organization_id', org.id)
-    .order('created_at', { ascending: false }) as { data: CustomerRow[] | null; error: unknown }
+  const [customersRes, countRes] = await Promise.all([
+    supabase
+      .from('customers')
+      .select('id, first_name, last_name, company_name, email, phone, city, state, status, terms, created_at')
+      .eq('organization_id', org.id)
+      .order('created_at', { ascending: false })
+      .limit(1000),
+    supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id),
+  ])
+  const customers = (customersRes.data ?? []) as CustomerRow[]
+  const totalCount = countRes.count ?? 0
 
   return (
     <div className="p-8">
@@ -51,16 +60,21 @@ export default async function CustomersPage({ params }: PageProps) {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
             <p className="mt-1 text-sm text-gray-500">
-              {(customers ?? []).length === 0
+              {totalCount === 0
                 ? 'No customers yet.'
-                : `${(customers ?? []).length} customer${(customers ?? []).length === 1 ? '' : 's'}`}
+                : `${totalCount} customer${totalCount === 1 ? '' : 's'}`}
             </p>
+            {totalCount > 1000 && (
+              <p className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+                Showing 1000 of {totalCount} — use search to filter
+              </p>
+            )}
           </div>
           <CreateCustomerForm orgId={org.id} orgSlug={org.slug} />
         </div>
       </div>
 
-      <CustomersListClient rows={customers ?? []} orgSlug={slug} />
+      <CustomersListClient rows={customers} orgSlug={slug} />
     </div>
   )
 }

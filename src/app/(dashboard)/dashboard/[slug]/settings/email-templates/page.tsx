@@ -18,12 +18,20 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   const org = orgRow as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const { data: rows } = await supabase
-    .from('email_templates')
-    .select('id, name, subject, trigger_event, is_active')
-    .eq('organization_id', org.id)
-    .order('name')
-  const templates = (rows ?? []) as { id: string; name: string; subject: string; trigger_event: string | null; is_active: boolean | null }[]
+  const [rowsRes, countRes] = await Promise.all([
+    supabase
+      .from('email_templates')
+      .select('id, name, subject, trigger_event, is_active')
+      .eq('organization_id', org.id)
+      .order('name')
+      .limit(1000),
+    supabase
+      .from('email_templates')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id),
+  ])
+  const totalCount = countRes.count ?? 0
+  const templates = (rowsRes.data ?? []) as { id: string; name: string; subject: string; trigger_event: string | null; is_active: boolean | null }[]
 
   return (
     <div className="p-8 max-w-5xl">
@@ -34,11 +42,17 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       </div>
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Email Templates <span className="text-sm font-normal text-gray-400">({templates.length})</span></h1>
+        <h1 className="text-2xl font-bold text-gray-900">Email Templates <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
         <Link href={`/dashboard/${slug}/settings/email-templates/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
           + New Template
         </Link>
       </div>
+
+      {totalCount > 1000 && (
+        <p className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Showing 1000 of {totalCount} — use search to filter
+        </p>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full divide-y divide-gray-200">

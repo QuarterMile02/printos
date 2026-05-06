@@ -47,13 +47,21 @@ export default async function SalesOrdersPage({ params, searchParams }: PageProp
     .eq('organization_id', org.id)
     .order('so_number', { ascending: false })
 
+  let countQuery = supabase
+    .from('sales_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', org.id)
+
   const filterStatus = sp.status as string | undefined
   if (filterStatus && filterStatus !== 'all') {
     query = query.eq('status', filterStatus) as typeof query
+    countQuery = countQuery.eq('status', filterStatus) as typeof countQuery
   }
 
-  const { data: rows } = await query.limit(500) as { data: SoRow[] | null; error: unknown }
-  const salesOrders = (rows ?? []).map((r) => ({
+  const [rowsRes, countRes] = await Promise.all([query.limit(1000), countQuery])
+  const rows = (rowsRes.data ?? []) as SoRow[]
+  const totalCount = countRes.count ?? 0
+  const salesOrders = rows.map((r) => ({
     id: r.id,
     so_number: r.so_number,
     title: r.title ?? '',
@@ -63,7 +71,8 @@ export default async function SalesOrdersPage({ params, searchParams }: PageProp
     customer: r.customers,
   }))
 
-  const total = salesOrders.length
+  const total = totalCount
+  const loadedCount = salesOrders.length
 
   return (
     <div className="p-8">
@@ -77,6 +86,11 @@ export default async function SalesOrdersPage({ params, searchParams }: PageProp
         <p className="mt-1 text-sm text-gray-500">
           {total === 0 ? 'No sales orders yet.' : `${total} sales order${total === 1 ? '' : 's'}`}
         </p>
+        {loadedCount === 1000 && total > 1000 && (
+          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
+            Showing 1000 of {total} — use filter to narrow results
+          </p>
+        )}
       </div>
 
       <SalesOrderTable

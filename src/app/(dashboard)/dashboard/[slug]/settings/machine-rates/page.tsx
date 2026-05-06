@@ -106,16 +106,24 @@ async function PageInner({ params, searchParams }: PageProps) {
     )
   }
 
-  const { data: rows, error: ratesError } = await supabase
-    .from('machine_rates')
-    .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, labor_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_labor_rate_id, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, calc_equipment_cost, calc_life_expectancy_years, calc_days_per_year, calc_hours_per_day, calc_productivity_percent')
-    .eq('organization_id', org.id)
-    .order('name')
-  if (ratesError) {
-    console.error('[machine-rates] machine_rates SELECT failed:', ratesError)
-    throw new Error(`machine_rates SELECT failed: ${ratesError.message ?? JSON.stringify(ratesError)}`)
+  const [ratesRes, countRes] = await Promise.all([
+    supabase
+      .from('machine_rates')
+      .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, labor_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_labor_rate_id, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, calc_equipment_cost, calc_life_expectancy_years, calc_days_per_year, calc_hours_per_day, calc_productivity_percent')
+      .eq('organization_id', org.id)
+      .order('name')
+      .limit(1000),
+    supabase
+      .from('machine_rates')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id),
+  ])
+  if (ratesRes.error) {
+    console.error('[machine-rates] machine_rates SELECT failed:', ratesRes.error)
+    throw new Error(`machine_rates SELECT failed: ${ratesRes.error.message ?? JSON.stringify(ratesRes.error)}`)
   }
-  let rates = (rows ?? []) as Rate[]
+  const totalCount = countRes.count ?? 0
+  let rates = (ratesRes.data ?? []) as Rate[]
 
   const search = sp.search?.trim().toLowerCase() ?? ''
   if (search) rates = rates.filter(r => r.name.toLowerCase().includes(search))
@@ -175,7 +183,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       </div>
 
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Machine Rates <span className="text-sm font-normal text-gray-400">({rates.length})</span></h1>
+        <h1 className="text-2xl font-bold text-gray-900">Machine Rates <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
         <div className="flex gap-2">
           <a href={`/api/export/machine-rates?orgId=${org.id}`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Export CSV</a>
           <Link href={`/dashboard/${slug}/settings/machine-rates/import`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Import CSV</Link>
@@ -467,6 +475,12 @@ async function PageInner({ params, searchParams }: PageProps) {
             </div>
           )}
         </div>
+      )}
+
+      {!isPanelOpen && totalCount > 1000 && (
+        <p className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Showing 1000 of {totalCount} — use search to filter
+        </p>
       )}
 
       {!isPanelOpen && (

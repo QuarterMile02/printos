@@ -18,11 +18,20 @@ export default async function ModifiersPage({ params }: PageProps) {
 
   if (!org) notFound()
 
-  const { data: modifiers } = await supabase
-    .from('modifiers')
-    .select('*')
-    .eq('organization_id', org.id)
-    .order('display_name', { ascending: true }) as { data: Modifier[] | null; error: unknown }
+  const [modRes, countRes] = await Promise.all([
+    supabase
+      .from('modifiers')
+      .select('*')
+      .eq('organization_id', org.id)
+      .order('display_name', { ascending: true })
+      .limit(1000),
+    supabase
+      .from('modifiers')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id),
+  ])
+  const modifiers = (modRes.data ?? []) as Modifier[]
+  const totalCount = countRes.count ?? 0
 
   return (
     <div className="p-8">
@@ -38,10 +47,16 @@ export default async function ModifiersPage({ params }: PageProps) {
         </div>
       </div>
 
+      {totalCount > 1000 && (
+        <p className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Showing 1000 of {totalCount} — use search to filter
+        </p>
+      )}
+
       <ModifiersClient
         orgId={org.id}
         orgSlug={slug}
-        initialModifiers={modifiers ?? []}
+        initialModifiers={modifiers}
       />
     </div>
   )

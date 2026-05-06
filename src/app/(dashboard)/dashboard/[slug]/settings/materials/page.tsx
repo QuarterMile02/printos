@@ -49,13 +49,20 @@ export default async function Page({ params, searchParams }: {
     current_stock: number | null; min_stock_level: number | null
   }
 
-  const { data: rows } = await supabase
-    .from('materials')
-    .select('id, name, cost, price, multiplier, formula, selling_units, active, material_type_id, material_type, material_category, current_stock, min_stock_level')
-    .eq('organization_id', org.id)
-    .order('name')
-    .limit(1000)
-  let materials = (rows ?? []) as MatRow[]
+  const [rowsRes, countRes] = await Promise.all([
+    supabase
+      .from('materials')
+      .select('id, name, cost, price, multiplier, formula, selling_units, active, material_type_id, material_type, material_category, current_stock, min_stock_level')
+      .eq('organization_id', org.id)
+      .order('name')
+      .limit(1000),
+    supabase
+      .from('materials')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id),
+  ])
+  const totalCount = countRes.count ?? 0
+  let materials = (rowsRes.data ?? []) as MatRow[]
 
   // Resolve legacy FK type names for any rows missing the new text column
   const legacyTypeIds = [...new Set(
@@ -100,7 +107,7 @@ export default async function Page({ params, searchParams }: {
 
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">
-          Materials <span className="text-sm font-normal text-gray-400">({materials.length})</span>
+          Materials <span className="text-sm font-normal text-gray-400">({totalCount})</span>
           {lowCount > 0 && !lowOnly && (
             <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
               {lowCount} low/out
@@ -122,6 +129,12 @@ export default async function Page({ params, searchParams }: {
         distinctTypes={distinctTypes}
         basePath={`/dashboard/${slug}/settings/materials`}
       />
+
+      {totalCount > 1000 && (
+        <p className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Showing 1000 of {totalCount} — use search to filter
+        </p>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
