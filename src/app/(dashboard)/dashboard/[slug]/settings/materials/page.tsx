@@ -26,12 +26,13 @@ const STATUS_LABEL: Record<StockStatus, string> = {
 
 export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ search?: string; low_stock?: string }>
+  searchParams: Promise<{ search?: string; low_stock?: string; type?: string }>
 }) {
   const { slug } = await params
   const sp = await searchParams
-  const search  = sp.search?.trim().toLowerCase() ?? ''
-  const lowOnly = sp.low_stock === '1'
+  const search   = sp.search?.trim().toLowerCase() ?? ''
+  const lowOnly  = sp.low_stock === '1'
+  const typeFilter = sp.type?.trim() ?? ''
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase
@@ -41,26 +42,41 @@ export default async function Page({ params, searchParams }: {
 
   type MatRow = {
     id: string; name: string
-    cost: number | null; price: number | null; selling_units: string | null
+    cost: number | null; price: number | null; multiplier: number | null
+    formula: string | null; selling_units: string | null
     active: boolean | null; material_type_id: string | null
+    material_type: string | null; material_category: string | null
     current_stock: number | null; min_stock_level: number | null
   }
 
   const { data: rows } = await supabase
     .from('materials')
-    .select('id, name, cost, price, selling_units, active, material_type_id, current_stock, min_stock_level')
+    .select('id, name, cost, price, multiplier, formula, selling_units, active, material_type_id, material_type, material_category, current_stock, min_stock_level')
     .eq('organization_id', org.id)
     .order('name')
+    .limit(1000)
   let materials = (rows ?? []) as MatRow[]
 
-  // Resolve type names
-  const typeIds = [...new Set(materials.map(m => m.material_type_id).filter(Boolean) as string[])]
+  // Resolve legacy FK type names for any rows missing the new text column
+  const legacyTypeIds = [...new Set(
+    materials.filter(m => !m.material_type && m.material_type_id).map(m => m.material_type_id) as string[]
+  )]
   const typeMap = new Map<string, string>()
-  if (typeIds.length > 0) {
+  if (legacyTypeIds.length > 0) {
     const { data: types } = await supabase
-      .from('material_types').select('id, name').in('id', typeIds)
+      .from('material_types').select('id, name').in('id', legacyTypeIds)
     for (const t of (types ?? []) as { id: string; name: string }[]) typeMap.set(t.id, t.name)
   }
+  const resolveType = (m: MatRow): string =>
+    m.material_type ?? (m.material_type_id ? typeMap.get(m.material_type_id) ?? '—' : '—')
+
+  // Distinct types for the filter dropdown
+  const typeSet = new Set<string>()
+  for (const m of materials) {
+    const t = resolveType(m)
+    if (t && t !== '—') typeSet.add(t)
+  }
+  const distinctTypes = [...typeSet].sort((a, b) => a.localeCompare(b))
 
   const lowCount = materials.filter(m => {
     const st = stockStatus(m.current_stock, m.min_stock_level)
@@ -68,6 +84,7 @@ export default async function Page({ params, searchParams }: {
   }).length
 
   if (search)  materials = materials.filter(m => m.name.toLowerCase().includes(search))
+  if (typeFilter) materials = materials.filter(m => resolveType(m) === typeFilter)
   if (lowOnly) materials = materials.filter(m => {
     const st = stockStatus(m.current_stock, m.min_stock_level)
     return st === 'low' || st === 'out'
@@ -97,25 +114,26 @@ export default async function Page({ params, searchParams }: {
         </div>
       </div>
 
-      {/* Client component owns all event handlers — fixes server/client boundary violation */}
       <MaterialsFilter
         search={search}
         lowOnly={lowOnly}
         lowCount={lowCount}
+        typeFilter={typeFilter}
+        distinctTypes={distinctTypes}
         basePath={`/dashboard/${slug}/settings/materials`}
       />
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
               <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Category</th>
               <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Cost</th>
               <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
-              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Units</th>
-              <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">In Stock</th>
-              <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Min Level</th>
+              <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Multiplier</th>
+              <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Formula</th>
               <th className="px-5 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
               <th className="px-5 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
             </tr>
@@ -133,18 +151,12 @@ export default async function Page({ params, searchParams }: {
                     <Link href={`/dashboard/${slug}/settings/materials/${m.id}`}
                       className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia">{m.name}</Link>
                   </td>
-                  <td className="px-5 py-3 text-sm text-gray-600">
-                    {m.material_type_id ? typeMap.get(m.material_type_id) ?? '—' : '—'}
-                  </td>
+                  <td className="px-5 py-3 text-sm text-gray-600">{resolveType(m)}</td>
+                  <td className="px-5 py-3 text-sm text-gray-600">{m.material_category ?? '—'}</td>
                   <td className="px-5 py-3 text-sm text-gray-900 text-right tabular-nums">${Number(m.cost ?? 0).toFixed(4)}</td>
                   <td className="px-5 py-3 text-sm text-gray-900 text-right tabular-nums">${Number(m.price ?? 0).toFixed(4)}</td>
-                  <td className="px-5 py-3 text-sm text-gray-600">{m.selling_units ?? '—'}</td>
-                  <td className="px-5 py-3 text-sm text-gray-900 text-right tabular-nums">
-                    {Number(m.current_stock ?? 0).toFixed(2)}
-                  </td>
-                  <td className="px-5 py-3 text-sm text-gray-500 text-right tabular-nums">
-                    {Number(m.min_stock_level ?? 0).toFixed(2)}
-                  </td>
+                  <td className="px-5 py-3 text-sm text-gray-600 text-right tabular-nums">{Number(m.multiplier ?? 1).toFixed(2)}x</td>
+                  <td className="px-5 py-3 text-sm text-gray-600">{m.formula ?? '—'}</td>
                   <td className="px-5 py-3 text-center">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[st]}`}>
                       {STATUS_LABEL[st]}

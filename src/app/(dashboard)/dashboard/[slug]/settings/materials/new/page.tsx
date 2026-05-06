@@ -15,6 +15,27 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
 
   const { allowed: canEditInventory } = await checkPermission(org.id, 'materials.edit_inventory')
 
+  const [catRes, dRes] = await Promise.all([
+    supabase
+      .from('materials')
+      .select('material_category')
+      .eq('organization_id', org.id)
+      .not('material_category', 'is', null),
+    supabase
+      .from('discounts')
+      .select('id, name')
+      .eq('organization_id', org.id)
+      .order('name'),
+  ])
+  const seen = new Set<string>()
+  const categorySuggestions: string[] = []
+  for (const r of (catRes.data ?? []) as { material_category: string | null }[]) {
+    const v = r.material_category?.trim()
+    if (v && !seen.has(v)) { seen.add(v); categorySuggestions.push(v) }
+  }
+  categorySuggestions.sort((a, b) => a.localeCompare(b))
+  const discounts = (dRes.data ?? []) as { id: string; name: string }[]
+
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
@@ -28,7 +49,14 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       <h1 className="text-2xl font-bold text-gray-900 mb-6">New Material</h1>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <MaterialForm material={null} orgId={org.id} orgSlug={slug} canEditInventory={canEditInventory} />
+        <MaterialForm
+          material={null}
+          orgId={org.id}
+          orgSlug={slug}
+          canEditInventory={canEditInventory}
+          categorySuggestions={categorySuggestions}
+          discounts={discounts}
+        />
       </div>
     </div>
   )

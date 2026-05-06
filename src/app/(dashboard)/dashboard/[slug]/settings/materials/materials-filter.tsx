@@ -1,23 +1,26 @@
 'use client'
 
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useTransition } from 'react'
 
 type Props = {
   search: string
   lowOnly: boolean
   lowCount: number
+  typeFilter: string
+  distinctTypes: string[]
   basePath: string
 }
 
-export default function MaterialsFilter({ search, lowOnly, lowCount, basePath }: Props) {
+export default function MaterialsFilter({ search, lowOnly, lowCount, typeFilter, distinctTypes, basePath }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
-  function submit(newSearch: string, newLowOnly: boolean) {
+  function submit(newSearch: string, newLowOnly: boolean, newType: string) {
     const url = new URL(basePath, 'http://x')
     if (newSearch) url.searchParams.set('search', newSearch)
     if (newLowOnly) url.searchParams.set('low_stock', '1')
+    if (newType) url.searchParams.set('type', newType)
     startTransition(() => router.push(url.pathname + url.search))
   }
 
@@ -27,14 +30,22 @@ export default function MaterialsFilter({ search, lowOnly, lowCount, basePath }:
         type="text"
         defaultValue={search}
         placeholder="Search materials…"
-        onChange={(e) => submit(e.target.value, lowOnly)}
+        onChange={(e) => submit(e.target.value, lowOnly, typeFilter)}
         className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
       />
+      <select
+        value={typeFilter}
+        onChange={(e) => submit(search, lowOnly, e.target.value)}
+        className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+      >
+        <option value="">All Types</option>
+        {distinctTypes.map(t => <option key={t} value={t}>{t}</option>)}
+      </select>
       <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-gray-700">
         <input
           type="checkbox"
           checked={lowOnly}
-          onChange={(e) => submit(search, e.target.checked)}
+          onChange={(e) => submit(search, e.target.checked, typeFilter)}
           className="h-4 w-4 rounded border-gray-300 accent-amber-500"
         />
         Show low stock only

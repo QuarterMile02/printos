@@ -4,6 +4,20 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
 import { redirect } from 'next/navigation'
 
+function numOrNull(v: FormDataEntryValue | null): number | null {
+  if (v == null) return null
+  const s = (v as string).trim()
+  if (s === '') return null
+  const n = parseFloat(s)
+  return isFinite(n) ? n : null
+}
+
+function strOrNull(v: FormDataEntryValue | null): string | null {
+  if (v == null) return null
+  const s = (v as string).trim()
+  return s === '' ? null : s
+}
+
 export async function saveMaterial(formData: FormData) {
   const id = formData.get('id') as string | null
   const orgId = formData.get('orgId') as string
@@ -11,24 +25,47 @@ export async function saveMaterial(formData: FormData) {
 
   const fields: Record<string, unknown> = {
     name: formData.get('name') as string,
-    external_name: (formData.get('external_name') as string) || null,
+    external_name: strOrNull(formData.get('external_name')),
     cost: parseFloat(formData.get('cost') as string) || 0,
     price: parseFloat(formData.get('price') as string) || 0,
     multiplier: parseFloat(formData.get('multiplier') as string) || 2,
-    buying_units: (formData.get('buying_units') as string) || null,
-    selling_units: (formData.get('selling_units') as string) || null,
+    buying_units: strOrNull(formData.get('buying_units')),
+    selling_units: strOrNull(formData.get('selling_units')),
     formula: (formData.get('formula') as string) || 'Area',
-    fixed_side: (formData.get('fixed_side') as string) || null,
-    width: parseFloat(formData.get('width') as string) || null,
-    height: parseFloat(formData.get('height') as string) || null,
-    sheet_cost: parseFloat(formData.get('sheet_cost') as string) || null,
+    fixed_side: strOrNull(formData.get('fixed_side')),
+    width: numOrNull(formData.get('width')),
+    height: numOrNull(formData.get('height')),
+    sheet_cost: numOrNull(formData.get('sheet_cost')),
     wastage_markup: parseFloat(formData.get('wastage_markup') as string) || 0,
     sell_buy_ratio: parseFloat(formData.get('sell_buy_ratio') as string) || 1,
-    preferred_vendor: (formData.get('preferred_vendor') as string) || null,
+    preferred_vendor: strOrNull(formData.get('preferred_vendor')),
     labor_charge: parseFloat(formData.get('labor_charge') as string) || 0,
     machine_charge: parseFloat(formData.get('machine_charge') as string) || 0,
     setup_charge: parseFloat(formData.get('setup_charge') as string) || 0,
     active: formData.get('active') === 'on',
+    // Migration 047 fields
+    material_type: strOrNull(formData.get('material_type')),
+    material_category: strOrNull(formData.get('material_category')),
+    unit_width: numOrNull(formData.get('unit_width')),
+    unit_height: numOrNull(formData.get('unit_height')),
+    unit_cost: numOrNull(formData.get('unit_cost')),
+    other_charge: numOrNull(formData.get('other_charge')),
+    per_li_unit: formData.get('per_li_unit') === 'on',
+    calculate_wastage: formData.get('calculate_wastage') === 'on',
+    include_in_base_price: formData.get('include_in_base_price') === 'on',
+    discount_id: strOrNull(formData.get('discount_id')),
+    part_number: strOrNull(formData.get('part_number')),
+    sku: strOrNull(formData.get('sku')),
+    weight: numOrNull(formData.get('weight')),
+    weight_uom: strOrNull(formData.get('weight_uom')),
+    cog_account: strOrNull(formData.get('cog_account')),
+    qb_item_type: strOrNull(formData.get('qb_item_type')),
+    po_description: strOrNull(formData.get('po_description')),
+    info_url: strOrNull(formData.get('info_url')),
+    print_image_on_pdf: formData.get('print_image_on_pdf') === 'on',
+    show_internal: formData.get('show_internal') === 'on',
+    display_description_in_li: formData.get('display_description_in_li') === 'on',
+    description: strOrNull(formData.get('description')),
     updated_at: new Date().toISOString(),
   }
 

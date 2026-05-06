@@ -21,7 +21,7 @@ export default async function Page({ params, searchParams }: {
 
   const { data: matRow } = await supabase
     .from('materials')
-    .select('id, name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active, material_type_id, category_id, current_stock, min_stock_level, reorder_quantity, last_inventory_count_at')
+    .select('id, name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active, material_type_id, category_id, current_stock, min_stock_level, reorder_quantity, last_inventory_count_at, material_type, material_category, unit_width, unit_height, unit_cost, other_charge, per_li_unit, calculate_wastage, include_in_base_price, discount_id, part_number, sku, weight, weight_uom, cog_account, qb_item_type, po_description, info_url, print_image_on_pdf, show_internal, display_description_in_li, description')
     .eq('id', id)
     .eq('organization_id', org.id)
     .single()
@@ -37,14 +37,25 @@ export default async function Page({ params, searchParams }: {
     active: boolean | null; material_type_id: string | null; category_id: string | null
     current_stock: number | null; min_stock_level: number | null
     reorder_quantity: number | null; last_inventory_count_at: string | null
+    material_type: string | null; material_category: string | null
+    unit_width: number | null; unit_height: number | null; unit_cost: number | null
+    other_charge: number | null; per_li_unit: boolean | null
+    calculate_wastage: boolean | null; include_in_base_price: boolean | null
+    discount_id: string | null
+    part_number: string | null; sku: string | null
+    weight: number | null; weight_uom: string | null
+    cog_account: string | null; qb_item_type: string | null
+    po_description: string | null; info_url: string | null
+    print_image_on_pdf: boolean | null; show_internal: boolean | null
+    display_description_in_li: boolean | null; description: string | null
   } | null
   if (!m) return <div className="p-8 text-red-600">Material not found</div>
 
   const { allowed: canEditInventory } = await checkPermission(org.id, 'materials.edit_inventory')
 
-  // Type name
-  let typeName = '—'
-  if (m.material_type_id) {
+  // Type name (legacy FK fallback)
+  let typeName = m.material_type ?? '—'
+  if (!m.material_type && m.material_type_id) {
     const { data: t } = await supabase.from('material_types').select('name').eq('id', m.material_type_id).single()
     typeName = (t as { name: string } | null)?.name ?? '—'
   }
@@ -58,6 +69,31 @@ export default async function Page({ params, searchParams }: {
     usedInProducts = (prods ?? []) as { id: string; name: string }[]
   }
   const canDelete = sp.edit === '1' && usedProductIds.length === 0
+
+  // Edit-mode prerequisites: distinct categories for datalist + active discounts
+  let categorySuggestions: string[] = []
+  let discounts: { id: string; name: string }[] = []
+  if (editing) {
+    const [catRes, dRes] = await Promise.all([
+      supabase
+        .from('materials')
+        .select('material_category')
+        .eq('organization_id', org.id)
+        .not('material_category', 'is', null),
+      supabase
+        .from('discounts')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .order('name'),
+    ])
+    const seen = new Set<string>()
+    for (const r of (catRes.data ?? []) as { material_category: string | null }[]) {
+      const v = r.material_category?.trim()
+      if (v && !seen.has(v)) { seen.add(v); categorySuggestions.push(v) }
+    }
+    categorySuggestions.sort((a, b) => a.localeCompare(b))
+    discounts = (dRes.data ?? []) as { id: string; name: string }[]
+  }
 
   const n = (v: number | null, d = 0) => Number(v ?? d)
 
@@ -75,7 +111,14 @@ export default async function Page({ params, searchParams }: {
         <>
           <h1 className="text-2xl font-bold text-gray-900 mb-6">Edit Material</h1>
           <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <MaterialForm material={m} orgId={org.id} orgSlug={slug} canEditInventory={canEditInventory} />
+            <MaterialForm
+              material={m}
+              orgId={org.id}
+              orgSlug={slug}
+              canEditInventory={canEditInventory}
+              categorySuggestions={categorySuggestions}
+              discounts={discounts}
+            />
           </div>
         </>
       ) : (
@@ -85,7 +128,9 @@ export default async function Page({ params, searchParams }: {
             <div>
               <h1 className="text-2xl font-extrabold text-gray-900">{m.name}</h1>
               {m.external_name && <p className="text-sm text-gray-500">Display: {m.external_name}</p>}
-              <p className="mt-1 text-sm text-gray-500">{typeName} &middot; {m.formula ?? 'Area'} &middot; {m.selling_units ?? 'Each'}</p>
+              <p className="mt-1 text-sm text-gray-500">
+                {typeName}{m.material_category ? ` › ${m.material_category}` : ''} &middot; {m.formula ?? 'Area'} &middot; {m.selling_units ?? 'Each'}
+              </p>
             </div>
             <div className="flex items-center gap-3">
               <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${m.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
@@ -107,6 +152,7 @@ export default async function Page({ params, searchParams }: {
                 <div className="flex justify-between"><dt className="text-gray-500">Multiplier</dt><dd className="font-medium tabular-nums">{n(m.multiplier, 2).toFixed(2)}x</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Sell/Buy Ratio</dt><dd className="font-medium tabular-nums">{n(m.sell_buy_ratio, 1).toFixed(2)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Sheet Cost</dt><dd className="font-medium tabular-nums">{m.sheet_cost != null ? `$${n(m.sheet_cost).toFixed(2)}` : '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Unit Cost</dt><dd className="font-medium tabular-nums">{m.unit_cost != null ? `$${n(m.unit_cost).toFixed(4)}` : '—'}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Wastage Markup</dt><dd className="font-medium tabular-nums">{n(m.wastage_markup).toFixed(2)}%</dd></div>
               </dl>
             </div>
@@ -120,16 +166,21 @@ export default async function Page({ params, searchParams }: {
                 <div className="flex justify-between"><dt className="text-gray-500">Fixed Side</dt><dd className="font-medium">{m.fixed_side ?? '—'}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Width</dt><dd className="font-medium tabular-nums">{m.width != null ? `${n(m.width)}"` : '—'}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Height</dt><dd className="font-medium tabular-nums">{m.height != null ? `${n(m.height)}"` : '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Unit Size</dt><dd className="font-medium tabular-nums">{m.unit_width != null && m.unit_height != null ? `${n(m.unit_width)}" × ${n(m.unit_height)}"` : '—'}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Preferred Vendor</dt><dd className="font-medium">{m.preferred_vendor ?? '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Part Number</dt><dd className="font-medium">{m.part_number ?? '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">SKU</dt><dd className="font-medium">{m.sku ?? '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Weight</dt><dd className="font-medium tabular-nums">{m.weight != null ? `${n(m.weight)} ${m.weight_uom ?? ''}` : '—'}</dd></div>
               </dl>
             </div>
 
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm md:col-span-2">
               <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Charges</h2>
-              <dl className="grid grid-cols-3 gap-4 text-sm">
+              <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                 <div className="flex justify-between"><dt className="text-gray-500">Labor</dt><dd className="font-medium tabular-nums">${n(m.labor_charge).toFixed(2)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Machine</dt><dd className="font-medium tabular-nums">${n(m.machine_charge).toFixed(2)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Setup</dt><dd className="font-medium tabular-nums">${n(m.setup_charge).toFixed(2)}</dd></div>
+                <div className="flex justify-between"><dt className="text-gray-500">Other</dt><dd className="font-medium tabular-nums">{m.other_charge != null ? `$${n(m.other_charge).toFixed(2)}` : '—'}</dd></div>
               </dl>
             </div>
 
