@@ -66,7 +66,12 @@ export const WIDGET_META: Record<string, WidgetMeta> = {
   kpi_summary:            { label: 'KPI Department Summary',      defaultSpan: 12, pinned: false, visibleTo: (r) => isOwner(r) },
 
   // ── Accounting ────────────────────────────────────────────────────────────
-  collection_calls:   { label: 'Collection Calls',            defaultSpan: 6,  pinned: false, visibleTo: (r) => isAccounting(r) || isOwner(r) },
+  collection_calls:        { label: 'Collection Calls',          defaultSpan: 6,  pinned: false, visibleTo: (r) => isAccounting(r) || isOwner(r) },
+  payment_promise_tracker: { label: 'Payment Promise Tracker',   defaultSpan: 6,  pinned: false, visibleTo: (r) => isAccounting(r) || isOwner(r) },
+
+  // ── Sales Manager / Owner approvals ───────────────────────────────────────
+  quotes_needing_approval: { label: 'Quotes Needing Approval',   defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) },
+  rescue_list:             { label: 'Rescue List',               defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) },
 
   // ── Production / Installer ────────────────────────────────────────────────
   department_queue:   { label: 'Department Queue',            defaultSpan: 6,  pinned: false, visibleTo: (r) => isProduction(r) || isOwner(r) },

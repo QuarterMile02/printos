@@ -13,8 +13,9 @@ export type WidgetId =
   | 'kpi_summary' | 'sales_pipeline'
   // Sales role
   | 'quotes_priority' | 'sales_leads' | 'quotes_without_contact'
+  | 'quotes_needing_approval' | 'rescue_list'
   // Accounting role
-  | 'completed_not_invoiced' | 'collection_calls'
+  | 'completed_not_invoiced' | 'collection_calls' | 'payment_promise_tracker'
   // Production / installer
   | 'department_queue' | 'low_stock_materials'
   // Designer
@@ -66,8 +67,13 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'kpi_summary',            title: 'KPI Department Summary',  visibleTo: (r) => isOwner(r),                                                span: 12, built: true  },
 
   // ─── Accounting role (+ owner sees it on dashboard) ───────────────
-  { id: 'completed_not_invoiced', title: 'Completed Jobs Not Invoiced', visibleTo: (r) => isAccounting(r),   span: 6,  built: false },
-  { id: 'collection_calls',       title: 'Collection Calls',            visibleTo: (r) => isAccounting(r) || isOwner(r), span: 6, built: true  },
+  { id: 'completed_not_invoiced',  title: 'Completed Jobs Not Invoiced', visibleTo: (r) => isAccounting(r),                 span: 6,  built: false },
+  { id: 'collection_calls',        title: 'Collection Calls',            visibleTo: (r) => isAccounting(r) || isOwner(r),   span: 6,  built: true  },
+  { id: 'payment_promise_tracker', title: 'Payment Promise Tracker',     visibleTo: (r) => isAccounting(r) || isOwner(r),   span: 6,  built: true  },
+
+  // ─── Sales Manager / Owner ───────────────────────────────────────
+  { id: 'quotes_needing_approval', title: 'Quotes Needing Approval',     visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t), span: 6,  built: true  },
+  { id: 'rescue_list',             title: 'Rescue List',                 visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t), span: 6,  built: true  },
 
   // ─── Production + Installer (+ owner + accounting) ──────────────
   { id: 'department_queue',    title: 'Department Queue',        visibleTo: (r) => isProductionFloor(r) || isOwner(r),                     span: 6,  built: true  },

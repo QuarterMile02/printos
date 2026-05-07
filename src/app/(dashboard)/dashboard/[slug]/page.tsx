@@ -24,7 +24,6 @@ import AgingBuckets from './_widgets/aging-buckets'
 import SalesChartWidget from './_widgets/SalesChartWidget'
 import ConversionRatioWidget from './_widgets/ConversionRatioWidget'
 import QuotesPriorityWidget from './_widgets/QuotesPriorityWidget'
-import CollectionCallWidget from './_widgets/CollectionCallWidget'
 import DepartmentQueueWidget from './_widgets/DepartmentQueueWidget'
 import DesignQueueWidget from './_widgets/DesignQueueWidget'
 import LowStockWidget from './_widgets/LowStockWidget'
@@ -32,6 +31,10 @@ import MySalesLeads from './_widgets/my-sales-leads'
 import QuotesWithoutContact from './_widgets/quotes-without-contact'
 import KpiSummary from './_widgets/kpi-summary'
 import SalesPipeline from './_widgets/sales-pipeline'
+import CollectionCalls from './_widgets/collection-calls'
+import PaymentPromiseTracker from './_widgets/payment-promise-tracker'
+import QuotesNeedingApproval from './_widgets/quotes-needing-approval'
+import RescueList from './_widgets/rescue-list'
 import { WidgetStub } from './_widgets/widget-card'
 import type { DateRangePreset } from '@/lib/reports/report-utils'
 
@@ -121,7 +124,10 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
       case 'sales_chart':         return <SalesChartWidget orgId={org!.id} />
       case 'conversion_ratio':    return <ConversionRatioWidget service={service} orgId={org!.id} />
       case 'quotes_priority':     return <QuotesPriorityWidget service={service} orgId={org!.id} orgSlug={slug} />
-      case 'collection_calls':    return <CollectionCallWidget service={service} orgId={org!.id} orgSlug={slug} />
+      case 'collection_calls':    return <CollectionCalls service={service} orgId={org!.id} orgSlug={slug} />
+      case 'payment_promise_tracker': return <PaymentPromiseTracker service={service} orgId={org!.id} orgSlug={slug} />
+      case 'quotes_needing_approval': return <QuotesNeedingApproval service={service} orgId={org!.id} orgSlug={slug} />
+      case 'rescue_list':         return <RescueList service={service} orgId={org!.id} orgSlug={slug} />
       case 'department_queue':    return <DepartmentQueueWidget orgId={org!.id} orgSlug={slug} />
       case 'design_queue':        return <DesignQueueWidget service={service} orgId={org!.id} orgSlug={slug} />
       case 'low_stock_materials': return <LowStockWidget service={service} orgId={org!.id} orgSlug={slug} />
