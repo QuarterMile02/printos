@@ -57,6 +57,9 @@ async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promi
 // the job's material_selection jsonb column and denormalizes the first
 // non-null assigned_printer onto jobs.assigned_printer for fast filtering.
 //
+// TODO: Wire this into the SO→Job creation flow once Smart Material Engine
+// is implemented (Blueprint section 056). Called automatically when a large
+// format job is created — selects optimal roll material and assigns printer.
 // Failures are swallowed and logged — material selection is best-effort
 // and shouldn't block job creation. The job page degrades gracefully
 // when material_selection is null.
