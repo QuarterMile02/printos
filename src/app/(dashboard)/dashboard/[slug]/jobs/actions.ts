@@ -78,17 +78,25 @@ export async function updateJobStatus(
 
   const service = createServiceClient()
 
-  // Read previous status for stage_exited/stage_entered events
+  // Read previous status + completed_at for stage events and timestamp logic
   const { data: prev } = await service
     .from('jobs')
-    .select('status')
+    .select('status, completed_at')
     .eq('id', jobId)
     .eq('organization_id', orgId)
-    .maybeSingle() as { data: { status: JobStatus } | null; error: unknown }
+    .maybeSingle() as { data: { status: JobStatus; completed_at: string | null } | null; error: unknown }
+
+  const prevCompletedAt = prev?.completed_at ?? null
+  const updatePayload: { status: JobStatus; completed_at?: string | null } = { status }
+  if (status === 'completed') {
+    if (!prevCompletedAt) updatePayload.completed_at = new Date().toISOString()
+  } else {
+    updatePayload.completed_at = null
+  }
 
   const { error: updateError } = await service
     .from('jobs')
-    .update({ status })
+    .update(updatePayload)
     .eq('id', jobId)
     .eq('organization_id', orgId)
 
