@@ -7,6 +7,7 @@ import { TAX_RATE } from './format'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
+import { calculateProofDueDate } from '@/lib/date-utils'
 import {
   selectMaterial,
   isBannerProduct,
@@ -1072,6 +1073,7 @@ export async function convertQuoteToSalesOrder(
         title: `Job for SO-${String(so.so_number).padStart(4, '0')}`,
         status: 'new',
         proof_status: 'not_started',
+        proof_due_date: calculateProofDueDate(new Date()).toISOString(),
       })
       .select('id, job_number')
       .single()

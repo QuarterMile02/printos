@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { logActivity } from '@/lib/logActivity'
+import { calculateProofDueDate } from '@/lib/date-utils'
 
 export async function convertToSalesOrder(formData: FormData) {
   const quoteId = formData.get('quoteId') as string
@@ -59,6 +60,7 @@ export async function convertToSalesOrder(formData: FormData) {
       title: `Job for SO-${String(soNumber).padStart(4, '0')}`,
       status: 'new',
       proof_status: 'not_started',
+      proof_due_date: calculateProofDueDate(new Date()).toISOString(),
     })
     .select('id, job_number')
     .single()
