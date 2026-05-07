@@ -22,16 +22,26 @@ type QuoteRow = {
   total: number | null
 }
 
-const EXCLUDED = ['cancelled', 'invoiced', 'paid', 'completed']
+// Whitelist of "still open" quote_status enum values (verified in migrations
+// 002 and 018a). The original spec asked for NOT IN cancelled/invoiced/paid/
+// completed, but those are NOT members of the quote_status enum — passing
+// them to PostgREST raises "invalid input value for enum" and crashes the
+// query. We invert the filter and IN-list valid open statuses instead.
+const OPEN_STATUSES = [
+  'draft', 'sent', 'delivered', 'customer_review', 'approve_with_changes',
+  'revise', 'hold', 'pending', 'approved',
+]
 
 const STATUS_STYLES: Record<string, string> = {
-  draft:               'bg-gray-100 text-gray-600',
-  delivered:           'bg-blue-50 text-blue-700',
-  customer_review:     'bg-amber-50 text-amber-700',
-  approved:            'bg-green-50 text-green-700',
-  internally_approved: 'bg-green-100 text-green-800',
-  pending:             'bg-gray-100 text-gray-600',
-  hold:                'bg-orange-100 text-orange-800',
+  draft:                'bg-gray-100 text-gray-600',
+  sent:                 'bg-blue-50 text-blue-700',
+  delivered:            'bg-blue-50 text-blue-700',
+  customer_review:      'bg-amber-50 text-amber-700',
+  approve_with_changes: 'bg-teal-50 text-teal-700',
+  revise:               'bg-orange-50 text-orange-700',
+  approved:             'bg-green-50 text-green-700',
+  pending:              'bg-gray-100 text-gray-600',
+  hold:                 'bg-orange-100 text-orange-800',
 }
 
 function fmtMoney(cents: number | null): string {
@@ -46,18 +56,25 @@ function truncate(s: string | null, n: number): string {
 
 export default async function QuotesWithoutContact({ service, orgId, orgSlug }: Props) {
   let rows: QuoteRow[] | null = null
+  let errorMsg: string | null = null
   try {
     const r = await service
       .from('quotes')
-      .select('id, quote_number, title, status, created_at, total')
+      .select('id, quote_number, title, status, created_at, total, customer_id')
       .eq('organization_id', orgId)
       .is('customer_id', null)
-      .not('status', 'in', `(${EXCLUDED.map(s => `"${s}"`).join(',')})`)
+      .in('status', OPEN_STATUSES)
       .order('created_at', { ascending: false })
       .limit(20)
-    if (r.error) throw r.error
+    if (r.error) {
+      console.error('[quotes-without-contact] query failed:', r.error)
+      errorMsg = r.error.message
+      throw r.error
+    }
     rows = (r.data ?? []) as QuoteRow[]
-  } catch {
+  } catch (err) {
+    console.error('[quotes-without-contact] crash:', err)
+    if (!errorMsg && err instanceof Error) errorMsg = err.message
     rows = null
   }
 
@@ -72,7 +89,10 @@ export default async function QuotesWithoutContact({ service, orgId, orgSlug }: 
       }
     >
       {rows === null ? (
-        <p className="py-6 text-center text-sm text-gray-400">Unable to load</p>
+        <div className="py-6 text-center text-sm text-gray-400">
+          <p>Unable to load</p>
+          {errorMsg && <p className="mt-1 text-xs text-red-500 font-mono">{errorMsg}</p>}
+        </div>
       ) : rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-gray-500">✅ All quotes have customer contact info</p>
       ) : (

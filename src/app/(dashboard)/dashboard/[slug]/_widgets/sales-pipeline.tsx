@@ -1,7 +1,8 @@
 // Sales Team Pipeline — table grouping open quotes by their owning sales
-// rep. Each row links into /quotes?assigned_to=<userId> for drill-down.
-// Schema uses quotes.created_by (no assigned_to column), so we group by
-// that and resolve names via profiles.
+// rep. Schema has both quotes.sales_rep_id (from migration 021, the
+// proper "assigned to" column) and quotes.created_by; we prefer
+// sales_rep_id and fall back to created_by. Names are resolved via
+// profiles (id == auth.users.id).
 
 import Link from 'next/link'
 import WidgetCard from './widget-card'
@@ -15,12 +16,21 @@ type Props = {
   orgSlug: string
 }
 
-const EXCLUDED = ['cancelled', 'invoiced', 'paid', 'completed']
+// Whitelist of "still open" quote_status enum values (verified in migrations
+// 002 and 018a). Original spec wanted NOT IN cancelled/invoiced/paid/
+// completed, but those aren't members of the quote_status enum — passing
+// them to PostgREST raises "invalid input value for enum" and crashes the
+// query. Using IN with valid open statuses gives equivalent semantics.
+const OPEN_STATUSES = [
+  'draft', 'sent', 'delivered', 'customer_review', 'approve_with_changes',
+  'revise', 'hold', 'pending', 'approved',
+]
 
 type QuoteRow = {
   id: string
   total: number | null
   created_at: string
+  sales_rep_id: string | null
   created_by: string | null
 }
 
@@ -44,39 +54,50 @@ function fmtMoney(cents: number): string {
 export default async function SalesPipeline({ service, orgId, orgSlug }: Props) {
   let rows: QuoteRow[] = []
   let loadOk = true
+  let errorMsg: string | null = null
   try {
     const r = await service
       .from('quotes')
-      .select('id, total, created_at, created_by')
+      .select('id, total, created_at, sales_rep_id, created_by')
       .eq('organization_id', orgId)
-      .not('status', 'in', `(${EXCLUDED.map(s => `"${s}"`).join(',')})`)
+      .in('status', OPEN_STATUSES)
       .limit(5000)
-    if (r.error) throw r.error
+    if (r.error) {
+      console.error('[sales-pipeline] quotes query failed:', r.error)
+      errorMsg = r.error.message
+      throw r.error
+    }
     rows = (r.data ?? []) as QuoteRow[]
-  } catch {
+  } catch (err) {
+    console.error('[sales-pipeline] crash:', err)
+    if (!errorMsg && err instanceof Error) errorMsg = err.message
     loadOk = false
   }
 
   if (!loadOk) {
     return (
       <WidgetCard title="Sales Team Pipeline" span={12}>
-        <p className="py-6 text-center text-sm text-gray-400">Unable to load pipeline</p>
+        <div className="py-6 text-center text-sm text-gray-400">
+          <p>Unable to load pipeline</p>
+          {errorMsg && <p className="mt-1 text-xs text-red-500 font-mono">{errorMsg}</p>}
+        </div>
       </WidgetCard>
     )
   }
 
-  // Group by created_by
+  // Group by sales_rep_id (preferred), falling back to created_by
   type Group = { userId: string | null; ages: number[]; totalCents: number; count: number }
   const now = Date.now()
   const groupMap = new Map<string, Group>()
   for (const q of rows) {
-    const key = q.created_by ?? '__unassigned__'
+    const ownerId = q.sales_rep_id ?? q.created_by ?? null
+    const key = ownerId ?? '__unassigned__'
     const age = daysBetween(new Date(q.created_at).getTime(), now)
     const g = groupMap.get(key)
     if (g) {
       g.ages.push(age); g.totalCents += Number(q.total ?? 0); g.count++
     } else {
-      groupMap.set(key, { userId: q.created_by, ages: [age], totalCents: Number(q.total ?? 0), count: 1 })
+      groupMap.set(key, { userId: ownerId, ages: [age], totalCents: Number(q.total ?? 0), count: 1 })
     }
   }
 
@@ -89,10 +110,17 @@ export default async function SalesPipeline({ service, orgId, orgSlug }: Props) 
         .from('profiles')
         .select('id, full_name, email')
         .in('id', userIds)
-      for (const p of (r.data ?? []) as { id: string; full_name: string | null; email: string | null }[]) {
-        nameMap.set(p.id, p.full_name || p.email || '(unnamed)')
+      if (r.error) {
+        console.error('[sales-pipeline] profiles lookup failed:', r.error)
+      } else {
+        for (const p of (r.data ?? []) as { id: string; full_name: string | null; email: string | null }[]) {
+          nameMap.set(p.id, p.full_name || p.email || '(unnamed)')
+        }
       }
-    } catch { /* names unavailable; fall back to short id */ }
+    } catch (err) {
+      console.error('[sales-pipeline] profiles crash:', err)
+      // names unavailable — fall back to short uuid prefix below
+    }
   }
 
   const stats: RepStats[] = [...groupMap.entries()].map(([key, g]) => {
