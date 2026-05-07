@@ -1,8 +1,7 @@
 // Persistent alert strip that sits at the very top of the org dashboard
-// (above all widgets, below the top nav). Counts are fetched in parallel
-// with HEAD queries so we don't pull row data we don't render. Pills that
-// reference DB columns that may not exist (jobs.invoice_id,
-// jobs.proof_due_date) are wrapped in try/catch and skip gracefully.
+// (above all widgets, below the top nav). Every pill ALWAYS renders so a
+// single failing query can never hide the others — failed pills fall back
+// to grey + count 0 + a small "(query failed)" subtext for diagnostics.
 
 import Link from 'next/link'
 import type { createServiceClient } from '@/lib/supabase/server'
@@ -22,6 +21,7 @@ type Pill = {
   icon: string
   label: string
   href: string
+  errorMsg?: string  // surfaces under the label as a tiny diagnostic
 }
 
 const TONE_BORDER: Record<Tone, string> = {
@@ -41,14 +41,20 @@ const TONE_BG: Record<Tone, string> = {
 const fmtMoney = (cents: number) =>
   '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+function errorMessage(label: string, e: unknown): string {
+  if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') {
+    return `${label}: ${(e as { message: string }).message}`
+  }
+  return `${label}: ${String(e)}`
+}
+
 export default async function DashboardAlertStrip({ service, orgId, orgSlug }: Props) {
   const todayDate = new Date().toISOString().slice(0, 10)
   const base = `/dashboard/${orgSlug}`
 
-  // PILL 1 — quotes approved today (informational, not action-required).
-  // PrintOS auto-converts approved quotes to Sales Orders via the product
-  // recipe workflow, so the previous "needs conversion" pill was misleading.
-  const approvedTodayPromise = (async (): Promise<number | null> => {
+  // ── PILL 1 — Quotes Approved Today (informational, green tone) ───────
+  type ApprovedResult = { count: number; error: string | null }
+  const approvedTodayPromise: Promise<ApprovedResult> = (async () => {
     try {
       const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0)
       const dayEnd = new Date(dayStart.getTime() + 86_400_000)
@@ -59,15 +65,22 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .in('status', ['approved', 'internally_approved'])
         .gte('updated_at', dayStart.toISOString())
         .lt('updated_at', dayEnd.toISOString())
-      if (r.error) return null
-      return r.count ?? 0
-    } catch { return null }
+      if (r.error) {
+        console.error('[alert-strip] approved-today query error:', r.error)
+        return { count: 0, error: errorMessage('approved-today', r.error) }
+      }
+      return { count: r.count ?? 0, error: null }
+    } catch (e) {
+      console.error('[alert-strip] approved-today crash:', e)
+      return { count: 0, error: errorMessage('approved-today', e) }
+    }
   })()
 
-  // PILL 2 — overdue invoices, aged into 4 buckets. Single fetch + JS
-  // bucketing keeps the round-trip count down vs. four separate queries.
+  // ── PILL 2 — Overdue invoices, aged into 4 buckets ───────────────────
   type OverdueBuckets = { b0_30: number; b31_60: number; b61_90: number; b90: number; sumCents: number }
-  const overduePromise = (async (): Promise<OverdueBuckets | null> => {
+  type OverdueResult = { buckets: OverdueBuckets; error: string | null }
+  const overduePromise: Promise<OverdueResult> = (async () => {
+    const empty: OverdueBuckets = { b0_30: 0, b31_60: 0, b61_90: 0, b90: 0, sumCents: 0 }
     try {
       const r = await service
         .from('invoices')
@@ -76,9 +89,12 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .not('status', 'in', '(paid,cancelled,draft)')
         .lt('due_date', todayDate)
         .limit(2000)
-      if (r.error) return null
+      if (r.error) {
+        console.error('[alert-strip] overdue query error:', r.error)
+        return { buckets: empty, error: errorMessage('overdue', r.error) }
+      }
       const today = new Date(); today.setHours(0, 0, 0, 0)
-      const out: OverdueBuckets = { b0_30: 0, b31_60: 0, b61_90: 0, b90: 0, sumCents: 0 }
+      const out: OverdueBuckets = { ...empty }
       for (const row of (r.data ?? []) as { due_date: string | null; balance_due: number | null }[]) {
         if (!row.due_date) continue
         const bal = Number(row.balance_due ?? 0)
@@ -92,13 +108,16 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         else out.b90++
         out.sumCents += bal
       }
-      return out
-    } catch { return null }
+      return { buckets: out, error: null }
+    } catch (e) {
+      console.error('[alert-strip] overdue crash:', e)
+      return { buckets: empty, error: errorMessage('overdue', e) }
+    }
   })()
 
-  // PILL 3 — completed jobs not yet invoiced. jobs.invoice_id may not
-  // exist — wrap so a missing column degrades to null (pill skipped).
-  const completedNotInvoicedPromise = (async (): Promise<number | null> => {
+  // ── PILL 3 — Completed jobs not yet invoiced ─────────────────────────
+  type SimpleResult = { count: number; error: string | null }
+  const completedNotInvoicedPromise: Promise<SimpleResult> = (async () => {
     try {
       const r = await service
         .from('jobs')
@@ -106,14 +125,19 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .eq('organization_id', orgId)
         .eq('status', 'completed')
         .is('invoice_id', null)
-      if (r.error) return null
-      return r.count ?? 0
-    } catch { return null }
+      if (r.error) {
+        console.error('[alert-strip] completed-not-invoiced query error:', r.error)
+        return { count: 0, error: errorMessage('completed-not-invoiced', r.error) }
+      }
+      return { count: r.count ?? 0, error: null }
+    } catch (e) {
+      console.error('[alert-strip] completed-not-invoiced crash:', e)
+      return { count: 0, error: errorMessage('completed-not-invoiced', e) }
+    }
   })()
 
-  // PILL 4 — proofs past deadline. proof_due_date / proof_status may not
-  // exist on the jobs table. Skip on error.
-  const proofsOverduePromise = (async (): Promise<number | null> => {
+  // ── PILL 4 — Proofs past deadline ────────────────────────────────────
+  const proofsOverduePromise: Promise<SimpleResult> = (async () => {
     try {
       const r = await service
         .from('jobs')
@@ -121,9 +145,15 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .eq('organization_id', orgId)
         .lt('proof_due_date', todayDate)
         .neq('proof_status', 'approved')
-      if (r.error) return null
-      return r.count ?? 0
-    } catch { return null }
+      if (r.error) {
+        console.error('[alert-strip] proofs-overdue query error:', r.error)
+        return { count: 0, error: errorMessage('proofs-overdue', r.error) }
+      }
+      return { count: r.count ?? 0, error: null }
+    } catch (e) {
+      console.error('[alert-strip] proofs-overdue crash:', e)
+      return { count: 0, error: errorMessage('proofs-overdue', e) }
+    }
   })()
 
   const [approvedToday, overdue, completedNotInvoiced, proofsOverdue] = await Promise.all([
@@ -133,55 +163,45 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
     proofsOverduePromise,
   ])
 
-  const pills: Pill[] = []
-
-  if (approvedToday !== null) {
-    pills.push({
-      tone: approvedToday > 0 ? 'green' : 'grey',
+  // Build all 4 pills unconditionally. A failed query renders grey + 0 +
+  // tiny "(query failed)" subtext for diagnostics.
+  const pills: Pill[] = [
+    {
+      tone: approvedToday.error ? 'grey' : (approvedToday.count > 0 ? 'green' : 'grey'),
       icon: '⚡',
-      label: `${approvedToday} Quote${approvedToday === 1 ? '' : 's'} Approved Today`,
+      label: `${approvedToday.count} Quote${approvedToday.count === 1 ? '' : 's'} Approved Today`,
       href: `${base}/quotes?status=approved`,
-    })
-  }
-
-  if (overdue !== null) {
-    const total = overdue.b0_30 + overdue.b31_60 + overdue.b61_90 + overdue.b90
-    let label: string
-    if (total === 0) {
-      label = `Overdue Invoices: ${fmtMoney(0)}`
-    } else {
-      label = `Overdue: ${overdue.b0_30} (0-30d) · ${overdue.b31_60} (31-60d) · ${overdue.b61_90} (61-90d) · ${overdue.b90} (90+d) — ${fmtMoney(overdue.sumCents)}`
-    }
-    pills.push({
-      tone: total > 0 ? 'red' : 'grey',
-      icon: '🔴',
-      label,
-      href: `${base}/invoices?status=overdue`,
-    })
-  }
-
-  if (completedNotInvoiced !== null) {
-    pills.push({
-      tone: completedNotInvoiced > 0 ? 'amber' : 'grey',
+      errorMsg: approvedToday.error ?? undefined,
+    },
+    (() => {
+      const b = overdue.buckets
+      const total = b.b0_30 + b.b31_60 + b.b61_90 + b.b90
+      const label = total === 0
+        ? `Overdue Invoices: ${fmtMoney(0)}`
+        : `Overdue: ${b.b0_30} (0-30d) · ${b.b31_60} (31-60d) · ${b.b61_90} (61-90d) · ${b.b90} (90+d) — ${fmtMoney(b.sumCents)}`
+      return {
+        tone: overdue.error ? 'grey' : (total > 0 ? 'red' : 'grey'),
+        icon: '🔴',
+        label,
+        href: `${base}/invoices?status=overdue`,
+        errorMsg: overdue.error ?? undefined,
+      } as Pill
+    })(),
+    {
+      tone: completedNotInvoiced.error ? 'grey' : (completedNotInvoiced.count > 0 ? 'amber' : 'grey'),
       icon: '⚠️',
-      label: `${completedNotInvoiced} Completed Job${completedNotInvoiced === 1 ? '' : 's'} Not Invoiced`,
+      label: `${completedNotInvoiced.count} Completed Job${completedNotInvoiced.count === 1 ? '' : 's'} Not Invoiced`,
       href: `${base}/jobs?status=completed&invoiced=false`,
-    })
-  }
-
-  if (proofsOverdue !== null) {
-    pills.push({
-      tone: proofsOverdue > 0 ? 'amber' : 'grey',
+      errorMsg: completedNotInvoiced.error ?? undefined,
+    },
+    {
+      tone: proofsOverdue.error ? 'grey' : (proofsOverdue.count > 0 ? 'amber' : 'grey'),
       icon: '🎨',
-      label: `${proofsOverdue} Proof${proofsOverdue === 1 ? '' : 's'} Past Deadline`,
+      label: `${proofsOverdue.count} Proof${proofsOverdue.count === 1 ? '' : 's'} Past Deadline`,
       href: `${base}/jobs?proof_overdue=true`,
-    })
-  }
-
-  // Strip is always rendered — pills with count=0 fall back to the grey
-  // tone so the user can see the system is checking and everything is clear.
-  // If every query failed (all pills returned null), hide the empty bar.
-  if (pills.length === 0) return null
+      errorMsg: proofsOverdue.error ?? undefined,
+    },
+  ]
 
   return (
     <div className="bg-[#1A1A1A] -mx-8 mb-6 px-8 py-2">
@@ -190,10 +210,16 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
           <Link
             key={i}
             href={p.href}
-            className={`inline-flex items-center gap-1.5 rounded px-3 py-1 transition ${TONE_BORDER[p.tone]} ${TONE_BG[p.tone]}`}
+            className={`inline-flex flex-col items-start rounded px-3 py-1 transition ${TONE_BORDER[p.tone]} ${TONE_BG[p.tone]}`}
+            title={p.errorMsg}
           >
-            <span aria-hidden>{p.icon}</span>
-            <span className="font-medium">{p.label}</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden>{p.icon}</span>
+              <span className="font-medium">{p.label}</span>
+            </span>
+            {p.errorMsg && (
+              <span className="text-[10px] text-gray-600 leading-tight mt-0.5">(query failed)</span>
+            )}
           </Link>
         ))}
       </div>
