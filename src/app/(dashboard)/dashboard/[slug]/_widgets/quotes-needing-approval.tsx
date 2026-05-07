@@ -109,7 +109,12 @@ export default async function QuotesNeedingApproval({ service, orgId, orgSlug }:
   }
 
   return (
-    <WidgetCard title="Quotes Needing Approval" span={6}>
+    <WidgetCard
+      title="Quotes Needing Approval"
+      subtitle="Quotes flagged for manager pricing review"
+      accent="#fbbf24"
+      span={6}
+    >
       {errorMsg ? (
         <div className="py-6 text-center text-sm text-gray-400">
           <p>Unable to load</p>

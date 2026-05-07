@@ -108,7 +108,12 @@ export default async function RescueList({ service, orgId, orgSlug }: Props) {
   }
 
   return (
-    <WidgetCard title="Rescue List" span={6}>
+    <WidgetCard
+      title="Rescue List"
+      subtitle="Lost or declined quotes flagged for second attempt"
+      accent="#ee2b7b"
+      span={6}
+    >
       {errorMsg ? (
         <div className="py-6 text-center text-sm text-gray-400">
           <p>Unable to load</p>

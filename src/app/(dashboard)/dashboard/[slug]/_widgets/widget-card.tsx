@@ -5,12 +5,14 @@ import type { ReactNode } from 'react'
 
 type Props = {
   title: string
+  subtitle?: string   // optional secondary line under the title
+  accent?: string     // optional CSS color for a 3px top border
   action?: ReactNode  // optional button/link in the header (e.g. date selector)
   span?: number       // 1-12 grid columns; defaults to full row
   children: ReactNode
 }
 
-export default function WidgetCard({ title, action, span = 12, children }: Props) {
+export default function WidgetCard({ title, subtitle, accent, action, span = 12, children }: Props) {
   // Tailwind doesn't pick up dynamic classes, so map the small set we use.
   const colSpan: Record<number, string> = {
     3:  'lg:col-span-3',
@@ -19,10 +21,17 @@ export default function WidgetCard({ title, action, span = 12, children }: Props
     8:  'lg:col-span-8',
     12: 'lg:col-span-12',
   }
+  const accentStyle = accent ? { borderTopColor: accent, borderTopWidth: 3, borderTopStyle: 'solid' as const } : undefined
   return (
-    <section className={`col-span-12 ${colSpan[span] ?? 'lg:col-span-12'} rounded-xl border border-gray-200 bg-white shadow-sm`}>
-      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-[#1A1A1A]">{title}</h2>
+    <section
+      className={`col-span-12 ${colSpan[span] ?? 'lg:col-span-12'} rounded-xl border border-gray-200 bg-white shadow-sm`}
+      style={accentStyle}
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-gray-100 px-4 py-2.5">
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-[#1A1A1A]">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs font-normal normal-case text-gray-500">{subtitle}</p>}
+        </div>
         {action}
       </div>
       <div className="p-4">{children}</div>

@@ -15,7 +15,7 @@ type Props = {
   orgSlug: string
 }
 
-type Tone = 'red' | 'amber' | 'grey'
+type Tone = 'red' | 'amber' | 'green' | 'grey'
 
 type Pill = {
   tone: Tone
@@ -27,12 +27,14 @@ type Pill = {
 const TONE_BORDER: Record<Tone, string> = {
   red:   'border-l-[3px] border-l-[#ee2b7b]',
   amber: 'border-l-[3px] border-l-amber-400',
+  green: 'border-l-[3px] border-l-[#93ca3b]',
   grey:  'border-l-[3px] border-l-[#555]',
 }
 
 const TONE_BG: Record<Tone, string> = {
   red:   'bg-[#ee2b7b]/15 hover:bg-[#ee2b7b]/25 text-pink-100',
   amber: 'bg-amber-400/15 hover:bg-amber-400/25 text-amber-100',
+  green: 'bg-[#93ca3b]/15 hover:bg-[#93ca3b]/25 text-[#d6efb1]',
   grey:  'bg-[#2a2a2a] hover:bg-[#333] text-[#888]',
 }
 
@@ -43,17 +45,20 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
   const todayDate = new Date().toISOString().slice(0, 10)
   const base = `/dashboard/${orgSlug}`
 
-  // PILL 1 — approved quotes pending conversion
-  // Schema uses `converted_to_so_id` (per migrations 018b/019/020), not
-  // `sales_order_id` as in the spec.
-  const approvedPromise = (async (): Promise<number | null> => {
+  // PILL 1 — quotes approved today (informational, not action-required).
+  // PrintOS auto-converts approved quotes to Sales Orders via the product
+  // recipe workflow, so the previous "needs conversion" pill was misleading.
+  const approvedTodayPromise = (async (): Promise<number | null> => {
     try {
+      const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0)
+      const dayEnd = new Date(dayStart.getTime() + 86_400_000)
       const r = await service
         .from('quotes')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', orgId)
         .in('status', ['approved', 'internally_approved'])
-        .is('converted_to_so_id', null)
+        .gte('updated_at', dayStart.toISOString())
+        .lt('updated_at', dayEnd.toISOString())
       if (r.error) return null
       return r.count ?? 0
     } catch { return null }
@@ -121,8 +126,8 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
     } catch { return null }
   })()
 
-  const [approved, overdue, completedNotInvoiced, proofsOverdue] = await Promise.all([
-    approvedPromise,
+  const [approvedToday, overdue, completedNotInvoiced, proofsOverdue] = await Promise.all([
+    approvedTodayPromise,
     overduePromise,
     completedNotInvoicedPromise,
     proofsOverduePromise,
@@ -130,11 +135,11 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
 
   const pills: Pill[] = []
 
-  if (approved !== null) {
+  if (approvedToday !== null) {
     pills.push({
-      tone: approved > 0 ? 'red' : 'grey',
+      tone: approvedToday > 0 ? 'green' : 'grey',
       icon: '⚡',
-      label: `${approved} Approved Quote${approved === 1 ? '' : 's'} Need Conversion`,
+      label: `${approvedToday} Quote${approvedToday === 1 ? '' : 's'} Approved Today`,
       href: `${base}/quotes?status=approved`,
     })
   }
