@@ -59,32 +59,36 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
     } catch { return null }
   })()
 
-  // PILL 2 — overdue invoices (count + sum of balance_due in cents)
-  const overdueCountPromise = (async (): Promise<number | null> => {
+  // PILL 2 — overdue invoices, aged into 4 buckets. Single fetch + JS
+  // bucketing keeps the round-trip count down vs. four separate queries.
+  type OverdueBuckets = { b0_30: number; b31_60: number; b61_90: number; b90: number; sumCents: number }
+  const overduePromise = (async (): Promise<OverdueBuckets | null> => {
     try {
       const r = await service
         .from('invoices')
-        .select('id', { count: 'exact', head: true })
+        .select('due_date, balance_due')
         .eq('organization_id', orgId)
-        .neq('status', 'paid')
+        .not('status', 'in', '(paid,cancelled,draft)')
         .lt('due_date', todayDate)
+        .limit(2000)
       if (r.error) return null
-      return r.count ?? 0
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const out: OverdueBuckets = { b0_30: 0, b31_60: 0, b61_90: 0, b90: 0, sumCents: 0 }
+      for (const row of (r.data ?? []) as { due_date: string | null; balance_due: number | null }[]) {
+        if (!row.due_date) continue
+        const bal = Number(row.balance_due ?? 0)
+        if (bal <= 0) continue
+        const due = new Date(row.due_date + 'T00:00:00').getTime()
+        const days = Math.floor((today.getTime() - due) / 86_400_000)
+        if (days < 1) continue
+        if (days <= 30) out.b0_30++
+        else if (days <= 60) out.b31_60++
+        else if (days <= 90) out.b61_90++
+        else out.b90++
+        out.sumCents += bal
+      }
+      return out
     } catch { return null }
-  })()
-  const overdueSumPromise = (async (): Promise<number> => {
-    try {
-      const r = await service
-        .from('invoices')
-        .select('balance_due')
-        .eq('organization_id', orgId)
-        .neq('status', 'paid')
-        .lt('due_date', todayDate)
-      return (r.data ?? []).reduce<number>(
-        (s, row) => s + Number((row as { balance_due: number | null }).balance_due ?? 0),
-        0,
-      )
-    } catch { return 0 }
   })()
 
   // PILL 3 — completed jobs not yet invoiced. jobs.invoice_id may not
@@ -117,10 +121,9 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
     } catch { return null }
   })()
 
-  const [approved, overdueCount, overdueSum, completedNotInvoiced, proofsOverdue] = await Promise.all([
+  const [approved, overdue, completedNotInvoiced, proofsOverdue] = await Promise.all([
     approvedPromise,
-    overdueCountPromise,
-    overdueSumPromise,
+    overduePromise,
     completedNotInvoicedPromise,
     proofsOverduePromise,
   ])
@@ -136,11 +139,18 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
     })
   }
 
-  if (overdueCount !== null) {
+  if (overdue !== null) {
+    const total = overdue.b0_30 + overdue.b31_60 + overdue.b61_90 + overdue.b90
+    let label: string
+    if (total === 0) {
+      label = `Overdue Invoices: ${fmtMoney(0)}`
+    } else {
+      label = `Overdue: ${overdue.b0_30} (0-30d) · ${overdue.b31_60} (31-60d) · ${overdue.b61_90} (61-90d) · ${overdue.b90} (90+d) — ${fmtMoney(overdue.sumCents)}`
+    }
     pills.push({
-      tone: overdueCount > 0 ? 'red' : 'grey',
+      tone: total > 0 ? 'red' : 'grey',
       icon: '🔴',
-      label: `${overdueCount} Overdue Invoice${overdueCount === 1 ? '' : 's'} — ${fmtMoney(overdueSum)}`,
+      label,
       href: `${base}/invoices?status=overdue`,
     })
   }

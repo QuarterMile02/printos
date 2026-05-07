@@ -1,8 +1,10 @@
 // Aging Buckets — overdue invoices grouped into 4 buckets by days past
-// due_date. Each bucket shows count + total balance_due, sorted largest
-// total first. Click each to jump to the invoices report (the report's
-// status=overdue filter narrows it; bucket-specific filtering is a
-// follow-up once the invoices report supports a min/max age param).
+// due_date. Each bucket row shows count + total balance_due and links to
+// the invoices list pre-filtered to that bucket via ?overdue_bucket=…
+//
+// Source query: invoices WHERE status NOT IN ('paid','cancelled','draft')
+// AND due_date < today AND organization_id = org. Bucketing happens in JS
+// so we round-trip the DB once instead of four times.
 
 import Link from 'next/link'
 import WidgetCard from './widget-card'
@@ -17,86 +19,93 @@ type Props = {
 }
 
 type InvoiceRow = {
-  id: string
   due_date: string | null
-  total: number | null
-  amount_paid: number | null
   balance_due: number | null
-  status: string
 }
 
-type Bucket = { label: string; min: number; max: number; count: number; total: number }
+type Bucket = {
+  key: '0-30' | '31-60' | '61-90' | '90+'
+  label: string
+  borderColor: string
+  count: number
+  totalCents: number
+}
 
 function ageInDays(dueDate: string | null): number {
   if (!dueDate) return -1
   const due = new Date(dueDate + 'T00:00:00').getTime()
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  return Math.floor((today.getTime() - due) / (1000 * 60 * 60 * 24))
+  return Math.floor((today.getTime() - due) / 86_400_000)
 }
 
-function formatCents(c: number): string { return `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }
+function fmtMoney(cents: number): string {
+  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
 export default async function AgingBuckets({ service, orgId, orgSlug }: Props) {
-  // Pull every still-owing invoice in one shot. RLS guards by org.
-  // Filtering on date in JS lets us share the same fetch for all buckets;
-  // n is small enough (overdue invoices, not full history) that this is fine.
   const todayDate = new Date().toISOString().slice(0, 10)
   const { data } = await service
     .from('invoices')
-    .select('id, due_date, total, amount_paid, balance_due, status')
+    .select('due_date, balance_due')
     .eq('organization_id', orgId)
-    .in('status', ['sent', 'partial', 'overdue'])
+    .not('status', 'in', '(paid,cancelled,draft)')
     .not('due_date', 'is', null)
     .lt('due_date', todayDate)
     .limit(2000) as { data: InvoiceRow[] | null; error: unknown }
 
   const buckets: Bucket[] = [
-    { label: '0–30 days',  min: 1,  max: 30,        count: 0, total: 0 },
-    { label: '31–60 days', min: 31, max: 60,        count: 0, total: 0 },
-    { label: '61–90 days', min: 61, max: 90,        count: 0, total: 0 },
-    { label: '90+ days',   min: 91, max: Infinity,  count: 0, total: 0 },
+    { key: '0-30',  label: '0-30 days',   borderColor: '#93ca3b', count: 0, totalCents: 0 },
+    { key: '31-60', label: '31-60 days',  borderColor: '#fbbf24', count: 0, totalCents: 0 }, // amber-400
+    { key: '61-90', label: '61-90 days',  borderColor: '#fb923c', count: 0, totalCents: 0 }, // orange-400
+    { key: '90+',   label: '90+ days',    borderColor: '#ee2b7b', count: 0, totalCents: 0 },
   ]
   for (const r of data ?? []) {
     const age = ageInDays(r.due_date)
     if (age < 1) continue
     const bal = Number(r.balance_due ?? 0)
     if (bal <= 0) continue
-    for (const b of buckets) {
-      if (age >= b.min && age <= b.max) { b.count++; b.total += bal; break }
-    }
+    if (age <= 30) { buckets[0].count++; buckets[0].totalCents += bal }
+    else if (age <= 60) { buckets[1].count++; buckets[1].totalCents += bal }
+    else if (age <= 90) { buckets[2].count++; buckets[2].totalCents += bal }
+    else { buckets[3].count++; buckets[3].totalCents += bal }
   }
 
-  const sorted = [...buckets].sort((a, b) => b.total - a.total)
-  const grandTotal = buckets.reduce((s, b) => s + b.total, 0)
+  const grandTotalCents = buckets.reduce((s, b) => s + b.totalCents, 0)
   const grandCount = buckets.reduce((s, b) => s + b.count, 0)
 
   return (
-    <WidgetCard
-      title="Overdue Invoices Aging"
-      span={6}
-      action={
-        <span className="text-xs tabular-nums text-gray-500">
-          {grandCount} invoice{grandCount === 1 ? '' : 's'} · {formatCents(grandTotal)}
-        </span>
-      }
-    >
+    <WidgetCard title="Overdue Invoices Aging" span={6}>
       {grandCount === 0 ? (
-        <p className="py-6 text-center text-sm text-gray-500">No overdue invoices. Nice.</p>
+        <div className="rounded-md border border-green-200 bg-green-50 px-4 py-6 text-center">
+          <p className="text-sm font-semibold text-green-800">✅ No overdue invoices</p>
+        </div>
       ) : (
-        <ul className="divide-y divide-gray-100">
-          {sorted.map((b) => (
-            <li key={b.label}>
-              <Link
-                href={`/dashboard/${orgSlug}/reports/invoices`}
-                className="flex items-center justify-between py-2 hover:bg-gray-50 rounded px-2 -mx-2"
-              >
-                <span className="text-sm font-semibold text-[#1A1A1A]">{b.label}</span>
-                <span className="text-xs text-gray-500">{b.count} invoice{b.count === 1 ? '' : 's'}</span>
-                <span className="text-sm font-bold tabular-nums text-[#1A1A1A]">{formatCents(b.total)}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="mb-3 px-1">
+            <div className="text-xs font-medium uppercase tracking-wider text-gray-500">Total Outstanding</div>
+            <div className="text-2xl font-extrabold tabular-nums text-[#1A1A1A]">{fmtMoney(grandTotalCents)}</div>
+          </div>
+          <ul className="space-y-1.5">
+            {buckets.map((b) => (
+              <li key={b.key}>
+                <Link
+                  href={`/dashboard/${orgSlug}/invoices?overdue_bucket=${b.key}`}
+                  className="flex items-center justify-between gap-3 rounded-md border-l-[3px] bg-gray-50 hover:bg-gray-100 px-3 py-2 transition-colors"
+                  style={{ borderLeftColor: b.borderColor }}
+                >
+                  <span className="text-sm font-semibold text-[#1A1A1A] w-24 shrink-0">{b.label}</span>
+                  <span className="text-xs text-gray-500 w-20 text-right tabular-nums">
+                    {b.count} inv{b.count === 1 ? '.' : 's.'}
+                  </span>
+                  <span className="text-sm font-bold tabular-nums text-[#1A1A1A] flex-1 text-right">
+                    {fmtMoney(b.totalCents)}
+                  </span>
+                  <span aria-hidden className="text-gray-400">→</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </WidgetCard>
   )

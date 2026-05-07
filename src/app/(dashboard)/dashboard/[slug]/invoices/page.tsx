@@ -8,7 +8,27 @@ export const dynamic = 'force-dynamic'
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; overdue_bucket?: string }>
+}
+
+type OverdueBucket = '0-30' | '31-60' | '61-90' | '90+'
+
+function bucketDateRange(bucket: OverdueBucket): { gte?: string; lt?: string } {
+  // Returns ISO date strings for due_date range. Bucket = days past due:
+  //   0-30  → due_date in [today-30, today)
+  //   31-60 → due_date in [today-60, today-30)
+  //   61-90 → due_date in [today-90, today-60)
+  //   90+   → due_date < today-90
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const dayMs = 86_400_000
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  const offset = (days: number) => iso(new Date(today.getTime() - days * dayMs))
+  switch (bucket) {
+    case '0-30':  return { gte: offset(30), lt: iso(today) }
+    case '31-60': return { gte: offset(60), lt: offset(30) }
+    case '61-90': return { gte: offset(90), lt: offset(60) }
+    case '90+':   return { lt: offset(90) }
+  }
 }
 
 export default async function Page({ params, searchParams }: PageProps) {
@@ -45,9 +65,26 @@ export default async function Page({ params, searchParams }: PageProps) {
     .eq('organization_id', org.id)
 
   const filter = sp.status
+  const bucket = sp.overdue_bucket as OverdueBucket | undefined
+
   if (filter && filter !== 'all') {
     query = query.eq('status', filter) as typeof query
     countQuery = countQuery.eq('status', filter) as typeof countQuery
+  }
+
+  if (bucket && (bucket === '0-30' || bucket === '31-60' || bucket === '61-90' || bucket === '90+')) {
+    const range = bucketDateRange(bucket)
+    // Overdue ⇒ unpaid + non-cancelled + non-draft
+    query = query.not('status', 'in', '(paid,cancelled,draft)') as typeof query
+    countQuery = countQuery.not('status', 'in', '(paid,cancelled,draft)') as typeof countQuery
+    if (range.gte) {
+      query = query.gte('due_date', range.gte) as typeof query
+      countQuery = countQuery.gte('due_date', range.gte) as typeof countQuery
+    }
+    if (range.lt) {
+      query = query.lt('due_date', range.lt) as typeof query
+      countQuery = countQuery.lt('due_date', range.lt) as typeof countQuery
+    }
   }
 
   const [rowsRes, countRes] = await Promise.all([query.limit(1000), countQuery])
@@ -70,6 +107,12 @@ export default async function Page({ params, searchParams }: PageProps) {
         <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
         <p className="mt-1 text-sm text-gray-500">
           {totalCount === 0 ? 'No invoices yet.' : `${totalCount} invoice${totalCount === 1 ? '' : 's'}`}
+          {bucket && (
+            <span className="ml-2 inline-flex items-center gap-2 rounded-full bg-qm-fuchsia/10 px-2.5 py-0.5 text-xs font-semibold text-qm-fuchsia">
+              Overdue {bucket} days
+              <Link href={`/dashboard/${slug}/invoices`} className="text-[#888] hover:text-qm-fuchsia">×</Link>
+            </span>
+          )}
         </p>
         {invoices.length === 1000 && totalCount > 1000 && (
           <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
