@@ -1,8 +1,9 @@
 // Sales Team Pipeline — table grouping open quotes by their owning sales
-// rep. Schema has both quotes.sales_rep_id (from migration 021, the
-// proper "assigned to" column) and quotes.created_by; we prefer
-// sales_rep_id and fall back to created_by. Names are resolved via
-// profiles (id == auth.users.id).
+// rep. The live DB only has quotes.sales_rep_id (migration 021); the
+// created_by column from migration 018b was never applied, so referencing
+// it raised "column quotes.created_by does not exist". If sales_rep_id is
+// also missing on a future deploy we fall back to a single "Unassigned"
+// bucket and show the actual error in the widget.
 
 import Link from 'next/link'
 import WidgetCard from './widget-card'
@@ -31,7 +32,6 @@ type QuoteRow = {
   total: number | null
   created_at: string
   sales_rep_id: string | null
-  created_by: string | null
 }
 
 type RepStats = {
@@ -55,19 +55,40 @@ export default async function SalesPipeline({ service, orgId, orgSlug }: Props) 
   let rows: QuoteRow[] = []
   let loadOk = true
   let errorMsg: string | null = null
+  let salesRepIdMissing = false
   try {
     const r = await service
       .from('quotes')
-      .select('id, total, created_at, sales_rep_id, created_by')
+      .select('id, total, created_at, sales_rep_id')
       .eq('organization_id', orgId)
       .in('status', OPEN_STATUSES)
       .limit(5000)
     if (r.error) {
       console.error('[sales-pipeline] quotes query failed:', r.error)
       errorMsg = r.error.message
-      throw r.error
+      // If sales_rep_id itself is missing, retry without it so the table
+      // still renders with a single "Unassigned" row.
+      if (/column .*sales_rep_id.* does not exist/i.test(r.error.message)) {
+        salesRepIdMissing = true
+        const fallback = await service
+          .from('quotes')
+          .select('id, total, created_at')
+          .eq('organization_id', orgId)
+          .in('status', OPEN_STATUSES)
+          .limit(5000)
+        if (fallback.error) {
+          console.error('[sales-pipeline] fallback failed:', fallback.error)
+          errorMsg = fallback.error.message
+          throw fallback.error
+        }
+        rows = ((fallback.data ?? []) as Omit<QuoteRow, 'sales_rep_id'>[])
+          .map((q) => ({ ...q, sales_rep_id: null }))
+      } else {
+        throw r.error
+      }
+    } else {
+      rows = (r.data ?? []) as QuoteRow[]
     }
-    rows = (r.data ?? []) as QuoteRow[]
   } catch (err) {
     console.error('[sales-pipeline] crash:', err)
     if (!errorMsg && err instanceof Error) errorMsg = err.message
@@ -85,12 +106,13 @@ export default async function SalesPipeline({ service, orgId, orgSlug }: Props) 
     )
   }
 
-  // Group by sales_rep_id (preferred), falling back to created_by
+  // Group by sales_rep_id only — created_by from migration 018b was never
+  // applied to the live DB.
   type Group = { userId: string | null; ages: number[]; totalCents: number; count: number }
   const now = Date.now()
   const groupMap = new Map<string, Group>()
   for (const q of rows) {
-    const ownerId = q.sales_rep_id ?? q.created_by ?? null
+    const ownerId = q.sales_rep_id ?? null
     const key = ownerId ?? '__unassigned__'
     const age = daysBetween(new Date(q.created_at).getTime(), now)
     const g = groupMap.get(key)
@@ -127,9 +149,12 @@ export default async function SalesPipeline({ service, orgId, orgSlug }: Props) 
     const ages = g.ages.sort((a, b) => a - b)
     const avg = ages.reduce((s, n) => s + n, 0) / ages.length
     const oldest = ages[ages.length - 1]
+    const repName = key === '__unassigned__'
+      ? 'Unassigned'
+      : (nameMap.get(key) ?? `Rep ID: ${key.slice(0, 8)}…`)
     return {
       userId: key === '__unassigned__' ? null : key,
-      name: key === '__unassigned__' ? 'Unassigned' : (nameMap.get(key) ?? key.slice(0, 8)),
+      name: repName,
       count: g.count,
       totalCents: g.totalCents,
       avgAgeDays: Math.round(avg),
