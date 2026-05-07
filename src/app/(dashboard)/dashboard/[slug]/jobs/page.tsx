@@ -94,12 +94,12 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
     } | null
   }
 
-  let jobQuery = supabase
+  let jobQuery = service
     .from('jobs')
     .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, department, customers(first_name, last_name, company_name)')
     .eq('organization_id', org.id)
 
-  let countQuery = supabase
+  let countQuery = service
     .from('jobs')
     .select('id', { count: 'exact', head: true })
     .eq('organization_id', org.id)
@@ -115,13 +115,13 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
   if (jobRes.error?.message?.includes('department')) {
     // department column not yet added — fall back without it
     const [fallback, countFb] = await Promise.all([
-      supabase
+      service
         .from('jobs')
         .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, customers(first_name, last_name, company_name)')
         .eq('organization_id', org.id)
         .order('job_number', { ascending: false })
         .limit(1000),
-      supabase
+      service
         .from('jobs')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', org.id),
