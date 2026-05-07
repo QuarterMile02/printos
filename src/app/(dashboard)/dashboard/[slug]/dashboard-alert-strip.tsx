@@ -1,7 +1,7 @@
 // Persistent alert strip that sits at the very top of the org dashboard
 // (above all widgets, below the top nav). Every pill ALWAYS renders so a
-// single failing query can never hide the others — failed pills fall back
-// to grey + count 0 + a small "(query failed)" subtext for diagnostics.
+// single failing query can never hide the others — failed pills silently
+// fall back to grey + count 0. Errors still go to console for Vercel logs.
 
 import Link from 'next/link'
 import type { createServiceClient } from '@/lib/supabase/server'
@@ -21,7 +21,6 @@ type Pill = {
   icon: string
   label: string
   href: string
-  errorMsg?: string  // surfaces under the label as a tiny diagnostic
 }
 
 const TONE_BORDER: Record<Tone, string> = {
@@ -41,20 +40,15 @@ const TONE_BG: Record<Tone, string> = {
 const fmtMoney = (cents: number) =>
   '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-function errorMessage(label: string, e: unknown): string {
-  if (e && typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') {
-    return `${label}: ${(e as { message: string }).message}`
-  }
-  return `${label}: ${String(e)}`
-}
-
 export default async function DashboardAlertStrip({ service, orgId, orgSlug }: Props) {
   const todayDate = new Date().toISOString().slice(0, 10)
   const base = `/dashboard/${orgSlug}`
 
   // ── PILL 1 — Quotes Approved Today (informational, green tone) ───────
-  type ApprovedResult = { count: number; error: string | null }
-  const approvedTodayPromise: Promise<ApprovedResult> = (async () => {
+  // 'internally_approved' is not a member of the quote_status enum on
+  // the live DB, so the IN list uses only 'approved'. updated_at filter
+  // bounded by today's start/end (UTC).
+  const approvedTodayPromise: Promise<number> = (async () => {
     try {
       const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0)
       const dayEnd = new Date(dayStart.getTime() + 86_400_000)
@@ -62,24 +56,23 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .from('quotes')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', orgId)
-        .in('status', ['approved', 'internally_approved'])
+        .eq('status', 'approved')
         .gte('updated_at', dayStart.toISOString())
         .lt('updated_at', dayEnd.toISOString())
       if (r.error) {
         console.error('[alert-strip] approved-today query error:', r.error)
-        return { count: 0, error: errorMessage('approved-today', r.error) }
+        return 0
       }
-      return { count: r.count ?? 0, error: null }
+      return r.count ?? 0
     } catch (e) {
       console.error('[alert-strip] approved-today crash:', e)
-      return { count: 0, error: errorMessage('approved-today', e) }
+      return 0
     }
   })()
 
   // ── PILL 2 — Overdue invoices, aged into 4 buckets ───────────────────
   type OverdueBuckets = { b0_30: number; b31_60: number; b61_90: number; b90: number; sumCents: number }
-  type OverdueResult = { buckets: OverdueBuckets; error: string | null }
-  const overduePromise: Promise<OverdueResult> = (async () => {
+  const overduePromise: Promise<OverdueBuckets> = (async () => {
     const empty: OverdueBuckets = { b0_30: 0, b31_60: 0, b61_90: 0, b90: 0, sumCents: 0 }
     try {
       const r = await service
@@ -91,7 +84,7 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .limit(2000)
       if (r.error) {
         console.error('[alert-strip] overdue query error:', r.error)
-        return { buckets: empty, error: errorMessage('overdue', r.error) }
+        return empty
       }
       const today = new Date(); today.setHours(0, 0, 0, 0)
       const out: OverdueBuckets = { ...empty }
@@ -108,16 +101,24 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         else out.b90++
         out.sumCents += bal
       }
-      return { buckets: out, error: null }
+      return out
     } catch (e) {
       console.error('[alert-strip] overdue crash:', e)
-      return { buckets: empty, error: errorMessage('overdue', e) }
+      return empty
     }
   })()
 
   // ── PILL 3 — Completed jobs not yet invoiced ─────────────────────────
-  type SimpleResult = { count: number; error: string | null }
-  const completedNotInvoicedPromise: Promise<SimpleResult> = (async () => {
+  // Tries three queries in order, picks the first that works against the
+  // live schema:
+  //   (a) jobs.invoice_id IS NULL
+  //   (b) jobs.invoiced = false
+  //   (c) just status = 'completed' as a count proxy
+  // The pill label adapts to (c) — "Completed Jobs" instead of
+  // "...Not Invoiced" so it isn't misleading when we don't actually know.
+  type CompletedResult = { count: number; mode: 'invoice_id' | 'invoiced' | 'count_only' }
+  const completedNotInvoicedPromise: Promise<CompletedResult> = (async () => {
+    // (a) invoice_id IS NULL
     try {
       const r = await service
         .from('jobs')
@@ -125,19 +126,44 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .eq('organization_id', orgId)
         .eq('status', 'completed')
         .is('invoice_id', null)
-      if (r.error) {
-        console.error('[alert-strip] completed-not-invoiced query error:', r.error)
-        return { count: 0, error: errorMessage('completed-not-invoiced', r.error) }
-      }
-      return { count: r.count ?? 0, error: null }
+      if (!r.error) return { count: r.count ?? 0, mode: 'invoice_id' }
+      console.warn('[alert-strip] completed-not-invoiced (invoice_id) failed:', r.error.message)
     } catch (e) {
-      console.error('[alert-strip] completed-not-invoiced crash:', e)
-      return { count: 0, error: errorMessage('completed-not-invoiced', e) }
+      console.warn('[alert-strip] completed-not-invoiced (invoice_id) crash:', e)
     }
+    // (b) invoiced = false
+    try {
+      const r = await service
+        .from('jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('status', 'completed')
+        .eq('invoiced', false)
+      if (!r.error) return { count: r.count ?? 0, mode: 'invoiced' }
+      console.warn('[alert-strip] completed-not-invoiced (invoiced) failed:', r.error.message)
+    } catch (e) {
+      console.warn('[alert-strip] completed-not-invoiced (invoiced) crash:', e)
+    }
+    // (c) count proxy — all completed jobs
+    try {
+      const r = await service
+        .from('jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('status', 'completed')
+      if (!r.error) return { count: r.count ?? 0, mode: 'count_only' }
+      console.error('[alert-strip] completed-not-invoiced (count_only) failed:', r.error)
+    } catch (e) {
+      console.error('[alert-strip] completed-not-invoiced (count_only) crash:', e)
+    }
+    return { count: 0, mode: 'count_only' }
   })()
 
   // ── PILL 4 — Proofs past deadline ────────────────────────────────────
-  const proofsOverduePromise: Promise<SimpleResult> = (async () => {
+  // proof_due_date and/or proof_status may not exist on the live jobs
+  // table. If the query fails (column missing or anything else), the
+  // pill silently shows 0 — never surfaces the error to the user.
+  const proofsOverduePromise: Promise<number> = (async () => {
     try {
       const r = await service
         .from('jobs')
@@ -146,60 +172,56 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
         .lt('proof_due_date', todayDate)
         .neq('proof_status', 'approved')
       if (r.error) {
-        console.error('[alert-strip] proofs-overdue query error:', r.error)
-        return { count: 0, error: errorMessage('proofs-overdue', r.error) }
+        console.warn('[alert-strip] proofs-overdue query failed (likely missing columns):', r.error.message)
+        return 0
       }
-      return { count: r.count ?? 0, error: null }
+      return r.count ?? 0
     } catch (e) {
-      console.error('[alert-strip] proofs-overdue crash:', e)
-      return { count: 0, error: errorMessage('proofs-overdue', e) }
+      console.warn('[alert-strip] proofs-overdue crash:', e)
+      return 0
     }
   })()
 
-  const [approvedToday, overdue, completedNotInvoiced, proofsOverdue] = await Promise.all([
+  const [approvedToday, overdue, completed, proofsOverdue] = await Promise.all([
     approvedTodayPromise,
     overduePromise,
     completedNotInvoicedPromise,
     proofsOverduePromise,
   ])
 
-  // Build all 4 pills unconditionally. A failed query renders grey + 0 +
-  // tiny "(query failed)" subtext for diagnostics.
+  const overdueTotal = overdue.b0_30 + overdue.b31_60 + overdue.b61_90 + overdue.b90
+  const overdueLabel = overdueTotal === 0
+    ? `Overdue Invoices: ${fmtMoney(0)}`
+    : `Overdue: ${overdue.b0_30} (0-30d) · ${overdue.b31_60} (31-60d) · ${overdue.b61_90} (61-90d) · ${overdue.b90} (90+d) — ${fmtMoney(overdue.sumCents)}`
+
+  const completedLabel = completed.mode === 'count_only'
+    ? `${completed.count} Completed Job${completed.count === 1 ? '' : 's'}`
+    : `${completed.count} Completed Job${completed.count === 1 ? '' : 's'} Not Invoiced`
+
   const pills: Pill[] = [
     {
-      tone: approvedToday.error ? 'grey' : (approvedToday.count > 0 ? 'green' : 'grey'),
+      tone: approvedToday > 0 ? 'green' : 'grey',
       icon: '⚡',
-      label: `${approvedToday.count} Quote${approvedToday.count === 1 ? '' : 's'} Approved Today`,
+      label: `${approvedToday} Quote${approvedToday === 1 ? '' : 's'} Approved Today`,
       href: `${base}/quotes?status=approved`,
-      errorMsg: approvedToday.error ?? undefined,
     },
-    (() => {
-      const b = overdue.buckets
-      const total = b.b0_30 + b.b31_60 + b.b61_90 + b.b90
-      const label = total === 0
-        ? `Overdue Invoices: ${fmtMoney(0)}`
-        : `Overdue: ${b.b0_30} (0-30d) · ${b.b31_60} (31-60d) · ${b.b61_90} (61-90d) · ${b.b90} (90+d) — ${fmtMoney(b.sumCents)}`
-      return {
-        tone: overdue.error ? 'grey' : (total > 0 ? 'red' : 'grey'),
-        icon: '🔴',
-        label,
-        href: `${base}/invoices?status=overdue`,
-        errorMsg: overdue.error ?? undefined,
-      } as Pill
-    })(),
     {
-      tone: completedNotInvoiced.error ? 'grey' : (completedNotInvoiced.count > 0 ? 'amber' : 'grey'),
+      tone: overdueTotal > 0 ? 'red' : 'grey',
+      icon: '🔴',
+      label: overdueLabel,
+      href: `${base}/invoices?status=overdue`,
+    },
+    {
+      tone: completed.count > 0 ? 'amber' : 'grey',
       icon: '⚠️',
-      label: `${completedNotInvoiced.count} Completed Job${completedNotInvoiced.count === 1 ? '' : 's'} Not Invoiced`,
+      label: completedLabel,
       href: `${base}/jobs?status=completed&invoiced=false`,
-      errorMsg: completedNotInvoiced.error ?? undefined,
     },
     {
-      tone: proofsOverdue.error ? 'grey' : (proofsOverdue.count > 0 ? 'amber' : 'grey'),
+      tone: proofsOverdue > 0 ? 'amber' : 'grey',
       icon: '🎨',
-      label: `${proofsOverdue.count} Proof${proofsOverdue.count === 1 ? '' : 's'} Past Deadline`,
+      label: `${proofsOverdue} Proof${proofsOverdue === 1 ? '' : 's'} Past Deadline`,
       href: `${base}/jobs?proof_overdue=true`,
-      errorMsg: proofsOverdue.error ?? undefined,
     },
   ]
 
@@ -210,16 +232,10 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
           <Link
             key={i}
             href={p.href}
-            className={`inline-flex flex-col items-start rounded px-3 py-1 transition ${TONE_BORDER[p.tone]} ${TONE_BG[p.tone]}`}
-            title={p.errorMsg}
+            className={`inline-flex items-center gap-1.5 rounded px-3 py-1 transition ${TONE_BORDER[p.tone]} ${TONE_BG[p.tone]}`}
           >
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden>{p.icon}</span>
-              <span className="font-medium">{p.label}</span>
-            </span>
-            {p.errorMsg && (
-              <span className="text-[10px] text-gray-600 leading-tight mt-0.5">(query failed)</span>
-            )}
+            <span aria-hidden>{p.icon}</span>
+            <span className="font-medium">{p.label}</span>
           </Link>
         ))}
       </div>
