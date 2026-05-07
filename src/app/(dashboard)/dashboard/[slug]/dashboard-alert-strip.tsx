@@ -27,13 +27,13 @@ type Pill = {
 const TONE_BORDER: Record<Tone, string> = {
   red:   'border-l-[3px] border-l-[#ee2b7b]',
   amber: 'border-l-[3px] border-l-amber-400',
-  grey:  'border-l-[3px] border-l-gray-700',
+  grey:  'border-l-[3px] border-l-[#555]',
 }
 
 const TONE_BG: Record<Tone, string> = {
   red:   'bg-[#ee2b7b]/15 hover:bg-[#ee2b7b]/25 text-pink-100',
   amber: 'bg-amber-400/15 hover:bg-amber-400/25 text-amber-100',
-  grey:  'bg-white/5 hover:bg-white/10 text-gray-400',
+  grey:  'bg-[#2a2a2a] hover:bg-[#333] text-[#888]',
 }
 
 const fmtMoney = (cents: number) =>
@@ -137,11 +137,10 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
   }
 
   if (overdueCount !== null) {
-    const moneyTag = overdueCount > 0 ? ` — ${fmtMoney(overdueSum)}` : ''
     pills.push({
       tone: overdueCount > 0 ? 'red' : 'grey',
       icon: '🔴',
-      label: `${overdueCount} Overdue Invoice${overdueCount === 1 ? '' : 's'}${moneyTag}`,
+      label: `${overdueCount} Overdue Invoice${overdueCount === 1 ? '' : 's'} — ${fmtMoney(overdueSum)}`,
       href: `${base}/invoices?status=overdue`,
     })
   }
@@ -164,9 +163,10 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
     })
   }
 
-  // Hide entire bar if every pill is 0 (nothing actionable).
-  const anyActive = pills.some(p => p.tone !== 'grey')
-  if (!anyActive) return null
+  // Strip is always rendered — pills with count=0 fall back to the grey
+  // tone so the user can see the system is checking and everything is clear.
+  // If every query failed (all pills returned null), hide the empty bar.
+  if (pills.length === 0) return null
 
   return (
     <div className="bg-[#1A1A1A] -mx-8 mb-6 px-8 py-2">
