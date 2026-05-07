@@ -123,25 +123,56 @@ export default async function SalesPipeline({ service, orgId, orgSlug }: Props) 
     }
   }
 
-  // Resolve names for known user ids
+  // Resolve names for known user ids — try team_members first, then
+  // profiles, never crash. team_members may not exist in this schema; if
+  // the query fails we silently fall through to profiles.
   const userIds = [...groupMap.keys()].filter(k => k !== '__unassigned__')
   const nameMap = new Map<string, string>()
   if (userIds.length > 0) {
+    // 1) team_members lookup (preferred — has first_name + last_name)
     try {
       const r = await service
-        .from('profiles')
-        .select('id, full_name, email')
-        .in('id', userIds)
+        .from('team_members')
+        .select('user_id, full_name, first_name, last_name')
+        .in('user_id', userIds)
       if (r.error) {
-        console.error('[sales-pipeline] profiles lookup failed:', r.error)
+        console.warn('[sales-pipeline] team_members lookup failed (will try profiles):', r.error.message)
       } else {
-        for (const p of (r.data ?? []) as { id: string; full_name: string | null; email: string | null }[]) {
-          nameMap.set(p.id, p.full_name || p.email || '(unnamed)')
+        for (const m of (r.data ?? []) as {
+          user_id: string
+          full_name: string | null
+          first_name: string | null
+          last_name: string | null
+        }[]) {
+          const composed = m.full_name
+            ?? [m.first_name, m.last_name].filter(Boolean).join(' ').trim()
+          if (composed) nameMap.set(m.user_id, composed)
         }
       }
     } catch (err) {
-      console.error('[sales-pipeline] profiles crash:', err)
-      // names unavailable — fall back to short uuid prefix below
+      console.warn('[sales-pipeline] team_members crash (will try profiles):', err)
+    }
+
+    // 2) profiles fallback for any ids still missing a name
+    const stillMissing = userIds.filter((id) => !nameMap.has(id))
+    if (stillMissing.length > 0) {
+      try {
+        const r = await service
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', stillMissing)
+        if (r.error) {
+          console.error('[sales-pipeline] profiles lookup failed:', r.error)
+        } else {
+          for (const p of (r.data ?? []) as { id: string; full_name: string | null; email: string | null }[]) {
+            const composed = p.full_name || p.email
+            if (composed) nameMap.set(p.id, composed)
+          }
+        }
+      } catch (err) {
+        console.error('[sales-pipeline] profiles crash:', err)
+        // remaining ids get the "Rep ID: …" fallback in the stats map below
+      }
     }
   }
 
