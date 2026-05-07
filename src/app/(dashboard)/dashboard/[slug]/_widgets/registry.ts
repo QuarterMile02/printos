@@ -10,8 +10,9 @@ export type WidgetId =
   | 'alert_bar' | 'quick_create' | 'my_job_assignments' | 'my_tasks' | 'recent_activity'
   // Owner + sales manager
   | 'sales_chart' | 'bi_stats' | 'production_control' | 'conversion_ratio' | 'aging_buckets'
+  | 'kpi_summary' | 'sales_pipeline'
   // Sales role
-  | 'quotes_priority' | 'sales_leads'
+  | 'quotes_priority' | 'sales_leads' | 'quotes_without_contact'
   // Accounting role
   | 'completed_not_invoiced' | 'collection_calls'
   // Production / installer
@@ -55,9 +56,14 @@ export const WIDGETS: WidgetDef[] = [
   // conversion_ratio: same audience as sales_chart
   { id: 'conversion_ratio',    title: 'Conversion Ratio',       visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) || isAccounting(r), span: 6,  built: true  },
 
-  // ─── Sales role (+ owner sees it on dashboard) ────────────────────
-  { id: 'quotes_priority',     title: 'Quotes Priority',        visibleTo: (r) => isSales(r) || isOwner(r),  span: 6,  built: true  },
-  { id: 'sales_leads',         title: 'My Sales Leads',         visibleTo: (r) => isSales(r),                span: 6,  built: false },
+  // ─── Sales role (+ owner / sales manager) ────────────────────────
+  { id: 'quotes_priority',        title: 'Quotes Priority',         visibleTo: (r) => isSales(r) || isOwner(r),                                  span: 6,  built: true  },
+  { id: 'sales_leads',            title: 'My Sales Leads',          visibleTo: (r, t) => isSales(r) || isOwner(r) || isOwnerOrSalesMgr(r, t),    span: 6,  built: true  },
+  { id: 'quotes_without_contact', title: 'Quotes Without Contact',  visibleTo: (r, t) => isSales(r) || isOwner(r) || isOwnerOrSalesMgr(r, t),    span: 6,  built: true  },
+  { id: 'sales_pipeline',         title: 'Sales Team Pipeline',     visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t),                  span: 12, built: true  },
+
+  // ─── Owner only ───────────────────────────────────────────────────
+  { id: 'kpi_summary',            title: 'KPI Department Summary',  visibleTo: (r) => isOwner(r),                                                span: 12, built: true  },
 
   // ─── Accounting role (+ owner sees it on dashboard) ───────────────
   { id: 'completed_not_invoiced', title: 'Completed Jobs Not Invoiced', visibleTo: (r) => isAccounting(r),   span: 6,  built: false },

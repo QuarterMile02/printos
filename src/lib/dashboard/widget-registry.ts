@@ -57,7 +57,13 @@ export const WIDGET_META: Record<string, WidgetMeta> = {
   conversion_ratio:   { label: 'Conversion Ratio',            defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) || isAccounting(r) },
 
   // ── Sales ─────────────────────────────────────────────────────────────────
-  quotes_priority:    { label: 'Quotes Priority',             defaultSpan: 6,  pinned: false, visibleTo: (r) => isSales(r) || isOwner(r) },
+  quotes_priority:        { label: 'Quotes Priority',             defaultSpan: 6,  pinned: false, visibleTo: (r) => isSales(r) || isOwner(r) },
+  sales_leads:            { label: 'My Sales Leads',              defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isSales(r) || isOwner(r) || isOwnerOrSalesMgr(r, t) },
+  quotes_without_contact: { label: 'Quotes Without Contact',      defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isSales(r) || isOwner(r) || isOwnerOrSalesMgr(r, t) },
+  sales_pipeline:         { label: 'Sales Team Pipeline',         defaultSpan: 12, pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) },
+
+  // ── Owner only ────────────────────────────────────────────────────────────
+  kpi_summary:            { label: 'KPI Department Summary',      defaultSpan: 12, pinned: false, visibleTo: (r) => isOwner(r) },
 
   // ── Accounting ────────────────────────────────────────────────────────────
   collection_calls:   { label: 'Collection Calls',            defaultSpan: 6,  pinned: false, visibleTo: (r) => isAccounting(r) || isOwner(r) },

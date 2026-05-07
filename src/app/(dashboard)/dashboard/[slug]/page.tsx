@@ -28,6 +28,10 @@ import CollectionCallWidget from './_widgets/CollectionCallWidget'
 import DepartmentQueueWidget from './_widgets/DepartmentQueueWidget'
 import DesignQueueWidget from './_widgets/DesignQueueWidget'
 import LowStockWidget from './_widgets/LowStockWidget'
+import MySalesLeads from './_widgets/my-sales-leads'
+import QuotesWithoutContact from './_widgets/quotes-without-contact'
+import KpiSummary from './_widgets/kpi-summary'
+import SalesPipeline from './_widgets/sales-pipeline'
 import { WidgetStub } from './_widgets/widget-card'
 import type { DateRangePreset } from '@/lib/reports/report-utils'
 
@@ -121,6 +125,10 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
       case 'department_queue':    return <DepartmentQueueWidget orgId={org!.id} orgSlug={slug} />
       case 'design_queue':        return <DesignQueueWidget service={service} orgId={org!.id} orgSlug={slug} />
       case 'low_stock_materials': return <LowStockWidget service={service} orgId={org!.id} orgSlug={slug} />
+      case 'sales_leads':         return <MySalesLeads service={service} orgId={org!.id} orgSlug={slug} userId={user!.id} />
+      case 'quotes_without_contact': return <QuotesWithoutContact service={service} orgId={org!.id} orgSlug={slug} />
+      case 'kpi_summary':         return <KpiSummary service={service} orgId={org!.id} />
+      case 'sales_pipeline':      return <SalesPipeline service={service} orgId={org!.id} orgSlug={slug} />
       default: {
         const def = WIDGETS.find((w) => w.id === id)
         return <WidgetStub title={def?.title ?? id} span={def?.span ?? 12} role={role} />
