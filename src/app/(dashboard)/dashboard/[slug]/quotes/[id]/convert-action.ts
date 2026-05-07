@@ -49,7 +49,27 @@ export async function convertToSalesOrder(formData: FormData) {
   const soId = (so as Record<string, unknown>).id as string
   const soNumber = (so as Record<string, unknown>).so_number as number
 
-  // Activity log: SO created + quote converted
+  // Create job linked to this SO
+  const { data: newJob, error: jobErr } = await service
+    .from('jobs')
+    .insert({
+      organization_id: orgId,
+      sales_order_id: soId,
+      customer_id: (quote as Record<string, unknown>).customer_id as string | null,
+      title: `Job for SO-${String(soNumber).padStart(4, '0')}`,
+      status: 'new',
+      proof_status: 'not_started',
+    })
+    .select('id, job_number')
+    .single()
+
+  if (jobErr) {
+    console.error('[convertToSalesOrder] Job insert failed:', jobErr.message)
+  } else {
+    console.log('[convertToSalesOrder] Created Job:', (newJob as Record<string, unknown>).id)
+  }
+
+  // Activity log: SO created + quote converted + job created
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -71,6 +91,18 @@ export async function convertToSalesOrder(formData: FormData) {
         to_value: `SO-${String(soNumber).padStart(4, '0')}`,
         metadata: { sales_order_id: soId },
       })
+      if (!jobErr && newJob) {
+        const jobId = (newJob as Record<string, unknown>).id as string
+        const jobNumber = (newJob as Record<string, unknown>).job_number as number
+        await logActivity({
+          org_id: orgId,
+          user_id: user.id,
+          entity_type: 'job',
+          entity_id: jobId,
+          action: 'created',
+          metadata: { job_number: jobNumber, sales_order_id: soId },
+        })
+      }
     }
   } catch (err) {
     console.error('[convertToSalesOrder] logActivity failed:', err)

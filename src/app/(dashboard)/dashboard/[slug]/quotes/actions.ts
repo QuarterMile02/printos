@@ -235,7 +235,7 @@ export async function updateQuoteStatus(
   orgId: string,
   orgSlug: string,
   status: QuoteStatus
-): Promise<{ error?: string; jobCreated?: number }> {
+): Promise<{ error?: string }> {
   if (!VALID_STATUSES.includes(status)) return { error: 'Invalid status.' }
 
   const supabase = await createClient()
@@ -280,80 +280,8 @@ export async function updateQuoteStatus(
     to_value: status,
   })
 
-  // Auto-create job when quote is approved
-  let jobCreated: number | undefined
-  if (status === 'approved') {
-    // Check if a job was already created from this quote
-    const { data: existing } = await service
-      .from('jobs')
-      .select('id')
-      .eq('source_quote_id', quoteId)
-      .maybeSingle()
-
-    if (!existing) {
-      // Fetch quote details for the new job
-      const { data: quote } = await service
-        .from('quotes')
-        .select('title, customer_id, quote_number')
-        .eq('id', quoteId)
-        .single() as { data: { title: string; customer_id: string | null; quote_number: number } | null; error: unknown }
-
-      if (quote) {
-        const { data: newJob } = await service
-          .from('jobs')
-          .insert({
-            organization_id: orgId,
-            customer_id: quote.customer_id,
-            title: quote.title,
-            description: `Auto-created from Quote #${quote.quote_number} on approval`,
-            status: 'new' as const,
-            source_quote_id: quoteId,
-          })
-          .select('id, job_number')
-          .single() as { data: { id: string; job_number: number } | null; error: unknown }
-
-        if (newJob) {
-          jobCreated = newJob.job_number
-
-          // Auto-assign department from the first line item's product category
-          try {
-            type LiRow = { product_id: string | null }
-            const { data: liRows } = await service
-              .from('quote_line_items')
-              .select('product_id')
-              .eq('quote_id', quoteId)
-              .not('product_id', 'is', null)
-              .order('sort_order')
-              .limit(5) as { data: LiRow[] | null; error: unknown }
-
-            const productIds = (liRows ?? []).map((r) => r.product_id).filter(Boolean) as string[]
-            if (productIds.length > 0) {
-              type ProdRow = { id: string; product_categories: { primary_department: string | null } | null }
-              const { data: prodRows } = await service
-                .from('products')
-                .select('id, product_categories(primary_department)')
-                .in('id', productIds) as { data: ProdRow[] | null; error: unknown }
-
-              const dept = (prodRows ?? [])
-                .map((p) => p.product_categories?.primary_department)
-                .find((d) => !!d) ?? null
-
-              if (dept) {
-                await service.from('jobs').update({ department: dept }).eq('id', newJob.id)
-              }
-            }
-          } catch { /* non-critical — job still created without department */ }
-
-          await runMaterialSelectionForJob(service, newJob.id, quoteId, orgId)
-          revalidatePath(`/dashboard/${orgSlug}/jobs`)
-          revalidatePath(`/dashboard/${orgSlug}/jobs/${newJob.id}`)
-        }
-      }
-    }
-  }
-
   revalidatePath(`/dashboard/${orgSlug}/quotes`)
-  return { jobCreated }
+  return {}
 }
 
 export async function sendQuoteToCustomer(
@@ -1131,6 +1059,26 @@ export async function convertQuoteToSalesOrder(
     }
     console.log('[convertQuoteToSalesOrder] Created SO:', so.id, 'so_number:', so.so_number)
 
+    // Create job linked to this SO
+    const { data: newJob, error: jobErr } = await ctx.service
+      .from('jobs')
+      .insert({
+        organization_id: orgId,
+        sales_order_id: so.id,
+        customer_id: existing.customer_id,
+        title: `Job for SO-${String(so.so_number).padStart(4, '0')}`,
+        status: 'new',
+        proof_status: 'not_started',
+      })
+      .select('id, job_number')
+      .single()
+
+    if (jobErr) {
+      console.error('[convertQuoteToSalesOrder] Job insert failed:', jobErr.message)
+    } else {
+      console.log('[convertQuoteToSalesOrder] Created Job:', newJob?.id, 'job_number:', (newJob as unknown as { job_number: number })?.job_number)
+    }
+
     // Link quote to SO and set status. If converted_to_so_id column is
     // missing, fall back to updating status only.
     const linkResult = await ctx.service
@@ -1167,10 +1115,23 @@ export async function convertQuoteToSalesOrder(
       to_value: `SO-${String(so.so_number).padStart(4, '0')}`,
       metadata: { sales_order_id: so.id },
     })
+    if (!jobErr && newJob) {
+      const jobId = (newJob as unknown as { id: string }).id
+      const jobNumber = (newJob as unknown as { job_number: number }).job_number
+      await logActivity({
+        org_id: orgId,
+        user_id: ctx.user.id,
+        entity_type: 'job',
+        entity_id: jobId,
+        action: 'created',
+        metadata: { job_number: jobNumber, sales_order_id: so.id },
+      })
+    }
 
     revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
     revalidatePath(`/dashboard/${orgSlug}/quotes`)
     revalidatePath(`/dashboard/${orgSlug}/sales-orders`)
+    revalidatePath(`/dashboard/${orgSlug}/jobs`)
     return { soNumber: so.so_number, soId: so.id, createdAt: so.created_at }
   } catch (err) {
     console.error('[convertQuoteToSalesOrder] Unexpected error:', err)
