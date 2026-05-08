@@ -1,6 +1,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import type { JobStatus } from '@/types/database'
+import type { JobStatus, JobFlag } from '@/types/database'
 import type { Role, Tier } from '@/lib/permissions'
 import KanbanBoard, { type JobCard } from './kanban-board'
 
@@ -82,14 +82,17 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
     job_number: number
     title: string
     status: JobStatus
+    flag: JobFlag | null
     due_date: string | null
     customer_id: string | null
+    source_quote_id: string | null
+    assigned_to: string | null
     department: string | null
   }
 
   let jobQuery = service
     .from('jobs')
-    .select('id, job_number, title, status, due_date, customer_id, department')
+    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, department')
     .eq('organization_id', org.id)
 
   let countQuery = service
@@ -110,7 +113,7 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
     const [fallback, countFb] = await Promise.all([
       service
         .from('jobs')
-        .select('id, job_number, title, status, due_date, customer_id')
+        .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to')
         .eq('organization_id', org.id)
         .order('job_number', { ascending: false })
         .limit(1000),
@@ -143,21 +146,50 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
     }
   }
 
-  const jobs: JobCard[] = allJobs.map((r) => ({
-    id: r.id,
-    job_number: r.job_number,
-    title: r.title,
-    status: r.status,
-    flag: null,
-    due_date: r.due_date,
-    customer: r.customer_id ? customerMap.get(r.customer_id) ?? null : null,
-    product_name: null,
-    width: null,
-    height: null,
-    quantity: null,
-    assigned_initials: null,
-    department: r.department ?? null,
-  }))
+  // Fetch first line item per quote for product/dimension info
+  const quoteIds = [...new Set(allJobs.map(j => j.source_quote_id).filter(Boolean) as string[])]
+  const lineItemMap = new Map<string, { description: string; width: number | null; height: number | null; quantity: number }>()
+  if (quoteIds.length > 0) {
+    const { data: liRows } = await supabase
+      .from('quote_line_items')
+      .select('quote_id, description, width, height, quantity')
+      .in('quote_id', quoteIds)
+      .order('sort_order', { ascending: true })
+    for (const li of (liRows ?? []) as { quote_id: string; description: string; width: number | null; height: number | null; quantity: number }[]) {
+      if (!lineItemMap.has(li.quote_id)) lineItemMap.set(li.quote_id, li)
+    }
+  }
+
+  // Fetch assigned user initials
+  const assignedIds = [...new Set(allJobs.map(j => j.assigned_to).filter(Boolean) as string[])]
+  const initialsMap = new Map<string, string>()
+  if (assignedIds.length > 0) {
+    const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', assignedIds)
+    for (const p of (profiles ?? []) as { id: string; full_name: string | null; email: string }[]) {
+      const name = p.full_name || p.email
+      const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+      initialsMap.set(p.id, initials)
+    }
+  }
+
+  const jobs: JobCard[] = allJobs.map((r) => {
+    const li = r.source_quote_id ? lineItemMap.get(r.source_quote_id) : undefined
+    return {
+      id: r.id,
+      job_number: r.job_number,
+      title: r.title,
+      status: r.status,
+      flag: r.flag,
+      due_date: r.due_date,
+      customer: r.customer_id ? customerMap.get(r.customer_id) ?? null : null,
+      product_name: li?.description ?? null,
+      width: li?.width ?? null,
+      height: li?.height ?? null,
+      quantity: li?.quantity ?? null,
+      assigned_initials: r.assigned_to ? initialsMap.get(r.assigned_to) ?? null : null,
+      department: r.department ?? null,
+    }
+  })
 
   const total = jobs.length
 
