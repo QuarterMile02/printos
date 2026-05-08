@@ -1,6 +1,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { uploadProof, updateProofStatus } from './proof-actions'
+import { updateJobPhaseDates } from '../actions'
 import { generateQRDataUrl } from '@/lib/qr'
 import PrintLabelButton from './print-label-button'
 import DepartmentSelect from './department-select'
@@ -62,10 +63,13 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     assigned_printer: string | null
     label_printed_at: string | null
     department: string | null
+    production_due_date: string | null
+    fabrication_due_date: string | null
+    installation_due_date: string | null
   }
 
   let job: JobShape | null = null
-  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, label_printed_at, department, customers(first_name, last_name, company_name, email, phone)'
+  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, label_printed_at, department, production_due_date, fabrication_due_date, installation_due_date, customers(first_name, last_name, company_name, email, phone)'
   const { data: jobRow1, error: jobErr1 } = await supabase
     .from('jobs')
     .select(fullSelect)
@@ -81,7 +85,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
       .eq('id', jobId)
       .eq('organization_id', org.id)
       .single()
-    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer' | 'label_printed_at' | 'department'>), material_selection: null, assigned_printer: null, label_printed_at: null, department: null }
+    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer' | 'label_printed_at' | 'department' | 'production_due_date' | 'fabrication_due_date' | 'installation_due_date'>), material_selection: null, assigned_printer: null, label_printed_at: null, department: null, production_due_date: null, fabrication_due_date: null, installation_due_date: null }
   }
   if (!job) return <div className="p-8 text-red-600">Job not found</div>
 
@@ -337,6 +341,52 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Phase Dates */}
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Phase Dates</h2>
+        <form action={updateJobPhaseDates}>
+          <input type="hidden" name="jobId"   value={job.id} />
+          <input type="hidden" name="orgId"   value={org.id} />
+          <input type="hidden" name="orgSlug" value={slug} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Production Due</label>
+              <input
+                type="date"
+                name="production_due_date"
+                defaultValue={job.production_due_date ?? ''}
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+            </div>
+            {(job.department?.includes('fabrication') || job.fabrication_due_date) && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Fabrication Due</label>
+                <input
+                  type="date"
+                  name="fabrication_due_date"
+                  defaultValue={job.fabrication_due_date ?? ''}
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                />
+              </div>
+            )}
+            {(job.department?.includes('installation') || job.installation_due_date) && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Installation Date</label>
+                <input
+                  type="date"
+                  name="installation_due_date"
+                  defaultValue={job.installation_due_date ?? ''}
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                />
+              </div>
+            )}
+          </div>
+          <button type="submit" className="mt-4 rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
+            Save Dates
+          </button>
+        </form>
       </div>
 
       {/* Workflow Steps checklist — only shown when the job has flagged steps */}

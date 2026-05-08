@@ -405,3 +405,29 @@ export async function updateJobDescription(
   revalidatePath(`/dashboard/${orgSlug}/jobs/${jobId}`)
   return {}
 }
+
+export async function updateJobPhaseDates(formData: FormData): Promise<void> {
+  const jobId  = formData.get('jobId')  as string
+  const orgId  = formData.get('orgId')  as string
+  const orgSlug = formData.get('orgSlug') as string
+
+  const productionDueDate    = (formData.get('production_due_date')    as string | null) || null
+  const fabricationDueDate   = (formData.get('fabrication_due_date')   as string | null) || null
+  const installationDueDate  = (formData.get('installation_due_date')  as string | null) || null
+
+  const { membership } = await getMembership(orgId)
+  if (!membership || membership.role === 'viewer') return
+
+  const service = createServiceClient()
+  await service
+    .from('jobs')
+    .update({
+      production_due_date:   productionDueDate,
+      fabrication_due_date:  fabricationDueDate,
+      installation_due_date: installationDueDate,
+    })
+    .eq('id', jobId)
+    .eq('organization_id', orgId)
+
+  revalidatePath(`/dashboard/${orgSlug}/jobs/${jobId}`)
+}
