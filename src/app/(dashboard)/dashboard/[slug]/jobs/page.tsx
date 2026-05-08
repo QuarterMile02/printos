@@ -126,7 +126,7 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', org.id),
     ])
-    jobRowsData = ((fallback.data ?? []) as Omit<JobRow, 'department'>[]).map((j) => ({ ...j, department: null }))
+    jobRowsData = ((fallback.data ?? []) as unknown as Omit<JobRow, 'department'>[]).map((j) => ({ ...j, department: null }))
     totalCount = countFb.count ?? 0
   } else {
     jobRowsData = jobRes.data
