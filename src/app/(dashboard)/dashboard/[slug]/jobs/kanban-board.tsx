@@ -103,6 +103,33 @@ function isDueSoon(dueDate: string, status: JobStatus): boolean {
   return diff >= 0 && diff <= 24 * 60 * 60 * 1000
 }
 
+// Priority: blinking-red > solid-red > bright-green > light-green > amber > yellow > white
+function getJobColorClass(status: JobStatus, dueDate: string | null): string {
+  if (dueDate && status !== 'completed') {
+    const [y, m, d] = dueDate.split('-').map(Number)
+    const dueMidnight = new Date(y, m - 1, d)
+    const now = new Date()
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    if (dueMidnight < today) {
+      const msOverdue = now.getTime() - dueMidnight.getTime()
+      return msOverdue > 48 * 60 * 60 * 1000
+        ? 'border-l-4 border-l-red-600 animate-pulse'
+        : 'border-l-4 border-l-red-600'
+    }
+  }
+  if (status === 'ready_for_pickup') return 'border-l-4 border-l-green-600'
+  if (status === 'completed')        return 'border-l-4 border-l-green-300'
+  if (dueDate) {
+    const [y, m, d] = dueDate.split('-').map(Number)
+    const dueMidnight = new Date(y, m - 1, d)
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1)
+    if (dueMidnight.getTime() === tomorrow.getTime()) return 'border-l-4 border-l-amber-500'
+    if (dueMidnight.getTime() === today.getTime())    return 'border-l-4 border-l-yellow-400'
+  }
+  return 'border-l-4 border-l-gray-200'
+}
+
 type CardProps = {
   job: JobCard
   orgId: string
@@ -131,15 +158,7 @@ function JobCardItem({ job, orgId, orgSlug, onNotified, printMode, selected, onT
   const overdue = job.due_date ? isOverdue(job.due_date, optimisticStatus) : false
   const dueSoon = job.due_date ? isDueSoon(job.due_date, optimisticStatus) : false
 
-  const isFileError  = job.flag === 'file_error'
-  const isHelpNeeded = job.flag === 'help_needed'
-  const isCompleted  = optimisticStatus === 'completed'
-
-  let borderClass = 'border'
-  if (isFileError) borderClass = 'border-2 border-red-500 animate-pulse'
-  else if (isHelpNeeded) borderClass = 'border-2 border-amber-500'
-  else if (dueSoon) borderClass = 'border-2 border-amber-500'
-  else if (isCompleted) borderClass = 'border-2 border-green-400'
+  const colorClass = getJobColorClass(optimisticStatus, job.due_date)
 
   const detailHref = `/dashboard/${orgSlug}/jobs/${job.id}`
 
@@ -154,7 +173,7 @@ function JobCardItem({ job, orgId, orgSlug, onNotified, printMode, selected, onT
     return (
       <div
         onClick={() => onToggleSelect(job.id)}
-        className={`cursor-pointer select-none rounded-lg ${borderClass} bg-white p-3 shadow-sm transition-all
+        className={`cursor-pointer select-none rounded-lg border border-gray-200 ${colorClass} bg-white p-3 shadow-sm transition-all
           ${selected ? 'ring-2 ring-qm-lime ring-offset-1' : 'hover:shadow-md'}`}
       >
         <div className="flex items-start justify-between mb-1.5">
@@ -186,7 +205,7 @@ function JobCardItem({ job, orgId, orgSlug, onNotified, printMode, selected, onT
 
   // ── Normal mode ───────────────────────────────────────────────────────────────
   return (
-    <a href={detailHref} className={`block rounded-lg ${borderClass} bg-white p-3 shadow-sm transition-all hover:shadow-md ${isPending ? 'opacity-60' : ''}`}>
+    <a href={detailHref} className={`block rounded-lg border border-gray-200 ${colorClass} bg-white p-3 shadow-sm transition-all hover:shadow-md ${isPending ? 'opacity-60' : ''}`}>
       {/* Top row: job number + assigned initials */}
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs font-semibold text-gray-400">#{job.job_number}</span>
