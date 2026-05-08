@@ -75,7 +75,8 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
     activeDepartments = profileDepts.length > 0 ? profileDepts : null
   }
 
-  // Fetch jobs with joined customer data
+  // Fetch jobs — scalar columns only; customer names fetched separately
+  // to avoid PostgREST join failures after direct-DDL schema changes.
   type JobRow = {
     id: string
     job_number: number
@@ -87,16 +88,11 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
     source_quote_id: string | null
     assigned_to: string | null
     department: string | null
-    customers: {
-      first_name: string
-      last_name: string
-      company_name: string | null
-    } | null
   }
 
   let jobQuery = service
     .from('jobs')
-    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, department, customers(first_name, last_name, company_name)')
+    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, department')
     .eq('organization_id', org.id)
 
   let countQuery = service
@@ -112,12 +108,12 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
   let jobRowsData: JobRow[] | null = null
   let totalCount = 0
   const jobRes = await jobQuery.order('job_number', { ascending: false }).limit(1000) as { data: JobRow[] | null; error: { message: string } | null }
-  if (jobRes.error?.message?.includes('department')) {
-    // department column not yet added — fall back without it
+  if (jobRes.error) {
+    // Any error (e.g. department column missing) — fall back without it
     const [fallback, countFb] = await Promise.all([
       service
         .from('jobs')
-        .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, customers(first_name, last_name, company_name)')
+        .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to')
         .eq('organization_id', org.id)
         .order('job_number', { ascending: false })
         .limit(1000),
@@ -135,6 +131,20 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
   }
 
   const allJobs = jobRowsData ?? []
+
+  // Fetch customer names separately (avoids PostgREST join fragility)
+  type CustomerRow = { id: string; first_name: string; last_name: string; company_name: string | null }
+  const customerIds = [...new Set(allJobs.map(j => j.customer_id).filter(Boolean) as string[])]
+  const customerMap = new Map<string, { first_name: string; last_name: string; company_name: string | null }>()
+  if (customerIds.length > 0) {
+    const { data: customerRows } = await service
+      .from('customers')
+      .select('id, first_name, last_name, company_name')
+      .in('id', customerIds) as { data: CustomerRow[] | null; error: unknown }
+    for (const c of (customerRows ?? [])) {
+      customerMap.set(c.id, { first_name: c.first_name, last_name: c.last_name, company_name: c.company_name })
+    }
+  }
 
   // Fetch first line item per quote for product/dimension info
   const quoteIds = [...new Set(allJobs.map(j => j.source_quote_id).filter(Boolean) as string[])]
@@ -172,7 +182,7 @@ export default async function JobsPage({ params, searchParams }: PageProps) {
       status: r.status,
       flag: r.flag,
       due_date: r.due_date,
-      customer: r.customers ?? null,
+      customer: r.customer_id ? customerMap.get(r.customer_id) ?? null : null,
       product_name: li?.description ?? null,
       width: li?.width ?? null,
       height: li?.height ?? null,
