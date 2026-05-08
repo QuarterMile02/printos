@@ -1,6 +1,6 @@
 // My Sales Leads — open leads assigned to the current user, sorted by
 // next_contact_date. Wraps the query in try/catch so the widget degrades
-// to a "module coming soon" stub when the sales_leads table is absent.
+// to a "No leads yet" stub when the sales_leads table is absent.
 
 import Link from 'next/link'
 import WidgetCard from './widget-card'
@@ -17,24 +17,22 @@ type Props = {
 
 type LeadRow = {
   id: string
-  company_name: string | null
+  company: string | null
   contact_name: string | null
   status: string | null
   next_contact_date: string | null
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  new:        'bg-blue-50 text-blue-700',
-  contacted:  'bg-purple-50 text-purple-700',
-  quoted:     'bg-green-50 text-green-700',
-  follow_up:  'bg-amber-50 text-amber-700',
-  'follow-up': 'bg-amber-50 text-amber-700',
+  new:       'bg-blue-50 text-blue-700',
+  contacted: 'bg-purple-50 text-purple-700',
+  qualified: 'bg-green-50 text-green-700',
+  proposal:  'bg-amber-50 text-amber-700',
 }
 
 function statusLabel(s: string | null): string {
   if (!s) return '—'
-  const n = s.replace(/_/g, ' ').replace(/-/g, ' ')
-  return n.charAt(0).toUpperCase() + n.slice(1)
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function dueState(d: string | null): { tone: 'red' | 'amber' | 'normal'; label: string } {
@@ -42,42 +40,60 @@ function dueState(d: string | null): { tone: 'red' | 'amber' | 'normal'; label: 
   const target = new Date(d + 'T00:00:00').getTime()
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const days = Math.floor((target - today.getTime()) / 86_400_000)
-  if (days < 0) return { tone: 'red', label: 'OVERDUE' }
+  if (days < 0)  return { tone: 'red',   label: 'OVERDUE' }
   if (days === 0) return { tone: 'amber', label: 'TODAY' }
   return { tone: 'normal', label: new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
 }
 
 export default async function MySalesLeads({ service, orgId, orgSlug, userId }: Props) {
   let rows: LeadRow[] | null = null
+  let total = 0
+
   try {
-    const r = await service
-      .from('sales_leads')
-      .select('id, company_name, contact_name, status, next_contact_date')
-      .eq('organization_id', orgId)
-      .eq('assigned_to', userId)
-      .neq('status', 'closed')
-      .order('next_contact_date', { ascending: true, nullsFirst: false })
-      .limit(10)
-    if (r.error) throw r.error
-    rows = (r.data ?? []) as LeadRow[]
+    const [listRes, countRes] = await Promise.all([
+      service
+        .from('sales_leads')
+        .select('id, company, contact_name, status, next_contact_date')
+        .eq('organization_id', orgId)
+        .eq('assigned_to', userId)
+        .neq('status', 'won')
+        .neq('status', 'lost')
+        .order('next_contact_date', { ascending: true, nullsFirst: false })
+        .limit(5),
+      service
+        .from('sales_leads')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('assigned_to', userId)
+        .neq('status', 'won')
+        .neq('status', 'lost'),
+    ])
+    if (listRes.error) throw listRes.error
+    rows = (listRes.data ?? []) as LeadRow[]
+    total = countRes.count ?? rows.length
   } catch {
     rows = null
   }
 
+  const subtitle = rows !== null && total > 0
+    ? `${total} open lead${total === 1 ? '' : 's'}`
+    : undefined
+
   return (
     <WidgetCard
       title="My Sales Leads"
+      subtitle={subtitle}
       span={6}
       action={
         <Link href={`/dashboard/${orgSlug}/sales-leads`} className="text-xs font-medium text-[#93ca3b] hover:underline">
-          View all leads →
+          View all →
         </Link>
       }
     >
       {rows === null ? (
-        <p className="py-6 text-center text-sm text-gray-400">Sales leads module coming soon</p>
+        <p className="py-6 text-center text-sm text-gray-400">No leads yet</p>
       ) : rows.length === 0 ? (
-        <p className="py-6 text-center text-sm text-gray-500">✅ No open leads assigned to you</p>
+        <p className="py-6 text-center text-sm text-gray-500">No open leads assigned to you</p>
       ) : (
         <ul className="divide-y divide-gray-100">
           {rows.map((l) => {
@@ -95,9 +111,9 @@ export default async function MySalesLeads({ service, orgId, orgSlug, userId }: 
                 >
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-bold text-[#1A1A1A] truncate">
-                      {l.company_name ?? l.contact_name ?? 'Untitled lead'}
+                      {l.company ?? l.contact_name ?? 'Untitled lead'}
                     </div>
-                    {l.company_name && l.contact_name && (
+                    {l.company && l.contact_name && (
                       <div className="text-xs text-gray-500 truncate">{l.contact_name}</div>
                     )}
                   </div>
