@@ -8,6 +8,7 @@ import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-templa
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { calculateProofDueDate } from '@/lib/date-utils'
+import { resolveJobDepartments } from '@/lib/jobs/resolve-departments'
 import {
   selectMaterial,
   isBannerProduct,
@@ -1063,6 +1064,16 @@ export async function convertQuoteToSalesOrder(
     }
     console.log('[convertQuoteToSalesOrder] Created SO:', so.id, 'so_number:', so.so_number)
 
+    // Resolve departments from quote products (non-fatal)
+    let upcomingDepartments: string[] = []
+    let primaryDepartment: string | null = null
+    try {
+      upcomingDepartments = await resolveJobDepartments(quoteId, orgId, ctx.service)
+      if (upcomingDepartments.length === 1) primaryDepartment = upcomingDepartments[0]
+    } catch (err) {
+      console.error('[convertQuoteToSalesOrder] resolveJobDepartments failed:', err)
+    }
+
     // Create job linked to this SO
     const { data: newJob, error: jobErr } = await ctx.service
       .from('jobs')
@@ -1074,6 +1085,8 @@ export async function convertQuoteToSalesOrder(
         status: 'new',
         proof_status: 'not_started',
         proof_due_date: calculateProofDueDate(new Date()).toISOString(),
+        upcoming_departments: upcomingDepartments,
+        department: primaryDepartment,
       })
       .select('id, job_number')
       .single()

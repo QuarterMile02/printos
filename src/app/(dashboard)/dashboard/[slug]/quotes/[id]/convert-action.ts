@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { logActivity } from '@/lib/logActivity'
 import { calculateProofDueDate } from '@/lib/date-utils'
+import { resolveJobDepartments } from '@/lib/jobs/resolve-departments'
 
 export async function convertToSalesOrder(formData: FormData) {
   const quoteId = formData.get('quoteId') as string
@@ -50,6 +51,16 @@ export async function convertToSalesOrder(formData: FormData) {
   const soId = (so as Record<string, unknown>).id as string
   const soNumber = (so as Record<string, unknown>).so_number as number
 
+  // Resolve departments from quote products (non-fatal)
+  let upcomingDepartments: string[] = []
+  let primaryDepartment: string | null = null
+  try {
+    upcomingDepartments = await resolveJobDepartments(quoteId, orgId, service)
+    if (upcomingDepartments.length === 1) primaryDepartment = upcomingDepartments[0]
+  } catch (err) {
+    console.error('[convertToSalesOrder] resolveJobDepartments failed:', err)
+  }
+
   // Create job linked to this SO
   const { data: newJob, error: jobErr } = await service
     .from('jobs')
@@ -61,6 +72,8 @@ export async function convertToSalesOrder(formData: FormData) {
       status: 'new',
       proof_status: 'not_started',
       proof_due_date: calculateProofDueDate(new Date()).toISOString(),
+      upcoming_departments: upcomingDepartments,
+      department: primaryDepartment,
     })
     .select('id, job_number')
     .single()
