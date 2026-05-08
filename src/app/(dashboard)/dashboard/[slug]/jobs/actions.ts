@@ -152,7 +152,8 @@ export async function updateJobStatus(
               txn_number: `JOB-${String(job.job_number).padStart(4, '0')}`,
               job_name: job.title,
             }
-            const template = await getEmailTemplate(orgId, 'order_ready')
+            // TODO: add 'order_ready' trigger_event template for Ready for Pickup notifications
+            const template = await getEmailTemplate(orgId, 'order_confirmed')
 
             const emailSubject = template
               ? await renderTemplate(template.subject, templateVars)
@@ -206,12 +207,19 @@ export async function updateJobStatus(
         }
 
         // SMS via Twilio
+        const { data: orgRow } = await service
+          .from('organizations')
+          .select('name')
+          .eq('id', orgId)
+          .single() as { data: { name: string } | null; error: unknown }
+        const orgName = orgRow?.name ?? 'us'
+
         if (customer.phone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
           try {
             const sid = process.env.TWILIO_ACCOUNT_SID
             const token = process.env.TWILIO_AUTH_TOKEN
             const from = process.env.TWILIO_PHONE_NUMBER
-            const body = `Hi ${customerName}, your order "${job.title}" (Job #${job.job_number}) is ready for pickup! Call us to schedule.`
+            const body = `Hi ${customer.first_name}, your order "${job.title}" (Job #${String(job.job_number).padStart(4, '0')}) is ready for pickup at ${orgName}! Call us to schedule.`
 
             const params = new URLSearchParams({ To: customer.phone, From: from, Body: body })
             const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
