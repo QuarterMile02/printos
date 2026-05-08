@@ -235,7 +235,7 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
                 <input type="email" value={detailDraft.email ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, email: e.target.value || null })} className={ic} />
               </div>
               <div><Label>Phone</Label>
-                <input type="tel" value={detailDraft.phone ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, phone: e.target.value || null })} className={ic} />
+                <input type="text" value={detailDraft.phone ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, phone: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

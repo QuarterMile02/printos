@@ -65,11 +65,11 @@ function ContactForm({
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-          <input type="tel" value={draft.phone ?? ''} onChange={(e) => onChange({ ...draft, phone: e.target.value || null })} className={ic} />
+          <input type="text" value={draft.phone ?? ''} onChange={(e) => onChange({ ...draft, phone: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Phone 2</label>
-          <input type="tel" value={draft.phone2 ?? ''} onChange={(e) => onChange({ ...draft, phone2: e.target.value || null })} className={ic} />
+          <input type="text" value={draft.phone2 ?? ''} onChange={(e) => onChange({ ...draft, phone2: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Ext</label>

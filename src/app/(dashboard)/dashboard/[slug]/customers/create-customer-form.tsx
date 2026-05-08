@@ -133,9 +133,9 @@ export default function CreateCustomerForm({ orgId, orgSlug }: Props) {
                 <input
                   id="phone"
                   name="phone"
-                  type="tel"
+                  type="text"
                   maxLength={30}
-                  placeholder="+1 (555) 000-0000"
+                  placeholder="e.g. 9561234567 or +52 956 123 4567"
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                 />
               </div>
