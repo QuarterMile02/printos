@@ -275,9 +275,9 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                   )}
                   {(c.phone || c.phone2) && (
                     <p className="text-sm text-gray-600">
-                      {c.phone}
+                      {c.phone && <a href={`tel:${c.phone}`} className="hover:underline">{c.phone}</a>}
                       {c.phone_ext && <span className="text-qm-gray ml-1">ext {c.phone_ext}</span>}
-                      {c.phone2 && <span className="text-qm-gray ml-2 text-xs">· {c.phone2}</span>}
+                      {c.phone2 && <><span className="text-qm-gray mx-1">·</span><a href={`tel:${c.phone2}`} className="hover:underline text-xs">{c.phone2}</a></>}
                     </p>
                   )}
                   {deleteError && deletingId === c.id && (

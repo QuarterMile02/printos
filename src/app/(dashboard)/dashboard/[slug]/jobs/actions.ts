@@ -152,8 +152,9 @@ export async function updateJobStatus(
               txn_number: `JOB-${String(job.job_number).padStart(4, '0')}`,
               job_name: job.title,
             }
-            // TODO: add 'order_ready' trigger_event template for Ready for Pickup notifications
-            const template = await getEmailTemplate(orgId, 'order_confirmed')
+            const template =
+              (await getEmailTemplate(orgId, 'order_ready')) ??
+              (await getEmailTemplate(orgId, 'order_confirmed'))
 
             const emailSubject = template
               ? await renderTemplate(template.subject, templateVars)

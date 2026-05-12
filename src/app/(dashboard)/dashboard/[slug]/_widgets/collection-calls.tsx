@@ -145,7 +145,7 @@ export default async function CollectionCalls({ service, orgId, orgSlug }: Props
                     </Link>
                     <div className="mt-0.5 text-xs text-gray-500">
                       {c.invoiceCount} invoice{c.invoiceCount === 1 ? '' : 's'} · oldest due {fmtDate(c.oldestDueIso)}
-                      {c.phone && <> · <span className="text-gray-700">{c.phone}</span></>}
+                      {c.phone && <> · <a href={`tel:${c.phone}`} className="hover:underline text-gray-700">{c.phone}</a></>}
                     </div>
                   </div>
                   <div className={`text-base font-extrabold tabular-nums whitespace-nowrap ${tone}`}>

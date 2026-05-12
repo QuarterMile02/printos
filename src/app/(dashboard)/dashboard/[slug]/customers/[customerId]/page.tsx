@@ -45,6 +45,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     city: string | null; state: string | null; zip: string | null
     secondary_street: string | null; secondary_city: string | null
     secondary_state: string | null; secondary_zip: string | null
+    country: string | null; secondary_country: string | null
     terms: string | null; taxable: boolean | null; tax_exempt_code: string | null
     tax_exempt_expires: string | null; credit_limit: number | null
     pricing_level: string | null; discount_percent: number | null
@@ -55,8 +56,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     .from('customers')
     .select(`id, first_name, last_name, company_name, email, phone, notes, created_at,
       legal_name, sales_rep, industry, lead_source, customer_group, status, is_active,
-      street, street2, city, state, zip,
-      secondary_street, secondary_city, secondary_state, secondary_zip,
+      street, street2, city, state, zip, country,
+      secondary_street, secondary_city, secondary_state, secondary_zip, secondary_country,
       terms, taxable, tax_exempt_code, tax_exempt_expires, credit_limit,
       pricing_level, discount_percent, website, allow_credit_card_payments,
       background_info, special_notes`)
@@ -178,6 +179,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           secondary_city: customer.secondary_city,
           secondary_state: customer.secondary_state,
           secondary_zip: customer.secondary_zip,
+          country: customer.country,
+          secondary_country: customer.secondary_country,
           terms: customer.terms,
           taxable: customer.taxable,
           tax_exempt_code: customer.tax_exempt_code,

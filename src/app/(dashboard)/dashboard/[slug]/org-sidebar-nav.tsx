@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import PhoneLookup from '@/components/ui/PhoneLookup'
 
 const NAV_ITEMS = [
   {
@@ -206,6 +207,9 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
           </svg>
         </button>
         <span className="text-lg font-extrabold text-qm-lime">PrintOS</span>
+        <div className="ml-auto">
+          <PhoneLookup />
+        </div>
       </div>
 
       {/* Backdrop */}
@@ -237,6 +241,14 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+
+        {/* Phone lookup — receptionist quick-dial search */}
+        <div className="px-4 py-2 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <PhoneLookup />
+            <span className="text-xs text-gray-400 select-none">Phone lookup</span>
+          </div>
         </div>
 
         {/* Nav links */}

@@ -26,20 +26,127 @@ export async function createCustomer(
   const { allowed } = await checkPermission(orgId, 'customers.create')
   if (!allowed) return { error: 'You do not have permission to create customers.' }
 
+  const tagsRaw = t(formData.get('tags') as string | null)
+  const tags = tagsRaw ? tagsRaw.split(',').map((s) => s.trim()).filter(Boolean) : []
+  const salesRepId = t(formData.get('sales_rep_id') as string | null)
+  const creditLimitRaw = (formData.get('credit_limit') as string | null)?.trim()
+
   const service = createServiceClient()
   const { error } = await service.from('customers').insert({
     organization_id: orgId,
+    // contact
     first_name: firstName,
     last_name: lastName,
     company_name: t(formData.get('company_name') as string | null),
     email: t(formData.get('email') as string | null),
     phone: t(formData.get('phone') as string | null),
+    phone_ext: t(formData.get('phone_ext') as string | null),
+    website: t(formData.get('website') as string | null),
+    // primary address
+    street: t(formData.get('street') as string | null),
+    street2: t(formData.get('street2') as string | null),
+    suburb: t(formData.get('suburb') as string | null),
+    city: t(formData.get('city') as string | null),
+    state: t(formData.get('state') as string | null),
+    zip: t(formData.get('zip') as string | null),
+    country: t(formData.get('country') as string | null) || 'US',
+    address_type: t(formData.get('address_type') as string | null),
+    attention_to: t(formData.get('attention_to') as string | null),
+    label: t(formData.get('label') as string | null),
+    // secondary address
+    secondary_street: t(formData.get('secondary_street') as string | null),
+    secondary_street2: t(formData.get('secondary_street2') as string | null),
+    secondary_suburb: t(formData.get('secondary_suburb') as string | null),
+    secondary_city: t(formData.get('secondary_city') as string | null),
+    secondary_state: t(formData.get('secondary_state') as string | null),
+    secondary_zip: t(formData.get('secondary_zip') as string | null),
+    secondary_country: t(formData.get('secondary_country') as string | null),
+    secondary_address_type: t(formData.get('secondary_address_type') as string | null),
+    secondary_attention_to: t(formData.get('secondary_attention_to') as string | null),
+    // account
+    status: t(formData.get('status') as string | null) || 'lead',
+    sales_rep_id: salesRepId || null,
+    industry: t(formData.get('industry') as string | null),
+    lead_source: t(formData.get('lead_source') as string | null),
+    pricing_level: t(formData.get('pricing_level') as string | null),
+    payment_terms: t(formData.get('payment_terms') as string | null),
+    credit_limit: creditLimitRaw ? parseFloat(creditLimitRaw) : null,
+    taxable: formData.get('taxable') === 'true',
+    tax_exempt_code: t(formData.get('tax_exempt_code') as string | null),
+    tax_exempt_expires_at: t(formData.get('tax_exempt_expires_at') as string | null) || null,
+    vat_number: t(formData.get('vat_number') as string | null),
+    tags,
+    ap_contact: t(formData.get('ap_contact') as string | null),
+    other_info: t(formData.get('other_info') as string | null),
+    background_info: t(formData.get('background_info') as string | null),
+    special_notes: t(formData.get('special_notes') as string | null),
     notes: t(formData.get('notes') as string | null),
   })
   if (error) return { error: error.message }
 
   revalidatePath(`/dashboard/${orgSlug}/customers`)
   return {}
+}
+
+// ── LOAD MORE (for paginated list) ───────────────────────────────────────────
+
+export type CustomerListRow = {
+  id: string
+  first_name: string
+  last_name: string
+  company_name: string | null
+  email: string | null
+  phone: string | null
+  city: string | null
+  state: string | null
+  status: string | null
+  terms: string | null
+  is_active: boolean | null
+  tags: string[]
+  created_at: string
+}
+
+export async function loadMoreCustomers(
+  orgId: string,
+  filters: { sort?: string; status?: string; type?: string; tag?: string },
+  offset: number,
+): Promise<CustomerListRow[]> {
+  const service = createServiceClient()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = service
+    .from('customers')
+    .select('id, first_name, last_name, company_name, email, phone, city, state, status, terms, is_active, tags, created_at')
+    .eq('organization_id', orgId)
+
+  if (filters.status === 'inactive') {
+    query = query.eq('is_active', false)
+  } else if (filters.status) {
+    query = query.eq('status', filters.status)
+  }
+
+  if (filters.type === 'company') {
+    query = query.not('company_name', 'is', null).neq('company_name', '')
+  } else if (filters.type === 'individual') {
+    query = query.or('company_name.is.null,company_name.eq.')
+  }
+
+  if (filters.tag) {
+    query = query.contains('tags', [filters.tag])
+  }
+
+  const sort = filters.sort ?? 'name_asc'
+  if (sort === 'name_desc') {
+    query = query.order('last_name', { ascending: false }).order('first_name', { ascending: false })
+  } else if (sort === 'newest') {
+    query = query.order('created_at', { ascending: false })
+  } else {
+    query = query.order('last_name', { ascending: true }).order('first_name', { ascending: true })
+  }
+
+  query = query.range(offset, offset + 49)
+  const { data } = await query
+  return (data ?? []) as CustomerListRow[]
 }
 
 // ── UPDATE — covers all editable customer fields ──────────────────────────────
@@ -69,6 +176,8 @@ export type CustomerUpdatePayload = {
   secondary_city?: string | null
   secondary_state?: string | null
   secondary_zip?: string | null
+  country?: string | null
+  secondary_country?: string | null
   // account / finance
   terms?: string | null
   taxable?: boolean | null
@@ -100,8 +209,8 @@ export async function updateCustomer(
   const textFields = [
     'first_name', 'last_name', 'company_name', 'email', 'phone', 'notes',
     'legal_name', 'sales_rep', 'industry', 'lead_source', 'customer_group',
-    'status', 'street', 'street2', 'city', 'state', 'zip',
-    'secondary_street', 'secondary_city', 'secondary_state', 'secondary_zip',
+    'status', 'street', 'street2', 'city', 'state', 'zip', 'country',
+    'secondary_street', 'secondary_city', 'secondary_state', 'secondary_zip', 'secondary_country',
     'terms', 'tax_exempt_code', 'tax_exempt_expires', 'pricing_level',
     'website', 'background_info', 'special_notes',
   ] as const

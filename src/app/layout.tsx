@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Montserrat } from "next/font/google";
 import "./globals.css";
+import IncomingCallToast from "@/components/ui/IncomingCallToast";
 
 const montserrat = Montserrat({
   variable: "--font-montserrat",
@@ -23,7 +24,10 @@ export default function RootLayout({
       lang="en"
       className={`${montserrat.variable} antialiased`}
     >
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        {children}
+        <IncomingCallToast />
+      </body>
     </html>
   );
 }

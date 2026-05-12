@@ -3,6 +3,7 @@
 import { useState, useTransition, useCallback } from 'react'
 import { updateCustomer, type CustomerUpdatePayload } from '../actions'
 import VoiceInput from '@/components/voice-input'
+import AddressAutocomplete from '@/components/ui/AddressAutocomplete'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -13,9 +14,9 @@ type CustomerData = {
   lead_source: string | null; customer_group: string | null
   status: string | null; is_active: boolean | null
   street: string | null; street2: string | null
-  city: string | null; state: string | null; zip: string | null
+  city: string | null; state: string | null; zip: string | null; country: string | null
   secondary_street: string | null; secondary_city: string | null
-  secondary_state: string | null; secondary_zip: string | null
+  secondary_state: string | null; secondary_zip: string | null; secondary_country: string | null
   terms: string | null; taxable: boolean | null
   tax_exempt_code: string | null; tax_exempt_expires: string | null
   credit_limit: number | null; pricing_level: string | null
@@ -155,10 +156,12 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
       const res = await save({
         street: addrDraft.street, street2: addrDraft.street2,
         city: addrDraft.city, state: addrDraft.state, zip: addrDraft.zip,
+        country: addrDraft.country,
         secondary_street: addrDraft.secondary_street,
         secondary_city: addrDraft.secondary_city,
         secondary_state: addrDraft.secondary_state,
         secondary_zip: addrDraft.secondary_zip,
+        secondary_country: addrDraft.secondary_country,
       })
       if (res.error) { setAddrError(res.error); return }
       setData((d) => ({ ...d, ...addrDraft }))
@@ -280,7 +283,7 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
             <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Name</dt><dd className="font-medium mt-0.5">{data.first_name} {data.last_name}</dd></div>
             <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Company</dt><dd className="font-medium mt-0.5">{data.company_name ?? <Dash />}</dd></div>
             <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Email</dt><dd className="mt-0.5">{data.email ? <a href={`mailto:${data.email}`} className="text-qm-lime hover:underline">{data.email}</a> : <Dash />}</dd></div>
-            <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Phone</dt><dd className="mt-0.5">{data.phone ?? <Dash />}</dd></div>
+            <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Phone</dt><dd className="mt-0.5">{data.phone ? <a href={`tel:${data.phone}`} className="hover:underline">{data.phone}</a> : <Dash />}</dd></div>
             {data.legal_name && <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Legal Name</dt><dd className="font-medium mt-0.5">{data.legal_name}</dd></div>}
             {data.sales_rep && <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Sales Rep</dt><dd className="mt-0.5">{data.sales_rep}</dd></div>}
             {data.industry && <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Industry</dt><dd className="mt-0.5">{data.industry}</dd></div>}
@@ -325,25 +328,55 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-2">Bill To / Primary</p>
               <div className="space-y-3">
-                <div><Label>Street</Label><input type="text" value={addrDraft.street ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, street: e.target.value || null })} className={ic} placeholder="123 Main St" /></div>
+                <div>
+                  <Label>Street</Label>
+                  <AddressAutocomplete
+                    defaultValue={addrDraft.street ?? ''}
+                    className={ic}
+                    onSelect={(addr) => setAddrDraft((prev) => ({
+                      ...prev,
+                      street: addr.street || prev.street,
+                      city: addr.city || prev.city,
+                      state: addr.state || prev.state,
+                      zip: addr.zip || prev.zip,
+                      country: addr.country || prev.country,
+                    }))}
+                  />
+                </div>
                 <div><Label>Street 2</Label><input type="text" value={addrDraft.street2 ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, street2: e.target.value || null })} className={ic} placeholder="Suite 100" /></div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1"><Label>City</Label><input type="text" value={addrDraft.city ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, city: e.target.value || null })} className={ic} /></div>
                   <div><Label>State</Label><input type="text" value={addrDraft.state ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, state: e.target.value || null })} className={ic} maxLength={2} placeholder="TX" /></div>
                   <div><Label>Zip</Label><input type="text" value={addrDraft.zip ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, zip: e.target.value || null })} className={ic} /></div>
                 </div>
+                <div><Label>Country</Label><input type="text" value={addrDraft.country ?? 'US'} onChange={(e) => setAddrDraft({ ...addrDraft, country: e.target.value || null })} className={ic} maxLength={2} placeholder="US" /></div>
               </div>
             </div>
             {/* Secondary */}
             <div className="border-t border-gray-100 pt-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-2">Ship To / Install Address</p>
               <div className="space-y-3">
-                <div><Label>Street</Label><input type="text" value={addrDraft.secondary_street ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, secondary_street: e.target.value || null })} className={ic} /></div>
+                <div>
+                  <Label>Street</Label>
+                  <AddressAutocomplete
+                    defaultValue={addrDraft.secondary_street ?? ''}
+                    className={ic}
+                    onSelect={(addr) => setAddrDraft((prev) => ({
+                      ...prev,
+                      secondary_street: addr.street || prev.secondary_street,
+                      secondary_city: addr.city || prev.secondary_city,
+                      secondary_state: addr.state || prev.secondary_state,
+                      secondary_zip: addr.zip || prev.secondary_zip,
+                      secondary_country: addr.country || prev.secondary_country,
+                    }))}
+                  />
+                </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1"><Label>City</Label><input type="text" value={addrDraft.secondary_city ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, secondary_city: e.target.value || null })} className={ic} /></div>
                   <div><Label>State</Label><input type="text" value={addrDraft.secondary_state ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, secondary_state: e.target.value || null })} className={ic} maxLength={2} /></div>
                   <div><Label>Zip</Label><input type="text" value={addrDraft.secondary_zip ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, secondary_zip: e.target.value || null })} className={ic} /></div>
                 </div>
+                <div><Label>Country</Label><input type="text" value={addrDraft.secondary_country ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, secondary_country: e.target.value || null })} className={ic} maxLength={2} placeholder="US" /></div>
               </div>
             </div>
           </div>
@@ -360,6 +393,7 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
                   {(data.city || data.state || data.zip) && (
                     <div>{[data.city, data.state, data.zip].filter(Boolean).join(', ')}</div>
                   )}
+                  {data.country && data.country !== 'US' && <div>{data.country}</div>}
                 </address>
               ) : <span className="text-qm-gray">—</span>}
             </div>
@@ -371,6 +405,7 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
                   {(data.secondary_city || data.secondary_state || data.secondary_zip) && (
                     <div>{[data.secondary_city, data.secondary_state, data.secondary_zip].filter(Boolean).join(', ')}</div>
                   )}
+                  {data.secondary_country && data.secondary_country !== 'US' && <div>{data.secondary_country}</div>}
                 </address>
               ) : <span className="text-qm-gray">—</span>}
             </div>
