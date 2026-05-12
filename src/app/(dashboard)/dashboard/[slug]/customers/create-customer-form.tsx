@@ -355,10 +355,22 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps }: Props)
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-3 gap-4">
                         <div>
                           <Lbl>Credit Limit ($)</Lbl>
                           <input name="credit_limit" type="number" step="0.01" min={0} defaultValue="" placeholder="0.00" className={ic} />
+                        </div>
+                        <div>
+                          <Lbl>Tax Rate</Lbl>
+                          <select name="tax_rate" className={sc}>
+                            <option value="">None</option>
+                            <option value="8.25">8.25% (TX Standard)</option>
+                            <option value="8">8%</option>
+                            <option value="7">7%</option>
+                            <option value="6">6%</option>
+                            <option value="5">5%</option>
+                            <option value="exempt">Exempt</option>
+                          </select>
                         </div>
                         <div className="flex items-end pb-1">
                           <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">

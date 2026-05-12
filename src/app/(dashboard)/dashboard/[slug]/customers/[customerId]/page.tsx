@@ -76,7 +76,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active')
     .eq('customer_id', customerId)
     .eq('organization_id', org.id)
-    .order('is_primary', { ascending: false })
+    .order('last_name', { ascending: true, nullsFirst: false })
+    .order('first_name', { ascending: true, nullsFirst: false })
     .order('full_name', { ascending: true }) as { data: ContactRow[] | null; error: unknown }
 
   type JobRow = { id: string; job_number: number; title: string; status: JobStatus; created_at: string }

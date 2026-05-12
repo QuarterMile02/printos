@@ -178,7 +178,13 @@ export default function SoDetailClient({
           {salesOrder.customer?.email && (
             <div>
               <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Email</span>
-              <span className="mt-1 block text-sm text-gray-700">{salesOrder.customer.email}</span>
+              <a href={`mailto:${salesOrder.customer.email}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{salesOrder.customer.email}</a>
+            </div>
+          )}
+          {salesOrder.customer?.phone && (
+            <div>
+              <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Phone</span>
+              <a href={`tel:${salesOrder.customer.phone}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{salesOrder.customer.phone}</a>
             </div>
           )}
         </div>

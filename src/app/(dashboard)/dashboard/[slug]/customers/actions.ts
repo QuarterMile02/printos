@@ -75,6 +75,7 @@ export async function createCustomer(
     tax_exempt_code: t(formData.get('tax_exempt_code') as string | null),
     tax_exempt_expires_at: t(formData.get('tax_exempt_expires_at') as string | null) || null,
     vat_number: t(formData.get('vat_number') as string | null),
+    tax_rate: t(formData.get('tax_rate') as string | null),
     tags,
     ap_contact: t(formData.get('ap_contact') as string | null),
     other_info: t(formData.get('other_info') as string | null),

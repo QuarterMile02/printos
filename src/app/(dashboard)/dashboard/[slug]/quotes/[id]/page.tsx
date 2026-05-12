@@ -49,6 +49,15 @@ export default async function QuoteDetailPage({ params }: PageProps) {
       company_name: string | null
       email: string | null
       phone: string | null
+      street: string | null
+      city: string | null
+      state: string | null
+      zip: string | null
+      status: string | null
+      terms: string | null
+      credit_limit: number | null
+      special_notes: string | null
+      background_info: string | null
     } | null
   }
 
@@ -64,7 +73,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
       expires_at, terms, notes, subtotal, tax_total, total,
       customer_id, converted_to_so_id,
       due_date, sales_rep_id, po_number, install_address, production_notes,
-      customers(first_name, last_name, company_name, email, phone)
+      customers(first_name, last_name, company_name, email, phone, street, city, state, zip, status, terms, credit_limit, special_notes, background_info)
     `)
     .eq('id', id)
     .eq('organization_id', org.id)
@@ -79,7 +88,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
       .select(`
         id, quote_number, title, description, status, created_at,
         customer_id,
-        customers(first_name, last_name, company_name, email, phone)
+        customers(first_name, last_name, company_name, email, phone, street, city, state, zip, status, terms, credit_limit, special_notes, background_info)
       `)
       .eq('id', id)
       .eq('organization_id', org.id)
@@ -301,6 +310,15 @@ export default async function QuoteDetailPage({ params }: PageProps) {
                 company_name: quote.customers.company_name,
                 email: quote.customers.email,
                 phone: quote.customers.phone,
+                street: quote.customers.street ?? null,
+                city: quote.customers.city ?? null,
+                state: quote.customers.state ?? null,
+                zip: quote.customers.zip ?? null,
+                status: quote.customers.status ?? null,
+                terms: quote.customers.terms ?? null,
+                credit_limit: quote.customers.credit_limit ?? null,
+                special_notes: quote.customers.special_notes ?? null,
+                background_info: quote.customers.background_info ?? null,
               }
             : null,
         }}

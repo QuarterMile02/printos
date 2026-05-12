@@ -1,26 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
-function normalizeDigits(q: string): string {
-  return q.replace(/\D/g, '')
-}
-
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('q') ?? ''
-  const digits = normalizeDigits(raw)
+  const allDigits = raw.replace(/\D/g, '')
 
-  if (digits.length < 4) {
-    return NextResponse.json([])
-  }
+  // Require at least 7 digits; use last 7 to strip country codes
+  if (allDigits.length < 7) return NextResponse.json([])
+  const digits = allDigits.slice(-7)
 
-  // Verify the user is authenticated
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Get org IDs this user belongs to
   type MembershipRow = { organization_id: string }
   const { data: memberships } = await supabase
     .from('organization_members')
@@ -32,36 +24,33 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient()
 
-  type CustomerRow = {
+  type LookupRow = {
+    result_type: string
     id: string
-    first_name: string
-    last_name: string
+    display_name: string
     company_name: string | null
     phone: string | null
-    organization_id: string
-    organizations: { slug: string } | null
+    customer_id: string
+    org_slug: string
   }
 
-  // Search primary phone; use OR filter for secondary_phone if that column exists
-  const { data } = await service
-    .from('customers')
-    .select('id, first_name, last_name, company_name, phone, organization_id, organizations(slug)')
-    .in('organization_id', orgIds)
-    .ilike('phone', `%${digits}%`)
-    .limit(5) as { data: CustomerRow[] | null; error: unknown }
+  const { data } = await service.rpc('lookup_by_phone', {
+    p_org_ids: orgIds,
+    p_digits: digits,
+  }) as { data: LookupRow[] | null; error: unknown }
 
-  const results = (data ?? []).map((c) => ({
-    id: c.id,
-    first_name: c.first_name,
-    last_name: c.last_name,
-    company_name: c.company_name,
-    phone: c.phone,
-    url: c.organizations?.slug
-      ? `/dashboard/${c.organizations.slug}/customers/${c.id}`
-      : null,
+  const results = (data ?? []).map((r) => ({
+    id: r.id,
+    result_type: r.result_type,           // 'customer' | 'contact'
+    display_name: r.display_name,
+    company_name: r.company_name,
+    phone: r.phone,
+    customer_id: r.customer_id,
+    url: `/dashboard/${r.org_slug}/customers/${r.customer_id}`,
+    // legacy shape consumed by PhoneLookup component
+    first_name: r.display_name.split(' ')[0] ?? '',
+    last_name: r.display_name.split(' ').slice(1).join(' ') ?? '',
   }))
 
-  return NextResponse.json(results, {
-    headers: { 'Cache-Control': 'no-store' },
-  })
+  return NextResponse.json(results, { headers: { 'Cache-Control': 'no-store' } })
 }

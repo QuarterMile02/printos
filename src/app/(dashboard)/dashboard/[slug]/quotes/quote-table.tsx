@@ -90,7 +90,7 @@ function SendModal({
             <p className="font-medium text-gray-900">
               {quote.customer.first_name} {quote.customer.last_name}
             </p>
-            {quote.customer.email && <p>Email: {quote.customer.email}</p>}
+            {quote.customer.email && <p>Email: <a href={`mailto:${quote.customer.email}`} className="hover:text-green-600 hover:underline">{quote.customer.email}</a></p>}
             {quote.customer.phone && <p>Phone: <a href={`tel:${quote.customer.phone}`} className="hover:underline">{quote.customer.phone}</a></p>}
             {!quote.customer.email && !quote.customer.phone && (
               <p className="text-amber-600">No email or phone on file.</p>
