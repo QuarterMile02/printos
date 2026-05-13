@@ -7,6 +7,16 @@ import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-templa
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 
+function toE164(phone: string | null | undefined): string | null {
+  if (!phone) return null
+  if (phone.startsWith('+')) return phone
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  if (digits.length === 12 && digits.startsWith('52')) return `+${digits}`
+  return `+${digits}`
+}
+
 const VALID_STATUSES: JobStatus[] = [
   'new', 'in_progress', 'proof_review', 'ready_for_pickup', 'completed',
 ]
@@ -215,24 +225,36 @@ export async function updateJobStatus(
           .single() as { data: { name: string } | null; error: unknown }
         const orgName = orgRow?.name ?? 'us'
 
-        if (customer.phone && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
-          try {
-            const sid = process.env.TWILIO_ACCOUNT_SID
-            const token = process.env.TWILIO_AUTH_TOKEN
-            const from = process.env.TWILIO_PHONE_NUMBER
-            const body = `Hi ${customer.first_name}, your order "${job.title}" (Job #${String(job.job_number).padStart(4, '0')}) is ready for pickup at ${orgName}! Call us to schedule.`
-
-            const params = new URLSearchParams({ To: customer.phone, From: from, Body: body })
-            const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-              method: 'POST',
-              headers: {
-                'Authorization': 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64'),
-                'Content-Type': 'application/x-www-form-urlencoded',
-              },
-              body: params.toString(),
-            })
-            sentSms = res.ok
-          } catch { /* sms send failed silently */ }
+        const twilioSid = process.env.TWILIO_ACCOUNT_SID
+        const twilioToken = process.env.TWILIO_AUTH_TOKEN
+        const twilioFrom = process.env.TWILIO_PHONE_NUMBER
+        if (!twilioSid || !twilioToken || !twilioFrom) {
+          console.error('[SMS] Missing Twilio env vars — TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, or TWILIO_PHONE_NUMBER not set')
+        } else {
+          const toPhone = toE164(customer.phone)
+          if (!toPhone) {
+            console.error('[SMS] Cannot send — customer phone is empty for customer_id:', job.customer_id)
+          } else {
+            try {
+              const body = `Hi ${customer.first_name}, your order "${job.title}" (Job #${String(job.job_number).padStart(4, '0')}) is ready for pickup at ${orgName}! Call us to schedule.`
+              const params = new URLSearchParams({ To: toPhone, From: twilioFrom, Body: body })
+              const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64'),
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: params.toString(),
+              })
+              if (!res.ok) {
+                const errBody = await res.text()
+                console.error('[SMS] Twilio API error:', res.status, errBody)
+              }
+              sentSms = res.ok
+            } catch (smsError) {
+              console.error('[SMS] Twilio send failed:', smsError)
+            }
+          }
         }
 
         // Log notification
