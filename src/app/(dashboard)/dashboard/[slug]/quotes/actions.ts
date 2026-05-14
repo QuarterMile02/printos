@@ -8,6 +8,16 @@ import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-templa
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { calculateProofDueDate } from '@/lib/date-utils'
+
+function toE164(phone: string | null | undefined): string | null {
+  if (!phone) return null
+  if (phone.startsWith('+')) return phone
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  if (digits.length === 12 && digits.startsWith('52')) return `+${digits}`
+  return `+${digits}`
+}
 import { resolveJobDepartments } from '@/lib/jobs/resolve-departments'
 import {
   selectMaterial,
@@ -437,27 +447,34 @@ export async function sendQuoteToCustomer(
     } else if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
       errors.push('SMS delivery not configured — Twilio credentials are missing.')
     } else {
-      try {
-        const sid = process.env.TWILIO_ACCOUNT_SID
-        const token = process.env.TWILIO_AUTH_TOKEN
-        const from = process.env.TWILIO_PHONE_NUMBER
-        const body = `Hi ${customerName}, your quote Q-${quote.quote_number} for "${quote.title}" totaling $${totalFormatted} is ready. Call us to approve!`
+      const toPhone = toE164(customerPhone)
+      if (!toPhone) {
+        errors.push('Customer phone number could not be normalized to a valid format.')
+      } else {
+        try {
+          const sid = process.env.TWILIO_ACCOUNT_SID
+          const token = process.env.TWILIO_AUTH_TOKEN
+          const from = process.env.TWILIO_PHONE_NUMBER
+          const body = `Hi ${customerName}, your quote Q-${quote.quote_number} for "${quote.title}" totaling $${totalFormatted} is ready. Call us to approve!`
 
-        const params = new URLSearchParams({ To: customerPhone, From: from, Body: body })
-        const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64'),
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: params.toString(),
-        })
-        if (!res.ok) {
-          const respBody = await res.text()
-          errors.push(`SMS failed: ${respBody}`)
+          const params = new URLSearchParams({ To: toPhone, From: from, Body: body })
+          const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64'),
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: params.toString(),
+          })
+          if (!res.ok) {
+            const respBody = await res.text()
+            console.error('[SMS] Twilio quote send failed:', res.status, respBody)
+            errors.push(`SMS failed: ${respBody}`)
+          }
+        } catch (e) {
+          console.error('[SMS] Twilio quote send exception:', e)
+          errors.push(`SMS failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
         }
-      } catch (e) {
-        errors.push(`SMS failed: ${e instanceof Error ? e.message : 'Unknown error'}`)
       }
     }
   }
