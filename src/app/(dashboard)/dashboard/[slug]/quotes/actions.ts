@@ -457,7 +457,8 @@ export async function sendQuoteToCustomer(
           const from = process.env.TWILIO_PHONE_NUMBER
           const body = `Hi ${customerName}, your quote Q-${quote.quote_number} for "${quote.title}" totaling $${totalFormatted} is ready. Call us to approve!`
 
-          const params = new URLSearchParams({ To: toPhone, From: from, Body: body })
+          console.log('[SMS] Sending quote SMS to:', toPhone, 'from:', from)
+          const params = new URLSearchParams({ To: toPhone, From: from!, Body: body })
           const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
             method: 'POST',
             headers: {
@@ -469,7 +470,12 @@ export async function sendQuoteToCustomer(
           if (!res.ok) {
             const respBody = await res.text()
             console.error('[SMS] Twilio quote send failed:', res.status, respBody)
-            errors.push(`SMS failed: ${respBody}`)
+            let userMessage = `SMS failed (${res.status})`
+            try {
+              const parsed = JSON.parse(respBody) as { message?: string; code?: number }
+              if (parsed.message) userMessage = `SMS failed: ${parsed.message}`
+            } catch { /* use raw body if not JSON */ }
+            errors.push(userMessage)
           }
         } catch (e) {
           console.error('[SMS] Twilio quote send exception:', e)
