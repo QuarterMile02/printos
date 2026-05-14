@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo, useTransition, useRef, useCallback } from 'react'
-import { createVendor, loadMoreVendors, type VendorListRow } from './actions'
+import { useState, useRef, useTransition, useCallback } from 'react'
+import { createVendor, loadMoreVendors, searchVendors, type VendorListRow } from './actions'
 
 type Props = {
   initialRows: VendorListRow[]
@@ -17,7 +17,31 @@ function Dash() { return <span className="text-gray-300">—</span> }
 export default function VendorsListClient({ initialRows, totalCount, orgSlug, orgId }: Props) {
   const [rows, setRows] = useState<VendorListRow[]>(initialRows)
   const [search, setSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<VendorListRow[] | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
   const [loadPending, startLoad] = useTransition()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchSeqRef = useRef(0)
+
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const term = value.trim()
+    if (term.length < 2) {
+      setSearchResults(null)
+      setIsSearching(false)
+      return
+    }
+    setIsSearching(true)
+    const seq = ++searchSeqRef.current
+    debounceRef.current = setTimeout(async () => {
+      const results = await searchVendors(orgId, term)
+      if (searchSeqRef.current === seq) {
+        setSearchResults(results)
+        setIsSearching(false)
+      }
+    }, 300)
+  }
 
   // ── Create modal ─────────────────────────────────────────────────────────
   const [open, setOpen] = useState(false)
@@ -41,16 +65,7 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
   }
 
   // ── Search + display ─────────────────────────────────────────────────────
-  const displayed = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter((r) =>
-      [r.name, r.primary_contact, r.primary_email, r.primary_phone, r.city].some(
-        (v) => (v ?? '').toLowerCase().includes(q)
-      )
-    )
-  }, [rows, search])
-
+  const displayed = searchResults ?? rows
   const hasMore = rows.length < totalCount
 
   function handleLoadMore() {
@@ -65,14 +80,21 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
+          {isSearching ? (
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-lime animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          ) : (
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+          )}
           <input
             type="text"
             placeholder="Search name, contact, email, city…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="block w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm placeholder-gray-400 focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
           />
         </div>
@@ -133,7 +155,7 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
       )}
 
       {/* Load More */}
-      {hasMore && !search && (
+      {hasMore && !searchResults && (
         <div className="flex items-center justify-center gap-4 pt-2">
           <span className="text-sm text-gray-500">Showing {rows.length.toLocaleString()} of {totalCount.toLocaleString()}</span>
           <button

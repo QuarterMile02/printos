@@ -45,6 +45,32 @@ export async function createVendor(
   return {}
 }
 
+export async function searchVendors(
+  orgId: string,
+  term: string,
+): Promise<VendorListRow[]> {
+  const service = createServiceClient()
+  const digits = term.replace(/\D/g, '')
+
+  const conds = [
+    `name.ilike.%${term}%`,
+    `primary_contact.ilike.%${term}%`,
+    `primary_email.ilike.%${term}%`,
+    `city.ilike.%${term}%`,
+    `primary_phone.ilike.%${term}%`,
+  ]
+  if (digits && digits !== term) conds.push(`primary_phone.ilike.%${digits}%`)
+
+  const { data } = await service
+    .from('vendors')
+    .select('id, name, primary_contact, primary_phone, primary_email, city, state, is_active, created_at')
+    .eq('organization_id', orgId)
+    .or(conds.join(','))
+    .order('name', { ascending: true })
+    .limit(50)
+  return (data ?? []) as VendorListRow[]
+}
+
 export async function loadMoreVendors(
   orgId: string,
   search: string,

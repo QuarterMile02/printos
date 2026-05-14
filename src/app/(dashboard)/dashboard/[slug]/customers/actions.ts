@@ -150,6 +150,50 @@ export async function loadMoreCustomers(
   return (data ?? []) as CustomerListRow[]
 }
 
+export async function searchCustomers(
+  orgId: string,
+  term: string,
+  filters: { status?: string; type?: string; tag?: string },
+): Promise<CustomerListRow[]> {
+  const service = createServiceClient()
+  const digits = term.replace(/\D/g, '')
+
+  const conds = [
+    `first_name.ilike.%${term}%`,
+    `last_name.ilike.%${term}%`,
+    `company_name.ilike.%${term}%`,
+    `email.ilike.%${term}%`,
+    `city.ilike.%${term}%`,
+    `phone.ilike.%${term}%`,
+  ]
+  if (digits && digits !== term) conds.push(`phone.ilike.%${digits}%`)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = service
+    .from('customers')
+    .select('id, first_name, last_name, company_name, email, phone, city, state, status, terms, is_active, tags, created_at')
+    .eq('organization_id', orgId)
+    .or(conds.join(','))
+
+  if (filters.status === 'inactive') {
+    query = query.eq('is_active', false)
+  } else if (filters.status) {
+    query = query.eq('status', filters.status)
+  }
+  if (filters.type === 'company') {
+    query = query.not('company_name', 'is', null).neq('company_name', '')
+  } else if (filters.type === 'individual') {
+    query = query.or('company_name.is.null,company_name.eq.')
+  }
+  if (filters.tag) {
+    query = query.contains('tags', [filters.tag])
+  }
+
+  query = query.order('last_name', { ascending: true }).order('first_name', { ascending: true }).limit(50)
+  const { data } = await query
+  return (data ?? []) as CustomerListRow[]
+}
+
 // ── UPDATE — covers all editable customer fields ──────────────────────────────
 
 export type CustomerUpdatePayload = {
