@@ -2,6 +2,7 @@
 
 import { useState, useRef, useTransition, useCallback } from 'react'
 import { createVendor, loadMoreVendors, searchVendors, type VendorListRow } from './actions'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type Props = {
   initialRows: VendorListRow[]
@@ -47,6 +48,7 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
   const [open, setOpen] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [createPending, startCreate] = useTransition()
+  const [vendorPhone, setVendorPhone] = useState('')
   const formRef = useRef<HTMLFormElement>(null)
 
   const handleNotesTranscript = useCallback(() => {}, [])
@@ -58,8 +60,8 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
       const res = await createVendor(orgId, orgSlug, formData)
       if (res.error) { setCreateError(res.error); return }
       formRef.current?.reset()
+      setVendorPhone('')
       setOpen(false)
-      // Reload page to get fresh server data
       window.location.reload()
     })
   }
@@ -171,7 +173,7 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
       {/* Add Vendor modal */}
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => !createPending && setOpen(false)} />
+          <div className="absolute inset-0 bg-black/40" onClick={() => { if (!createPending) { setOpen(false); setVendorPhone('') } }} />
           <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-gray-900">Add Vendor</h2>
             {createError && (
@@ -189,7 +191,11 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input name="primary_phone" type="text" maxLength={30} className={ic} />
+                  <PhoneInput
+                    name="primary_phone"
+                    value={vendorPhone}
+                    onChange={(val) => setVendorPhone(val.replace(/\D/g, '').length > 3 ? val : '')}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

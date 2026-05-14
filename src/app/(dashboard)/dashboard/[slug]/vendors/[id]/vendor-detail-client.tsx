@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { updateVendor, type VendorUpdatePayload } from './actions'
 import AddressAutocomplete from '@/components/ui/AddressAutocomplete'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type VendorData = {
   name: string
@@ -210,7 +211,10 @@ export default function VendorDetailClient({ vendorId, orgId, orgSlug, initialDa
               </div>
               <div>
                 <Label>Phone</Label>
-                <input type="text" value={detailDraft.primary_phone ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, primary_phone: e.target.value || null })} className={ic} />
+                <PhoneInput
+                  value={detailDraft.primary_phone ?? ''}
+                  onChange={(val) => setDetailDraft({ ...detailDraft, primary_phone: val.replace(/\D/g, '').length > 3 ? val : null })}
+                />
               </div>
             </div>
             <div>

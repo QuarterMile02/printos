@@ -4,6 +4,7 @@ import { useState, useTransition, useCallback } from 'react'
 import { updateCustomer, type CustomerUpdatePayload } from '../actions'
 import VoiceInput from '@/components/voice-input'
 import AddressAutocomplete from '@/components/ui/AddressAutocomplete'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -238,7 +239,10 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
                 <input type="email" value={detailDraft.email ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, email: e.target.value || null })} className={ic} />
               </div>
               <div><Label>Phone</Label>
-                <input type="text" value={detailDraft.phone ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, phone: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
+                <PhoneInput
+                  value={detailDraft.phone ?? ''}
+                  onChange={(val) => setDetailDraft({ ...detailDraft, phone: val.replace(/\D/g, '').length > 3 ? val : null })}
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
