@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import type { JobStatus, QuoteStatus } from '@/types/database'
 import CustomerDetailClient from './customer-detail-client'
 import CustomerContactsSection from './customer-contacts'
+import CustomerDangerZone from './customer-danger-zone'
 import { QUOTE_STATUS_STYLES } from '../../quotes/format'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
@@ -64,6 +65,15 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     .eq('id', customerId).eq('organization_id', org.id)
     .maybeSingle() as { data: CustomerRow | null; error: unknown }
   if (!customer) notFound()
+
+  // Resolve viewer's role for danger zone visibility
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', org.id)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const isOwnerOrAdmin = membership?.role === 'owner' || membership?.role === 'admin'
 
   type ContactRow = {
     id: string; full_name: string; first_name: string | null; last_name: string | null
@@ -258,6 +268,14 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           </div>
         )}
       </div>
+      <CustomerDangerZone
+        customerId={customer.id}
+        orgId={org.id}
+        orgSlug={slug}
+        customerName={`${customer.first_name} ${customer.last_name}`}
+        isActive={customer.is_active}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+      />
     </div>
   )
 }

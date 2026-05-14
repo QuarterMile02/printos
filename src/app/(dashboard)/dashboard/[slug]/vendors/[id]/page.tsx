@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import VendorDetailClient from './vendor-detail-client'
+import VendorDangerZone from './vendor-danger-zone'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
@@ -13,6 +14,14 @@ export default async function VendorDetailPage({ params }: PageProps) {
     .from('organizations').select('id, name, slug').eq('slug', slug)
     .maybeSingle() as { data: OrgRow | null; error: unknown }
   if (!org) notFound()
+
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', org.id)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const isOwnerOrAdmin = membership?.role === 'owner' || membership?.role === 'admin'
 
   type VendorRow = {
     id: string; name: string; legal_name: string | null
@@ -183,6 +192,15 @@ export default async function VendorDetailPage({ params }: PageProps) {
           </div>
         )}
       </div>
+
+      <VendorDangerZone
+        vendorId={vendor.id}
+        orgId={org.id}
+        orgSlug={slug}
+        vendorName={vendor.name}
+        isActive={vendor.is_active}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+      />
     </div>
   )
 }

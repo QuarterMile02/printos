@@ -1,6 +1,6 @@
 'use server'
 
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
 import { revalidatePath } from 'next/cache'
 
@@ -69,6 +69,68 @@ export async function searchVendors(
     .order('name', { ascending: true })
     .limit(50)
   return (data ?? []) as VendorListRow[]
+}
+
+export async function deleteVendor(
+  vendorId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .maybeSingle() as { data: { role: string } | null; error: unknown }
+
+  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    return { error: 'Only owners and admins can delete vendors.' }
+  }
+
+  const service = createServiceClient()
+
+  // Get vendor name for material_vendors lookup (FK is by name, not ID)
+  const { data: vendor } = await service
+    .from('vendors').select('name').eq('id', vendorId).eq('organization_id', orgId).single()
+  if (!vendor) return { error: 'Vendor not found.' }
+
+  const { count: matCount } = await service
+    .from('material_vendors')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', orgId)
+    .eq('vendor_name', vendor.name)
+
+  if ((matCount ?? 0) > 0) {
+    return { error: `Cannot delete — vendor is linked to ${matCount} material${matCount === 1 ? '' : 's'}. Deactivate instead.` }
+  }
+
+  const { error } = await service.from('vendors').delete().eq('id', vendorId).eq('organization_id', orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/vendors`)
+  return {}
+}
+
+export async function deactivateVendor(
+  vendorId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const { allowed } = await checkPermission(orgId, 'customers.create')
+  if (!allowed) return { error: 'You do not have permission to deactivate vendors.' }
+
+  const service = createServiceClient()
+  const { error } = await service
+    .from('vendors').update({ is_active: false }).eq('id', vendorId).eq('organization_id', orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/vendors/${vendorId}`)
+  revalidatePath(`/dashboard/${orgSlug}/vendors`)
+  return {}
 }
 
 export async function loadMoreVendors(

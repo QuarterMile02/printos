@@ -158,6 +158,14 @@ export async function searchCustomers(
   const service = createServiceClient()
   const digits = term.replace(/\D/g, '')
 
+  // Also search linked contact names — fetch matching customer_ids first
+  const { data: contactHits } = await service
+    .from('customer_contacts')
+    .select('customer_id')
+    .eq('organization_id', orgId)
+    .or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%,full_name.ilike.%${term}%`)
+  const contactIds = [...new Set((contactHits ?? []).map((c) => c.customer_id).filter(Boolean))]
+
   const conds = [
     `first_name.ilike.%${term}%`,
     `last_name.ilike.%${term}%`,
@@ -167,6 +175,7 @@ export async function searchCustomers(
     `phone.ilike.%${term}%`,
   ]
   if (digits && digits !== term) conds.push(`phone.ilike.%${digits}%`)
+  if (contactIds.length > 0) conds.push(`id.in.(${contactIds.join(',')})`)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query: any = service
@@ -414,6 +423,84 @@ export async function setPrimaryContact(
   if (setErr) return { error: setErr.message }
 
   revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  return {}
+}
+
+export async function deleteCustomer(
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .maybeSingle() as { data: { role: OrgRole } | null; error: unknown }
+
+  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    return { error: 'Only owners and admins can delete customers.' }
+  }
+
+  const service = createServiceClient()
+
+  // Dependency check — run in parallel
+  const [{ count: quoteCount }, { count: jobCount }, { count: soCount }, { count: invCount }] =
+    await Promise.all([
+      service.from('quotes').select('id', { count: 'exact', head: true }).eq('customer_id', customerId),
+      service.from('jobs').select('id', { count: 'exact', head: true }).eq('customer_id', customerId),
+      service.from('sales_orders').select('id', { count: 'exact', head: true }).eq('customer_id', customerId),
+      service.from('invoices').select('id', { count: 'exact', head: true }).eq('customer_id', customerId),
+    ])
+
+  const linked: string[] = []
+  if ((quoteCount ?? 0) > 0) linked.push(`${quoteCount} quote${quoteCount === 1 ? '' : 's'}`)
+  if ((jobCount ?? 0) > 0) linked.push(`${jobCount} job${jobCount === 1 ? '' : 's'}`)
+  if ((soCount ?? 0) > 0) linked.push(`${soCount} sales order${soCount === 1 ? '' : 's'}`)
+  if ((invCount ?? 0) > 0) linked.push(`${invCount} invoice${invCount === 1 ? '' : 's'}`)
+
+  if (linked.length > 0) {
+    return { error: `Cannot delete — customer is linked to ${linked.join(', ')}. Deactivate instead.` }
+  }
+
+  const { error } = await service.from('customers').delete().eq('id', customerId).eq('organization_id', orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/customers`)
+  return {}
+}
+
+export async function deactivateCustomer(
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .maybeSingle() as { data: { role: OrgRole } | null; error: unknown }
+
+  if (!membership || !['owner', 'admin', 'member'].includes(membership.role)) {
+    return { error: 'You do not have permission to deactivate customers.' }
+  }
+
+  const service = createServiceClient()
+  const { error } = await service
+    .from('customers').update({ is_active: false }).eq('id', customerId).eq('organization_id', orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  revalidatePath(`/dashboard/${orgSlug}/customers`)
   return {}
 }
 

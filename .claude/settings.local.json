@@ -53,7 +53,13 @@
       "PowerShell(Get-ChildItem \"c:\\\\printos\\\\supabase\" -Recurse | Where-Object { $_.Name -match \"05[0-9]\" } | Select-Object -ExpandProperty FullName)",
       "Bash(vercel --version)",
       "Bash(vercel --prod)",
-      "Bash(vercel inspect *)"
+      "Bash(vercel inspect *)",
+      "PowerShell($port = \\(Invoke-WebRequest -Uri \"http://localhost:3000\" -TimeoutSec 2 -ErrorAction SilentlyContinue\\).StatusCode; if \\($port\\) { \"running\" } else { \"not running\" })",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:3000/api/test-sms\" -Method POST -ContentType \"application/json\" -Body '{\"phone\": \"+19562364367\", \"message\": \"Test from PrintOS\"}' | ConvertTo-Json)",
+      "PowerShell(try { Invoke-RestMethod -Uri \"http://localhost:3000/api/test-sms\" -Method POST -ContentType \"application/json\" -Body '{\"phone\": \"+19562364367\", \"message\": \"Test from PrintOS\"}' } catch { $_.Exception.Response.GetResponseStream\\(\\) | ForEach-Object { $reader = New-Object System.IO.StreamReader\\($_\\); $reader.ReadToEnd\\(\\) } })",
+      "PowerShell(try { Invoke-RestMethod -Uri \"http://localhost:3000/api/test-sms\" -Method POST -ContentType \"application/json\" -Body '{\"phone\": \"+19562364367\", \"message\": \"Test from PrintOS\"}' | ConvertTo-Json } catch { $_.Exception.Response.GetResponseStream\\(\\) | ForEach-Object { $reader = New-Object System.IO.StreamReader\\($_\\); $reader.ReadToEnd\\(\\) } })",
+      "PowerShell(vercel *)",
+      "Bash(Get-ChildItem *)"
     ]
   }
 }
