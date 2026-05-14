@@ -7,6 +7,7 @@ import PrintLabelButton from './print-label-button'
 import DepartmentSelect from './department-select'
 import WorkflowChecklist, { type WorkflowStep, type WorkflowProgress } from './workflow-checklist'
 import { checkPermission } from '@/lib/check-permission'
+import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 
 export const dynamic = 'force-dynamic'
 
@@ -91,6 +92,30 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
 
   // Permission: who can assign department
   const { allowed: canAssignDepartment } = await checkPermission(org.id, 'jobs.assign_department')
+
+  // Owner/admin role
+  const { data: jobMemberRow } = await supabase
+    .from('organization_members').select('role')
+    .eq('organization_id', org.id)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const isOwnerOrAdmin = jobMemberRow?.role === 'owner' || jobMemberRow?.role === 'admin'
+
+  // contact_id (migration 058)
+  let jobContactId: string | null = null
+  let jobContactName: string | null = null
+  try {
+    const { data: cRow } = await supabase
+      .from('jobs').select('contact_id')
+      .eq('id', jobId).maybeSingle() as { data: { contact_id?: string | null } | null; error: unknown }
+    jobContactId = cRow?.contact_id ?? null
+    if (jobContactId) {
+      const { data: ccRow } = await supabase
+        .from('customer_contacts').select('full_name')
+        .eq('id', jobContactId).maybeSingle() as { data: { full_name: string } | null; error: unknown }
+      jobContactName = ccRow?.full_name ?? null
+    }
+  } catch { /* migration 058 not yet applied */ }
 
   // Workflow steps: product_default_items where workflow_step=true for this job's products
   const service = createServiceClient()
@@ -636,29 +661,44 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
       </div>
 
       {/* Customer card */}
-      {job.customers && (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Customer</h2>
-          <div className="flex flex-wrap gap-6 text-sm">
-            <div>
-              <span className="font-semibold text-gray-900">{job.customers.first_name} {job.customers.last_name}</span>
-              {job.customers.company_name && <p className="text-gray-500">{job.customers.company_name}</p>}
+      <div className="mt-6">
+        {job.customers && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-3">Customer</h2>
+            <div className="flex flex-wrap gap-6 text-sm">
+              <div>
+                <span className="font-semibold text-gray-900">{job.customers.first_name} {job.customers.last_name}</span>
+                {job.customers.company_name && <p className="text-gray-500">{job.customers.company_name}</p>}
+              </div>
+              {job.customers.email && (
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Email </span>
+                  <a href={`mailto:${job.customers.email}`} className="text-qm-fuchsia hover:underline">{job.customers.email}</a>
+                </div>
+              )}
+              {job.customers.phone && (
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Phone </span>
+                  <a href={`tel:${job.customers.phone}`} className="text-qm-fuchsia hover:underline">{job.customers.phone}</a>
+                </div>
+              )}
             </div>
-            {job.customers.email && (
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Email </span>
-                <a href={`mailto:${job.customers.email}`} className="text-qm-fuchsia hover:underline">{job.customers.email}</a>
-              </div>
-            )}
-            {job.customers.phone && (
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Phone </span>
-                <a href={`tel:${job.customers.phone}`} className="text-qm-fuchsia hover:underline">{job.customers.phone}</a>
-              </div>
-            )}
           </div>
-        </div>
-      )}
+        )}
+        <CustomerContactPicker
+          recordId={job.id}
+          recordType="job"
+          orgId={org.id}
+          orgSlug={slug}
+          initialCustomerId={job.customer_id}
+          initialCustomerName={job.customers ? `${job.customers.first_name} ${job.customers.last_name}` : null}
+          initialCompanyName={job.customers?.company_name ?? null}
+          initialContactId={jobContactId}
+          initialContactName={jobContactName}
+          isOwnerOrAdmin={isOwnerOrAdmin}
+          allowCustomerChange={false}
+        />
+      </div>
     </div>
   )
 }

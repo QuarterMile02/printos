@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { SalesOrderStatus, JobStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
 import SoDetailClient from './so-detail-client'
+import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
@@ -54,6 +55,30 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
 
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
+  // Owner/admin role
+  const { data: soMemberRow } = await supabase
+    .from('organization_members').select('role')
+    .eq('organization_id', org.id)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const isOwnerOrAdmin = soMemberRow?.role === 'owner' || soMemberRow?.role === 'admin'
+
+  // contact_id (migration 058)
+  let soContactId: string | null = null
+  let soContactName: string | null = null
+  try {
+    const { data: cRow } = await supabase
+      .from('sales_orders').select('contact_id')
+      .eq('id', id).maybeSingle() as { data: { contact_id?: string | null } | null; error: unknown }
+    soContactId = cRow?.contact_id ?? null
+    if (soContactId) {
+      const { data: ccRow } = await supabase
+        .from('customer_contacts').select('full_name')
+        .eq('id', soContactId).maybeSingle() as { data: { full_name: string } | null; error: unknown }
+      soContactName = ccRow?.full_name ?? null
+    }
+  } catch { /* migration 058 not yet applied */ }
+
   // Fetch parent quote info if linked
   type QuoteRef = { id: string; quote_number: number; title: string; created_at: string }
   let parentQuote: QuoteRef | null = null
@@ -91,6 +116,21 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
         <span className="text-gray-700">SO-{String(so.so_number).padStart(4, '0')}</span>
       </div>
 
+      <CustomerContactPicker
+        recordId={so.id}
+        recordType="sales_order"
+        orgId={org.id}
+        orgSlug={slug}
+        initialCustomerId={so.customer_id}
+        initialCustomerName={so.customers ? `${so.customers.first_name} ${so.customers.last_name}` : null}
+        initialCompanyName={so.customers?.company_name ?? null}
+        initialContactId={soContactId}
+        initialContactName={soContactName}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        allowCustomerChange={true}
+      />
+
+      <div className="mt-4">
       <SoDetailClient
         orgId={org.id}
         orgSlug={slug}
@@ -115,6 +155,7 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
         }))}
         canSeePricing={canSeePricing}
       />
+      </div>
     </div>
   )
 }

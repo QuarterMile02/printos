@@ -6,6 +6,7 @@ import QuoteDetailClient from './quote-detail-client'
 import { convertToSalesOrder } from './convert-action'
 import type { EmailTemplate } from '../actions'
 import { checkPermission } from '@/lib/check-permission'
+import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 
 export const dynamic = 'force-dynamic'
 
@@ -257,6 +258,30 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
   const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
+  // Resolve org role for owner/admin gating
+  const { data: membershipRow } = await supabase
+    .from('organization_members').select('role')
+    .eq('organization_id', org.id)
+    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const isOwnerOrAdmin = membershipRow?.role === 'owner' || membershipRow?.role === 'admin'
+
+  // Fetch contact_id (column added in migration 058 — may not exist yet)
+  let quoteContactId: string | null = null
+  let quoteContactName: string | null = null
+  try {
+    const { data: cRow } = await supabase
+      .from('quotes').select('contact_id')
+      .eq('id', quote.id).maybeSingle() as { data: { contact_id?: string | null } | null; error: unknown }
+    quoteContactId = cRow?.contact_id ?? null
+    if (quoteContactId) {
+      const { data: ccRow } = await supabase
+        .from('customer_contacts').select('full_name')
+        .eq('id', quoteContactId).maybeSingle() as { data: { full_name: string } | null; error: unknown }
+      quoteContactName = ccRow?.full_name ?? null
+    }
+  } catch { /* migration 058 not yet applied — skip */ }
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -282,6 +307,21 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         </form>
       )}
 
+      <CustomerContactPicker
+        recordId={quote.id}
+        recordType="quote"
+        orgId={org.id}
+        orgSlug={slug}
+        initialCustomerId={quote.customer_id}
+        initialCustomerName={quote.customers ? `${quote.customers.first_name} ${quote.customers.last_name}` : null}
+        initialCompanyName={quote.customers?.company_name ?? null}
+        initialContactId={quoteContactId}
+        initialContactName={quoteContactName}
+        isOwnerOrAdmin={isOwnerOrAdmin}
+        allowCustomerChange={true}
+      />
+
+      <div className="mt-4">
       <QuoteDetailClient
         orgId={org.id}
         orgSlug={slug}
@@ -346,6 +386,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         canExportPdf={canExportPdf}
         modifierDefs={modifierDefs}
       />
+      </div>
     </div>
   )
 }

@@ -1,0 +1,49 @@
+-- ============================================================
+-- MIGRATION TEMPLATE — copy this header into every new file
+-- ============================================================
+--
+-- REQUIRED: Explicit grants for all new tables (Supabase policy May 2026)
+-- Supabase no longer auto-grants when tables are created via SQL migrations.
+-- After every CREATE TABLE block, add the three lines below.
+--
+-- Replace `table_name` with the actual table name.
+--
+-- grant select                          on public.table_name to anon;
+-- grant select, insert, update, delete  on public.table_name to authenticated;
+-- grant select, insert, update, delete  on public.table_name to service_role;
+--
+-- ALSO REQUIRED: Enable RLS and add policies.
+-- alter table public.table_name enable row level security;
+--
+-- ============================================================
+-- Migration NNN: short description
+-- Applied: YYYY-MM-DD
+-- ============================================================
+
+-- Example structure:
+
+-- create table if not exists public.example_table (
+--   id              uuid primary key default gen_random_uuid(),
+--   organization_id uuid not null references organizations(id) on delete cascade,
+--   name            text not null,
+--   created_at      timestamptz not null default now()
+-- );
+--
+-- -- Grants (required)
+-- grant select                         on public.example_table to anon;
+-- grant select, insert, update, delete on public.example_table to authenticated;
+-- grant select, insert, update, delete on public.example_table to service_role;
+--
+-- -- RLS
+-- alter table public.example_table enable row level security;
+--
+-- drop policy if exists "Org members can view example_table" on public.example_table;
+-- create policy "Org members can view example_table"
+--   on public.example_table for select
+--   using (
+--     exists (
+--       select 1 from organization_members om
+--       where om.organization_id = example_table.organization_id
+--         and om.user_id = auth.uid()
+--     )
+--   );
