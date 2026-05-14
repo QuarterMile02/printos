@@ -106,7 +106,11 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
               {displayed.map((v) => {
                 const cityState = [v.city, v.state].filter(Boolean).join(', ')
                 return (
-                  <tr key={v.id} className={`hover:bg-gray-50 ${v.is_active === false ? 'opacity-50' : ''}`}>
+                  <tr
+                    key={v.id}
+                    onClick={() => { window.location.href = `/dashboard/${orgSlug}/vendors/${v.id}` }}
+                    className={`cursor-pointer hover:bg-gray-50 ${v.is_active === false ? 'opacity-50' : ''}`}
+                  >
                     <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">{v.name}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700">{v.primary_contact ?? <Dash />}</td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">
