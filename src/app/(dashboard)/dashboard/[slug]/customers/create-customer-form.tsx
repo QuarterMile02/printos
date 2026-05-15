@@ -12,6 +12,7 @@ type Props = {
   orgId: string
   orgSlug: string
   salesReps: SalesRep[]
+  initialOpen?: boolean
 }
 
 const LEAD_SOURCES = ['Referral', 'Walk-in', 'Google', 'Social Media', 'Trade Show', 'Cold Call', 'Website', 'Other']
@@ -55,8 +56,8 @@ function CollapseToggle({ open, onToggle, label }: { open: boolean; onToggle: ()
   )
 }
 
-export default function CreateCustomerForm({ orgId, orgSlug, salesReps }: Props) {
-  const [open, setOpen] = useState(false)
+export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialOpen = false }: Props) {
+  const [open, setOpen] = useState(initialOpen)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const formRef = useRef<HTMLFormElement>(null)

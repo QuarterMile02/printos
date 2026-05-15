@@ -41,7 +41,7 @@ export default function PhoneLookup() {
   const [loading, setLoading] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
   const [searched, setSearched] = useState(false)
-  const [dropPos, setDropPos] = useState<{ top: number; left: number } | null>(null)
+  const [dropTop, setDropTop] = useState(0)
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -51,7 +51,7 @@ export default function PhoneLookup() {
   function openPanel() {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
-      setDropPos({ top: rect.bottom + 6, left: rect.left })
+      setDropTop(rect.bottom + 6)
     }
     setOpen(true)
   }
@@ -64,12 +64,10 @@ export default function PhoneLookup() {
     setSearched(false)
   }, [])
 
-  // Focus input on open
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 0)
   }, [open])
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return
     function handle(e: MouseEvent) {
@@ -83,7 +81,6 @@ export default function PhoneLookup() {
     return () => document.removeEventListener('mousedown', handle)
   }, [open, closePanel])
 
-  // Close on ESC
   useEffect(() => {
     if (!open) return
     function handle(e: KeyboardEvent) {
@@ -93,7 +90,6 @@ export default function PhoneLookup() {
     return () => document.removeEventListener('keydown', handle)
   }, [open, closePanel])
 
-  // Debounced search — 2-digit minimum
   useEffect(() => {
     if (!open) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -107,9 +103,7 @@ export default function PhoneLookup() {
     setLoading(true)
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/customers/phone-lookup?q=${encodeURIComponent(query)}`, {
-          cache: 'no-store',
-        })
+        const res = await fetch(`/api/customers/phone-lookup?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
         const data: Result[] = await res.json()
         setResults(data)
         setActiveIdx(-1)
@@ -123,6 +117,12 @@ export default function PhoneLookup() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query, open])
 
+  // Always navigate to the parent customer page — never a contact-specific URL
+  function openCustomer(r: Result) {
+    const url = `/dashboard/${r.customer_id ? (r.url.match(/\/dashboard\/([^/]+)\//)?.[1] ?? orgSlug) : orgSlug}/customers/${r.customer_id}`
+    window.open(url, '_blank')
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -133,12 +133,12 @@ export default function PhoneLookup() {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const target = activeIdx >= 0 ? results[activeIdx] : results[0]
-      if (target?.url) window.open(target.url, '_blank')
-      // panel stays open
+      if (target) openCustomer(target)
     }
   }
 
   const digits = query.replace(/\D/g, '')
+  const addNewUrl = orgSlug ? `/dashboard/${orgSlug}/customers?new=1` : null
 
   return (
     <div className="relative">
@@ -155,17 +155,17 @@ export default function PhoneLookup() {
         <PhoneIcon className="h-5 w-5" />
       </button>
 
-      {/* Fixed-position panel — escapes sidebar overflow/stacking context */}
-      {open && dropPos && (
+      {/* Panel — fixed, 360px wide, right of sidebar (left: 228px) */}
+      {open && (
         <div
           ref={panelRef}
           style={{
             position: 'fixed',
-            top: dropPos.top,
-            left: dropPos.left,
+            top: dropTop,
+            left: 228,
             zIndex: 200,
-            minWidth: 340,
-            maxWidth: 'calc(100vw - 16px)',
+            width: 360,
+            minWidth: 360,
           }}
           className="rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
         >
@@ -195,17 +195,18 @@ export default function PhoneLookup() {
             )}
           </div>
 
-          {/* Results */}
+          {/* Results + Add New (shown once 2+ digits typed) */}
           {digits.length >= 2 && !loading && (
-            <div className="border-t border-gray-100 max-h-80 overflow-y-auto">
-              {results.length > 0 ? (
-                <ul role="listbox">
+            <div className="border-t border-gray-100">
+              {/* Result rows */}
+              {results.length > 0 && (
+                <ul role="listbox" className="max-h-72 overflow-y-auto">
                   {results.map((r, i) => (
                     <li key={`${r.result_type}-${r.id}`} role="option" aria-selected={i === activeIdx}>
                       <button
                         type="button"
                         onMouseEnter={() => setActiveIdx(i)}
-                        onClick={() => window.open(r.url, '_blank')}
+                        onClick={() => openCustomer(r)}
                         className={`w-full flex items-start gap-3 px-4 py-3 text-sm text-left transition-colors ${
                           i === activeIdx ? 'bg-qm-lime-light' : 'hover:bg-gray-50'
                         }`}
@@ -230,9 +231,7 @@ export default function PhoneLookup() {
                             </>
                           )}
                           <span className="flex items-center gap-2 mt-0.5">
-                            {r.phone && (
-                              <span className="text-xs text-qm-gray font-mono">{r.phone}</span>
-                            )}
+                            {r.phone && <span className="text-xs text-qm-gray font-mono">{r.phone}</span>}
                             {r.status && (
                               <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-semibold capitalize ${STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
                                 {r.status}
@@ -247,20 +246,24 @@ export default function PhoneLookup() {
                     </li>
                   ))}
                 </ul>
-              ) : searched ? (
-                <div className="px-4 py-5 text-center">
-                  <p className="text-sm text-gray-500 mb-3">
+              )}
+
+              {/* No-results message */}
+              {searched && results.length === 0 && (
+                <div className="px-4 py-3 text-center">
+                  <p className="text-sm text-gray-500">
                     No customer found for <span className="font-mono font-medium">{digits}</span>
                   </p>
+                </div>
+              )}
+
+              {/* Add New Customer — always pinned at bottom once 2+ digits typed */}
+              {addNewUrl && (
+                <div className={results.length > 0 ? 'border-t border-gray-100' : ''}>
                   <button
                     type="button"
-                    onClick={() => {
-                      const url = orgSlug
-                        ? `/dashboard/${orgSlug}/customers?new=true`
-                        : '/dashboard'
-                      window.open(url, '_blank')
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 transition-all"
+                    onClick={() => window.open(addNewUrl, '_blank')}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-qm-lime hover:bg-qm-lime-light transition-colors"
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -268,7 +271,7 @@ export default function PhoneLookup() {
                     Add New Customer
                   </button>
                 </div>
-              ) : null}
+              )}
             </div>
           )}
 

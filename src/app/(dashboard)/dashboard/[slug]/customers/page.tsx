@@ -6,7 +6,7 @@ import type { CustomerListRow } from './actions'
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ sort?: string; status?: string; type?: string; tag?: string }>
+  searchParams: Promise<{ sort?: string; status?: string; type?: string; tag?: string; new?: string }>
 }
 
 export default async function CustomersPage({ params, searchParams }: PageProps) {
@@ -127,7 +127,7 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
               {totalCount === 0 ? 'No customers yet.' : `${totalCount.toLocaleString()} customer${totalCount === 1 ? '' : 's'}`}
             </p>
           </div>
-          <CreateCustomerForm orgId={org.id} orgSlug={org.slug} salesReps={salesReps} />
+          <CreateCustomerForm orgId={org.id} orgSlug={org.slug} salesReps={salesReps} initialOpen={sp.new === '1'} />
         </div>
       </div>
 
