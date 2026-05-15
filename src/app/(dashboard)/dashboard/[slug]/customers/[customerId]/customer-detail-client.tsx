@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useEffect } from 'react'
 import { updateCustomer, type CustomerUpdatePayload } from '../actions'
 import VoiceInput from '@/components/voice-input'
 import AddressAutocomplete from '@/components/ui/AddressAutocomplete'
@@ -140,6 +140,23 @@ export default function CustomerDetailClient({
   const [acctError, setAcctError] = useState<string | null>(null)
   const [acctPending, startAcctTransition] = useTransition()
 
+  // Pencil button (in CustomerActionMenu) dispatches this event to open both cards
+  useEffect(() => {
+    function handler() {
+      setAddrDraft((d) => d) // keep current draft
+      setDetailDraft((d) => d)
+      setAddrDraft({ ...data })
+      setDetailDraft({ ...data })
+      setAddrEditing(true)
+      setDetailEditing(true)
+      setAddrError(null)
+      setDetailError(null)
+    }
+    window.addEventListener('customer:open-edit', handler)
+    return () => window.removeEventListener('customer:open-edit', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
+
   const handleNotesVoice = useCallback((text: string) => {
     setDetailDraft((prev) => ({ ...prev, notes: (prev.notes ? prev.notes + ' ' : '') + text }))
   }, [])
@@ -236,16 +253,20 @@ export default function CustomerDetailClient({
   return (
     <div className="space-y-6">
 
-      {/* ── 1. ADDRESS CARD (first) ── */}
+      {/* ── 1. ADDRESS CARD (first) — Edit triggered by top pencil only ── */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-bold text-qm-black">Address</h2>
-          <CardActions
-            editing={addrEditing} saved={addrSaved} pending={addrPending}
-            onEdit={() => { setAddrDraft({ ...data }); setAddrEditing(true); setAddrError(null) }}
-            onCancel={() => { setAddrEditing(false); setAddrError(null) }}
-            onSave={saveAddr}
-          />
+          {/* Save/Cancel only shown when in edit mode — no standalone Edit button */}
+          {addrEditing && (
+            <div className="flex items-center gap-2">
+              {addrSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+              <button onClick={() => { setAddrEditing(false); setAddrError(null) }} disabled={addrPending} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">Cancel</button>
+              <button onClick={saveAddr} disabled={addrPending} className="rounded-md bg-qm-lime px-4 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+                {addrPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )}
         </div>
         {addrError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{addrError}</div>}
 
@@ -338,16 +359,19 @@ export default function CustomerDetailClient({
         )}
       </div>
 
-      {/* ── 2. CUSTOMER DETAILS CARD (second) ── */}
+      {/* ── 2. CUSTOMER DETAILS CARD (second) — Edit triggered by top pencil only ── */}
       <div id="section-customer-details" className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-bold text-qm-black">Customer Details</h2>
-          <CardActions
-            editing={detailEditing} saved={detailSaved} pending={detailPending}
-            onEdit={() => { setDetailDraft({ ...data }); setDetailEditing(true); setDetailError(null) }}
-            onCancel={() => { setDetailEditing(false); setDetailError(null) }}
-            onSave={saveDetail}
-          />
+          {detailEditing && (
+            <div className="flex items-center gap-2">
+              {detailSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+              <button onClick={() => { setDetailEditing(false); setDetailError(null) }} disabled={detailPending} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">Cancel</button>
+              <button onClick={saveDetail} disabled={detailPending} className="rounded-md bg-qm-lime px-4 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+                {detailPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )}
         </div>
         {detailError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{detailError}</div>}
 

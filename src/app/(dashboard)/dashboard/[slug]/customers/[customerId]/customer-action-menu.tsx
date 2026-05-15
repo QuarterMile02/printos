@@ -1,22 +1,24 @@
 'use client'
 
 import { useState, useRef, useEffect, useTransition } from 'react'
-import { deleteCustomer, deactivateCustomer } from '../actions'
+import { useRouter } from 'next/navigation'
+import { deleteCustomer, deactivateCustomer, reactivateCustomer, createSalesLeadForCustomer } from '../actions'
 
-// ── Static menu data — defined at module level, never recreated per render ──────
-
-const CREATE_ITEMS: Array<{ label: string; path: string; enabled: boolean }> = [
-  { label: 'Quote',        path: 'quotes/new',    enabled: true },
-  { label: 'Sales Order',  path: 'sales-orders',  enabled: true },
-  { label: 'Invoice',      path: 'invoices',       enabled: true },
-  { label: 'Payment',      path: '',               enabled: false },
-  { label: 'Job',          path: 'jobs',           enabled: true },
-  { label: 'Sales Lead',   path: '',               enabled: false },
+// Static data — module level, never recreated per render
+const CREATE_ITEMS: Array<{ label: string; key: string }> = [
+  { label: 'Quote',        key: 'quote' },
+  { label: 'Sales Order',  key: 'sales-order' },
+  { label: 'Invoice',      key: 'invoice' },
+  { label: 'Payment',      key: 'payment' },
+  { label: 'Job',          key: 'job' },
+  { label: 'Sales Lead',   key: 'sales-lead' },
 ]
 
-const DISABLED_ITEMS: string[] = ['Send Invoice Statements', 'Enable Customer Portal', 'Merge Customer']
-
-// ── Component ─────────────────────────────────────────────────────────────────
+const MISC_ITEMS: Array<{ label: string; key: string }> = [
+  { label: 'Send Invoice Statements', key: 'invoice-statements' },
+  { label: 'Enable Customer Portal',  key: 'customer-portal' },
+  { label: 'Merge Customer',          key: 'merge' },
+]
 
 type Props = {
   customerId: string
@@ -35,18 +37,19 @@ export default function CustomerActionMenu({
   isActive,
   isOwnerOrAdmin,
 }: Props) {
+  const router   = useRouter()
   const [open, setOpen]   = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, start]  = useTransition()
   const menuRef           = useRef<HTMLDivElement>(null)
+  const toastRef          = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Outside-click + Escape to close — listeners only active while open
+  // Outside-click + Escape to close
   useEffect(() => {
     if (!open) return
     function onMouseDown(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false)
@@ -59,11 +62,40 @@ export default function CustomerActionMenu({
     }
   }, [open])
 
-  // ── Handlers (never called during render) ─────────────────────────────────
+  function showToast(msg: string) {
+    setToast(msg)
+    if (toastRef.current) clearTimeout(toastRef.current)
+    toastRef.current = setTimeout(() => setToast(null), 3500)
+  }
 
   function go(path: string) {
     setOpen(false)
-    window.location.href = `/dashboard/${orgSlug}/${path}`
+    router.push(`/dashboard/${orgSlug}/${path}`)
+  }
+
+  function handleCreate(key: string) {
+    setOpen(false)
+    const cid = `?customer_id=${customerId}`
+    if (key === 'quote')       return go(`quotes/new${cid}`)
+    if (key === 'sales-order') return go(`sales-orders/new${cid}`)
+    if (key === 'invoice')     return go(`invoices/new${cid}`)
+    if (key === 'payment')     return go(`invoices${cid}&action=payment`)
+    if (key === 'job')         return go(`sales-orders/new${cid}`) // jobs created from SOs
+    if (key === 'sales-lead') {
+      start(async () => {
+        const res = await createSalesLeadForCustomer(customerId, orgId, orgSlug)
+        if (res.error) { setError(res.error); return }
+        showToast('Sales lead created')
+        router.refresh()
+      })
+    }
+  }
+
+  function handleMisc(key: string) {
+    setOpen(false)
+    if (key === 'invoice-statements') return showToast('This feature is coming soon')
+    if (key === 'customer-portal')    return showToast('Customer portal coming in Phase 3')
+    if (key === 'merge')              return showToast('Merge feature coming soon')
   }
 
   function onDisable() {
@@ -73,7 +105,8 @@ export default function CustomerActionMenu({
     start(async () => {
       const res = await deactivateCustomer(customerId, orgId, orgSlug)
       if (res.error) { setError(res.error); return }
-      window.location.reload()
+      showToast('Customer disabled')
+      router.refresh()
     })
   }
 
@@ -88,26 +121,38 @@ export default function CustomerActionMenu({
     })
   }
 
-  const canDelete = isActive === false
+  function onPencilClick() {
+    // Dispatch custom event to CustomerDetailClient to open both cards in edit mode
+    window.dispatchEvent(new CustomEvent('customer:open-edit'))
+    // Scroll to section
+    const el = document.getElementById('section-customer-details')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const canDelete = isActive === false
 
   return (
     <div className="flex items-center gap-2">
-      {error && <span className="text-xs text-red-600 max-w-xs truncate">{error}</span>}
+      {/* Toast / error feedback */}
+      {(toast || error) && (
+        <span className={`text-xs font-medium max-w-xs truncate ${error ? 'text-red-600' : 'text-green-700'}`}>
+          {error ?? toast}
+        </span>
+      )}
 
-      {/* Pencil — scrolls to customer details */}
-      <a
-        href="#section-customer-details"
+      {/* Pencil — opens inline edit for Address + Customer Details */}
+      <button
+        type="button"
+        onClick={onPencilClick}
         className="inline-flex items-center justify-center rounded-md border border-gray-300 p-2 text-gray-600 hover:bg-gray-50 transition-colors"
         title="Edit customer details"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
         </svg>
-      </a>
+      </button>
 
-      {/* Kebab — isolated div with its own ref */}
+      {/* Kebab */}
       <div ref={menuRef} className="relative">
         <button
           type="button"
@@ -130,39 +175,29 @@ export default function CustomerActionMenu({
             <div className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400 select-none">
               Create
             </div>
-            {CREATE_ITEMS.map((item) =>
-              item.enabled ? (
-                <button
-                  key={item.label}
-                  type="button"
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  onClick={() => go(item.path)}
-                >
-                  {item.label}
-                </button>
-              ) : (
-                <button
-                  key={item.label}
-                  type="button"
-                  disabled
-                  className="w-full text-left px-4 py-2 text-sm text-gray-300 cursor-not-allowed"
-                >
-                  {item.label}
-                </button>
-              )
-            )}
+            {CREATE_ITEMS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                disabled={pending}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => handleCreate(item.key)}
+              >
+                {item.label}
+              </button>
+            ))}
 
             <div className="border-t border-gray-100 my-1" />
 
-            {/* Placeholder items */}
-            {DISABLED_ITEMS.map((label) => (
+            {/* Misc items */}
+            {MISC_ITEMS.map((item) => (
               <button
-                key={label}
+                key={item.key}
                 type="button"
-                disabled
-                className="w-full text-left px-4 py-2 text-sm text-gray-300 cursor-not-allowed"
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => handleMisc(item.key)}
               >
-                {label}
+                {item.label}
               </button>
             ))}
 
@@ -178,15 +213,25 @@ export default function CustomerActionMenu({
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     onClick={onDisable}
                   >
-                    {pending ? 'Disabling…' : 'Disable Customer'}
+                    {pending ? 'Saving…' : 'Disable Customer'}
                   </button>
                 ) : (
                   <button
                     type="button"
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                    onClick={() => go(`customers/${customerId}`)}
+                    disabled={pending}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    onClick={() => {
+                      setOpen(false)
+                      setError(null)
+                      start(async () => {
+                        const res = await reactivateCustomer(customerId, orgId, orgSlug)
+                        if (res.error) { setError(res.error); return }
+                        showToast('Customer enabled')
+                        router.refresh()
+                      })
+                    }}
                   >
-                    Enable Customer
+                    {pending ? 'Saving…' : 'Enable Customer'}
                   </button>
                 )}
 

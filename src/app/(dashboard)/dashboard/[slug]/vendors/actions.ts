@@ -50,8 +50,20 @@ export async function searchVendors(
   term: string,
 ): Promise<VendorListRow[]> {
   const service = createServiceClient()
-  const digits = term.replace(/\D/g, '')
 
+  // Try trigram fuzzy search (requires pg_trgm + 062 migration)
+  try {
+    const { data: fuzzyData, error } = await service.rpc('search_vendors_fuzzy', {
+      p_org_id: orgId,
+      p_term: term,
+    }) as { data: VendorListRow[] | null; error: unknown }
+    if (!error && fuzzyData) return fuzzyData
+  } catch {
+    // pg_trgm not installed — fall through
+  }
+
+  // Fallback: ILIKE search
+  const digits = term.replace(/\D/g, '')
   const conds = [
     `name.ilike.%${term}%`,
     `primary_contact.ilike.%${term}%`,

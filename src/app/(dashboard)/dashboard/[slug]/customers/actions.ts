@@ -164,11 +164,18 @@ export async function loadMoreCustomers(
 
   const sort = filters.sort ?? 'name_asc'
   if (sort === 'name_desc') {
-    query = query.order('last_name', { ascending: false }).order('first_name', { ascending: false })
+    query = query
+      .order('company_name', { ascending: false, nullsFirst: true })
+      .order('last_name', { ascending: false })
+      .order('first_name', { ascending: false })
   } else if (sort === 'newest') {
     query = query.order('created_at', { ascending: false })
   } else {
-    query = query.order('last_name', { ascending: true }).order('first_name', { ascending: true })
+    // Default A→Z: company name first (nulls last), then last/first name
+    query = query
+      .order('company_name', { ascending: true, nullsFirst: false })
+      .order('last_name', { ascending: true })
+      .order('first_name', { ascending: true })
   }
 
   query = query.range(offset, offset + 49)
@@ -182,9 +189,30 @@ export async function searchCustomers(
   filters: { status?: string; type?: string; tag?: string },
 ): Promise<CustomerListRow[]> {
   const service = createServiceClient()
+
+  // Try trigram fuzzy search (requires pg_trgm extension + 062 migration)
+  try {
+    const { data: fuzzyData, error } = await service.rpc('search_customers_fuzzy', {
+      p_org_id: orgId,
+      p_term: term,
+    }) as { data: CustomerListRow[] | null; error: unknown }
+
+    if (!error && fuzzyData) {
+      let rows = fuzzyData
+      if (filters.status === 'inactive') rows = rows.filter((r) => r.is_active === false)
+      else if (filters.status) rows = rows.filter((r) => r.status === filters.status)
+      if (filters.type === 'company') rows = rows.filter((r) => r.company_name)
+      else if (filters.type === 'individual') rows = rows.filter((r) => !r.company_name)
+      if (filters.tag) rows = rows.filter((r) => r.tags?.includes(filters.tag!))
+      return rows
+    }
+  } catch {
+    // pg_trgm not installed — fall through to ILIKE search
+  }
+
+  // Fallback: ILIKE search (works without pg_trgm)
   const digits = term.replace(/\D/g, '')
 
-  // Also search linked contact names — fetch matching customer_ids first
   const { data: contactHits } = await service
     .from('customer_contacts')
     .select('customer_id')
@@ -210,21 +238,17 @@ export async function searchCustomers(
     .eq('organization_id', orgId)
     .or(conds.join(','))
 
-  if (filters.status === 'inactive') {
-    query = query.eq('is_active', false)
-  } else if (filters.status) {
-    query = query.eq('status', filters.status)
-  }
-  if (filters.type === 'company') {
-    query = query.not('company_name', 'is', null).neq('company_name', '')
-  } else if (filters.type === 'individual') {
-    query = query.or('company_name.is.null,company_name.eq.')
-  }
-  if (filters.tag) {
-    query = query.contains('tags', [filters.tag])
-  }
+  if (filters.status === 'inactive') query = query.eq('is_active', false)
+  else if (filters.status) query = query.eq('status', filters.status)
+  if (filters.type === 'company') query = query.not('company_name', 'is', null).neq('company_name', '')
+  else if (filters.type === 'individual') query = query.or('company_name.is.null,company_name.eq.')
+  if (filters.tag) query = query.contains('tags', [filters.tag])
 
-  query = query.order('last_name', { ascending: true }).order('first_name', { ascending: true }).limit(50)
+  query = query
+    .order('company_name', { ascending: true, nullsFirst: false })
+    .order('last_name', { ascending: true })
+    .order('first_name', { ascending: true })
+    .limit(50)
   const { data } = await query
   return (data ?? []) as CustomerListRow[]
 }
@@ -533,6 +557,22 @@ export async function deactivateCustomer(
   return {}
 }
 
+export async function reactivateCustomer(
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const { allowed } = await checkPermission(orgId, 'customers.edit')
+  if (!allowed) return { error: 'You do not have permission to edit customers.' }
+  const service = createServiceClient()
+  const { error } = await service
+    .from('customers').update({ is_active: true }).eq('id', customerId).eq('organization_id', orgId)
+  if (error) return { error: error.message }
+  revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  revalidatePath(`/dashboard/${orgSlug}/customers`)
+  return {}
+}
+
 export async function deleteContact(
   contactId: string,
   customerId: string,
@@ -563,6 +603,25 @@ export async function deleteContact(
     .eq('customer_id', customerId)
   if (error) return { error: error.message }
 
+  revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  return {}
+}
+
+// ── SALES LEAD ────────────────────────────────────────────────────────────────
+export async function createSalesLeadForCustomer(
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const { allowed } = await checkPermission(orgId, 'customers.edit')
+  if (!allowed) return { error: 'You do not have permission to update customers.' }
+  const service = createServiceClient()
+  const { error } = await service
+    .from('customers')
+    .update({ status: 'lead' })
+    .eq('id', customerId)
+    .eq('organization_id', orgId)
+  if (error) return { error: error.message }
   revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
   return {}
 }
