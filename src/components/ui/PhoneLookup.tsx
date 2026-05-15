@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { usePathname } from 'next/navigation'
 
 type Result = {
@@ -35,6 +36,7 @@ export default function PhoneLookup() {
   const slugMatch = pathname?.match(/\/dashboard\/([^/]+)/)
   const orgSlug = slugMatch?.[1]
 
+  const [mounted, setMounted] = useState(false)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Result[]>([])
@@ -42,6 +44,8 @@ export default function PhoneLookup() {
   const [activeIdx, setActiveIdx] = useState(-1)
   const [searched, setSearched] = useState(false)
   const [dropTop, setDropTop] = useState(0)
+
+  useEffect(() => setMounted(true), [])
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -155,17 +159,16 @@ export default function PhoneLookup() {
         <PhoneIcon className="h-5 w-5" />
       </button>
 
-      {/* Panel — fixed, 360px wide, right of sidebar (left: 228px) */}
-      {open && (
+      {/* Panel — portalled to document.body so no parent transform/overflow clips it */}
+      {open && mounted && createPortal(
         <div
           ref={panelRef}
           style={{
             position: 'fixed',
             top: dropTop,
             left: 228,
-            zIndex: 200,
+            zIndex: 9999,
             width: 360,
-            minWidth: 360,
           }}
           className="rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
         >
@@ -278,7 +281,8 @@ export default function PhoneLookup() {
           <div className="border-t border-gray-100 px-4 py-2 bg-gray-50">
             <p className="text-xs text-gray-400">↑↓ navigate · click or Enter opens in new tab · Esc to close</p>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
