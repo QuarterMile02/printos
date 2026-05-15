@@ -8,7 +8,7 @@ export default function TermsPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-16 text-gray-800">
       <h1 className="text-3xl font-extrabold mb-2">Terms of Service</h1>
-      <p className="text-sm text-gray-500 mb-8">Quarter Mile Inc. &mdash; Last updated May 14, 2025</p>
+      <p className="text-sm text-gray-500 mb-8">Quarter Mile Inc. &mdash; Last updated May 14, 2026</p>
 
       <section className="space-y-6 text-sm leading-relaxed">
         <div>

@@ -32,14 +32,20 @@ export async function createCustomer(
   const creditLimitRaw = (formData.get('credit_limit') as string | null)?.trim()
 
   const service = createServiceClient()
-  const { error } = await service.from('customers').insert({
+  const companyName = t(formData.get('company_name') as string | null)
+  const email = t(formData.get('email') as string | null)
+  const phone = t(formData.get('phone') as string | null)
+  const phone2 = t(formData.get('phone2') as string | null)
+
+  const { data: inserted, error } = await service.from('customers').insert({
     organization_id: orgId,
     // contact
     first_name: firstName,
     last_name: lastName,
-    company_name: t(formData.get('company_name') as string | null),
-    email: t(formData.get('email') as string | null),
-    phone: t(formData.get('phone') as string | null),
+    company_name: companyName,
+    email,
+    phone,
+    phone2,
     phone_ext: t(formData.get('phone_ext') as string | null),
     website: t(formData.get('website') as string | null),
     // primary address
@@ -83,8 +89,27 @@ export async function createCustomer(
     special_notes: t(formData.get('special_notes') as string | null),
     notes: t(formData.get('notes') as string | null),
     sms_consent: formData.get('sms_consent') === 'true',
-  })
+  }).select('id').single()
   if (error) return { error: error.message }
+
+  // Auto-create primary contact from the form's primary contact fields
+  if (inserted?.id) {
+    try {
+      await service.from('customer_contacts').insert({
+        customer_id: inserted.id,
+        organization_id: orgId,
+        full_name: `${firstName} ${lastName}`.trim(),
+        first_name: firstName,
+        last_name: lastName,
+        email,
+        phone,
+        is_primary: true,
+        is_ap_contact: false,
+      })
+    } catch {
+      // best-effort — don't fail the whole create if contact insert fails
+    }
+  }
 
   revalidatePath(`/dashboard/${orgSlug}/customers`)
   return {}
@@ -213,6 +238,8 @@ export type CustomerUpdatePayload = {
   company_name?: string | null
   email?: string | null
   phone?: string | null
+  phone2?: string | null
+  phone_ext?: string | null
   notes?: string | null
   legal_name?: string | null
   sales_rep?: string | null
@@ -263,7 +290,7 @@ export async function updateCustomer(
   // Build a clean payload (trim strings, preserve booleans/numbers)
   const payload: Record<string, unknown> = {}
   const textFields = [
-    'first_name', 'last_name', 'company_name', 'email', 'phone', 'notes',
+    'first_name', 'last_name', 'company_name', 'email', 'phone', 'phone2', 'phone_ext', 'notes',
     'legal_name', 'sales_rep', 'industry', 'lead_source', 'customer_group',
     'status', 'street', 'street2', 'city', 'state', 'zip', 'country',
     'secondary_street', 'secondary_city', 'secondary_state', 'secondary_zip', 'secondary_country',

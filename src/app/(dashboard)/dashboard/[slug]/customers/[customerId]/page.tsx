@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import type { JobStatus, QuoteStatus } from '@/types/database'
 import CustomerDetailClient from './customer-detail-client'
 import CustomerContactsSection from './customer-contacts'
-import CustomerDangerZone from './customer-danger-zone'
+import CustomerActionMenu from './customer-action-menu'
 import { QUOTE_STATUS_STYLES } from '../../quotes/format'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
@@ -38,7 +38,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
   type CustomerRow = {
     id: string; first_name: string; last_name: string; company_name: string | null
-    email: string | null; phone: string | null; notes: string | null; created_at: string
+    email: string | null; phone: string | null; phone2: string | null; phone_ext: string | null
+    notes: string | null; created_at: string
     legal_name: string | null; sales_rep: string | null; industry: string | null
     lead_source: string | null; customer_group: string | null; status: string | null
     is_active: boolean | null
@@ -54,9 +55,10 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     background_info: string | null; special_notes: string | null
     sms_consent: boolean | null
   }
+
   const { data: customer } = await supabase
     .from('customers')
-    .select(`id, first_name, last_name, company_name, email, phone, notes, created_at,
+    .select(`id, first_name, last_name, company_name, email, phone, phone2, phone_ext, notes, created_at,
       legal_name, sales_rep, industry, lead_source, customer_group, status, is_active,
       street, street2, city, state, zip, country,
       secondary_street, secondary_city, secondary_state, secondary_zip, secondary_country,
@@ -67,7 +69,6 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     .maybeSingle() as { data: CustomerRow | null; error: unknown }
   if (!customer) notFound()
 
-  // Resolve viewer's role for danger zone visibility
   const { data: membership } = await supabase
     .from('organization_members')
     .select('role')
@@ -87,14 +88,18 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active')
     .eq('customer_id', customerId)
     .eq('organization_id', org.id)
+    .order('is_primary', { ascending: false })
     .order('last_name', { ascending: true, nullsFirst: false })
-    .order('first_name', { ascending: true, nullsFirst: false })
     .order('full_name', { ascending: true }) as { data: ContactRow[] | null; error: unknown }
 
+  const primaryContact = (contactRows ?? []).find((c) => c.is_primary) ?? null
+
+  // Open jobs only (exclude completed + cancelled)
   type JobRow = { id: string; job_number: number; title: string; status: JobStatus; created_at: string }
-  const { data: jobRows } = await supabase
+  const { data: openJobRows } = await supabase
     .from('jobs').select('id, job_number, title, status, created_at')
     .eq('organization_id', org.id).eq('customer_id', customerId)
+    .neq('status', 'completed').neq('status', 'cancelled')
     .order('created_at', { ascending: false }) as { data: JobRow[] | null; error: unknown }
 
   type QuoteRow = { id: string; quote_number: number; title: string; status: QuoteStatus; created_at: string }
@@ -114,66 +119,85 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       perQuoteTotals.set(item.quote_id, (perQuoteTotals.get(item.quote_id) ?? 0) + item.quantity * item.unit_price)
   }
 
-  const jobs = jobRows ?? []
+  const openJobs = openJobRows ?? []
   const quotes = (quoteRows ?? []).map((q) => ({ ...q, total: perQuoteTotals.get(q.id) ?? 0 }))
+
+  const headerName = customer.company_name || `${customer.first_name} ${customer.last_name}`
 
   return (
     <div className="p-8 max-w-4xl">
       {/* Breadcrumbs */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-          <a href="/dashboard" className="hover:text-gray-700">Dashboard</a>
-          <span>/</span>
-          <a href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</a>
-          <span>/</span>
-          <a href={`/dashboard/${slug}/customers`} className="hover:text-gray-700">Customers</a>
-          <span>/</span>
-          <span className="text-gray-700">{customer.first_name} {customer.last_name}</span>
-        </div>
-        <a href={`/dashboard/${slug}/customers`} className="inline-flex items-center gap-1.5 text-sm font-medium text-qm-gray hover:text-qm-black transition-colors">
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-          </svg>
-          Back to Customers
-        </a>
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        <a href="/dashboard" className="hover:text-gray-700">Dashboard</a>
+        <span>/</span>
+        <a href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</a>
+        <span>/</span>
+        <a href={`/dashboard/${slug}/customers`} className="hover:text-gray-700">Customers</a>
+        <span>/</span>
+        <span className="text-gray-700">{headerName}</span>
       </div>
 
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-extrabold text-qm-black">{customer.first_name} {customer.last_name}</h1>
-        {customer.company_name && <p className="text-sm text-qm-gray mt-1">{customer.company_name}</p>}
-        <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-qm-gray">
-          {customer.email && (
-            <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 hover:text-qm-lime">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
-              </svg>
-              {customer.email}
-            </a>
-          )}
-          {customer.phone && (
-            <a href={`tel:${customer.phone}`} className="flex items-center gap-1.5 hover:text-qm-lime">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z" />
-              </svg>
-              {customer.phone}
-            </a>
-          )}
-          <span>Added {formatDate(customer.created_at)}</span>
+      <div className="flex items-start justify-between mb-8 gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold text-qm-black">{headerName}</h1>
+            {customer.is_active === false && (
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-500">
+                Inactive
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-gray-400">Added {formatDate(customer.created_at)}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-600">
+            {customer.email && (
+              <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 hover:text-qm-lime">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+                </svg>
+                {customer.email}
+              </a>
+            )}
+            {customer.phone && (
+              <a href={`tel:${customer.phone}`} className="flex items-center gap-1.5 hover:text-qm-lime">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z" />
+                </svg>
+                {customer.phone}
+                {customer.phone_ext && <span className="text-gray-400 ml-1">ext {customer.phone_ext}</span>}
+              </a>
+            )}
+          </div>
         </div>
+        <CustomerActionMenu
+          customerId={customer.id}
+          orgId={org.id}
+          orgSlug={slug}
+          customerName={headerName}
+          isActive={customer.is_active}
+          isOwnerOrAdmin={isOwnerOrAdmin}
+        />
       </div>
 
-      {/* Editable cards — Customer Details, Address, Account Info, Notes */}
+      {/* Editable cards — Address, Customer Details, Account Info */}
       <CustomerDetailClient
         customerId={customer.id}
         orgId={org.id}
         orgSlug={slug}
+        initialPrimaryContact={primaryContact ? {
+          full_name: primaryContact.full_name,
+          email: primaryContact.email,
+          phone: primaryContact.phone,
+          title: primaryContact.title,
+        } : null}
         initialData={{
           first_name: customer.first_name,
           last_name: customer.last_name,
           company_name: customer.company_name,
           email: customer.email,
           phone: customer.phone,
+          phone2: customer.phone2,
+          phone_ext: customer.phone_ext,
           notes: customer.notes,
           legal_name: customer.legal_name,
           sales_rep: customer.sales_rep,
@@ -208,7 +232,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         }}
       />
 
-      {/* Contacts */}
+      {/* Contacts — non-primary contacts */}
       <CustomerContactsSection
         customerId={customer.id}
         orgId={org.id}
@@ -216,17 +240,17 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         initialContacts={contactRows ?? []}
       />
 
-      {/* Jobs */}
+      {/* Open Jobs */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-base font-bold text-qm-black">Jobs</h2>
-          <span className="text-xs font-medium text-qm-gray">{jobs.length}</span>
+          <h2 className="text-base font-bold text-qm-black">Open Jobs</h2>
+          <span className="text-xs font-medium text-qm-gray">{openJobs.length}</span>
         </div>
-        {jobs.length === 0 ? (
-          <p className="px-6 py-8 text-center text-sm text-qm-gray">No jobs for this customer</p>
+        {openJobs.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-qm-gray">No open jobs</p>
         ) : (
           <div className="divide-y divide-gray-50">
-            {jobs.map((j) => (
+            {openJobs.map((j) => (
               <a key={j.id} href={`/dashboard/${slug}/jobs/${j.id}`} className="flex items-center justify-between px-6 py-3 hover:bg-qm-surface/50 transition-colors">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
@@ -240,6 +264,11 @@ export default async function CustomerDetailPage({ params }: PageProps) {
             ))}
           </div>
         )}
+        <div className="border-t border-gray-100 px-6 py-3">
+          <a href={`/dashboard/${slug}/jobs`} className="text-sm text-qm-lime hover:underline font-medium">
+            View all jobs →
+          </a>
+        </div>
       </div>
 
       {/* Quotes */}
@@ -270,14 +299,6 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           </div>
         )}
       </div>
-      <CustomerDangerZone
-        customerId={customer.id}
-        orgId={org.id}
-        orgSlug={slug}
-        customerName={`${customer.first_name} ${customer.last_name}`}
-        isActive={customer.is_active}
-        isOwnerOrAdmin={isOwnerOrAdmin}
-      />
     </div>
   )
 }

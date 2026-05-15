@@ -8,7 +8,7 @@ export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-16 text-gray-800">
       <h1 className="text-3xl font-extrabold mb-2">Privacy Policy</h1>
-      <p className="text-sm text-gray-500 mb-8">Quarter Mile Inc. &mdash; Last updated May 14, 2025</p>
+      <p className="text-sm text-gray-500 mb-8">Quarter Mile Inc. &mdash; Last updated May 14, 2026</p>
 
       <section className="space-y-6 text-sm leading-relaxed">
         <div>
@@ -17,6 +17,16 @@ export default function PrivacyPage() {
             Quarter Mile Inc. (&ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;) is committed to protecting your
             personal information. This Privacy Policy explains how we collect, use, and share
             information when you interact with us, including through SMS messaging.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <h2 className="text-base font-bold mb-2">Mobile Phone Numbers</h2>
+          <p>
+            We do not sell, rent, share, or disclose your mobile phone number to third parties or
+            affiliates for their own marketing purposes. Your mobile number is used solely to send
+            you transactional SMS messages related to your quotes, orders, and design proofs with
+            Quarter Mile Inc.
           </p>
         </div>
 
@@ -46,6 +56,10 @@ export default function PrivacyPage() {
           <p className="mt-2">
             We do not sell, rent, or share your phone number or SMS consent with third parties for
             their marketing purposes.
+          </p>
+          <p className="mt-2">
+            To opt out of SMS messages at any time, reply <strong>STOP</strong> to any message.
+            For help, reply <strong>HELP</strong>. Message and data rates may apply.
           </p>
         </div>
 
