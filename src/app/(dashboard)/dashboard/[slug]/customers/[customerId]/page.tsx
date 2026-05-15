@@ -52,6 +52,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     pricing_level: string | null; discount_percent: number | null
     website: string | null; allow_credit_card_payments: boolean | null
     background_info: string | null; special_notes: string | null
+    sms_consent: boolean | null
   }
   const { data: customer } = await supabase
     .from('customers')
@@ -61,7 +62,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       secondary_street, secondary_city, secondary_state, secondary_zip, secondary_country,
       terms, taxable, tax_exempt_code, tax_exempt_expires, credit_limit,
       pricing_level, discount_percent, website, allow_credit_card_payments,
-      background_info, special_notes`)
+      background_info, special_notes, sms_consent`)
     .eq('id', customerId).eq('organization_id', org.id)
     .maybeSingle() as { data: CustomerRow | null; error: unknown }
   if (!customer) notFound()
@@ -203,6 +204,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           allow_credit_card_payments: customer.allow_credit_card_payments,
           background_info: customer.background_info,
           special_notes: customer.special_notes,
+          sms_consent: customer.sms_consent,
         }}
       />
 

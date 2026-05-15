@@ -3,11 +3,9 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
   const raw = request.nextUrl.searchParams.get('q') ?? ''
-  const allDigits = raw.replace(/\D/g, '')
+  const digits = raw.replace(/\D/g, '')
 
-  // Require at least 7 digits; use last 7 to strip country codes
-  if (allDigits.length < 7) return NextResponse.json([])
-  const digits = allDigits.slice(-7)
+  if (digits.length < 2) return NextResponse.json([])
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -32,6 +30,8 @@ export async function GET(request: NextRequest) {
     phone: string | null
     customer_id: string
     org_slug: string
+    status: string | null
+    customer_name: string | null
   }
 
   const { data } = await service.rpc('lookup_by_phone', {
@@ -41,13 +41,15 @@ export async function GET(request: NextRequest) {
 
   const results = (data ?? []).map((r) => ({
     id: r.id,
-    result_type: r.result_type,           // 'customer' | 'contact'
+    result_type: r.result_type,
     display_name: r.display_name,
     company_name: r.company_name,
     phone: r.phone,
     customer_id: r.customer_id,
+    status: r.status,
+    customer_name: r.customer_name,
     url: `/dashboard/${r.org_slug}/customers/${r.customer_id}`,
-    // legacy shape consumed by PhoneLookup component
+    // legacy shape kept for backward compat
     first_name: r.display_name.split(' ')[0] ?? '',
     last_name: r.display_name.split(' ').slice(1).join(' ') ?? '',
   }))

@@ -1,14 +1,25 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { usePathname } from 'next/navigation'
 
 type Result = {
   id: string
-  first_name: string
-  last_name: string
+  result_type: string       // 'customer' | 'contact'
+  display_name: string
   company_name: string | null
   phone: string | null
-  url: string | null
+  customer_id: string
+  url: string
+  status: string | null
+  customer_name: string | null
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  lead: 'bg-gray-100 text-gray-600',
+  prospect: 'bg-yellow-50 text-yellow-700',
+  closable: 'bg-blue-50 text-blue-700',
+  sold: 'bg-green-50 text-green-700',
 }
 
 function PhoneIcon({ className }: { className?: string }) {
@@ -20,45 +31,32 @@ function PhoneIcon({ className }: { className?: string }) {
 }
 
 export default function PhoneLookup() {
+  const pathname = usePathname()
+  const slugMatch = pathname?.match(/\/dashboard\/([^/]+)/)
+  const orgSlug = slugMatch?.[1]
+
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Result[]>([])
   const [loading, setLoading] = useState(false)
   const [activeIdx, setActiveIdx] = useState(-1)
   const [searched, setSearched] = useState(false)
+  const [dropPos, setDropPos] = useState<{ top: number; left: number } | null>(null)
 
-  const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Focus input when popover opens
-  useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 0)
-  }, [open])
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        closePopover()
-      }
+  function openPanel() {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      setDropPos({ top: rect.bottom + 6, left: rect.left })
     }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
+    setOpen(true)
+  }
 
-  // Close on ESC globally
-  useEffect(() => {
-    if (!open) return
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') closePopover()
-    }
-    document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [open])
-
-  const closePopover = useCallback(() => {
+  const closePanel = useCallback(() => {
     setOpen(false)
     setQuery('')
     setResults([])
@@ -66,19 +64,46 @@ export default function PhoneLookup() {
     setSearched(false)
   }, [])
 
-  // Debounced search
+  // Focus input on open
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 0)
+  }, [open])
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    function handle(e: MouseEvent) {
+      const t = e.target as Node
+      if (
+        panelRef.current && !panelRef.current.contains(t) &&
+        triggerRef.current && !triggerRef.current.contains(t)
+      ) closePanel()
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [open, closePanel])
+
+  // Close on ESC
+  useEffect(() => {
+    if (!open) return
+    function handle(e: KeyboardEvent) {
+      if (e.key === 'Escape') closePanel()
+    }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [open, closePanel])
+
+  // Debounced search — 2-digit minimum
   useEffect(() => {
     if (!open) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
-
     const digits = query.replace(/\D/g, '')
-    if (digits.length < 4) {
+    if (digits.length < 2) {
       setResults([])
       setSearched(false)
       setLoading(false)
       return
     }
-
     setLoading(true)
     debounceRef.current = setTimeout(async () => {
       try {
@@ -95,10 +120,7 @@ export default function PhoneLookup() {
         setLoading(false)
       }
     }, 300)
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [query, open])
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -111,36 +133,42 @@ export default function PhoneLookup() {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       const target = activeIdx >= 0 ? results[activeIdx] : results[0]
-      if (target?.url) {
-        window.location.href = target.url
-        closePopover()
-      }
+      if (target?.url) window.open(target.url, '_blank')
+      // panel stays open
     }
   }
 
   const digits = query.replace(/\D/g, '')
-  const showDropdown = open && (loading || query.length > 0)
 
   return (
-    <div ref={containerRef} className="relative">
-      {/* Trigger button */}
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => open ? closePanel() : openPanel()}
         title="Phone lookup"
         aria-label="Phone lookup"
         className={`flex items-center justify-center rounded-md p-1.5 transition-colors ${
-          open
-            ? 'bg-qm-lime-light text-qm-lime'
-            : 'text-qm-gray hover:bg-qm-surface hover:text-qm-black'
+          open ? 'bg-qm-lime-light text-qm-lime' : 'text-qm-gray hover:bg-qm-surface hover:text-qm-black'
         }`}
       >
         <PhoneIcon className="h-5 w-5" />
       </button>
 
-      {/* Popover */}
-      {open && (
-        <div className="absolute left-0 top-full mt-2 z-50 w-80 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
+      {/* Fixed-position panel — escapes sidebar overflow/stacking context */}
+      {open && dropPos && (
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed',
+            top: dropPos.top,
+            left: dropPos.left,
+            zIndex: 200,
+            minWidth: 340,
+            maxWidth: 'calc(100vw - 16px)',
+          }}
+          className="rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
+        >
           {/* Search input */}
           <div className="px-3 pt-3 pb-2">
             <div className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 focus-within:border-qm-lime focus-within:ring-1 focus-within:ring-qm-lime">
@@ -162,70 +190,90 @@ export default function PhoneLookup() {
                 </svg>
               )}
             </div>
-            {digits.length > 0 && digits.length < 4 && (
-              <p className="mt-1.5 text-xs text-gray-400">Type at least 4 digits to search</p>
+            {digits.length === 1 && (
+              <p className="mt-1.5 text-xs text-gray-400">Type at least 2 digits to search</p>
             )}
           </div>
 
           {/* Results */}
-          {showDropdown && digits.length >= 4 && !loading && (
-            <div className="border-t border-gray-100">
+          {digits.length >= 2 && !loading && (
+            <div className="border-t border-gray-100 max-h-80 overflow-y-auto">
               {results.length > 0 ? (
                 <ul role="listbox">
                   {results.map((r, i) => (
-                    <li key={r.id} role="option" aria-selected={i === activeIdx}>
-                      <a
-                        href={r.url ?? '#'}
-                        onClick={closePopover}
+                    <li key={`${r.result_type}-${r.id}`} role="option" aria-selected={i === activeIdx}>
+                      <button
+                        type="button"
                         onMouseEnter={() => setActiveIdx(i)}
-                        className={`flex items-start gap-3 px-4 py-3 text-sm transition-colors ${
-                          i === activeIdx
-                            ? 'bg-qm-lime-light text-qm-black'
-                            : 'hover:bg-gray-50 text-gray-900'
+                        onClick={() => window.open(r.url, '_blank')}
+                        className={`w-full flex items-start gap-3 px-4 py-3 text-sm text-left transition-colors ${
+                          i === activeIdx ? 'bg-qm-lime-light' : 'hover:bg-gray-50'
                         }`}
                       >
-                        {/* Avatar initial */}
                         <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                           i === activeIdx ? 'bg-qm-lime text-white' : 'bg-gray-100 text-gray-600'
                         }`}>
-                          {r.first_name?.[0]?.toUpperCase() ?? '?'}
+                          {(r.result_type === 'contact' ? r.customer_name : r.display_name)?.[0]?.toUpperCase() ?? '?'}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block font-medium truncate">
-                            {r.first_name} {r.last_name}
+                          {r.result_type === 'contact' ? (
+                            <>
+                              <span className="block font-semibold text-gray-900 truncate">{r.customer_name}</span>
+                              <span className="block text-xs text-gray-500 truncate">→ {r.display_name}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="block font-semibold text-gray-900 truncate">{r.display_name}</span>
+                              {r.company_name && (
+                                <span className="block text-xs text-gray-500 truncate">{r.company_name}</span>
+                              )}
+                            </>
+                          )}
+                          <span className="flex items-center gap-2 mt-0.5">
+                            {r.phone && (
+                              <span className="text-xs text-qm-gray font-mono">{r.phone}</span>
+                            )}
+                            {r.status && (
+                              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-semibold capitalize ${STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                                {r.status}
+                              </span>
+                            )}
                           </span>
-                          {r.company_name && (
-                            <span className="block text-xs text-gray-500 truncate">{r.company_name}</span>
-                          )}
-                          {r.phone && (
-                            <span className="block text-xs text-qm-gray font-mono mt-0.5">{r.phone}</span>
-                          )}
                         </span>
                         <svg className="mt-1 h-4 w-4 shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                         </svg>
-                      </a>
+                      </button>
                     </li>
                   ))}
                 </ul>
               ) : searched ? (
-                <div className="px-4 py-4 text-center">
-                  <p className="text-sm text-gray-500">No customer found for <span className="font-mono">{query}</span></p>
+                <div className="px-4 py-5 text-center">
+                  <p className="text-sm text-gray-500 mb-3">
+                    No customer found for <span className="font-mono font-medium">{digits}</span>
+                  </p>
                   <button
                     type="button"
-                    onClick={closePopover}
-                    className="mt-1 text-sm font-medium text-qm-lime hover:underline"
+                    onClick={() => {
+                      const url = orgSlug
+                        ? `/dashboard/${orgSlug}/customers?new=true`
+                        : '/dashboard'
+                      window.open(url, '_blank')
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 transition-all"
                   >
-                    Dismiss and add manually →
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Add New Customer
                   </button>
                 </div>
               ) : null}
             </div>
           )}
 
-          {/* Hint footer */}
           <div className="border-t border-gray-100 px-4 py-2 bg-gray-50">
-            <p className="text-xs text-gray-400">↑↓ navigate · Enter to open · Esc to close</p>
+            <p className="text-xs text-gray-400">↑↓ navigate · click or Enter opens in new tab · Esc to close</p>
           </div>
         </div>
       )}

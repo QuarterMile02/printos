@@ -3,6 +3,40 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+export async function quickCreateCustomer(
+  orgId: string,
+  orgSlug: string,
+  firstName: string,
+  lastName: string,
+  companyName: string | null,
+): Promise<{ error?: string; id?: string; name?: string; company?: string | null }> {
+  const guard = await assertOwnerOrAdmin(orgId)
+  if (guard.error) return guard
+
+  const fn = firstName.trim()
+  const ln = lastName.trim()
+  if (!fn) return { error: 'First name is required.' }
+  if (!ln) return { error: 'Last name is required.' }
+
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('customers')
+    .insert({
+      organization_id: orgId,
+      first_name: fn,
+      last_name: ln,
+      company_name: companyName?.trim() || null,
+      is_active: true,
+    })
+    .select('id')
+    .single()
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/customers`)
+  return { id: data.id, name: `${fn} ${ln}`, company: companyName?.trim() || null }
+}
+
 async function assertOwnerOrAdmin(orgId: string): Promise<{ error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

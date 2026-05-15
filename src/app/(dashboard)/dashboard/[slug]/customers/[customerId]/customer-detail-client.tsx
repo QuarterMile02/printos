@@ -24,6 +24,7 @@ type CustomerData = {
   discount_percent: number | null; website: string | null
   allow_credit_card_payments: boolean | null
   background_info: string | null; special_notes: string | null
+  sms_consent: boolean | null
 }
 
 type Props = {
@@ -134,6 +135,7 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
         company_name: detailDraft.company_name,
         email: detailDraft.email,
         phone: detailDraft.phone,
+        sms_consent: detailDraft.sms_consent,
         notes: detailDraft.notes,
         legal_name: detailDraft.legal_name,
         sales_rep: detailDraft.sales_rep,
@@ -245,6 +247,26 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
                 />
               </div>
             </div>
+            <div>
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={detailDraft.sms_consent ?? false}
+                  onChange={(e) => setDetailDraft({ ...detailDraft, sms_consent: e.target.checked })}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-qm-lime"
+                />
+                <span className="text-xs text-gray-600 leading-relaxed">
+                  Yes, I agree to receive automated text messages from Quarter Mile Inc. about
+                  my quotes, design proofs, and order updates. Message frequency varies per order
+                  (typically 2–5 messages). Message and data rates may apply. Reply HELP for help
+                  or STOP to cancel anytime.{' '}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-qm-lime">Terms</a>
+                  {' | '}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-qm-lime">Privacy</a>.
+                  {' '}Consent is not required to make a purchase.
+                </span>
+              </label>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Status</Label>
                 <select value={detailDraft.status ?? 'lead'} onChange={(e) => setDetailDraft({ ...detailDraft, status: e.target.value })} className={sc}>
@@ -288,6 +310,14 @@ export default function CustomerDetailClient({ customerId, orgId, orgSlug, initi
             <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Company</dt><dd className="font-medium mt-0.5">{data.company_name ?? <Dash />}</dd></div>
             <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Email</dt><dd className="mt-0.5">{data.email ? <a href={`mailto:${data.email}`} className="text-qm-lime hover:underline">{data.email}</a> : <Dash />}</dd></div>
             <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Phone</dt><dd className="mt-0.5">{data.phone ? <a href={`tel:${data.phone}`} className="hover:underline">{data.phone}</a> : <Dash />}</dd></div>
+            <div>
+              <dt className="text-qm-gray text-xs uppercase tracking-wide">SMS Consent</dt>
+              <dd className="mt-0.5">
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${data.sms_consent ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
+                  {data.sms_consent ? 'Opted in' : 'Not opted in'}
+                </span>
+              </dd>
+            </div>
             {data.legal_name && <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Legal Name</dt><dd className="font-medium mt-0.5">{data.legal_name}</dd></div>}
             {data.sales_rep && <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Sales Rep</dt><dd className="mt-0.5">{data.sales_rep}</dd></div>}
             {data.industry && <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Industry</dt><dd className="mt-0.5">{data.industry}</dd></div>}

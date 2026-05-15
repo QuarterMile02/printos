@@ -82,6 +82,7 @@ export async function createCustomer(
     background_info: t(formData.get('background_info') as string | null),
     special_notes: t(formData.get('special_notes') as string | null),
     notes: t(formData.get('notes') as string | null),
+    sms_consent: formData.get('sms_consent') === 'true',
   })
   if (error) return { error: error.message }
 
@@ -244,6 +245,7 @@ export type CustomerUpdatePayload = {
   allow_credit_card_payments?: boolean | null
   background_info?: string | null
   special_notes?: string | null
+  sms_consent?: boolean | null
 }
 
 export async function updateCustomer(
@@ -268,7 +270,7 @@ export async function updateCustomer(
     'terms', 'tax_exempt_code', 'tax_exempt_expires', 'pricing_level',
     'website', 'background_info', 'special_notes',
   ] as const
-  const boolFields = ['taxable', 'is_active', 'allow_credit_card_payments'] as const
+  const boolFields = ['taxable', 'is_active', 'allow_credit_card_payments', 'sms_consent'] as const
   const numFields = ['credit_limit', 'discount_percent'] as const
 
   for (const f of textFields) {

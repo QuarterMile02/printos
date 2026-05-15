@@ -73,6 +73,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps }: Props)
   const [secZip, setSecZip] = useState('')
   const [secCountry, setSecCountry] = useState('US')
   const [taxable, setTaxable] = useState(true)
+  const [smsConsent, setSmsConsent] = useState(false)
 
   // Section visibility
   const [showSecondary, setShowSecondary] = useState(false)
@@ -91,6 +92,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps }: Props)
     setAddrCity(''); setAddrState(''); setAddrZip(''); setAddrCountry('US')
     setSecCity(''); setSecState(''); setSecZip(''); setSecCountry('US')
     setTaxable(true)
+    setSmsConsent(false)
     setShowSecondary(false); setShowAccount(false); setShowNotes(false)
   }
 
@@ -185,6 +187,28 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps }: Props)
                       <Lbl>Ext.</Lbl>
                       <input name="phone_ext" type="text" maxLength={10} placeholder="123" className={ic} />
                     </div>
+                  </div>
+
+                  <div>
+                    <input type="hidden" name="sms_consent" value={smsConsent ? 'true' : 'false'} />
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={smsConsent}
+                        onChange={(e) => setSmsConsent(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 accent-qm-lime"
+                      />
+                      <span className="text-xs text-gray-600 leading-relaxed">
+                        Yes, I agree to receive automated text messages from Quarter Mile Inc. about
+                        my quotes, design proofs, and order updates. Message frequency varies per order
+                        (typically 2–5 messages). Message and data rates may apply. Reply HELP for help
+                        or STOP to cancel anytime.{' '}
+                        <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-qm-lime">Terms</a>
+                        {' | '}
+                        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-qm-lime">Privacy</a>.
+                        {' '}Consent is not required to make a purchase.
+                      </span>
+                    </label>
                   </div>
                 </div>
 
