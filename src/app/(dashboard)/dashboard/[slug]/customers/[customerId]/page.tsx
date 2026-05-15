@@ -119,8 +119,15 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       perQuoteTotals.set(item.quote_id, (perQuoteTotals.get(item.quote_id) ?? 0) + item.quantity * item.unit_price)
   }
 
+  type InvoiceRow = { id: string; invoice_number: number; status: string; total: number; due_date: string | null; created_at: string }
+  const { data: invoiceRows } = await supabase
+    .from('invoices').select('id, invoice_number, status, total, due_date, created_at')
+    .eq('organization_id', org.id).eq('customer_id', customerId)
+    .order('created_at', { ascending: false }) as { data: InvoiceRow[] | null; error: unknown }
+
   const openJobs = openJobRows ?? []
   const quotes = (quoteRows ?? []).map((q) => ({ ...q, total: perQuoteTotals.get(q.id) ?? 0 }))
+  const invoices = invoiceRows ?? []
 
   const headerName = customer.company_name || `${customer.first_name} ${customer.last_name}`
 
@@ -179,11 +186,19 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         />
       </div>
 
-      {/* Editable cards — Address, Customer Details, Account Info */}
+      {/* Editable cards — Address, Customer Details, [Contacts slot], Account Info */}
       <CustomerDetailClient
         customerId={customer.id}
         orgId={org.id}
         orgSlug={slug}
+        contactsSlot={
+          <CustomerContactsSection
+            customerId={customer.id}
+            orgId={org.id}
+            orgSlug={slug}
+            initialContacts={contactRows ?? []}
+          />
+        }
         initialPrimaryContact={primaryContact ? {
           full_name: primaryContact.full_name,
           email: primaryContact.email,
@@ -230,14 +245,6 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           special_notes: customer.special_notes,
           sms_consent: customer.sms_consent,
         }}
-      />
-
-      {/* Contacts — non-primary contacts */}
-      <CustomerContactsSection
-        customerId={customer.id}
-        orgId={org.id}
-        orgSlug={slug}
-        initialContacts={contactRows ?? []}
       />
 
       {/* Open Jobs */}
@@ -298,6 +305,42 @@ export default async function CustomerDetailPage({ params }: PageProps) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Invoices */}
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+          <h2 className="text-base font-bold text-qm-black">Invoices</h2>
+          <span className="text-xs font-medium text-qm-gray">{invoices.length}</span>
+        </div>
+        {invoices.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-qm-gray">No invoices for this customer</p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {invoices.map((inv) => (
+              <a key={inv.id} href={`/dashboard/${slug}/invoices/${inv.id}`} className="flex items-center justify-between px-6 py-3 hover:bg-qm-surface/50 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-xs font-semibold text-qm-gray">INV-{inv.invoice_number}</span>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${
+                      { draft: 'bg-gray-100 text-gray-600', sent: 'bg-blue-50 text-blue-700', paid: 'bg-qm-lime-light text-qm-lime-dark', partial: 'bg-yellow-50 text-yellow-700', overdue: 'bg-red-50 text-red-700', void: 'bg-gray-100 text-gray-400' }[inv.status] ?? 'bg-gray-100 text-gray-600'
+                    }`}>{inv.status}</span>
+                  </div>
+                  {inv.due_date && <p className="text-xs text-qm-gray">Due {formatDate(inv.due_date)}</p>}
+                </div>
+                <div className="ml-4 shrink-0 text-right">
+                  <p className="text-sm font-semibold text-qm-black">${formatCents(inv.total ?? 0)}</p>
+                  <p className="text-xs text-qm-gray">{formatDate(inv.created_at)}</p>
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+        <div className="border-t border-gray-100 px-6 py-3">
+          <a href={`/dashboard/${slug}/invoices?customer_id=${customer.id}`} className="text-sm text-qm-lime hover:underline font-medium">
+            View all invoices →
+          </a>
+        </div>
       </div>
     </div>
   )

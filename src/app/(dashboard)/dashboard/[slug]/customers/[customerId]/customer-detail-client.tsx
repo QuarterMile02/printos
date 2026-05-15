@@ -40,6 +40,7 @@ type Props = {
   orgSlug: string
   initialData: CustomerData
   initialPrimaryContact: PrimaryContact
+  contactsSlot?: React.ReactNode
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -114,7 +115,7 @@ function CardActions({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function CustomerDetailClient({
-  customerId, orgId, orgSlug, initialData, initialPrimaryContact,
+  customerId, orgId, orgSlug, initialData, initialPrimaryContact, contactsSlot,
 }: Props) {
   const [data, setData] = useState<CustomerData>(initialData)
 
@@ -512,7 +513,10 @@ export default function CustomerDetailClient({
         )}
       </div>
 
-      {/* ── 3. ACCOUNT INFO CARD (third) ── */}
+      {/* ── 3. CONTACTS SLOT (injected from page) ── */}
+      {contactsSlot}
+
+      {/* ── 4. ACCOUNT INFO CARD (fourth) ── */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-bold text-qm-black">Account Info</h2>

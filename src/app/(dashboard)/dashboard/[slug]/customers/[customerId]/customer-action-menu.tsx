@@ -13,11 +13,10 @@ type Props = {
 }
 
 function MenuItem({
-  children, onClick, disabled, red, dimmed, title,
+  children, onClick, red, dimmed, title,
 }: {
   children: React.ReactNode
-  onClick?: () => void
-  disabled?: boolean
+  onClick?: (e: React.MouseEvent) => void
   red?: boolean
   dimmed?: boolean
   title?: string
@@ -26,7 +25,7 @@ function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
+      disabled={dimmed}
       title={title}
       className={`w-full text-left px-4 py-2 text-sm transition-colors ${
         dimmed
@@ -34,7 +33,7 @@ function MenuItem({
           : red
           ? 'text-red-600 hover:bg-red-50'
           : 'text-gray-700 hover:bg-gray-50'
-      } disabled:cursor-not-allowed`}
+      }`}
     >
       {children}
     </button>
@@ -43,14 +42,14 @@ function MenuItem({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400 select-none">
+    <div className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-400 select-none pointer-events-none">
       {children}
     </div>
   )
 }
 
 function Divider() {
-  return <div className="border-t border-gray-100 my-1" />
+  return <div className="border-t border-gray-100 my-1 pointer-events-none" />
 }
 
 export default function CustomerActionMenu({
@@ -62,35 +61,65 @@ export default function CustomerActionMenu({
   const [deletePending, startDelete] = useTransition()
   const menuRef = useRef<HTMLDivElement>(null)
 
+  // Close on outside click
   useEffect(() => {
     if (!open) return
     function handle(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
     }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
   }, [open])
 
-  function handleDeactivate() {
-    setOpen(false)
-    if (!confirm(`Disable "${customerName}"? They'll be hidden from active lists but all records are preserved.`)) return
-    setError(null)
-    startDeactivate(async () => {
-      const res = await deactivateCustomer(customerId, orgId, orgSlug)
-      if (res.error) { setError(res.error); return }
-      window.location.reload()
-    })
+  function nav(url: string) {
+    try {
+      setOpen(false)
+      window.location.href = url
+    } catch {
+      // ignore
+    }
   }
 
-  function handleDelete() {
+  function handleDeactivate(e: React.MouseEvent) {
+    e.stopPropagation()
     setOpen(false)
-    if (!confirm(`Permanently delete "${customerName}"? This cannot be undone.`)) return
-    setError(null)
-    startDelete(async () => {
-      const res = await deleteCustomer(customerId, orgId, orgSlug)
-      if (res.error) { setError(res.error); return }
-      window.location.href = `/dashboard/${orgSlug}/customers`
-    })
+    try {
+      if (!confirm(`Disable "${customerName}"? They'll be hidden from active lists but all records are preserved.`)) return
+      setError(null)
+      startDeactivate(async () => {
+        try {
+          const res = await deactivateCustomer(customerId, orgId, orgSlug)
+          if (res.error) { setError(res.error); return }
+          window.location.reload()
+        } catch {
+          setError('An error occurred. Please try again.')
+        }
+      })
+    } catch {
+      // ignore
+    }
+  }
+
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation()
+    setOpen(false)
+    try {
+      if (!confirm(`Permanently delete "${customerName}"? This cannot be undone.`)) return
+      setError(null)
+      startDelete(async () => {
+        try {
+          const res = await deleteCustomer(customerId, orgId, orgSlug)
+          if (res.error) { setError(res.error); return }
+          window.location.href = `/dashboard/${orgSlug}/customers`
+        } catch {
+          setError('An error occurred. Please try again.')
+        }
+      })
+    } catch {
+      // ignore
+    }
   }
 
   const base = `/dashboard/${orgSlug}`
@@ -98,7 +127,7 @@ export default function CustomerActionMenu({
 
   return (
     <div className="flex items-center gap-2">
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs text-red-600 max-w-[200px]">{error}</span>}
 
       {/* Pencil — scrolls to customer details section */}
       <a
@@ -115,31 +144,28 @@ export default function CustomerActionMenu({
       <div ref={menuRef} className="relative">
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => setOpen((prev) => !prev)}
           className={`inline-flex items-center justify-center rounded-md border border-gray-300 p-2 text-gray-600 hover:bg-gray-50 transition-colors ${open ? 'bg-gray-100' : ''}`}
           title="More actions"
         >
-          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-            <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="5" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="12" cy="19" r="1.5" />
           </svg>
         </button>
 
         {open && (
-          <div className="absolute right-0 top-full mt-1 z-[100] w-56 rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden py-1">
+          <div
+            className="absolute right-0 top-full mt-1 z-[200] w-56 rounded-lg border border-gray-200 bg-white shadow-xl py-1"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SectionLabel>Create</SectionLabel>
-            <MenuItem onClick={() => { setOpen(false); window.location.href = `${base}/quotes/new` }}>
-              Quote
-            </MenuItem>
-            <MenuItem onClick={() => { setOpen(false); window.location.href = `${base}/sales-orders` }}>
-              Sales Order
-            </MenuItem>
-            <MenuItem onClick={() => { setOpen(false); window.location.href = `${base}/invoices` }}>
-              Invoice
-            </MenuItem>
+            <MenuItem onClick={(e) => { e.stopPropagation(); nav(`${base}/quotes/new`) }}>Quote</MenuItem>
+            <MenuItem onClick={(e) => { e.stopPropagation(); nav(`${base}/sales-orders`) }}>Sales Order</MenuItem>
+            <MenuItem onClick={(e) => { e.stopPropagation(); nav(`${base}/invoices`) }}>Invoice</MenuItem>
             <MenuItem dimmed title="Coming soon">Payment</MenuItem>
-            <MenuItem onClick={() => { setOpen(false); window.location.href = `${base}/jobs` }}>
-              Job
-            </MenuItem>
+            <MenuItem onClick={(e) => { e.stopPropagation(); nav(`${base}/jobs`) }}>Job</MenuItem>
             <MenuItem dimmed title="Coming soon">Sales Lead</MenuItem>
 
             <Divider />
@@ -151,24 +177,16 @@ export default function CustomerActionMenu({
                 <Divider />
                 <MenuItem dimmed title="Coming soon">Merge Customer</MenuItem>
                 {isActive !== false ? (
-                  <MenuItem
-                    onClick={handleDeactivate}
-                    disabled={deactivatePending}
-                  >
+                  <MenuItem onClick={handleDeactivate} dimmed={deactivatePending}>
                     {deactivatePending ? 'Disabling…' : 'Disable Customer'}
                   </MenuItem>
                 ) : (
-                  <MenuItem
-                    onClick={() => {
-                      setOpen(false)
-                      window.location.href = `${base}/customers/${customerId}`
-                    }}
-                  >
+                  <MenuItem onClick={(e) => { e.stopPropagation(); nav(`${base}/customers/${customerId}`) }}>
                     Enable Customer
                   </MenuItem>
                 )}
                 {canDelete ? (
-                  <MenuItem red onClick={handleDelete} disabled={deletePending}>
+                  <MenuItem red onClick={handleDelete} dimmed={deletePending}>
                     {deletePending ? 'Deleting…' : 'Delete Customer'}
                   </MenuItem>
                 ) : (
