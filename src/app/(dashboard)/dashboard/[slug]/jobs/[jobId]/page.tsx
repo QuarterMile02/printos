@@ -668,45 +668,6 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
         </div>
       </div>
 
-      {/* Customer card */}
-      <div className="mt-6">
-        {job.customers && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm mb-3">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-3">Customer</h2>
-            <div className="flex flex-wrap gap-6 text-sm">
-              <div>
-                <span className="font-semibold text-gray-900">{job.customers.first_name} {job.customers.last_name}</span>
-                {job.customers.company_name && <p className="text-gray-500">{job.customers.company_name}</p>}
-              </div>
-              {job.customers.email && (
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Email </span>
-                  <a href={`mailto:${job.customers.email}`} className="text-qm-fuchsia hover:underline">{job.customers.email}</a>
-                </div>
-              )}
-              {job.customers.phone && (
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Phone </span>
-                  <a href={`tel:${job.customers.phone}`} className="text-qm-fuchsia hover:underline">{job.customers.phone}</a>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        <CustomerContactPicker
-          recordId={job.id}
-          recordType="job"
-          orgId={org.id}
-          orgSlug={slug}
-          initialCustomerId={job.customer_id}
-          initialCustomerName={job.customers ? `${job.customers.first_name} ${job.customers.last_name}` : null}
-          initialCompanyName={job.customers?.company_name ?? null}
-          initialContactId={jobContactId}
-          initialContactName={jobContactName}
-          isOwnerOrAdmin={isOwnerOrAdmin}
-          allowCustomerChange={canReassignJobCustomer}
-        />
-      </div>
     </div>
   )
 }

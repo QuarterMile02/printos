@@ -55,7 +55,7 @@ const STATUS_OPTIONS = [
   { value: 'prospect', label: 'Prospect' },
   { value: 'closable', label: 'Closable' },
   { value: 'sold', label: 'Sold' },
-  { value: 'inactive', label: 'Inactive' },
+  { value: 'inactive', label: 'Disabled' },
 ]
 const TYPE_OPTIONS = [
   { value: '', label: 'All Types' },
@@ -275,7 +275,7 @@ export default function CustomersListClient({
                     <td className="whitespace-nowrap px-4 py-3">
                       <a href={href}>
                         {isInactive ? (
-                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-red-50 text-red-600">Inactive</span>
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-red-50 text-red-600">Disabled</span>
                         ) : (
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-600'}`}>
                             {STATUS_LABELS[status] ?? status}
