@@ -6,7 +6,7 @@ import { searchCustomers } from '@/app/(dashboard)/dashboard/[slug]/customers/ac
 import {
   assignCustomerToQuote, assignContactToQuote,
   assignCustomerToSalesOrder, assignContactToSalesOrder,
-  assignContactToJob,
+  assignCustomerToJob, assignContactToJob,
   fetchContactsForCustomer,
   quickCreateCustomer,
   type ContactOption,
@@ -212,6 +212,9 @@ export default function CustomerContactPicker({
           if (res.error) { flash(res.error, false); return }
         } else if (recordType === 'sales_order') {
           const res = await assignCustomerToSalesOrder(recordId, orgId, orgSlug, pending.customerId)
+          if (res.error) { flash(res.error, false); return }
+        } else if (recordType === 'job') {
+          const res = await assignCustomerToJob(recordId, orgId, orgSlug, pending.customerId)
           if (res.error) { flash(res.error, false); return }
         }
       }

@@ -100,6 +100,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
     .maybeSingle() as { data: { role: string } | null; error: unknown }
   const isOwnerOrAdmin = jobMemberRow?.role === 'owner' || jobMemberRow?.role === 'admin'
+  // Owner, admin, or member (sales manager) can reassign the job's customer
+  const canReassignJobCustomer = ['owner', 'admin', 'member'].includes(jobMemberRow?.role ?? '')
 
   // contact_id (migration 058)
   let jobContactId: string | null = null
@@ -696,7 +698,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
           initialContactId={jobContactId}
           initialContactName={jobContactName}
           isOwnerOrAdmin={isOwnerOrAdmin}
-          allowCustomerChange={false}
+          allowCustomerChange={canReassignJobCustomer}
         />
       </div>
     </div>

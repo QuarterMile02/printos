@@ -114,6 +114,27 @@ export async function assignContactToSalesOrder(
 
 // ── Job ───────────────────────────────────────────────────────────────────────
 
+export async function assignCustomerToJob(
+  jobId: string, orgId: string, orgSlug: string, customerId: string | null,
+): Promise<{ error?: string }> {
+  // Allowed roles: owner, admin, member (sales manager)
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Not authenticated.' }
+  const { data: m } = await supabase
+    .from('organization_members').select('role')
+    .eq('organization_id', orgId).eq('user_id', user.id).maybeSingle() as { data: { role: string } | null; error: unknown }
+  if (!m || !['owner', 'admin', 'member'].includes(m.role))
+    return { error: 'Only owners, admins, and sales managers can reassign a job\'s customer.' }
+  const service = createServiceClient()
+  const { error } = await service.from('jobs')
+    .update({ customer_id: customerId, contact_id: null })
+    .eq('id', jobId).eq('organization_id', orgId)
+  if (error) return { error: error.message }
+  revalidatePath(`/dashboard/${orgSlug}/jobs/${jobId}`)
+  return {}
+}
+
 export async function assignContactToJob(
   jobId: string, orgId: string, orgSlug: string, contactId: string | null,
 ): Promise<{ error?: string }> {
