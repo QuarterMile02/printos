@@ -50,11 +50,17 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = q as any
     if (sort === 'name_desc') {
-      query = query.order('last_name', { ascending: false }).order('first_name', { ascending: false })
+      query = query
+        .order('company_name', { ascending: false, nullsFirst: true })
+        .order('last_name', { ascending: false })
+        .order('first_name', { ascending: false })
     } else if (sort === 'newest') {
       query = query.order('created_at', { ascending: false })
     } else {
-      query = query.order('last_name', { ascending: true }).order('first_name', { ascending: true })
+      query = query
+        .order('company_name', { ascending: true, nullsFirst: false })
+        .order('last_name', { ascending: true })
+        .order('first_name', { ascending: true })
     }
     return query
   }
