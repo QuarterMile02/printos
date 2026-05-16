@@ -19,6 +19,7 @@ type CustomerResult = {
   name: string
   company: string | null
   status: string | null
+  isActive: boolean | null
 }
 
 type Props = {
@@ -159,6 +160,7 @@ export default function CustomerContactPicker({
         name: `${r.first_name} ${r.last_name}`,
         company: r.company_name,
         status: r.status,
+        isActive: r.is_active ?? null,
       })))
       setIsSearching(false)
     }, 300)
@@ -365,11 +367,15 @@ export default function CustomerContactPicker({
                           {r.company && <p className="font-medium text-gray-900 truncate">{r.company}</p>}
                           <p className={r.company ? 'text-xs text-gray-500 truncate' : 'font-medium text-gray-900 truncate'}>{r.name}</p>
                         </div>
-                        {r.status && (
+                        {r.isActive === false ? (
+                          <span className="shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500">
+                            Disabled
+                          </span>
+                        ) : r.status ? (
                           <span className={`shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium capitalize ${STATUS_BADGE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
                             {r.status}
                           </span>
-                        )}
+                        ) : null}
                       </button>
                     ))
                   ) : custSearch.trim().length >= 2 && !isSearching ? (

@@ -4,7 +4,6 @@ import Link from 'next/link'
 import type { SalesOrderStatus, JobStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
 import SoDetailClient from './so-detail-client'
-import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
@@ -61,7 +60,7 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
     .eq('organization_id', org.id)
     .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
     .maybeSingle() as { data: { role: string } | null; error: unknown }
-  const isOwnerOrAdmin = soMemberRow?.role === 'owner' || soMemberRow?.role === 'admin'
+  const canReassignSoCustomer = ['owner', 'admin', 'member'].includes(soMemberRow?.role ?? '')
 
   // contact_id (migration 058)
   let soContactId: string | null = null
@@ -116,21 +115,6 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
         <span className="text-gray-700">SO-{String(so.so_number).padStart(4, '0')}</span>
       </div>
 
-      <CustomerContactPicker
-        recordId={so.id}
-        recordType="sales_order"
-        orgId={org.id}
-        orgSlug={slug}
-        initialCustomerId={so.customer_id}
-        initialCustomerName={so.customers ? `${so.customers.first_name} ${so.customers.last_name}` : null}
-        initialCompanyName={so.customers?.company_name ?? null}
-        initialContactId={soContactId}
-        initialContactName={soContactName}
-        isOwnerOrAdmin={isOwnerOrAdmin}
-        allowCustomerChange={true}
-      />
-
-      <div className="mt-4">
       <SoDetailClient
         orgId={org.id}
         orgSlug={slug}
@@ -143,6 +127,7 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
           notes: so.notes,
           created_at: so.created_at,
           updated_at: so.updated_at,
+          customer_id: so.customer_id,
           customer: so.customers ?? null,
         }}
         parentQuote={parentQuote}
@@ -154,8 +139,10 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
           due_date: j.due_date,
         }))}
         canSeePricing={canSeePricing}
+        initialContactId={soContactId}
+        initialContactName={soContactName}
+        canReassignCustomer={canReassignSoCustomer}
       />
-      </div>
     </div>
   )
 }

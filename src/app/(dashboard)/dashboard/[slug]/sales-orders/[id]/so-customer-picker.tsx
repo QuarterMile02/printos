@@ -4,8 +4,8 @@ import { useState, useRef, useEffect, useTransition, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { searchCustomers } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
 import {
-  assignCustomerToJob,
-  assignContactToJob,
+  assignCustomerToSalesOrder,
+  assignContactToSalesOrder,
   fetchContactsForCustomer,
   type ContactOption,
 } from '@/app/(dashboard)/dashboard/[slug]/assign-actions'
@@ -13,18 +13,17 @@ import {
 type CustomerResult = { id: string; name: string; company: string | null; status: string | null; isActive: boolean | null }
 
 type Props = {
-  jobId: string
+  soId: string
   orgId: string
   orgSlug: string
   initialCustomerId: string | null
-  initialCustomerName: string | null   // "First Last"
+  initialCustomerName: string | null
   initialCompanyName: string | null
   initialContactId: string | null
   initialContactName: string | null
   canReassign: boolean
 }
 
-// Defined at module level — no re-creation per render
 const STATUS_BADGE: Record<string, string> = {
   lead: 'bg-gray-100 text-gray-700',
   prospect: 'bg-yellow-50 text-yellow-700',
@@ -40,47 +39,43 @@ function PencilIcon() {
   )
 }
 
-export default function JobCustomerPicker({
-  jobId, orgId, orgSlug,
+export default function SoCustomerPicker({
+  soId, orgId, orgSlug,
   initialCustomerId, initialCustomerName, initialCompanyName,
   initialContactId, initialContactName,
   canReassign,
 }: Props) {
   const router = useRouter()
 
-  // Committed (saved) state
   const [customerId, setCustomerId]     = useState(initialCustomerId)
   const [customerName, setCustomerName] = useState(initialCustomerName)
   const [companyName, setCompanyName]   = useState(initialCompanyName)
   const [contactId, setContactId]       = useState(initialContactId)
   const [contactName, setContactName]   = useState(initialContactName)
 
-  // Pending (staged) selection
-  const [pendingCustId, setPendingCustId]       = useState<string | null>(null)
-  const [pendingCustName, setPendingCustName]   = useState<string | null>(null)
-  const [pendingCustCo, setPendingCustCo]       = useState<string | null>(null)
-  const [pendingContactId, setPendingContactId] = useState<string | null>(null)
+  const [pendingCustId, setPendingCustId]           = useState<string | null>(null)
+  const [pendingCustName, setPendingCustName]       = useState<string | null>(null)
+  const [pendingCustCo, setPendingCustCo]           = useState<string | null>(null)
+  const [pendingContactId, setPendingContactId]     = useState<string | null>(null)
   const [pendingContactName, setPendingContactName] = useState<string | null>(null)
 
-  // Dropdown state
-  const [open, setOpen]             = useState(false)
-  const [search, setSearch]         = useState('')
-  const [results, setResults]       = useState<CustomerResult[]>([])
+  const [open, setOpen]               = useState(false)
+  const [search, setSearch]           = useState('')
+  const [results, setResults]         = useState<CustomerResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
 
-  // Contact dropdown
-  const [contactOpts, setContactOpts]             = useState<ContactOption[]>([])
-  const [contactDropOpen, setContactDropOpen]     = useState(false)
-  const [loadingContacts, setLoadingContacts]     = useState(false)
+  const [contactOpts, setContactOpts]           = useState<ContactOption[]>([])
+  const [contactDropOpen, setContactDropOpen]   = useState(false)
+  const [loadingContacts, setLoadingContacts]   = useState(false)
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [saving, startSave] = useTransition()
 
-  const dropRef     = useRef<HTMLDivElement>(null)
-  const contactRef  = useRef<HTMLDivElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const seqRef      = useRef(0)
-  const toastTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dropRef      = useRef<HTMLDivElement>(null)
+  const contactRef   = useRef<HTMLDivElement>(null)
+  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seqRef       = useRef(0)
+  const toastTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const hasPending = pendingCustId !== null
 
@@ -90,7 +85,6 @@ export default function JobCustomerPicker({
     toastTimer.current = setTimeout(() => setToast(null), 3500)
   }
 
-  // Close customer dropdown on outside click
   const closeDropdown = useCallback(() => {
     setOpen(false)
     setSearch('')
@@ -107,7 +101,6 @@ export default function JobCustomerPicker({
     return () => document.removeEventListener('mousedown', handle)
   }, [open, closeDropdown])
 
-  // Close contact dropdown on outside click
   useEffect(() => {
     if (!contactDropOpen) return
     function handle(e: MouseEvent) {
@@ -117,7 +110,6 @@ export default function JobCustomerPicker({
     return () => document.removeEventListener('mousedown', handle)
   }, [contactDropOpen])
 
-  // Customer search with debounce
   function handleSearchChange(val: string) {
     setSearch(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -176,10 +168,8 @@ export default function JobCustomerPicker({
 
   function handleSave() {
     startSave(async () => {
-      // Save customer if changed
-      const targetCustId = pendingCustId ?? customerId
       if (pendingCustId && pendingCustId !== customerId) {
-        const res = await assignCustomerToJob(jobId, orgId, orgSlug, targetCustId)
+        const res = await assignCustomerToSalesOrder(soId, orgId, orgSlug, pendingCustId)
         if (res.error) { flash(res.error, false); return }
         setCustomerId(pendingCustId)
         setCustomerName(pendingCustName)
@@ -187,9 +177,8 @@ export default function JobCustomerPicker({
         setContactId(null); setContactName(null)
       }
 
-      // Save contact if changed
       if (pendingContactId !== contactId) {
-        const res = await assignContactToJob(jobId, orgId, orgSlug, pendingContactId)
+        const res = await assignContactToSalesOrder(soId, orgId, orgSlug, pendingContactId)
         if (res.error) { flash(res.error, false); return }
         setContactId(pendingContactId)
         setContactName(pendingContactName)
@@ -201,21 +190,18 @@ export default function JobCustomerPicker({
     })
   }
 
-  // Display values (show pending if staged, otherwise committed)
   const displayName    = hasPending ? pendingCustName    : customerName
   const displayCompany = hasPending ? pendingCustCo      : companyName
   const displayContact = hasPending ? pendingContactName : contactName
 
   return (
     <div className="mt-1">
-      {/* Toast feedback */}
       {toast && (
         <p className={`text-xs font-medium mb-1 ${toast.ok ? 'text-green-600' : 'text-red-600'}`}>
           {toast.msg}
         </p>
       )}
 
-      {/* Customer name row with hover pencil */}
       <div ref={dropRef} className="relative">
         <div className="group flex items-center gap-1.5">
           <span className="text-sm text-gray-600">
@@ -237,10 +223,8 @@ export default function JobCustomerPicker({
           )}
         </div>
 
-        {/* Customer search dropdown */}
         {open && (
           <div className="absolute left-0 top-full mt-1 z-[200] w-72 rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden">
-            {/* Search input */}
             <div className="p-2 border-b border-gray-100">
               <div className="relative">
                 {isSearching ? (
@@ -264,7 +248,6 @@ export default function JobCustomerPicker({
               </div>
             </div>
 
-            {/* Results */}
             <div className="max-h-52 overflow-y-auto">
               {results.length > 0 ? (
                 results.map((r) => (
@@ -307,7 +290,6 @@ export default function JobCustomerPicker({
         )}
       </div>
 
-      {/* Optional contact row — shown when a pending customer is selected */}
       {hasPending && (
         <div ref={contactRef} className="relative mt-1">
           <div className="group flex items-center gap-1.5">
@@ -366,7 +348,6 @@ export default function JobCustomerPicker({
         </div>
       )}
 
-      {/* Save / Cancel — appear when a pending customer is staged */}
       {hasPending && (
         <div className="flex items-center gap-2 mt-2">
           <button

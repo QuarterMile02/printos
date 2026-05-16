@@ -10,6 +10,7 @@ import {
   SO_STATUS_STYLES,
   SO_STATUS_LABELS,
 } from '../format'
+import SoCustomerPicker from './so-customer-picker'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New',
@@ -36,6 +37,7 @@ type SalesOrder = {
   notes: string | null
   created_at: string
   updated_at: string
+  customer_id: string | null
   customer: {
     first_name: string
     last_name: string
@@ -67,6 +69,9 @@ type Props = {
   parentQuote: QuoteRef | null
   jobs: Job[]
   canSeePricing: boolean
+  initialContactId: string | null
+  initialContactName: string | null
+  canReassignCustomer: boolean
 }
 
 const MANUAL_STATUSES: { value: SalesOrderStatus; label: string }[] = [
@@ -84,6 +89,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, canSeePricing,
+  initialContactId, initialContactName, canReassignCustomer,
 }: Props) {
   const [isPending, startTransition] = useTransition()
   const [status, setStatus] = useState<SalesOrderStatus>(salesOrder.status)
@@ -135,14 +141,17 @@ export default function SoDetailClient({
             <h1 className="mt-1 text-2xl font-extrabold text-gray-900">
               {salesOrder.title || 'Untitled Sales Order'}
             </h1>
-            {customerName ? (
-              <p className="mt-1 text-sm text-gray-600">
-                {customerName}
-                {companyName && <span className="text-gray-400"> &mdash; {companyName}</span>}
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-gray-400">No customer linked</p>
-            )}
+            <SoCustomerPicker
+              soId={salesOrder.id}
+              orgId={orgId}
+              orgSlug={orgSlug}
+              initialCustomerId={salesOrder.customer_id}
+              initialCustomerName={customerName}
+              initialCompanyName={companyName ?? null}
+              initialContactId={initialContactId}
+              initialContactName={initialContactName}
+              canReassign={canReassignCustomer}
+            />
           </div>
           <div className="text-right">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${SO_STATUS_STYLES[status]}`}>
