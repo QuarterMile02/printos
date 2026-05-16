@@ -321,10 +321,17 @@ export default function QuoteTable({
               <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
                 {quote.title}
               </td>
-              <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                {quote.customer
-                  ? `${quote.customer.first_name} ${quote.customer.last_name}${quote.customer.company_name ? ` (${quote.customer.company_name})` : ''}`
-                  : <span className="text-gray-300">—</span>}
+              <td className="px-6 py-4 text-sm max-w-[200px]">
+                {quote.customer ? (
+                  <div>
+                    <p className="font-medium text-gray-900 truncate">
+                      {quote.customer.company_name || `${quote.customer.first_name} ${quote.customer.last_name}`}
+                    </p>
+                    {quote.customer.company_name && (
+                      <p className="text-xs text-gray-500 truncate">{quote.customer.first_name} {quote.customer.last_name}</p>
+                    )}
+                  </div>
+                ) : <span className="text-gray-300">—</span>}
               </td>
               {canSeePricing && (
                 <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 text-right font-medium">

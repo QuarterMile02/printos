@@ -114,10 +114,17 @@ export default function SalesOrderTable({
                   <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-900">
                     {so.title || <span className="text-gray-300">&mdash;</span>}
                   </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {so.customer
-                      ? `${so.customer.first_name} ${so.customer.last_name}${so.customer.company_name ? ` (${so.customer.company_name})` : ''}`
-                      : <span className="text-gray-300">&mdash;</span>}
+                  <td className="px-6 py-4 text-sm max-w-[200px]">
+                    {so.customer ? (
+                      <div>
+                        <p className="font-medium text-gray-900 truncate">
+                          {so.customer.company_name || `${so.customer.first_name} ${so.customer.last_name}`}
+                        </p>
+                        {so.customer.company_name && (
+                          <p className="text-xs text-gray-500 truncate">{so.customer.first_name} {so.customer.last_name}</p>
+                        )}
+                      </div>
+                    ) : <span className="text-gray-300">&mdash;</span>}
                   </td>
                   {canSeePricing && (
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900 text-right font-medium">

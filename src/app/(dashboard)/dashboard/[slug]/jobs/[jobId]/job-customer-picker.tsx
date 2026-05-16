@@ -217,13 +217,19 @@ export default function JobCustomerPicker({
 
       {/* Customer name row with hover pencil */}
       <div ref={dropRef} className="relative">
-        <div className="group flex items-center gap-1.5">
-          <span className="text-sm text-gray-600">
-            {displayName ?? <span className="text-gray-400 italic">No customer assigned</span>}
-            {displayCompany && (
-              <span className="text-gray-400"> &mdash; {displayCompany}</span>
+        <div className="group flex items-start gap-1.5">
+          <div>
+            {displayCompany ? (
+              <>
+                <p className="text-sm font-semibold text-gray-900">{displayCompany}</p>
+                {displayName && <p className="text-xs text-gray-500">{displayName}</p>}
+              </>
+            ) : (
+              <p className="text-sm text-gray-600">
+                {displayName ?? <span className="text-gray-400 italic">No customer assigned</span>}
+              </p>
             )}
-          </span>
+          </div>
 
           {canReassign && (
             <button

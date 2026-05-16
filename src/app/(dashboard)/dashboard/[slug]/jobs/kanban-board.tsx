@@ -187,12 +187,14 @@ function JobCardItem({ job, orgId, orgSlug, onNotified, printMode, selected, onT
         </div>
         <p className="text-sm font-medium text-gray-900 leading-snug mb-1">{job.title}</p>
         {job.customer && (
-          <p className="text-xs text-gray-500">
-            {job.customer.first_name} {job.customer.last_name}
+          <div>
+            <p className="text-xs font-medium text-gray-700 truncate">
+              {job.customer.company_name || `${job.customer.first_name} ${job.customer.last_name}`}
+            </p>
             {job.customer.company_name && (
-              <span className="text-gray-400"> &middot; {job.customer.company_name}</span>
+              <p className="text-xs text-gray-400 truncate">{job.customer.first_name} {job.customer.last_name}</p>
             )}
-          </p>
+          </div>
         )}
         {job.due_date && (
           <div className={`mt-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${dueDateStyle}`}>
@@ -240,12 +242,14 @@ function JobCardItem({ job, orgId, orgSlug, onNotified, printMode, selected, onT
 
       {/* Customer */}
       {job.customer && (
-        <p className="text-xs text-gray-500 mb-2">
-          {job.customer.first_name} {job.customer.last_name}
+        <div className="mb-2">
+          <p className="text-xs font-medium text-gray-700 truncate">
+            {job.customer.company_name || `${job.customer.first_name} ${job.customer.last_name}`}
+          </p>
           {job.customer.company_name && (
-            <span className="text-gray-400"> &middot; {job.customer.company_name}</span>
+            <p className="text-xs text-gray-400 truncate">{job.customer.first_name} {job.customer.last_name}</p>
           )}
-        </p>
+        </div>
       )}
 
       {/* Due date badge */}

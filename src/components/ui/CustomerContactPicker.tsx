@@ -288,23 +288,38 @@ export default function CustomerContactPicker({
           {/* Name — clickable link + hover pencil */}
           <div className="min-w-0 flex-1">
             {pending.customerName ? (
-              <>
-                {pending.companyName && (
-                  <p className="text-xs text-gray-500 truncate leading-tight">{pending.companyName}</p>
-                )}
-                {customerDetailUrl ? (
-                  <a
-                    href={customerDetailUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-semibold text-gray-900 hover:underline leading-snug"
-                  >
-                    {pending.customerName}
-                  </a>
-                ) : (
-                  <span className="font-semibold text-gray-900 leading-snug">{pending.customerName}</span>
-                )}
-              </>
+              pending.companyName ? (
+                <>
+                  <p className="font-semibold text-gray-900 truncate leading-tight">{pending.companyName}</p>
+                  {customerDetailUrl ? (
+                    <a
+                      href={customerDetailUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-gray-500 hover:underline leading-tight"
+                    >
+                      {pending.customerName}
+                    </a>
+                  ) : (
+                    <span className="text-sm text-gray-500 leading-tight">{pending.customerName}</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  {customerDetailUrl ? (
+                    <a
+                      href={customerDetailUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-gray-900 hover:underline leading-snug"
+                    >
+                      {pending.customerName}
+                    </a>
+                  ) : (
+                    <span className="font-semibold text-gray-900 leading-snug">{pending.customerName}</span>
+                  )}
+                </>
+              )
             ) : (
               <span className="text-sm text-gray-400 italic">No customer assigned</span>
             )}
