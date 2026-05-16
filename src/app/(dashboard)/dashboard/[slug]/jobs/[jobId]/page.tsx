@@ -8,6 +8,7 @@ import DepartmentSelect from './department-select'
 import WorkflowChecklist, { type WorkflowStep, type WorkflowProgress } from './workflow-checklist'
 import { checkPermission } from '@/lib/check-permission'
 import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
+import JobCustomerPicker from './job-customer-picker'
 
 export const dynamic = 'force-dynamic'
 
@@ -302,12 +303,17 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
               )}
             </div>
             <p className="mt-1 text-lg font-medium text-gray-900">{job.title}</p>
-            {job.customers && (
-              <p className="mt-1 text-sm text-gray-600">
-                {job.customers.first_name} {job.customers.last_name}
-                {job.customers.company_name && <span className="text-gray-400"> &mdash; {job.customers.company_name}</span>}
-              </p>
-            )}
+            <JobCustomerPicker
+              jobId={job.id}
+              orgId={org.id}
+              orgSlug={slug}
+              initialCustomerId={job.customer_id}
+              initialCustomerName={job.customers ? `${job.customers.first_name} ${job.customers.last_name}` : null}
+              initialCompanyName={job.customers?.company_name ?? null}
+              initialContactId={jobContactId}
+              initialContactName={jobContactName}
+              canReassign={canReassignJobCustomer}
+            />
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="text-right text-sm text-gray-500">
