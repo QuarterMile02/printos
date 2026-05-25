@@ -12,14 +12,14 @@ export async function GET() {
   const { data: all, error: e1 } = await supabase
     .from('materials')
     .select('name, active')
-    .limit(3)
+    .limit(2000)
 
   // Test 2: active = true
   const { data: active, error: e2 } = await supabase
     .from('materials')
     .select('name, active')
     .eq('active', true)
-    .limit(3)
+    .limit(2000)
 
   return NextResponse.json({
     keyPresent: !!process.env.SUPABASE_SERVICE_ROLE_KEY,

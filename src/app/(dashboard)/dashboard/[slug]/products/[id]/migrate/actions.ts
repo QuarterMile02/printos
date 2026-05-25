@@ -524,6 +524,7 @@ export async function fetchMaterialsForQuote(_orgId?: string) {
     .from('materials')
     .select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage')
     .eq('active', true)
+    .limit(2000)
   if (error) console.error('fetchMaterialsForQuote error:', error)
   return data ?? []
 }
