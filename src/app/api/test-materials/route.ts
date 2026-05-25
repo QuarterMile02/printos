@@ -7,17 +7,24 @@ export async function GET() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false, autoRefreshToken: false } }
   )
-  const { data, error } = await supabase
+
+  // Test 1: no filter
+  const { data: all, error: e1 } = await supabase
     .from('materials')
-    .select('name, cost, active')
+    .select('name, active')
+    .limit(3)
+
+  // Test 2: active = true
+  const { data: active, error: e2 } = await supabase
+    .from('materials')
+    .select('name, active')
     .eq('active', true)
-    .limit(5)
+    .limit(3)
 
   return NextResponse.json({
-    count: data?.length ?? 0,
-    error: error?.message ?? null,
-    first3: data?.slice(0,3).map(m => m.name) ?? [],
     keyPresent: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-    keyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0,12) ?? 'MISSING'
+    keyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0,15) ?? 'MISSING',
+    noFilter: { count: all?.length ?? 0, error: e1?.message ?? null, sample: all?.[0] },
+    activeFilter: { count: active?.length ?? 0, error: e2?.message ?? null, sample: active?.[0] }
   })
 }
