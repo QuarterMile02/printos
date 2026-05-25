@@ -94,6 +94,9 @@ export interface MachineRate {
   linked_labor_rate_id: string | null
   production_mins_per_sqft: number | null
   prod_rate_units: string | null
+  operator_attendance_percent: number | null
+  production_factor: number | null
+  show_name: boolean | null
   pricing_table: PricingTableRow[] | null
   created_at: string; created_by: string | null; updated_at: string; updated_by: string | null
 }

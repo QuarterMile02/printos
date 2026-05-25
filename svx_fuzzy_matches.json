@@ -1,0 +1,116 @@
+[
+  {
+    "printosId": "cad0d55c-0436-48cc-b543-5a22df15a74f",
+    "printosName": "Box Truck Wrap- Full (Panels)",
+    "svxKey": "Box Truck Wrap- Full",
+    "reason": "suffix-strip: \"Box Truck Wrap- Full (Panels)\" → stripped to \"Box Truck Wrap- Full\""
+  },
+  {
+    "printosId": "e6abf366-e488-4479-961e-99a2c70c6da1",
+    "printosName": "Box Truck Wrap- Spot/ Partial (Panels)",
+    "svxKey": "Box Truck Wrap- Spot/ Partial",
+    "reason": "suffix-strip: \"Box Truck Wrap- Spot/ Partial (Panels)\" → stripped to \"Box Truck Wrap- Spot/ Partial\""
+  },
+  {
+    "printosId": "54cc6450-d306-4dce-9cc5-bf7e69e656d7",
+    "printosName": "Car & Small SUV Wrap- Full (PANELS)",
+    "svxKey": "Car & Small SUV Wrap- Full",
+    "reason": "suffix-strip: \"Car & Small SUV Wrap- Full (PANELS)\" → stripped to \"Car & Small SUV Wrap- Full\""
+  },
+  {
+    "printosId": "f8fc06f3-6fed-47a1-b967-96d44bc2d210",
+    "printosName": "Magnet LF- Direct Printing (Panels)",
+    "svxKey": "Magnet LF- Direct Printing",
+    "reason": "suffix-strip: \"Magnet LF- Direct Printing (Panels)\" → stripped to \"Magnet LF- Direct Printing\""
+  },
+  {
+    "printosId": "53fb8b25-69ad-4627-8436-eea1bbadb7f0",
+    "printosName": "Magnet LF- Vinyl Transfer (Panels)",
+    "svxKey": "Magnet LF- Vinyl Transfer",
+    "reason": "suffix-strip: \"Magnet LF- Vinyl Transfer (Panels)\" → stripped to \"Magnet LF- Vinyl Transfer\""
+  },
+  {
+    "printosId": "7d41192d-1802-4a5f-a323-c20e1287a636",
+    "printosName": "Magnet Promo- Direct Printing (Panels)",
+    "svxKey": "Magnet Promo- Direct Printing",
+    "reason": "suffix-strip: \"Magnet Promo- Direct Printing (Panels)\" → stripped to \"Magnet Promo- Direct Printing\""
+  },
+  {
+    "printosId": "1bc0fb68-bf72-4848-8655-4827b587327f",
+    "printosName": "Perforated- Digital (PANELS)",
+    "svxKey": "Perforated- Digital",
+    "reason": "suffix-strip: \"Perforated- Digital (PANELS)\" → stripped to \"Perforated- Digital\""
+  },
+  {
+    "printosId": "6a8357c0-7bc1-4917-b9be-9af4e3185ee0",
+    "printosName": "Solid Vinyl Covering- Intermediate/ Cast/ Reflective/ Translucent (Panels)",
+    "svxKey": "Solid Vinyl Covering- Intermediate/ Cast/ Reflective/ Translucent",
+    "reason": "suffix-strip: \"Solid Vinyl Covering- Intermediate/ Cast/ Reflective/ Translucent (Panels)\" → stripped to \"Solid Vinyl Covering- Intermediate/ Cast/ Reflective/ Translucent\""
+  },
+  {
+    "printosId": "4c9bd309-e19e-4073-801d-f52bc4cb7a77",
+    "printosName": "Stencil/ Pattern- Kraft Paper or Polystrene or Coroplast",
+    "svxKey": "Stencil/ Pattern- Kraft Paper or Polystrene or Coroplast (Panels)",
+    "reason": "exact-norm (whitespace/case)"
+  },
+  {
+    "printosId": "eecae047-a05c-47a4-8937-21b49e2668be",
+    "printosName": "T-Shirt Heat Transfer- Digital (Panels)",
+    "svxKey": "T-Shirt Heat Transfer- Digital",
+    "reason": "suffix-strip: \"T-Shirt Heat Transfer- Digital (Panels)\" → stripped to \"T-Shirt Heat Transfer- Digital\""
+  },
+  {
+    "printosId": "4870429f-14ab-4177-b9a6-18b851dc475d",
+    "printosName": "Tractor Trailer Wrap- Full (PANELS)",
+    "svxKey": "Tractor Trailer Wrap- Full",
+    "reason": "suffix-strip: \"Tractor Trailer Wrap- Full (PANELS)\" → stripped to \"Tractor Trailer Wrap- Full\""
+  },
+  {
+    "printosId": "c83c98f7-c24d-4914-b5db-275461834b02",
+    "printosName": "Tractor Trailer Wrap- Spot/ Partial (Panels)",
+    "svxKey": "Tractor Trailer Wrap- Spot/ Partial",
+    "reason": "suffix-strip: \"Tractor Trailer Wrap- Spot/ Partial (Panels)\" → stripped to \"Tractor Trailer Wrap- Spot/ Partial\""
+  },
+  {
+    "printosId": "5d30f030-a7ad-4a2d-a99e-bb02a595f43b",
+    "printosName": "Vehicle & Box Wrap- Spot/ Partial (Panels)",
+    "svxKey": "Vehicle & Box Wrap- Spot/ Partial",
+    "reason": "suffix-strip: \"Vehicle & Box Wrap- Spot/ Partial (Panels)\" → stripped to \"Vehicle & Box Wrap- Spot/ Partial\""
+  },
+  {
+    "printosId": "690b4338-f92e-44da-9afe-943dd6387ff3",
+    "printosName": "Vehicle Wrap Reflective- Full (Panels)",
+    "svxKey": "Vehicle Wrap Reflective- Full",
+    "reason": "suffix-strip: \"Vehicle Wrap Reflective- Full (Panels)\" → stripped to \"Vehicle Wrap Reflective- Full\""
+  },
+  {
+    "printosId": "76747e71-ab2c-4d96-96af-bdea799052b8",
+    "printosName": "Vehicle Wrap Reflective- Spot/ Partial (Panels)",
+    "svxKey": "Vehicle Wrap Reflective- Spot/ Partial",
+    "reason": "suffix-strip: \"Vehicle Wrap Reflective- Spot/ Partial (Panels)\" → stripped to \"Vehicle Wrap Reflective- Spot/ Partial\""
+  },
+  {
+    "printosId": "8a4ebf57-9cb3-476f-8bc7-b4955e0e6639",
+    "printosName": "Vehicle Wrap- Full (PANELS)",
+    "svxKey": "Vehicle Wrap- Full",
+    "reason": "suffix-strip: \"Vehicle Wrap- Full (PANELS)\" → stripped to \"Vehicle Wrap- Full\""
+  },
+  {
+    "printosId": "e4119221-64f4-4be2-9ac7-48b5d706da4e",
+    "printosName": "Vehicle Wrap- Solid Color Change (Panels)",
+    "svxKey": "Vehicle Wrap- Solid Color Change",
+    "reason": "suffix-strip: \"Vehicle Wrap- Solid Color Change (Panels)\" → stripped to \"Vehicle Wrap- Solid Color Change\""
+  },
+  {
+    "printosId": "8b53b9a2-0e49-417a-aa7a-72e5a8050e66",
+    "printosName": "Vehicle Wrap- Spot/ Partial (Panels)",
+    "svxKey": "Vehicle Wrap- Spot/ Partial",
+    "reason": "suffix-strip: \"Vehicle Wrap- Spot/ Partial (Panels)\" → stripped to \"Vehicle Wrap- Spot/ Partial\""
+  },
+  {
+    "printosId": "9f772994-1e0a-42be-b833-2cf92b6b1907",
+    "printosName": "Vinyl Regular- Digital (Panels)",
+    "svxKey": "Vinyl Regular- Digital",
+    "reason": "suffix-strip: \"Vinyl Regular- Digital (Panels)\" → stripped to \"Vinyl Regular- Digital\""
+  }
+]

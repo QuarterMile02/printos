@@ -39,8 +39,12 @@ export type MachineRateFormData = {
   display_name_in_line_item: boolean
   display_description_in_line_item: boolean
   show_internal: boolean
+  show_name: boolean
   sop_url: string | null
   video_url: string | null
+  // Production
+  operator_attendance_percent: number | null
+  production_factor: number | null
   active: boolean
 }
 
@@ -97,8 +101,11 @@ function buildRecord(data: MachineRateFormData) {
     display_name_in_line_item: data.display_name_in_line_item,
     display_description_in_line_item: data.display_description_in_line_item,
     show_internal: data.show_internal,
+    show_name: data.show_name,
     sop_url: data.sop_url,
     video_url: data.video_url,
+    operator_attendance_percent: data.operator_attendance_percent,
+    production_factor: data.production_factor,
     profit_margin_pct: calcProfitMargin(data.cost, data.price),
     active: data.active,
   }

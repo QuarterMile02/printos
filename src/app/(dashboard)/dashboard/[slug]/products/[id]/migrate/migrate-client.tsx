@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useCallback, useTransition } from 'react'
+import React, { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -23,6 +23,8 @@ import {
   type MigrateBundle, type MigrateDefaultItem, type MigrateModifier,
   type MigrateOptionRate, type MigrateDropdownMenu,
 } from './actions'
+import ShopVOXReferencePanel from '@/components/products/shopvox-reference-panel'
+import ShopvoxQuotePreview from '@/components/products/shopvox-quote-preview'
 
 // ---- ShopVOX data shape ----
 export type ShopvoxData = {
@@ -61,6 +63,7 @@ export type ShopvoxData = {
     formula: string
     multiplier: number
     per_li: boolean
+    per_li_unit?: boolean  // alias used in some scraper versions
     modifier: { kind: 'checkbox' | 'numeric' | 'formula'; expression: string } | null
     note?: string
   }[]
@@ -255,36 +258,22 @@ export default function MigrateClient({
     }))
   )
 
-  // FIX 3: Pre-populate modifiers from shopvox_data when no saved modifiers
-  const [modifierRows, setModifierRows] = useState<ModifierRow[]>(() => {
-    const saved = existingModifiers.filter((m) => m.modifier_id)
-    if (saved.length > 0) {
-      return saved.map((m) => {
+  const [modifierRows, setModifierRows] = useState<ModifierRow[]>(() =>
+    existingModifiers
+      .filter((m) => m.modifier_id)
+      .map((m) => {
         const mod = initialModifiersList.find((x) => x.id === m.modifier_id)
         return { id: uid(), modifier_id: m.modifier_id!, is_required: m.is_required ?? false, default_value: m.default_value, display_name: mod?.display_name ?? 'Unknown', modifier_type: mod?.modifier_type ?? '' }
       })
-    }
-    const rows: ModifierRow[] = []
-    const seen = new Set<string>()
-    for (const m of (shopvoxData?.modifiers ?? [])) {
-      const lc = m.name.toLowerCase().trim()
-      const match =
-        initialModifiersList.find((x) => x.system_lookup_name?.toLowerCase().trim() === lc) ||
-        initialModifiersList.find((x) => x.display_name.toLowerCase().trim() === lc) ||
-        initialModifiersList.find((x) => x.name.toLowerCase().trim() === lc)
-      if (!match || seen.has(match.id)) continue
-      seen.add(match.id)
-      rows.push({ id: uid(), modifier_id: match.id, is_required: false, default_value: m.default != null ? String(m.default) : null, display_name: match.display_name, modifier_type: match.modifier_type })
-    }
-    return rows
-  })
+  )
 
   const [dropdownMenus, setDropdownMenus] = useState<DropdownMenuRow[]>(() =>
     existingDropdownMenus.map((menu) => ({ id: uid(), menu_name: menu.menu_name, is_optional: menu.is_optional, items: menu.items.map((i) => ({ ...i, id: uid() })) }))
   )
 
-  // Left panel tab: Reference (read-only) | Quote Preview (interactive ShopVOX quoting)
+  // Left panel tab: Reference (read-only) | Quote Preview
   const [leftMode, setLeftMode] = useState<'reference' | 'preview'>('reference')
+  const [leftExpanded, setLeftExpanded] = useState(false)
 
   // FIX 1: Universal reviewed checkboxes for every left panel row
   const [reviewedRows, setReviewedRows] = useState<Set<string>>(new Set())
@@ -374,12 +363,12 @@ export default function MigrateClient({
       const match = laborRates.find((l: LaborRateOption) => l.name.toLowerCase().trim() === lcName)
       if (!match) { showToast(`No labor rate match for "${it.name}"`); return }
       if (laborRateRows.some((r: RateRow) => r.rate_id === match.id)) return
-      setLaborRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li, include_in_base_price: false, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
+      setLaborRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li_unit ?? it.per_li, include_in_base_price: false, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
     } else {
       const match = machineRates.find((m: MachineRateOption) => m.name.toLowerCase().trim() === lcName)
       if (!match) { showToast(`No machine rate match for "${it.name}"`); return }
       if (machineRateRows.some((r: RateRow) => r.rate_id === match.id)) return
-      setMachineRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li, include_in_base_price: false, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
+      setMachineRateRows((rows: RateRow[]) => [...rows, { id: uid(), rate_id: match.id, formula: it.formula || 'Area', multiplier: it.multiplier ?? 1, charge_per_li_unit: it.per_li_unit ?? it.per_li, include_in_base_price: false, modifier_formula: it.modifier?.expression ?? null, workflow_step: true }])
     }
   }
 
@@ -453,7 +442,7 @@ export default function MigrateClient({
         newLabor.push({
           id: uid(), rate_id: match.id,
           formula: it.formula || 'Area', multiplier: it.multiplier ?? 1,
-          charge_per_li_unit: it.per_li, include_in_base_price: false,
+          charge_per_li_unit: it.per_li_unit ?? it.per_li, include_in_base_price: false,
           modifier_formula: it.modifier?.expression ?? null, workflow_step: true,
         })
         defaultItemCount++
@@ -464,7 +453,7 @@ export default function MigrateClient({
         newMachine.push({
           id: uid(), rate_id: match.id,
           formula: it.formula || 'Area', multiplier: it.multiplier ?? 1,
-          charge_per_li_unit: it.per_li, include_in_base_price: false,
+          charge_per_li_unit: it.per_li_unit ?? it.per_li, include_in_base_price: false,
           modifier_formula: it.modifier?.expression ?? null, workflow_step: true,
         })
         defaultItemCount++
@@ -687,132 +676,47 @@ export default function MigrateClient({
         </div>
       </div>
 
-      {/* Two-column body — flex row, 30/70 split, each column independently scrollable */}
+      {/* Two-column body — flex row, dynamically split, each column independently scrollable */}
       <div className="flex-1 flex flex-row min-h-0 gap-4 p-4 overflow-hidden">
 
-        {/* LEFT 30% — independently scrollable */}
-        <div className="w-[30%] shrink-0 min-h-0 overflow-y-auto pr-1 space-y-3">
-          <LeftTabBar mode={leftMode} setMode={setLeftMode} />
-          {!hasShopvox && (
-            <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
-              No ShopVOX reference data saved for this product.
+        {/* LEFT panel — fixed header (tab bar + toggle), scrollable body */}
+        <div className={`${leftExpanded ? 'w-[62%]' : 'w-[38%]'} shrink-0 min-h-0 flex flex-col transition-all duration-300`}>
+          {/* Pinned header — does NOT scroll */}
+          <div className="shrink-0 flex items-center gap-1.5 pb-2">
+            <div className="flex-1 min-w-0">
+              <LeftTabBar mode={leftMode} setMode={setLeftMode} />
             </div>
-          )}
-          {hasShopvox && leftMode === 'preview' && (
-            <QuotePreviewPanel productId={product.id} shopvoxData={shopvoxData!} />
-          )}
-          {hasShopvox && leftMode === 'reference' && (
-            <>
-              {/* 1. Basic Info */}
-              <LeftSection title="Basic Info" onCopyAll={copyBasic} canCopy>
-                {([
-                  ['Name', shopvoxData!.basic?.name],
-                  ['Display Name', shopvoxData!.basic?.display_name],
-                  ['Type', shopvoxData!.basic?.type],
-                  ['Workflow', shopvoxData!.basic?.workflow],
-                  ['Category', shopvoxData!.basic?.category],
-                  ['Secondary Category', shopvoxData!.basic?.secondary_category],
-                ] as [string, string | null | undefined][]).map(([k, v], i) => {
-                  const rKey = `basic:${i}`
-                  return (
-                    <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewedRows.has(rKey)} onToggle={() => toggleReviewed(rKey)}>
-                      <KV k={k} v={v} />
-                    </LeftCheckRow>
-                  )
-                })}
-              </LeftSection>
-
-              {/* 2. Pricing */}
-              <LeftSection title="Pricing" onCopyAll={copyPricing} canCopy>
-                {([
-                  ['Pricing Type', shopvoxData!.pricing?.pricing_type],
-                  ['Formula', shopvoxData!.pricing?.formula],
-                  ['Method', shopvoxData!.pricing?.pricing_method],
-                  ['Buying Units', shopvoxData!.pricing?.buying_units],
-                  ['Range Discount', shopvoxData!.pricing?.range_discount],
-                  ['Apply Discounts', shopvoxData!.pricing?.apply_discounts == null ? '—' : shopvoxData!.pricing.apply_discounts ? 'Yes' : 'No'],
-                ] as [string, string | null | undefined][]).map(([k, v], i) => {
-                  const rKey = `pricing:${i}`
-                  return (
-                    <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewedRows.has(rKey)} onToggle={() => toggleReviewed(rKey)}>
-                      <KV k={k} v={v} />
-                    </LeftCheckRow>
-                  )
-                })}
-              </LeftSection>
-
-              {/* 3. Modifiers */}
-              <LeftSection title={`Modifiers (${shopvoxData!.modifiers?.length ?? 0})`} onCopyAll={copyAllShopvoxModifiers} canCopy={!!shopvoxData!.modifiers?.length}>
-                {(shopvoxData!.modifiers ?? []).map((m, i) => {
-                  const rKey = `mod:${i}`
-                  return (
-                    <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewedRows.has(rKey)} onToggle={() => toggleReviewed(rKey)} onCopy={() => copyShopvoxModifier(m)}>
-                      <div className="flex items-start gap-2 flex-wrap">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0 ${m.type === 'Boolean' ? 'bg-blue-100 text-blue-700' : m.type === 'Numeric' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'}`}>{m.type}</span>
-                        <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{m.name}</span>
-                        <span className="text-xs text-gray-400 shrink-0">{typeof m.default === 'boolean' ? String(m.default) : (m.default ?? '')}</span>
-                      </div>
-                    </LeftCheckRow>
-                  )
-                })}
-              </LeftSection>
-
-              {/* 4. Dropdown Menus */}
-              <LeftSection title={`Dropdown Menus (${shopvoxData!.dropdown_menus?.length ?? 0})`} onCopyAll={copyAllShopvoxDropdowns} canCopy={!!shopvoxData!.dropdown_menus?.length}>
-                {(shopvoxData!.dropdown_menus ?? []).map((m, i) => {
-                  const rKey = `dd:${i}`
-                  return (
-                    <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewedRows.has(rKey)} onToggle={() => toggleReviewed(rKey)} onCopy={() => copyShopvoxDropdown(m)}>
-                      <div className="flex items-start gap-2 flex-wrap">
-                        <span className="inline-flex items-center rounded-full bg-fuchsia-100 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-700 shrink-0">{m.kind}</span>
-                        <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{m.name}</span>
-                        {m.optional && <span className="text-[10px] text-gray-400 shrink-0">optional</span>}
-                        {m.category && <span className="text-[10px] text-gray-400 break-words shrink-0">{m.category}</span>}
-                      </div>
-                    </LeftCheckRow>
-                  )
-                })}
-              </LeftSection>
-
-              {/* 5. Default Items — all items from shopvox_data.default_items
-                    regardless of kind (Material / LaborRate / MachineRate) */}
-              <LeftSection
-                title={`Default Items (${(shopvoxData!.default_items ?? []).length})`}
-                onCopyAll={copyAllShopvoxDefaultItems}
-                canCopy={(shopvoxData!.default_items ?? []).length > 0}
-              >
-                {(shopvoxData!.default_items ?? []).length === 0 && (
-                  <div className="text-xs text-gray-400 italic px-2 py-1">No default items.</div>
-                )}
-                {(shopvoxData!.default_items ?? []).map((it, i) => {
-                  const rKey = `di:${i}`
-                  const reviewed = reviewedRows.has(rKey)
-                  return (
-                    <LeftCheckRow key={i} rowKey={rKey} reviewed={reviewed} onToggle={() => toggleReviewed(rKey)} onCopy={() => addShopvoxDefaultItem(it)}>
-                      <div className={`space-y-0.5 transition-all ${reviewed ? 'line-through text-gray-400' : ''}`}>
-                        <div className="flex items-start gap-2 flex-wrap">
-                          <span className="text-[10px] font-mono text-gray-400 w-5 shrink-0 pt-0.5">#{it.idx ?? i + 1}</span>
-                          <TypeBadge kind={it.kind} />
-                          <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{it.name}</span>
-                        </div>
-                        <div className="flex items-start gap-2 flex-wrap text-xs pl-7">
-                          <span className="break-words">Formula: {it.formula}</span>
-                          <span>× {it.multiplier}</span>
-                          {it.per_li && <span className={reviewed ? '' : 'text-amber-600'}>Per LI</span>}
-                          {it.modifier && <span className="break-all whitespace-normal leading-relaxed text-gray-600" title={it.modifier.expression}>Mod: {it.modifier.expression}</span>}
-                        </div>
-                        {it.note && <div className="text-[11px] italic pl-7 break-words whitespace-normal leading-relaxed">{it.note}</div>}
-                      </div>
-                    </LeftCheckRow>
-                  )
-                })}
-              </LeftSection>
-            </>
-          )}
+            <button
+              type="button"
+              title={leftExpanded ? 'Collapse reference' : 'Expand reference'}
+              onClick={() => setLeftExpanded((v) => !v)}
+              className="shrink-0 p-1 text-gray-400 hover:text-gray-700"
+            >
+              {leftExpanded ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+            </button>
+          </div>
+          {/* Scrollable content */}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
+            {leftMode === 'reference' && (
+              <ShopVOXReferencePanel shopvoxData={shopvoxData} />
+            )}
+            {leftMode === 'preview' && !hasShopvox && (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
+                No ShopVOX reference data saved for this product.
+              </div>
+            )}
+            {leftMode === 'preview' && hasShopvox && (
+              <ShopvoxQuotePreview
+                shopvoxData={shopvoxData}
+                productName={product.name}
+                orgSlug={orgSlug}
+              />
+            )}
+          </div>
         </div>
 
-        {/* RIGHT 70% — independently scrollable */}
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1 space-y-4">
+        {/* RIGHT panel — flex-1 naturally absorbs leftover width */}
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto pr-1 space-y-4 transition-all duration-300">
           <SectionHeaderRight />
 
           {hasShopvox && (
@@ -1525,6 +1429,8 @@ function PlusIcon() { return (<svg className="h-3 w-3" fill="none" viewBox="0 0 
 function GripIcon() { return (<svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 4a1 1 0 110 2 1 1 0 010-2zM7 9a1 1 0 110 2 1 1 0 010-2zM7 14a1 1 0 110 2 1 1 0 010-2zM13 4a1 1 0 110 2 1 1 0 010-2zM13 9a1 1 0 110 2 1 1 0 010-2zM13 14a1 1 0 110 2 1 1 0 010-2z" /></svg>) }
 function TrashIcon() { return (<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>) }
 function CalculatorIcon() { return (<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75 18 18m0 0 2.25 2.25M18 18l2.25-2.25M18 18l-2.25 2.25M4.5 3.75h15a.75.75 0 0 1 .75.75v15a.75.75 0 0 1-.75.75h-15a.75.75 0 0 1-.75-.75v-15a.75.75 0 0 1 .75-.75Zm3 3h9v3h-9v-3Z" /></svg>) }
+function ChevronRightIcon() { return (<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>) }
+function ChevronLeftIcon() { return (<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>) }
 
 // ============================================================
 // CheckPricingPanel (FIX 6)
@@ -1707,281 +1613,3 @@ function CheckPricingPanel({ productId, modifiers }: { productId: string; modifi
   )
 }
 
-// ============================================================
-// QuotePreviewPanel — left panel interactive ShopVOX quoting form
-// ============================================================
-
-type ShopvoxQuoteBreakdown = {
-  idx: number
-  name: string
-  kind: 'Material' | 'LaborRate' | 'MachineRate'
-  formula: string
-  multiplier: number
-  charge_qty: number
-  rate_cost_cents: number
-  rate_sell_cents: number
-  total_cost_cents: number
-  total_sell_cents: number
-  inactive: boolean
-  inactive_reason: string | null
-  rate_found: boolean
-  modifier_expression: string | null
-}
-
-type ShopvoxQuoteResponse = {
-  breakdown: ShopvoxQuoteBreakdown[]
-  total_cost_cents: number
-  total_sell_cents: number
-  original_total_sell_cents?: number
-  discount_percent?: number
-  discount_type?: string
-  margin_pct: number
-  breakdown_by_kind: Record<'Material' | 'LaborRate' | 'MachineRate', number>
-  warning?: string
-  error?: string
-}
-
-function QuotePreviewPanel({ productId, shopvoxData }: { productId: string; shopvoxData: ShopvoxData }) {
-  const formula = shopvoxData.pricing?.formula ?? 'Area'
-  const needsWidth = formula === 'Area' || formula === 'Perimeter' || formula === 'Width'
-  const needsHeight = formula === 'Area' || formula === 'Perimeter' || formula === 'Height'
-
-  const [width, setWidth] = useState('24')
-  const [height, setHeight] = useState('36')
-  const [quantity, setQuantity] = useState('1')
-  const [modifierValues, setModifierValues] = useState<Record<string, boolean | number>>(() => {
-    const init: Record<string, boolean | number> = {}
-    for (const m of (shopvoxData.modifiers ?? [])) {
-      if (m.type === 'Boolean') init[m.name] = !!m.default
-      else {
-        const n = typeof m.default === 'number' ? m.default : typeof m.default === 'string' ? parseFloat(m.default) || 0 : 0
-        init[m.name] = n
-      }
-    }
-    return init
-  })
-  const [dropdownSelections, setDropdownSelections] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<ShopvoxQuoteResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const hasRecipe = (shopvoxData.default_items ?? []).length > 0
-  const modifiers = shopvoxData.modifiers ?? []
-  const dropdowns = shopvoxData.dropdown_menus ?? []
-
-  const setModValue = useCallback((name: string, v: boolean | number) => {
-    setModifierValues((prev) => ({ ...prev, [name]: v }))
-  }, [])
-
-  async function handleCalculate() {
-    setLoading(true); setError(null); setResult(null)
-    try {
-      const res = await fetch('/api/pricing/shopvox', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_id: productId,
-          width_inches: parseFloat(width) || 0,
-          height_inches: parseFloat(height) || 0,
-          quantity: parseInt(quantity) || 1,
-          modifier_values: modifierValues,
-        }),
-      })
-      const data = (await res.json()) as ShopvoxQuoteResponse
-      if (!res.ok || data.error) setError(data.error ?? 'Pricing request failed')
-      else setResult(data)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Pricing request failed')
-    } finally { setLoading(false) }
-  }
-
-  const kindTotals = result?.breakdown_by_kind ?? { Material: 0, LaborRate: 0, MachineRate: 0 }
-  const kindTotal = kindTotals.Material + kindTotals.LaborRate + kindTotals.MachineRate || 1
-  const pct = (v: number) => ((v / kindTotal) * 100)
-
-  return (
-    <div className="space-y-3">
-      {!hasRecipe && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
-          Recipe not yet extracted — use the <span className="font-semibold">Reference</span> tab to see available data.
-        </div>
-      )}
-
-      {/* A — Dimensions */}
-      <div className="rounded-lg border border-gray-200 bg-white">
-        <div className="bg-gray-50 border-b border-gray-200 px-3 py-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Dimensions</h3>
-        </div>
-        <div className="p-3 grid grid-cols-2 gap-2">
-          {needsWidth && (
-            <FieldRow label="Width (in)">
-              <input type="number" step="0.01" min={0} className={inputCls} value={width} onChange={(e) => setWidth(e.target.value)} />
-            </FieldRow>
-          )}
-          {needsHeight && (
-            <FieldRow label="Height (in)">
-              <input type="number" step="0.01" min={0} className={inputCls} value={height} onChange={(e) => setHeight(e.target.value)} />
-            </FieldRow>
-          )}
-          {!needsWidth && !needsHeight && (
-            <div className="col-span-2 text-[11px] italic text-gray-500 px-1 py-1">
-              Formula = {formula}. No dimensions needed.
-            </div>
-          )}
-          <FieldRow label="Quantity">
-            <input type="number" step="1" min={1} className={inputCls} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-          </FieldRow>
-        </div>
-      </div>
-
-      {/* B — Dropdown Menus */}
-      {dropdowns.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white">
-          <div className="bg-gray-50 border-b border-gray-200 px-3 py-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Dropdown Menus ({dropdowns.length})</h3>
-          </div>
-          <div className="p-3 space-y-2">
-            {dropdowns.map((m, i) => (
-              <div key={`${m.name}-${i}`}>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">
-                  {m.name}{m.optional && <span className="ml-1 text-gray-400 normal-case font-normal">(optional)</span>}
-                </label>
-                <select
-                  className={inputCls}
-                  value={dropdownSelections[m.name] ?? ''}
-                  onChange={(e) => setDropdownSelections((p) => ({ ...p, [m.name]: e.target.value }))}
-                >
-                  <option value="">{m.optional ? '— None —' : `Select ${m.kind}…`}</option>
-                  <option disabled>— items not extracted yet —</option>
-                </select>
-              </div>
-            ))}
-            <div className="text-[10px] italic text-gray-400 leading-relaxed">
-              Dropdown item lists are not yet present in shopvox_data; selections don&apos;t influence pricing for now.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* C — Modifiers */}
-      {modifiers.length > 0 && (
-        <div className="rounded-lg border border-gray-200 bg-white">
-          <div className="bg-gray-50 border-b border-gray-200 px-3 py-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Modifiers ({modifiers.length})</h3>
-          </div>
-          <div className="p-3 space-y-1.5">
-            {modifiers.map((m, i) => (
-              <div key={`${m.name}-${i}`} className="flex items-center gap-2 rounded border border-gray-100 px-2 py-1.5">
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0 ${m.type === 'Boolean' ? 'bg-blue-100 text-blue-700' : m.type === 'Numeric' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'}`}>{m.type}</span>
-                <span className="text-xs font-medium text-gray-700 break-words whitespace-normal leading-relaxed flex-1 min-w-0">{m.name}</span>
-                {m.type === 'Boolean' ? (
-                  <label className="inline-flex items-center gap-1 text-[11px] shrink-0">
-                    <input type="checkbox" checked={!!modifierValues[m.name]} onChange={(e) => setModValue(m.name, e.target.checked)} className="accent-qm-lime" />
-                    {modifierValues[m.name] ? 'on' : 'off'}
-                  </label>
-                ) : (
-                  <input
-                    type="number" step="0.01"
-                    className="h-7 w-20 rounded border border-gray-200 px-1.5 text-xs tabular-nums shrink-0"
-                    value={typeof modifierValues[m.name] === 'number' ? String(modifierValues[m.name]) : ''}
-                    onChange={(e) => setModValue(m.name, parseFloat(e.target.value) || 0)}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* E — Check Pricing */}
-      <div className="rounded-lg border border-gray-200 bg-white border-l-4 border-l-qm-lime">
-        <div className="flex items-center gap-2 bg-gray-50 border-b border-gray-200 px-3 py-2">
-          <CalculatorIcon />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-700">Check Pricing</h3>
-        </div>
-        <div className="p-3 space-y-3">
-          <button type="button" onClick={handleCalculate} disabled={loading || !hasRecipe} className="w-full rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
-            {loading ? 'Calculating…' : 'Calculate'}
-          </button>
-
-          {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          {result?.warning && <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{result.warning}</div>}
-
-          {result && result.breakdown.length > 0 && (
-            <>
-              <div className="overflow-x-auto rounded border border-gray-200">
-                <table className="min-w-full divide-y divide-gray-200 text-[11px]">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-1.5 py-1 text-left font-medium uppercase tracking-wide text-gray-500">#</th>
-                      <th className="px-1.5 py-1 text-left font-medium uppercase tracking-wide text-gray-500">Item</th>
-                      <th className="px-1.5 py-1 text-left font-medium uppercase tracking-wide text-gray-500">Status</th>
-                      <th className="px-1.5 py-1 text-right font-medium uppercase tracking-wide text-gray-500">Qty</th>
-                      <th className="px-1.5 py-1 text-right font-medium uppercase tracking-wide text-gray-500">Cost</th>
-                      <th className="px-1.5 py-1 text-right font-medium uppercase tracking-wide text-gray-500">Sell</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {result.breakdown.map((b) => (
-                      <tr key={b.idx} className={b.inactive ? 'text-gray-400 italic' : ''}>
-                        <td className="px-1.5 py-1 tabular-nums">{b.idx}</td>
-                        <td className="px-1.5 py-1 max-w-[180px]">
-                          <div className="flex flex-col">
-                            <span className="text-[11px] font-medium truncate" title={b.name}>{b.name}</span>
-                            <span className="text-[9px] text-gray-400">{b.kind} · {b.formula} · × {b.multiplier}</span>
-                            {!b.rate_found && <span className="text-[9px] text-red-500">rate not found</span>}
-                          </div>
-                        </td>
-                        <td className="px-1.5 py-1">
-                          {b.inactive ? (
-                            <span className="inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-500" title={b.inactive_reason ?? ''}>Inactive</span>
-                          ) : (
-                            <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-green-700">Active</span>
-                          )}
-                        </td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{b.charge_qty.toFixed(2)}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{money(b.total_cost_cents)}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">{money(b.total_sell_cents)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50 font-semibold">
-                    <tr>
-                      <td className="px-1.5 py-1.5" colSpan={4}>Total</td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums">{money(result.total_cost_cents)}</td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums">{money(result.total_sell_cents)}</td>
-                    </tr>
-                    <tr className="text-qm-lime-dark">
-                      <td className="px-1.5 py-1.5" colSpan={5}>Margin</td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums">{result.margin_pct.toFixed(1)}%</td>
-                    </tr>
-                    {result.discount_percent != null && result.discount_percent > 0 && (
-                      <tr className="text-[10px] text-gray-500">
-                        <td colSpan={6} className="px-1.5 py-1">{result.discount_type} discount: {result.discount_percent}%{result.original_total_sell_cents != null && <> (was {money(result.original_total_sell_cents)})</>}</td>
-                      </tr>
-                    )}
-                  </tfoot>
-                </table>
-              </div>
-
-              {/* Price breakdown bar */}
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1">Cost by Kind</div>
-                <div className="flex h-5 overflow-hidden rounded border border-gray-200">
-                  {kindTotals.Material > 0 && <div className="bg-emerald-400 text-[9px] text-white flex items-center justify-center" style={{ width: `${pct(kindTotals.Material)}%` }} title={`Materials ${pct(kindTotals.Material).toFixed(1)}%`}>{pct(kindTotals.Material) > 10 ? `${pct(kindTotals.Material).toFixed(0)}%` : ''}</div>}
-                  {kindTotals.LaborRate > 0 && <div className="bg-sky-400 text-[9px] text-white flex items-center justify-center" style={{ width: `${pct(kindTotals.LaborRate)}%` }} title={`Labor ${pct(kindTotals.LaborRate).toFixed(1)}%`}>{pct(kindTotals.LaborRate) > 10 ? `${pct(kindTotals.LaborRate).toFixed(0)}%` : ''}</div>}
-                  {kindTotals.MachineRate > 0 && <div className="bg-violet-400 text-[9px] text-white flex items-center justify-center" style={{ width: `${pct(kindTotals.MachineRate)}%` }} title={`Machine ${pct(kindTotals.MachineRate).toFixed(1)}%`}>{pct(kindTotals.MachineRate) > 10 ? `${pct(kindTotals.MachineRate).toFixed(0)}%` : ''}</div>}
-                </div>
-                <div className="flex gap-3 mt-1 text-[9px] text-gray-500">
-                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-emerald-400" />Materials</span>
-                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-sky-400" />Labor</span>
-                  <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded bg-violet-400" />Machine</span>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}

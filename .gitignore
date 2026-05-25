@@ -54,3 +54,4 @@ scripts/shopvox-extract-progress.json
 scripts/shopvox-extract-errors.json
 data/
 
+.claude/settings.local.json

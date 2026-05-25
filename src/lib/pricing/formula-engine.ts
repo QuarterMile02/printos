@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
+import { computeLineItem } from './compute-line-item'
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -109,27 +110,27 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   const laborIds = recipeItems.filter(r => r.labor_rate_id).map(r => r.labor_rate_id!)
   const machineIds = recipeItems.filter(r => r.machine_rate_id).map(r => r.machine_rate_id!)
 
-  const rateMap = new Map<string, { name: string; cost: number; price: number; production_rate: number | null; units: string | null }>()
+  const rateMap = new Map<string, { name: string; cost: number; price: number; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }>()
 
   if (matIds.length > 0) {
     const { data, error: matErr } = await service.from('materials').select('id, name, cost, price, selling_units').in('id', matIds)
     console.log('[pricing] materials loaded:', data?.length, 'error:', matErr?.message)
     for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; selling_units: string | null }[])
-      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units })
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units, setup_charge: null, other_charge: null })
   }
   if (laborIds.length > 0) {
-    const { data, error: laborErr } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units').in('id', laborIds)
+    const { data, error: laborErr } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units, setup_charge, other_charge').in('id', laborIds)
     console.log('[pricing] labor_rates loaded:', data?.length, 'error:', laborErr?.message)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[]) {
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }[]) {
       console.log('[pricing] labor:', r.name, 'cost:', r.cost, 'prod_rate:', r.production_rate, 'units:', r.units)
-      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units, setup_charge: r.setup_charge ? Number(r.setup_charge) : null, other_charge: r.other_charge ? Number(r.other_charge) : null })
     }
   }
   if (machineIds.length > 0) {
-    const { data, error: machErr } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units').in('id', machineIds)
+    const { data, error: machErr } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units, setup_charge, other_charge').in('id', machineIds)
     console.log('[pricing] machine_rates loaded:', data?.length, 'error:', machErr?.message)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[])
-      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }[])
+      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units, setup_charge: r.setup_charge ? Number(r.setup_charge) : null, other_charge: r.other_charge ? Number(r.other_charge) : null })
   }
 
   // 4. Load product modifiers + modifier definitions.
@@ -168,6 +169,8 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
 
     let productionRate: number | null = null
     let rateUnits: string | null = null
+    let rateSetup: number | null = null
+    let rateOther: number | null = null
 
     if (refId && rateMap.has(refId)) {
       const r = rateMap.get(refId)!
@@ -176,6 +179,8 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
       name = r.name
       productionRate = r.production_rate
       rateUnits = r.units
+      rateSetup = r.setup_charge
+      rateOther = r.other_charge
     } else if (item.item_type === 'CustomItem') {
       rateCost = Number(item.custom_item_cost ?? 0)
       ratePrice = Number(item.custom_item_price ?? 0)
@@ -198,32 +203,23 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
       continue
     }
 
-    // For hourly labor/machine rates with a production_rate:
-    // time_hours = formula_units / production_rate
-    // cost = time_hours * hourly_cost
-    // Without production_rate: treat cost as per-formula-unit directly
     let itemCost: number
     let itemPrice: number
 
-    if (rateUnits === 'Hr' && productionRate && productionRate > 0 && formula !== 'Unit') {
-      const timeHours = fMult / productionRate
-      itemCost = rateCost * timeHours * mult
-      itemPrice = ratePrice * timeHours * mult
-      console.log('[pricing] hourly calc:', name, 'fMult:', fMult, 'prodRate:', productionRate, 'timeHrs:', timeHours, 'cost:', itemCost)
-    } else {
-      itemCost = rateCost * fMult * mult
-      itemPrice = ratePrice * fMult * mult
-      console.log('[pricing] direct calc:', name, 'rateCost:', rateCost, 'fMult:', fMult, 'mult:', mult, 'cost:', itemCost)
-    }
-
     if (item.fixed_quantity && Number(item.fixed_quantity) > 0) {
-      itemCost = rateCost * Number(item.fixed_quantity) * mult
-      itemPrice = ratePrice * Number(item.fixed_quantity) * mult
-    }
-
-    if (item.charge_per_li_unit) {
-      itemCost *= input.quantity
-      itemPrice *= input.quantity
+      const fq = Number(item.fixed_quantity)
+      const fqQty = item.charge_per_li_unit ? input.quantity : 1
+      itemCost = rateCost * fq * mult * fqQty
+      itemPrice = ratePrice * fq * mult * fqQty
+    } else {
+      const chargeQty = item.charge_per_li_unit ? input.quantity : 1
+      const { totalCost, totalPrice } = computeLineItem(
+        { name, cost: rateCost, price: ratePrice, markup: 1, production_rate: productionRate ?? undefined, setup_charge: rateSetup ?? undefined, other_charge: rateOther ?? undefined },
+        fMult * mult,
+        chargeQty,
+      )
+      itemCost = totalCost
+      itemPrice = totalPrice
     }
 
     const costCents = Math.round(itemCost * 100)
@@ -275,15 +271,15 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   const orLaborIds = optionRates.filter(r => r.rate_type === 'labor_rate').map(r => r.rate_id)
   const orMachineIds = optionRates.filter(r => r.rate_type === 'machine_rate').map(r => r.rate_id)
   if (orLaborIds.length > 0) {
-    const { data } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units').in('id', orLaborIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[]) {
-      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
+    const { data } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units, setup_charge, other_charge').in('id', orLaborIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }[]) {
+      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units, setup_charge: r.setup_charge ? Number(r.setup_charge) : null, other_charge: r.other_charge ? Number(r.other_charge) : null })
     }
   }
   if (orMachineIds.length > 0) {
-    const { data } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units').in('id', orMachineIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null }[]) {
-      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units })
+    const { data } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units, setup_charge, other_charge').in('id', orMachineIds)
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }[]) {
+      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units, setup_charge: r.setup_charge ? Number(r.setup_charge) : null, other_charge: r.other_charge ? Number(r.other_charge) : null })
     }
   }
 
@@ -305,19 +301,20 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     const ratePrice = rate?.price ?? 0
     const fMult = formulaMultiplier(formula, input.width_inches, input.height_inches, input.quantity)
 
+    const chargeQty = r.charge_per_li_unit ? input.quantity : 1
     let itemCost: number
     let itemPrice: number
-    if (rate?.units === 'Hr' && rate.production_rate && rate.production_rate > 0 && formula !== 'Unit') {
-      const timeHours = fMult / rate.production_rate
-      itemCost = rateCost * timeHours * mult
-      itemPrice = ratePrice * timeHours * mult
+    if (rate) {
+      const { totalCost, totalPrice } = computeLineItem(
+        { name: rate.name, cost: rateCost, price: ratePrice, markup: 1, production_rate: rate.production_rate ?? undefined, setup_charge: rate.setup_charge ?? undefined, other_charge: rate.other_charge ?? undefined },
+        fMult * mult,
+        chargeQty,
+      )
+      itemCost = totalCost
+      itemPrice = totalPrice
     } else {
-      itemCost = rateCost * fMult * mult
-      itemPrice = ratePrice * fMult * mult
-    }
-    if (r.charge_per_li_unit) {
-      itemCost *= input.quantity
-      itemPrice *= input.quantity
+      itemCost = 0
+      itemPrice = 0
     }
 
     // Apply modifier condition — modifier_formula may name a product modifier.

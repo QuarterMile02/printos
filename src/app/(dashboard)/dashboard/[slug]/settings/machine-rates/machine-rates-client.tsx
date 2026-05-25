@@ -46,6 +46,7 @@ function emptyForm(): MachineRateFormData {
     formula: null, units: null,
     include_in_base_price: false, per_li_unit: false,
     production_rate: null, production_rate_units: null, production_rate_per: null,
+    operator_attendance_percent: null, production_factor: null,
     equipment_replacement_value: null, equipment_useful_life_years: null,
     markup_for_replacement: null, monthly_operating_hours: null,
     monthly_maintenance_cost: null, monthly_lease_payment: null,
@@ -53,6 +54,7 @@ function emptyForm(): MachineRateFormData {
     volume_discount_id: null, cog_account: null, cog_account_number: null, qb_item_type: null,
     description: null,
     display_name_in_line_item: false, display_description_in_line_item: false, show_internal: false,
+    show_name: false,
     sop_url: null, video_url: null,
     active: true,
   }
@@ -70,6 +72,8 @@ function toFormData(r: MachineRate): MachineRateFormData {
     production_rate: r.production_rate,
     production_rate_units: r.production_rate_units,
     production_rate_per: r.production_rate_per,
+    operator_attendance_percent: r.operator_attendance_percent,
+    production_factor: r.production_factor,
     equipment_replacement_value: r.equipment_replacement_value,
     equipment_useful_life_years: r.equipment_useful_life_years,
     markup_for_replacement: r.markup_for_replacement,
@@ -86,6 +90,7 @@ function toFormData(r: MachineRate): MachineRateFormData {
     display_name_in_line_item: r.display_name_in_line_item ?? false,
     display_description_in_line_item: r.display_description_in_line_item ?? false,
     show_internal: r.show_internal ?? false,
+    show_name: r.show_name ?? false,
     sop_url: r.sop_url, video_url: r.video_url,
     active: r.active ?? true,
   }
@@ -462,6 +467,10 @@ export default function MachineRatesClient({
                     <input type="number" step="0.01" value={form.other_charge ?? ''} onChange={(e) => setForm({ ...form, other_charge: e.target.value === '' ? null : parseFloat(e.target.value) })} className={inputClass} />
                   </Field>
                 </div>
+                <Field label="Operator Attendance %">
+                  <input type="number" step="0.01" min="0" max="100" value={form.operator_attendance_percent ?? ''} onChange={(e) => setForm({ ...form, operator_attendance_percent: e.target.value === '' ? null : parseFloat(e.target.value) })} className={inputClass} />
+                  <p className="mt-1 text-xs text-gray-500">% of machine run time the operator is required</p>
+                </Field>
               </Section>
 
               {/* Machine Cost Calculator */}
@@ -556,6 +565,9 @@ export default function MachineRatesClient({
                     </select>
                   </Field>
                 </div>
+                <Field label="Production Factor">
+                  <input type="number" step="0.01" value={form.production_factor ?? ''} onChange={(e) => setForm({ ...form, production_factor: e.target.value === '' ? null : parseFloat(e.target.value) })} className={inputClass} />
+                </Field>
               </Section>
 
               {/* Accounting */}
@@ -585,6 +597,7 @@ export default function MachineRatesClient({
                   <Toggle label="Display Name in Line Item Description" checked={form.display_name_in_line_item} onChange={(v) => setForm({ ...form, display_name_in_line_item: v })} />
                   <Toggle label="Display Description in Line Item Description" checked={form.display_description_in_line_item} onChange={(v) => setForm({ ...form, display_description_in_line_item: v })} />
                   <Toggle label="Show Internal" checked={form.show_internal} onChange={(v) => setForm({ ...form, show_internal: v })} />
+                  <Toggle label="Show Name" checked={form.show_name} onChange={(v) => setForm({ ...form, show_name: v })} />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="SOP URL">
