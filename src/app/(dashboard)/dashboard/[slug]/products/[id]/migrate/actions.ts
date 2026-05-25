@@ -518,13 +518,25 @@ export async function createWorkflow(
   return { row: data }
 }
 
-export async function fetchMaterialsForQuote(_orgId?: string) {
-  const service = createServiceClient()
-  const { data, error } = await service
-    .from('materials')
-    .select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage')
-    .eq('active', true)
-    .limit(2000)
-  if (error) console.error('fetchMaterialsForQuote error:', error)
-  return data ?? []
+export async function fetchMaterialsForQuote() {
+  const supabase = createServiceClient()
+  const allMaterials: any[] = []
+  const pageSize = 1000
+  let page = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('materials')
+      .select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage')
+      .eq('active', true)
+      .range(page * pageSize, (page + 1) * pageSize - 1)
+
+    if (error) { console.error('fetchMaterialsForQuote error:', error); break }
+    if (!data || data.length === 0) break
+    allMaterials.push(...data)
+    if (data.length < pageSize) break
+    page++
+  }
+
+  return allMaterials
 }
