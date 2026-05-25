@@ -87,10 +87,13 @@ function normalize(s: string) {
 // Prefix/contains match so "Ink Epson GS3" finds "Ink Epson GS3 Printing"
 function findMaterial(map: FullMaterialMap, name: string): FullMaterialRow | undefined {
   const key = name.trim().toLowerCase()
-  if (map[key]) return map[key]
-  for (const [k, val] of Object.entries(map)) {
-    if (k.startsWith(key) || key.startsWith(k)) return val
+  let found: FullMaterialRow | undefined = map[key]
+  if (!found) {
+    for (const [k, val] of Object.entries(map)) {
+      if (k.startsWith(key) || key.startsWith(k)) { found = val; break }
+    }
   }
+  return found
 }
 
 // Safe formula evaluator: replaces modifier variable names with their current values
@@ -201,7 +204,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         const [laborRes, machineRes, matRes] = await Promise.all([
           supabase.from('labor_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
           supabase.from('machine_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
-          supabase.from('materials').select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage').eq('organization_id', orgId).eq('active', true),
+          supabase.from('materials').select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage').eq('active', true),
         ])
 
         if (!cancelled) {
@@ -351,9 +354,20 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       }
     }
 
-    const gCost = lines.reduce((s, l) => s + l.totalCost, 0)
-    const gPrice = lines.reduce((s, l) => s + l.totalPrice, 0)
-    setResults(lines)
+    // Deduplicate: same item name may appear multiple times in shopvox default_items
+    // (once per dropdown option). Keep the active row; if none active, keep first.
+    const seen = new Map<string, LineResult>()
+    for (const line of lines) {
+      const existing = seen.get(line.name)
+      if (!existing || (!existing.active && line.active)) {
+        seen.set(line.name, line)
+      }
+    }
+    const deduped = [...seen.values()]
+
+    const gCost = deduped.reduce((s, l) => s + l.totalCost, 0)
+    const gPrice = deduped.reduce((s, l) => s + l.totalPrice, 0)
+    setResults(deduped)
     setGrandTotalCost(gCost)
     setGrandTotalPrice(gPrice)
   }
