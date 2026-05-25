@@ -517,3 +517,13 @@ export async function createWorkflow(
   if (error || !data) return { error: error?.message ?? 'Failed to create workflow.' }
   return { row: data }
 }
+
+export async function fetchMaterialsForQuote(_orgId?: string) {
+  const service = createServiceClient()
+  const { data, error } = await service
+    .from('materials')
+    .select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage')
+    .eq('active', true)
+  if (error) console.error('fetchMaterialsForQuote error:', error)
+  return data ?? []
+}
