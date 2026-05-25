@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { computeLineItem, computeMaterialLineItem, type RateRecord } from '@/lib/pricing/compute-line-item'
 import { fetchMaterialsForQuote } from '@/app/(dashboard)/dashboard/[slug]/products/[id]/migrate/actions'
@@ -149,6 +149,8 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
   const [laborMap, setLaborMap] = useState<RateMap>({})
   const [machineMap, setMachineMap] = useState<RateMap>({})
   const [fullMaterialMap, setFullMaterialMap] = useState<FullMaterialMap>({})
+  const fullMaterialMapRef = useRef<FullMaterialMap>({})
+  const [materialsLoading, setMaterialsLoading] = useState(true)
 
   const [results, setResults] = useState<LineResult[] | null>(null)
   const [grandTotalCost, setGrandTotalCost] = useState(0)
@@ -222,6 +224,8 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
             }
           }
           setFullMaterialMap(matData)
+          fullMaterialMapRef.current = matData
+          setMaterialsLoading(false)
           setRatesReady(true)
         }
       } catch (e) {
@@ -310,7 +314,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       let breakdown: string[] | undefined
 
       if (isMat) {
-        const mat = findMaterial(fullMaterialMap, name)
+        const mat = findMaterial(fullMaterialMapRef.current, name)
         rateFound = !!mat
         if (active && mat) {
           const res = computeMaterialLineItem(
@@ -509,9 +513,9 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       )}
 
       {/* 6. Calculate button */}
-      <button type="button" onClick={handleCalculate} disabled={!ratesReady}
+      <button type="button" onClick={handleCalculate} disabled={materialsLoading}
         className="w-full rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
-        {ratesLoading ? 'Loading rates…' : 'Calculate Price'}
+        {materialsLoading ? 'Loading materials…' : 'Calculate Price'}
       </button>
 
       {/* 7. Results */}
