@@ -180,7 +180,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
       const items: string[] = dm?.selected_items ?? []
       if (menuName) {
-        ddInit[menuName] = dm?.optional ? '' : (items[0] ?? '')
+        ddInit[menuName] = (dm?.optional || menuName.toLowerCase().includes('optional')) ? '' : (items[0] ?? '')
       }
     }
     setDropdownVals(ddInit)
@@ -280,8 +280,9 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         const modKind: string = d?.modifier?.kind ?? ''
         const modExpr: string = d?.modifier?.expression ?? ''
         if (modKind === 'formula' && modExpr) {
+          const cleanExpr = modExpr.trim().replace(/;+$/, '')
           const exprVars = { ...modVals, Width: widthInches, Height: heightInches }
-          const exprVal = evalExpression(modExpr, exprVars)
+          const exprVal = evalExpression(cleanExpr, exprVars)
           if (exprVal <= 0) {
             active = false
           } else {
@@ -293,7 +294,11 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
             active = chkVal === true || chkVal === 'true'
           }
           if (active && attachNum) {
-            const numVal = parseFloat(String(modVals[attachNum] ?? 0))
+            const cleanNum = attachNum.trim().replace(/;+$/, '')
+            const isSimpleVar = /^[A-Za-z_][A-Za-z0-9_]*$/.test(cleanNum)
+            const numVal = isSimpleVar
+              ? parseFloat(String(modVals[cleanNum] ?? 0))
+              : evalExpression(cleanNum, { ...modVals, Width: widthInches, Height: heightInches })
             if (numVal <= 0) {
               active = false
             } else {
@@ -359,20 +364,33 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       }
     }
 
-    // Deduplicate: same item name may appear multiple times in shopvox default_items
-    // (once per dropdown option). Keep the active row; if none active, keep first.
-    const seen = new Map<string, LineResult>()
-    for (const line of lines) {
-      const existing = seen.get(line.name)
-      if (!existing || (!existing.active && line.active)) {
-        seen.set(line.name, line)
+    // Price materials selected from dropdown menus (e.g. banner roll)
+    for (const dm of dropdownMenus) {
+      const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
+      if ((dm?.item_type ?? '').toLowerCase() !== 'material') continue
+      const selectedVal = dropdownVals[menuName] ?? ''
+      if (!selectedVal) continue
+      const mat = findMaterial(fullMaterialMapRef.current, selectedVal)
+      if (!mat) {
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Area', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: true })
+        continue
       }
+      const res = computeMaterialLineItem(
+        { cost: mat.cost, formula: mat.formula ?? 'Area', fixed_side: mat.fixed_side, width: mat.width, height: mat.height, wastage_markup: mat.wastage_markup, calculate_wastage: mat.calculate_wastage },
+        widthInches, heightInches, q, 1, true,
+      )
+      const dTotalCost = res.lineTotal
+      const dTotalPrice = mat.price > 0 && mat.cost > 0 ? res.lineTotal * (mat.price / mat.cost) : res.lineTotal
+      const bk: string[] = [`Print area: ${res.printArea.toFixed(2)} sqft × ${fmt(mat.cost)} = ${fmt(res.printArea * mat.cost)}`]
+      if (res.wasteArea > 0) {
+        bk.push(`Waste (${res.wasteStripInches.toFixed(0)}in strip): ${res.wasteArea.toFixed(2)} sqft × ${fmt(mat.cost)} × ${res.wastageMarkupPct}% = ${fmt(res.chargeableWaste * mat.cost)}`)
+      }
+      lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: parseFloat(res.finalQty.toFixed(4)), unitCost: mat.cost, unitPrice: mat.price, totalCost: dTotalCost, totalPrice: dTotalPrice, active: true, rateFound: true, isMaterial: true, breakdown: bk })
     }
-    const deduped = [...seen.values()]
 
-    const gCost = deduped.reduce((s, l) => s + l.totalCost, 0)
-    const gPrice = deduped.reduce((s, l) => s + l.totalPrice, 0)
-    setResults(deduped)
+    const gCost = lines.reduce((s, l) => s + l.totalCost, 0)
+    const gPrice = lines.reduce((s, l) => s + l.totalPrice, 0)
+    setResults(lines)
     setGrandTotalCost(gCost)
     setGrandTotalPrice(gPrice)
   }
@@ -491,7 +509,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
           {dropdownMenus.map((dm, i) => {
             const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
             const items: string[] = dm?.selected_items ?? []
-            const isOptional = !!dm?.optional
+            const isOptional = !!dm?.optional || menuName.toLowerCase().includes('optional')
             if (!menuName) return null
             return (
               <div key={i}>
@@ -543,6 +561,9 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
                       </span>
                       {!line.rateFound && line.active && (
                         <span className="text-[9px] text-amber-500">rate not found</span>
+                      )}
+                      {!line.active && (
+                        <span className="text-[9px] text-gray-400 italic">inactive</span>
                       )}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap"><TypeBadge type={line.itemType} /></td>
