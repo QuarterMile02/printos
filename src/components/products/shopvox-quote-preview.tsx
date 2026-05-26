@@ -141,7 +141,17 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
   const [height] = useState(96)
   const [qty, setQty] = useState(1)
   const [modVals, setModVals] = useState<Record<string, any>>({})
-  const [dropdownVals, setDropdownVals] = useState<Record<string, string>>({})
+  const [dropdownVals, setDropdownVals] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {}
+    for (const dm of (shopvoxData?.dropdown_menus ?? [])) {
+      const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
+      const items: string[] = dm?.selected_items ?? []
+      if (menuName) {
+        init[menuName] = (dm?.optional || menuName.toLowerCase().includes('optional')) ? '' : (items[0] ?? '')
+      }
+    }
+    return init
+  })
 
   const [ratesLoading, setRatesLoading] = useState(true)
   const [ratesError, setRatesError] = useState<string | null>(null)
@@ -174,16 +184,6 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
     if (init['Height'] === undefined) init['Height'] = 96
     if (init['Width'] === undefined) init['Width'] = 48
     setModVals(init)
-
-    const ddInit: Record<string, string> = {}
-    for (const dm of dropdownMenus) {
-      const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
-      const items: string[] = dm?.selected_items ?? []
-      if (menuName) {
-        ddInit[menuName] = (dm?.optional || menuName.toLowerCase().includes('optional')) ? '' : (items[0] ?? '')
-      }
-    }
-    setDropdownVals(ddInit)
   }, [shopvoxData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── fetch rates on mount ──────────────────────────────────────
