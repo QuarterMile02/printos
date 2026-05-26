@@ -219,6 +219,8 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
           supabase.from('materials').select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage').eq('organization_id', orgId).eq('active', true),
         ])
 
+        console.log('matRes:', matRes.data?.length, 'error:', matRes.error?.message, 'laborRes:', laborRes.data?.length)
+
         if (!cancelled) {
           setLaborMap(buildRateMap(laborRes.data ?? []))
           setMachineMap(buildRateMap(machineRes.data ?? []))
