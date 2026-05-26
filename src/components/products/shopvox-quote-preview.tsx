@@ -223,7 +223,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         const [laborRes, machineRes, matRows] = await Promise.all([
           supabase.from('labor_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
           supabase.from('machine_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
-          fetchMaterialsForQuote(orgId),
+          fetchMaterialsForQuote(),
         ])
 
         if (!cancelled) {
