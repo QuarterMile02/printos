@@ -189,19 +189,17 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
   // ── init dropdowns when shopvoxData loads asynchronously ─────
   useEffect(() => {
     if (!shopvoxData?.dropdown_menus?.length) return
-    setDropdownVals(prev => {
-      if (Object.keys(prev).length > 0) return prev
-      const init: Record<string, string> = {}
-      for (const dm of (shopvoxData.dropdown_menus as any[])) {
-        const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
-        const items: string[] = dm?.selected_items ?? []
-        if (menuName) {
-          const isOptional = !!dm?.optional || menuName.toLowerCase().includes('optional')
-          init[menuName] = isOptional ? '' : (items[0] ?? '')
-        }
+    const init: Record<string, string> = {}
+    for (const dm of (shopvoxData.dropdown_menus as any[])) {
+      const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
+      const selectedItems: string[] = dm?.selected_items ?? []
+      const allItems: string[] = selectedItems.length > 0 ? selectedItems : (dm?.items ?? dm?.all_items ?? [])
+      if (menuName) {
+        const isOptional = !!dm?.optional || menuName.toLowerCase().includes('optional')
+        init[menuName] = isOptional ? '' : (allItems[0] ?? '')
       }
-      return init
-    })
+    }
+    setDropdownVals(init)
   }, [shopvoxData]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── fetch rates on mount ──────────────────────────────────────
@@ -280,20 +278,24 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       let numModFactor = 1
 
       const normName = normalize(name)
-      const isDropdownControlled = dropdownMenus.some(dm => {
+      const rawTypeLower = rawType.toLowerCase().replace('_', '')
+      const isRateItem = rawTypeLower === 'laborrate' || rawTypeLower === 'labor' || rawTypeLower === 'machinerate' || rawTypeLower === 'machine'
+      const controllingMenu = isRateItem ? dropdownMenus.find(dm => {
+        const dmType = (dm?.item_type ?? '').toLowerCase().replace('_', '')
+        if (dmType === 'material') return false
         const opts: string[] = dm?.selected_items ?? []
         return opts.some(opt => {
           const n = normalize(opt)
-          return normName.includes(n) || n.includes(normName.slice(0, 15))
+          const minLen = Math.min(n.length, normName.length)
+          return minLen >= 10 && (normName.includes(n) || n.includes(normName))
         })
-      })
+      }) : undefined
+      const isDropdownControlled = !!controllingMenu
 
       if (isDropdownControlled) {
-        active = Object.values(dropdownVals).some(val => {
-          if (!val) return false
-          const n = normalize(val)
-          return normName.includes(n) || n.includes(normName.slice(0, 15))
-        })
+        const menuName = controllingMenu!.menu_name ?? controllingMenu!['Menu Name'] ?? controllingMenu!.name ?? ''
+        const selectedVal = dropdownVals[menuName] ?? ''
+        active = !!selectedVal && normName === normalize(selectedVal)
       } else {
         const modKind: string = d?.modifier?.kind ?? ''
         const modExpr: string = d?.modifier?.expression ?? ''
@@ -404,6 +406,29 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         bk.push(`Waste (${res.wasteStripInches.toFixed(0)}in strip): ${res.wasteArea.toFixed(2)} sqft × ${fmt(mat.cost)} × ${res.wastageMarkupPct}% = ${fmt(res.chargeableWaste * mat.cost)}`)
       }
       lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: parseFloat(res.finalQty.toFixed(4)), unitCost: mat.cost, unitPrice: mat.price, totalCost: dTotalCost, totalPrice: dTotalPrice, active: true, rateFound: true, isMaterial: true, breakdown: bk })
+    }
+
+    // Price machine rate and labor rate dropdowns (e.g. Hemming, Pole Pocket)
+    for (const dm of dropdownMenus) {
+      const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
+      const dmTypeLower = (dm?.item_type ?? '').toLowerCase().replace('_', '')
+      if (dmTypeLower !== 'machinerate' && dmTypeLower !== 'machine' && dmTypeLower !== 'laborrate' && dmTypeLower !== 'labor') continue
+      const selectedVal = dropdownVals[menuName] ?? ''
+      if (!selectedVal) continue
+      const rateMap = (dmTypeLower === 'machinerate' || dmTypeLower === 'machine') ? machineMap : laborMap
+      const rate = rateMap[selectedVal.trim().toLowerCase()]
+      if (!rate) {
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: false })
+        continue
+      }
+      const rateRec: RateRecord = {
+        name: rate.name, cost: rate.cost, price: rate.price, markup: rate.markup,
+        production_rate: rate.production_rate ?? undefined,
+        setup_charge: rate.setup_charge ?? undefined,
+        other_charge: rate.other_charge ?? undefined,
+      }
+      const result = computeLineItem(rateRec, 1, q)
+      lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: result.displayQty * q, unitCost: rate.cost, unitPrice: rate.price, totalCost: result.totalCost, totalPrice: result.totalPrice, active: true, rateFound: true, isMaterial: false })
     }
 
     const gCost = lines.reduce((s, l) => s + l.totalCost, 0)
@@ -526,7 +551,8 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
           <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1.5">Dropdown Selections</p>
           {dropdownMenus.map((dm, i) => {
             const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
-            const items: string[] = dm?.selected_items ?? []
+            const selectedItems: string[] = dm?.selected_items ?? []
+            const items: string[] = selectedItems.length > 0 ? selectedItems : (dm?.items ?? dm?.all_items ?? [])
             const isOptional = !!dm?.optional ||
               (dm?.menu_name ?? dm?.name ?? '').toLowerCase().includes('optional')
             if (!menuName) return null
@@ -539,11 +565,14 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
                   onChange={e => setDropdownVals(p => ({ ...p, [menuName]: e.target.value }))}
                 >
                   {isOptional && <option value="">— None —</option>}
-                  {items.map((item, j) => (
-                    <option key={j} value={typeof item === 'string' ? item : (item as any).name ?? ''}>
-                      {typeof item === 'string' ? item : (item as any).name ?? ''}
-                    </option>
-                  ))}
+                  {items.length === 0
+                    ? <option value="" disabled>No options available</option>
+                    : items.map((item, j) => (
+                        <option key={j} value={typeof item === 'string' ? item : (item as any).name ?? ''}>
+                          {typeof item === 'string' ? item : (item as any).name ?? ''}
+                        </option>
+                      ))
+                  }
                 </select>
               </div>
             )
