@@ -186,6 +186,24 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
     setModVals(init)
   }, [shopvoxData]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── init dropdowns when shopvoxData loads asynchronously ─────
+  useEffect(() => {
+    if (!shopvoxData?.dropdown_menus?.length) return
+    setDropdownVals(prev => {
+      if (Object.keys(prev).length > 0) return prev
+      const init: Record<string, string> = {}
+      for (const dm of (shopvoxData.dropdown_menus as any[])) {
+        const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
+        const items: string[] = dm?.selected_items ?? []
+        if (menuName) {
+          const isOptional = !!dm?.optional || menuName.toLowerCase().includes('optional')
+          init[menuName] = isOptional ? '' : (items[0] ?? '')
+        }
+      }
+      return init
+    })
+  }, [shopvoxData]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── fetch rates on mount ──────────────────────────────────────
   useEffect(() => {
     if (!orgSlug) return
