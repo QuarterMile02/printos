@@ -216,7 +216,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         const [laborRes, machineRes, matRows] = await Promise.all([
           supabase.from('labor_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
           supabase.from('machine_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
-          fetchMaterialsForQuote(),
+          fetchMaterialsForQuote(orgId),
         ])
 
         if (!cancelled) {
@@ -279,7 +279,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
           exprVars[k.trim()] = v
         }
         const numVal = evalExpression(cleanNum, exprVars)
-        if (numVal <= 0) {
+        if (!isFinite(numVal) || numVal <= 0) {
           active = false
         } else {
           numModFactor = numVal
