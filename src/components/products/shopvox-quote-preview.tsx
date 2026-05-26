@@ -535,12 +535,14 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
                 <label className="block text-[10px] text-gray-500 uppercase">{menuName}</label>
                 <select
                   className="w-full border border-gray-300 rounded px-2 py-1 text-xs mt-0.5 mb-2"
-                  value={dropdownVals[menuName] !== undefined ? dropdownVals[menuName] : (isOptional ? '' : (items[0] ?? ''))}
+                  value={dropdownVals[menuName] ?? ''}
                   onChange={e => setDropdownVals(p => ({ ...p, [menuName]: e.target.value }))}
                 >
                   {isOptional && <option value="">— None —</option>}
                   {items.map((item, j) => (
-                    <option key={j} value={item}>{item}</option>
+                    <option key={j} value={typeof item === 'string' ? item : (item as any).name ?? ''}>
+                      {typeof item === 'string' ? item : (item as any).name ?? ''}
+                    </option>
                   ))}
                 </select>
               </div>
