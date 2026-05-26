@@ -216,10 +216,8 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         const [laborRes, machineRes, matRes] = await Promise.all([
           supabase.from('labor_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
           supabase.from('machine_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
-          supabase.from('materials').select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage').eq('organization_id', orgId).eq('active', true),
+          supabase.from('materials').select('name, cost, price, formula, fixed_side, width, height, wastage_markup, calculate_wastage').eq('organization_id', orgId).eq('active', true),
         ])
-
-        console.log('matRes:', matRes.data?.length, 'error:', matRes.error?.message, 'laborRes:', laborRes.data?.length)
 
         if (!cancelled) {
           setLaborMap(buildRateMap(laborRes.data ?? []))
@@ -314,8 +312,6 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       let breakdown: string[] | undefined
 
       if (isMat) {
-        console.log('Looking up material:', JSON.stringify(name.trim().toLowerCase()))
-        console.log('Available material keys:', Object.keys(fullMaterialMapRef.current).slice(0, 10))
         const mat = findMaterial(fullMaterialMapRef.current, name)
         rateFound = !!mat
         if (active && mat) {
