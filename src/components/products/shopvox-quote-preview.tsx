@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { computeLineItem, computeMaterialLineItem, type RateRecord } from '@/lib/pricing/compute-line-item'
-import { fetchMaterialsForQuote } from '@/app/(dashboard)/dashboard/[slug]/products/[id]/migrate/actions'
+
 
 interface Props {
   shopvoxData: any
@@ -213,17 +213,17 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         if (orgErr || !orgRow) throw new Error('Organization not found')
         const orgId = (orgRow as { id: string }).id
 
-        const [laborRes, machineRes, matRows] = await Promise.all([
+        const [laborRes, machineRes, matRes] = await Promise.all([
           supabase.from('labor_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
           supabase.from('machine_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
-          fetchMaterialsForQuote(orgId),
+          supabase.from('materials').select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage').eq('organization_id', orgId).eq('active', true),
         ])
 
         if (!cancelled) {
           setLaborMap(buildRateMap(laborRes.data ?? []))
           setMachineMap(buildRateMap(machineRes.data ?? []))
           const matData: FullMaterialMap = {}
-          for (const r of matRows as any[]) {
+          for (const r of (matRes.data ?? []) as any[]) {
             if (r?.name) matData[r.name.trim().toLowerCase()] = {
               name: r.name, cost: r.cost ?? 0,
               price: r.price ?? (r.cost ?? 0) * (r.markup ?? 1),
