@@ -85,16 +85,8 @@ function normalize(s: string) {
   return (s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
-// Prefix/contains match so "Ink Epson GS3" finds "Ink Epson GS3 Printing"
 function findMaterial(map: FullMaterialMap, name: string): FullMaterialRow | undefined {
-  const key = name.trim().toLowerCase()
-  let found: FullMaterialRow | undefined = map[key]
-  if (!found) {
-    for (const [k, val] of Object.entries(map)) {
-      if (k.startsWith(key) || key.startsWith(k)) { found = val; break }
-    }
-  }
-  return found
+  return map[name.trim().toLowerCase()]
 }
 
 // Safe formula evaluator: replaces modifier variable names with their current values
@@ -107,7 +99,8 @@ function evalExpression(expr: string, vars: Record<string, any>): number {
   for (const name of names) {
     const v = vars[name]
     const replacement = typeof v === 'boolean' ? String(v) : String(parseFloat(String(v)) || 0)
-    s = s.replace(new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g'), replacement)
+    const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    s = s.replace(new RegExp('(?<![A-Za-z0-9_])' + escaped + '(?![A-Za-z0-9_])', 'g'), replacement)
   }
   try {
     // eslint-disable-next-line no-new-func
@@ -277,54 +270,34 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       let active = true
       let numModFactor = 1
 
-      const normName = normalize(name)
-      const rawTypeLower = rawType.toLowerCase().replace('_', '')
-      const isRateItem = rawTypeLower === 'laborrate' || rawTypeLower === 'labor' || rawTypeLower === 'machinerate' || rawTypeLower === 'machine'
-      const controllingMenu = isRateItem ? dropdownMenus.find(dm => {
-        const dmType = (dm?.item_type ?? '').toLowerCase().replace('_', '')
-        if (dmType === 'material') return false
-        const opts: string[] = dm?.selected_items ?? []
-        return opts.some(opt => {
-          const n = normalize(opt)
-          const minLen = Math.min(n.length, normName.length)
-          return minLen >= 10 && (normName.includes(n) || n.includes(normName))
-        })
-      }) : undefined
-      const isDropdownControlled = !!controllingMenu
-
-      if (isDropdownControlled) {
-        const menuName = controllingMenu!.menu_name ?? controllingMenu!['Menu Name'] ?? controllingMenu!.name ?? ''
-        const selectedVal = dropdownVals[menuName] ?? ''
-        active = !!selectedVal && normName === normalize(selectedVal)
-      } else {
-        const modKind: string = d?.modifier?.kind ?? ''
-        const modExpr: string = d?.modifier?.expression ?? ''
-        if (modKind === 'formula' && modExpr) {
-          const cleanExpr = modExpr.trim().replace(/;+$/, '')
-          const exprVars = { ...modVals, Width: widthInches, Height: heightInches }
-          const exprVal = evalExpression(cleanExpr, exprVars)
-          if (exprVal <= 0) {
-            active = false
-          } else {
-            numModFactor = exprVal
-          }
+      if (attachChk) {
+        active = modVals[attachChk] === true
+      } else if (attachNum) {
+        const cleanNum = attachNum.trim().replace(/;+$/, '')
+        const exprVars: Record<string, any> = {}
+        for (const [k, v] of Object.entries({ ...modVals, Width: widthInches, Height: heightInches })) {
+          exprVars[k.trim()] = v
+        }
+        const numVal = evalExpression(cleanNum, exprVars)
+        if (numVal <= 0) {
+          active = false
         } else {
-          if (attachChk) {
-            const chkVal = modVals[attachChk]
-            active = chkVal === true || chkVal === 'true'
-          }
-          if (active && attachNum) {
-            const cleanNum = attachNum.trim().replace(/;+$/, '')
-            const isSimpleVar = /^[A-Za-z_][A-Za-z0-9_]*$/.test(cleanNum)
-            const numVal = isSimpleVar
-              ? parseFloat(String(modVals[cleanNum] ?? 0))
-              : evalExpression(cleanNum, { ...modVals, Width: widthInches, Height: heightInches })
-            if (numVal <= 0) {
-              active = false
-            } else {
-              numModFactor = numVal
-            }
-          }
+          numModFactor = numVal
+        }
+      } else {
+        const isDropdownControlled = dropdownMenus.some(dm => {
+          if ((dm?.item_type ?? '').toLowerCase() === 'material') return false
+          const opts: string[] = dm?.selected_items ?? dm?.items ?? dm?.all_items ?? []
+          return opts.some(opt => {
+            const optName = (typeof opt === 'string' ? opt : (opt as any).name ?? '').trim().toLowerCase()
+            const itemName = name.trim().toLowerCase()
+            return optName === itemName
+          })
+        })
+        if (isDropdownControlled) {
+          active = Object.values(dropdownVals).some(val => {
+            return (val ?? '').trim().toLowerCase() === name.trim().toLowerCase()
+          })
         }
       }
 
