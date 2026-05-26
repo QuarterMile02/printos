@@ -312,6 +312,8 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       let breakdown: string[] | undefined
 
       if (isMat) {
+        console.log('Looking up material:', JSON.stringify(name.trim().toLowerCase()))
+        console.log('Available material keys:', Object.keys(fullMaterialMapRef.current).slice(0, 10))
         const mat = findMaterial(fullMaterialMapRef.current, name)
         rateFound = !!mat
         if (active && mat) {
