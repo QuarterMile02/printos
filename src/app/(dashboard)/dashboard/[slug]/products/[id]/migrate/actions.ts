@@ -527,7 +527,7 @@ export async function fetchMaterialsForQuote(orgId?: string) {
   while (true) {
     let query = supabase
       .from('materials')
-      .select('name, cost, price, markup, formula, fixed_side, width, height, wastage_markup, calculate_wastage')
+      .select('name, cost, price, formula, fixed_side, width, height, wastage_markup, calculate_wastage')
       .eq('active', true)
     if (orgId) query = query.eq('organization_id', orgId)
     const { data, error } = await query.range(page * pageSize, (page + 1) * pageSize - 1)
