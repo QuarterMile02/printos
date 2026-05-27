@@ -32,6 +32,7 @@ type FullMaterialRow = {
   height: number | null
   wastage_markup: number | null
   calculate_wastage: boolean | null
+  material_category: string | null
 }
 type FullMaterialMap = Record<string, FullMaterialRow>
 
@@ -102,11 +103,17 @@ function evalExpression(expr: string, vars: Record<string, any>): number {
     const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     s = s.replace(new RegExp('(?<![A-Za-z0-9_])' + escaped + '(?![A-Za-z0-9_])', 'g'), replacement)
   }
+  // Replace any remaining unsubstituted identifiers with 0 — prevents ReferenceError in ternaries
+  // when a variable like Grommets_Spacing is blank/0 and not present in vars
+  s = s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (m) =>
+    /^(true|false|null|undefined|Infinity|NaN)$/.test(m) ? m : '0'
+  )
   try {
     // eslint-disable-next-line no-new-func
     const r = new Function(`"use strict"; return (${s})`)()
     return typeof r === 'number' && isFinite(r) ? r : 0
-  } catch {
+  } catch (err) {
+    console.error('[evalExpression] failed on:', s, err)
     return 0
   }
 }
@@ -153,6 +160,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
   const [machineMap, setMachineMap] = useState<RateMap>({})
   const [fullMaterialMap, setFullMaterialMap] = useState<FullMaterialMap>({})
   const fullMaterialMapRef = useRef<FullMaterialMap>({})
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [materialsLoading, setMaterialsLoading] = useState(true)
 
   const [results, setResults] = useState<LineResult[] | null>(null)
@@ -230,6 +238,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
               formula: r.formula ?? null, fixed_side: r.fixed_side ?? null,
               width: r.width ?? null, height: r.height ?? null,
               wastage_markup: r.wastage_markup ?? null, calculate_wastage: r.calculate_wastage ?? null,
+              material_category: r.material_category ?? null,
             }
           }
           setFullMaterialMap(matData)
@@ -363,22 +372,37 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       if ((dm?.item_type ?? '').toLowerCase() !== 'material') continue
       const selectedVal = dropdownVals[menuName] ?? ''
       if (!selectedVal) continue
+
+      const dmAttachNum: string = (dm?.attach_num_modifier ?? '').trim()
+      const dmAttachNumQty: number = dmAttachNum ? (parseFloat(String(modVals[dmAttachNum] ?? 0)) || 0) : 0
+      const hasDmAttachNum = !!dmAttachNum
+
+      if (hasDmAttachNum && dmAttachNumQty <= 0) {
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: true })
+        continue
+      }
+
       const mat = findMaterial(fullMaterialMapRef.current, selectedVal)
       if (!mat) {
         lines.push({ name: selectedVal, itemType: 'Material', formula: 'Area', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: true })
         continue
       }
-      const res = computeMaterialLineItem(
-        { cost: mat.cost, formula: mat.formula ?? 'Area', fixed_side: mat.fixed_side, width: mat.width, height: mat.height, wastage_markup: mat.wastage_markup, calculate_wastage: mat.calculate_wastage },
-        widthInches, heightInches, q, 1, true,
-      )
-      const dTotalCost = res.lineTotal
-      const dTotalPrice = mat.price > 0 && mat.cost > 0 ? res.lineTotal * (mat.price / mat.cost) : res.lineTotal
-      const bk: string[] = [`Print area: ${res.printArea.toFixed(2)} sqft × ${fmt(mat.cost)} = ${fmt(res.printArea * mat.cost)}`]
-      if (res.wasteArea > 0) {
-        bk.push(`Waste (${res.wasteStripInches.toFixed(0)}in strip): ${res.wasteArea.toFixed(2)} sqft × ${fmt(mat.cost)} × ${res.wastageMarkupPct}% = ${fmt(res.chargeableWaste * mat.cost)}`)
+
+      if (hasDmAttachNum) {
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: dmAttachNumQty, unitCost: mat.cost, unitPrice: mat.price, totalCost: dmAttachNumQty * mat.cost, totalPrice: dmAttachNumQty * mat.price, active: true, rateFound: true, isMaterial: true })
+      } else {
+        const res = computeMaterialLineItem(
+          { cost: mat.cost, formula: mat.formula ?? 'Area', fixed_side: mat.fixed_side, width: mat.width, height: mat.height, wastage_markup: mat.wastage_markup, calculate_wastage: mat.calculate_wastage },
+          widthInches, heightInches, q, 1, true,
+        )
+        const dTotalCost = res.lineTotal
+        const dTotalPrice = mat.price > 0 && mat.cost > 0 ? res.lineTotal * (mat.price / mat.cost) : res.lineTotal
+        const bk: string[] = [`Print area: ${res.printArea.toFixed(2)} sqft × ${fmt(mat.cost)} = ${fmt(res.printArea * mat.cost)}`]
+        if (res.wasteArea > 0) {
+          bk.push(`Waste (${res.wasteStripInches.toFixed(0)}in strip): ${res.wasteArea.toFixed(2)} sqft × ${fmt(mat.cost)} × ${res.wastageMarkupPct}% = ${fmt(res.chargeableWaste * mat.cost)}`)
+        }
+        lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: parseFloat(res.finalQty.toFixed(4)), unitCost: mat.cost, unitPrice: mat.price, totalCost: dTotalCost, totalPrice: dTotalPrice, active: true, rateFound: true, isMaterial: true, breakdown: bk })
       }
-      lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: parseFloat(res.finalQty.toFixed(4)), unitCost: mat.cost, unitPrice: mat.price, totalCost: dTotalCost, totalPrice: dTotalPrice, active: true, rateFound: true, isMaterial: true, breakdown: bk })
     }
 
     // Price machine rate and labor rate dropdowns (e.g. Hemming, Pole Pocket)
@@ -388,6 +412,16 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       if (dmTypeLower !== 'machinerate' && dmTypeLower !== 'machine' && dmTypeLower !== 'laborrate' && dmTypeLower !== 'labor') continue
       const selectedVal = dropdownVals[menuName] ?? ''
       if (!selectedVal) continue
+
+      const dmAttachNum: string = (dm?.attach_num_modifier ?? '').trim()
+      const dmAttachNumQty: number = dmAttachNum ? (parseFloat(String(modVals[dmAttachNum] ?? 0)) || 0) : 0
+      const hasDmAttachNum = !!dmAttachNum
+
+      if (hasDmAttachNum && dmAttachNumQty <= 0) {
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: false })
+        continue
+      }
+
       const rateMap = (dmTypeLower === 'machinerate' || dmTypeLower === 'machine') ? machineMap : laborMap
       const rate = rateMap[selectedVal.trim().toLowerCase()]
       if (!rate) {
@@ -400,8 +434,13 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         setup_charge: rate.setup_charge ?? undefined,
         other_charge: rate.other_charge ?? undefined,
       }
-      const result = computeLineItem(rateRec, 1, q)
-      lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: result.displayQty * q, unitCost: rate.cost, unitPrice: rate.price, totalCost: result.totalCost, totalPrice: result.totalPrice, active: true, rateFound: true, isMaterial: false })
+
+      if (hasDmAttachNum) {
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: dmAttachNumQty, unitCost: rate.cost, unitPrice: rate.price, totalCost: dmAttachNumQty * rate.cost, totalPrice: dmAttachNumQty * rate.price, active: true, rateFound: true, isMaterial: false })
+      } else {
+        const result = computeLineItem(rateRec, 1, q)
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: result.displayQty * q, unitCost: rate.cost, unitPrice: rate.price, totalCost: result.totalCost, totalPrice: result.totalPrice, active: true, rateFound: true, isMaterial: false })
+      }
     }
 
     const gCost = lines.reduce((s, l) => s + l.totalCost, 0)
@@ -410,6 +449,17 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
     setGrandTotalCost(gCost)
     setGrandTotalPrice(gPrice)
   }
+
+  // ── auto-recalculate with debounce ────────────────────────────
+  useEffect(() => {
+    if (!ratesReady) return
+    if (!((modVals['Width'] ?? 0) > 0 || (modVals['Height'] ?? 0) > 0)) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(handleCalculate, 400)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [modVals, dropdownVals, ratesReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── guard clauses ─────────────────────────────────────────────
   if (!shopvoxData) {
@@ -481,9 +531,12 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
                 <div key={i}>
                   <label className="block truncate text-[10px] text-gray-500 mb-0.5" title={name}>{name}</label>
                   {isNumeric ? (
-                    <input type="number" min={0} step={0.01}
-                      value={typeof modVals[name] === 'number' ? modVals[name] : 0}
-                      onChange={e => setModVals(p => ({ ...p, [name]: parseFloat(e.target.value) || 0 }))}
+                    <input type="number" min={0} step="any"
+                      value={modVals[name] === 0 ? '' : (modVals[name] ?? '')}
+                      onChange={e => {
+                        const parsed = parseFloat(e.target.value)
+                        setModVals(p => ({ ...p, [name]: isNaN(parsed) ? 0 : parsed }))
+                      }}
                       className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs" />
                   ) : (
                     <input type="text"
@@ -525,7 +578,12 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
           {dropdownMenus.map((dm, i) => {
             const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
             const selectedItems: string[] = dm?.selected_items ?? []
-            const items: string[] = selectedItems.length > 0 ? selectedItems : (dm?.items ?? dm?.all_items ?? [])
+            const dmCategory: string | undefined = dm?.category
+            const items: string[] = selectedItems.length > 0
+              ? selectedItems
+              : dmCategory
+                ? Object.values(fullMaterialMap).filter(mat => mat.material_category === dmCategory).map(mat => mat.name)
+                : []
             const isOptional = !!dm?.optional ||
               (dm?.menu_name ?? dm?.name ?? '').toLowerCase().includes('optional')
             if (!menuName) return null
@@ -566,7 +624,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
             <table className="min-w-full text-xs">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500 max-w-[120px]">Item</th>
+                  <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500 min-w-[180px] resize-x overflow-auto">Item</th>
                   <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Type</th>
                   <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Formula</th>
                   <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Qty</th>
@@ -578,7 +636,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
               <tbody className="divide-y divide-gray-100">
                 {results.map((line, i) => (
                   <tr key={i} className={line.active ? '' : 'text-gray-300'}>
-                    <td className="px-2 py-1.5 max-w-[120px]">
+                    <td className="px-2 py-1.5 min-w-[180px] max-w-[220px] resize-x overflow-auto">
                       <span className={`truncate block ${!line.rateFound && line.active ? 'text-amber-600' : ''}`} title={line.name}>
                         {line.name}
                       </span>
@@ -623,6 +681,9 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
             <span className="font-bold text-green-700">
               Margin: <span className="tabular-nums">{overallMargin.toFixed(1)}%</span>
             </span>
+            {qty > 1 && (
+              <span className="text-gray-500 text-xs">× {qty} units</span>
+            )}
           </div>
 
           <p className="text-[10px] text-gray-400">
