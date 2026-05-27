@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { computeLineItem, computeMaterialLineItem, type RateRecord } from '@/lib/pricing/compute-line-item'
 import { fetchMaterialsForQuote } from '@/app/(dashboard)/dashboard/[slug]/products/[id]/migrate/actions'
 
 interface Props {
@@ -19,6 +18,8 @@ type RateRow = {
   production_rate: number | null
   setup_charge: number | null
   other_charge: number | null
+  per_li_unit: boolean
+  units: string | null
 }
 type RateMap = Record<string, RateRow>
 
@@ -33,6 +34,7 @@ type FullMaterialRow = {
   wastage_markup: number | null
   calculate_wastage: boolean | null
   material_category: string | null
+  material_type: string | null
 }
 type FullMaterialMap = Record<string, FullMaterialRow>
 
@@ -41,18 +43,28 @@ interface LineResult {
   itemType: string
   formula: string
   displayQty: number
+  units: string
   unitCost: number
   unitPrice: number
+  perLiUnit: boolean
+  liQty: number
   totalCost: number
   totalPrice: number
   active: boolean
   rateFound: boolean
   isMaterial: boolean
-  breakdown?: string[]
 }
 
 function fmt(n: number) {
   return '$' + n.toFixed(2)
+}
+
+function formulaToUnits(formula: string): string {
+  const f = (formula ?? '').toLowerCase().trim()
+  if (f === 'area' || f.includes('area')) return 'sqft'
+  if (f === 'perimeter' || f.includes('perim')) return 'ft'
+  if (f === 'height' || f === 'width') return 'ft'
+  return 'unit'
 }
 
 function computeFormula(formula: string, widthFt: number, heightFt: number): number {
@@ -76,26 +88,22 @@ function buildRateMap(rows: any[]): RateMap {
         production_rate: r.production_rate ?? null,
         setup_charge: r.setup_charge ?? null,
         other_charge: r.other_charge ?? null,
+        per_li_unit: r.per_li_unit ?? false,
+        units: r.units ?? null,
       }
     }
   }
   return m
 }
 
-function normalize(s: string) {
-  return (s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
-}
-
 function findMaterial(map: FullMaterialMap, name: string): FullMaterialRow | undefined {
   return map[name.trim().toLowerCase()]
 }
 
-// Safe formula evaluator: replaces modifier variable names with their current values
-// then evaluates the expression string. Handles ternary, arithmetic, boolean.
-// e.g. "Grommets_Corners ? 4 : No_Grommets ? 0 : (2*(Width+Height))/Grommets_Spacing"
+// Safe formula evaluator — replaces modifier variable names then evaluates.
+// Final pass replaces any remaining identifiers with 0 to prevent ReferenceError.
 function evalExpression(expr: string, vars: Record<string, any>): number {
   let s = expr
-  // Sort longer names first to avoid partial replacements (e.g. "Width" before "W")
   const names = Object.keys(vars).sort((a, b) => b.length - a.length)
   for (const name of names) {
     const v = vars[name]
@@ -103,8 +111,6 @@ function evalExpression(expr: string, vars: Record<string, any>): number {
     const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     s = s.replace(new RegExp('(?<![A-Za-z0-9_])' + escaped + '(?![A-Za-z0-9_])', 'g'), replacement)
   }
-  // Replace any remaining unsubstituted identifiers with 0 — prevents ReferenceError in ternaries
-  // when a variable like Grommets_Spacing is blank/0 and not present in vars
   s = s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\b/g, (m) =>
     /^(true|false|null|undefined|Infinity|NaN)$/.test(m) ? m : '0'
   )
@@ -121,46 +127,41 @@ function evalExpression(expr: string, vars: Record<string, any>): number {
 function TypeBadge({ type }: { type: string }) {
   const t = (type ?? '').toLowerCase().replace('_', '')
   if (t === 'material')
-    return <span className="inline-flex rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium">Material</span>
+    return <span className="inline-flex rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium">Mat</span>
   if (t === 'laborrate' || t === 'labor')
     return <span className="inline-flex rounded-full bg-purple-100 text-purple-700 px-1.5 py-0.5 text-[10px] font-medium">Labor</span>
   if (t === 'machinerate' || t === 'machine')
-    return <span className="inline-flex rounded-full bg-orange-100 text-orange-700 px-1.5 py-0.5 text-[10px] font-medium">Machine</span>
-  return <span className="text-[10px] text-gray-500">{type}</span>
+    return <span className="inline-flex rounded-full bg-orange-100 text-orange-700 px-1.5 py-0.5 text-[10px] font-medium">Mach</span>
+  return null
 }
 
-export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug }: Props) {
+export default function ShopvoxQuotePreview({ shopvoxData, productName: _productName, orgSlug }: Props) {
   const modifiers: any[] = shopvoxData?.modifiers ?? []
   const dropdownMenus: any[] = shopvoxData?.dropdown_menus ?? []
   const defaultItems: any[] = shopvoxData?.default_items ?? []
 
   // ── state ─────────────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [width] = useState(48)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [height] = useState(96)
   const [qty, setQty] = useState(1)
   const [modVals, setModVals] = useState<Record<string, any>>({})
+
+  // FIX 1: all dropdowns start blank — user always picks
   const [dropdownVals, setDropdownVals] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
     for (const dm of (shopvoxData?.dropdown_menus ?? [])) {
       const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
-      const items: string[] = dm?.selected_items ?? []
-      if (menuName) {
-        init[menuName] = (dm?.optional || menuName.toLowerCase().includes('optional')) ? '' : (items[0] ?? '')
-      }
+      if (menuName) init[menuName] = ''
     }
     return init
   })
 
   const [ratesLoading, setRatesLoading] = useState(true)
   const [ratesError, setRatesError] = useState<string | null>(null)
-  const [ratesReady, setRatesReady] = useState(false)
   const [laborMap, setLaborMap] = useState<RateMap>({})
   const [machineMap, setMachineMap] = useState<RateMap>({})
   const [fullMaterialMap, setFullMaterialMap] = useState<FullMaterialMap>({})
   const fullMaterialMapRef = useRef<FullMaterialMap>({})
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // FIX 5: use a ref so the debounce effect never reads stale ratesReady
+  const ratesReadyRef = useRef(false)
   const [materialsLoading, setMaterialsLoading] = useState(true)
 
   const [results, setResults] = useState<LineResult[] | null>(null)
@@ -187,18 +188,13 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
     setModVals(init)
   }, [shopvoxData]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── init dropdowns when shopvoxData loads asynchronously ─────
+  // FIX 1: init all dropdowns to blank on shopvoxData change
   useEffect(() => {
     if (!shopvoxData?.dropdown_menus?.length) return
     const init: Record<string, string> = {}
     for (const dm of (shopvoxData.dropdown_menus as any[])) {
       const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
-      const selectedItems: string[] = dm?.selected_items ?? []
-      const allItems: string[] = selectedItems.length > 0 ? selectedItems : (dm?.items ?? dm?.all_items ?? [])
-      if (menuName) {
-        const isOptional = !!dm?.optional || menuName.toLowerCase().includes('optional')
-        init[menuName] = isOptional ? '' : (allItems[0] ?? '')
-      }
+      if (menuName) init[menuName] = ''
     }
     setDropdownVals(init)
   }, [shopvoxData]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -221,9 +217,14 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         if (orgErr || !orgRow) throw new Error('Organization not found')
         const orgId = (orgRow as { id: string }).id
 
+        // FIX 2: fetch per_li_unit and units from both rate tables
         const [laborRes, machineRes, matRows] = await Promise.all([
-          supabase.from('labor_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
-          supabase.from('machine_rates').select('name, cost, price, markup, production_rate, setup_charge, other_charge').eq('organization_id', orgId).eq('active', true),
+          supabase.from('labor_rates')
+            .select('name, cost, price, markup, production_rate, setup_charge, other_charge, per_li_unit, units')
+            .eq('organization_id', orgId).eq('active', true),
+          supabase.from('machine_rates')
+            .select('name, cost, price, markup, production_rate, setup_charge, other_charge, per_li_unit, units')
+            .eq('organization_id', orgId).eq('active', true),
           fetchMaterialsForQuote(orgId),
         ])
 
@@ -239,12 +240,13 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
               width: r.width ?? null, height: r.height ?? null,
               wastage_markup: r.wastage_markup ?? null, calculate_wastage: r.calculate_wastage ?? null,
               material_category: r.material_category ?? null,
+              material_type: r.material_type ?? null,
             }
           }
           setFullMaterialMap(matData)
           fullMaterialMapRef.current = matData
           setMaterialsLoading(false)
-          setRatesReady(true)
+          ratesReadyRef.current = true  // FIX 5: set ref before any debounce fires
         }
       } catch (e) {
         if (!cancelled) setRatesError(e instanceof Error ? e.message : 'Failed to load rates')
@@ -258,7 +260,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
 
   // ── calculate ─────────────────────────────────────────────────
   function handleCalculate() {
-    if (!ratesReady) return
+    if (!ratesReadyRef.current) return
 
     const widthInches  = parseFloat(String(modVals['Width']  ?? modVals['width']  ?? 48)) || 48
     const heightInches = parseFloat(String(modVals['Height'] ?? modVals['height'] ?? 96)) || 96
@@ -268,6 +270,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
 
     const lines: LineResult[] = []
 
+    // ── default items ────────────────────────────────────────────
     for (const d of defaultItems) {
       const name = d?.name ?? d?.Name ?? ''
       const rawType = d?.item_type ?? d?.['Item Type'] ?? d?.ItemType ?? d?.type ?? ''
@@ -299,74 +302,60 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
           const opts: string[] = dm?.selected_items ?? dm?.items ?? dm?.all_items ?? []
           return opts.some(opt => {
             const optName = (typeof opt === 'string' ? opt : (opt as any).name ?? '').trim().toLowerCase()
-            const itemName = name.trim().toLowerCase()
-            return optName === itemName
+            return optName === name.trim().toLowerCase()
           })
         })
         if (isDropdownControlled) {
-          active = Object.values(dropdownVals).some(val => {
-            return (val ?? '').trim().toLowerCase() === name.trim().toLowerCase()
-          })
+          active = Object.values(dropdownVals).some(val =>
+            (val ?? '').trim().toLowerCase() === name.trim().toLowerCase()
+          )
         }
       }
 
-      const perLiUnit: boolean = !!(d?.per_li_unit ?? d?.per_li ?? false)
       const typeLower = rawType.toLowerCase().replace('_', '')
       const isMat = typeLower === 'material'
 
-      let totalCost = 0
-      let totalPrice = 0
-      let displayQty = 0
-      let rateFound = false
-      let breakdown: string[] | undefined
-
       if (isMat) {
         const mat = findMaterial(fullMaterialMapRef.current, name)
-        rateFound = !!mat
-        if (active && mat) {
-          const res = computeMaterialLineItem(
-            { cost: mat.cost, formula: mat.formula ?? itemFormula, fixed_side: mat.fixed_side, width: mat.width, height: mat.height, wastage_markup: mat.wastage_markup, calculate_wastage: mat.calculate_wastage },
-            widthInches, heightInches, q, multiplier * numModFactor, perLiUnit,
-          )
-          totalCost = res.lineTotal
-          totalPrice = mat.price > 0 && mat.cost > 0 ? res.lineTotal * (mat.price / mat.cost) : res.lineTotal
-          displayQty = parseFloat(res.finalQty.toFixed(4))
-          const bk: string[] = [`Print area: ${res.printArea.toFixed(2)} sqft × ${fmt(mat.cost)} = ${fmt(res.printArea * mat.cost)}`]
-          if (res.wasteArea > 0) {
-            bk.push(`Waste (${res.wasteStripInches.toFixed(0)}in strip): ${res.wasteArea.toFixed(2)} sqft × ${fmt(mat.cost)} × ${res.wastageMarkupPct}% = ${fmt(res.chargeableWaste * mat.cost)}`)
-          }
-          breakdown = bk
-        } else {
-          displayQty = multiplier * numModFactor * (perLiUnit ? q : 1)
-        }
-        lines.push({ name, itemType: rawType, formula: itemFormula, displayQty, unitCost: mat?.cost ?? 0, unitPrice: mat?.price ?? 0, totalCost, totalPrice, active, rateFound, isMaterial: true, breakdown })
+        const formulaQty = computeFormula(mat?.formula ?? itemFormula, widthFt, heightFt) * multiplier * numModFactor
+        const matUnits = formulaToUnits(mat?.formula ?? itemFormula)
+        // FIX 3: materials always per_li_unit; liQty = order qty when active
+        const liQty = active ? q : 0
+        const totalCost = active && mat ? mat.cost * formulaQty * liQty : 0
+        const totalPrice = active && mat ? mat.price * formulaQty * liQty : 0
+        lines.push({
+          name, itemType: rawType, formula: itemFormula,
+          displayQty: formulaQty, units: matUnits,
+          unitCost: mat?.cost ?? 0, unitPrice: mat?.price ?? 0,
+          perLiUnit: true, liQty,
+          totalCost, totalPrice,
+          active, rateFound: !!mat, isMaterial: true,
+        })
       } else {
         const perPiece = computeFormula(itemFormula, widthFt, heightFt)
-        const perPieceFormQty = perPiece * multiplier * numModFactor
-        displayQty = active ? perPieceFormQty * q : perPiece * multiplier * q
+        const formulaQty = perPiece * multiplier * numModFactor
         const rateMap =
           typeLower === 'laborrate' || typeLower === 'labor' ? laborMap
           : typeLower === 'machinerate' || typeLower === 'machine' ? machineMap
           : laborMap
         const rate = rateMap[name.trim().toLowerCase()]
-        rateFound = !!rate
-        if (active && rate) {
-          const rateRec: RateRecord = {
-            name: rate.name, cost: rate.cost, price: rate.price, markup: rate.markup,
-            production_rate: rate.production_rate ?? undefined,
-            setup_charge: rate.setup_charge ?? undefined,
-            other_charge: rate.other_charge ?? undefined,
-          }
-          const result = computeLineItem(rateRec, perPieceFormQty, q)
-          totalCost = result.totalCost
-          totalPrice = result.totalPrice
-          displayQty = result.displayQty * q
-        }
-        lines.push({ name, itemType: rawType, formula: itemFormula, displayQty, unitCost: rate?.cost ?? 0, unitPrice: rate?.price ?? 0, totalCost, totalPrice, active, rateFound, isMaterial: false })
+        // FIX 3: use rate.per_li_unit to determine liQty
+        const perLiUnit = rate?.per_li_unit ?? false
+        const liQty = active && rate ? (perLiUnit ? q : 1) : 0
+        const totalCost = active && rate ? rate.cost * formulaQty * liQty : 0
+        const totalPrice = active && rate ? rate.price * formulaQty * liQty : 0
+        lines.push({
+          name, itemType: rawType, formula: itemFormula,
+          displayQty: formulaQty, units: rate?.units ?? '',
+          unitCost: rate?.cost ?? 0, unitPrice: rate?.price ?? 0,
+          perLiUnit, liQty,
+          totalCost, totalPrice,
+          active, rateFound: !!rate, isMaterial: false,
+        })
       }
     }
 
-    // Price materials selected from dropdown menus (e.g. banner roll)
+    // ── material dropdown items ──────────────────────────────────
     for (const dm of dropdownMenus) {
       const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
       if ((dm?.item_type ?? '').toLowerCase() !== 'material') continue
@@ -378,34 +367,26 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       const hasDmAttachNum = !!dmAttachNum
 
       if (hasDmAttachNum && dmAttachNumQty <= 0) {
-        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: true })
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 1, units: 'unit', unitCost: 0, unitPrice: 0, perLiUnit: true, liQty: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: true })
         continue
       }
 
       const mat = findMaterial(fullMaterialMapRef.current, selectedVal)
       if (!mat) {
-        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Area', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: true })
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Area', displayQty: 0, units: 'sqft', unitCost: 0, unitPrice: 0, perLiUnit: true, liQty: q, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: true })
         continue
       }
 
       if (hasDmAttachNum) {
-        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: dmAttachNumQty, unitCost: mat.cost, unitPrice: mat.price, totalCost: dmAttachNumQty * mat.cost, totalPrice: dmAttachNumQty * mat.price, active: true, rateFound: true, isMaterial: true })
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 1, units: 'unit', unitCost: mat.cost, unitPrice: mat.price, perLiUnit: true, liQty: dmAttachNumQty, totalCost: mat.cost * dmAttachNumQty, totalPrice: mat.price * dmAttachNumQty, active: true, rateFound: true, isMaterial: true })
       } else {
-        const res = computeMaterialLineItem(
-          { cost: mat.cost, formula: mat.formula ?? 'Area', fixed_side: mat.fixed_side, width: mat.width, height: mat.height, wastage_markup: mat.wastage_markup, calculate_wastage: mat.calculate_wastage },
-          widthInches, heightInches, q, 1, true,
-        )
-        const dTotalCost = res.lineTotal
-        const dTotalPrice = mat.price > 0 && mat.cost > 0 ? res.lineTotal * (mat.price / mat.cost) : res.lineTotal
-        const bk: string[] = [`Print area: ${res.printArea.toFixed(2)} sqft × ${fmt(mat.cost)} = ${fmt(res.printArea * mat.cost)}`]
-        if (res.wasteArea > 0) {
-          bk.push(`Waste (${res.wasteStripInches.toFixed(0)}in strip): ${res.wasteArea.toFixed(2)} sqft × ${fmt(mat.cost)} × ${res.wastageMarkupPct}% = ${fmt(res.chargeableWaste * mat.cost)}`)
-        }
-        lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: parseFloat(res.finalQty.toFixed(4)), unitCost: mat.cost, unitPrice: mat.price, totalCost: dTotalCost, totalPrice: dTotalPrice, active: true, rateFound: true, isMaterial: true, breakdown: bk })
+        const formulaQty = computeFormula(mat.formula ?? 'Area', widthFt, heightFt)
+        const matUnits = formulaToUnits(mat.formula ?? 'Area')
+        lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: formulaQty, units: matUnits, unitCost: mat.cost, unitPrice: mat.price, perLiUnit: true, liQty: q, totalCost: mat.cost * formulaQty * q, totalPrice: mat.price * formulaQty * q, active: true, rateFound: true, isMaterial: true })
       }
     }
 
-    // Price machine rate and labor rate dropdowns (e.g. Hemming, Pole Pocket)
+    // ── machine/labor rate dropdown items ────────────────────────
     for (const dm of dropdownMenus) {
       const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
       const dmTypeLower = (dm?.item_type ?? '').toLowerCase().replace('_', '')
@@ -418,28 +399,22 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       const hasDmAttachNum = !!dmAttachNum
 
       if (hasDmAttachNum && dmAttachNumQty <= 0) {
-        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: false })
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 1, units: '', unitCost: 0, unitPrice: 0, perLiUnit: false, liQty: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: false })
         continue
       }
 
       const rateMap = (dmTypeLower === 'machinerate' || dmTypeLower === 'machine') ? machineMap : laborMap
       const rate = rateMap[selectedVal.trim().toLowerCase()]
       if (!rate) {
-        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 0, unitCost: 0, unitPrice: 0, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: false })
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 1, units: '', unitCost: 0, unitPrice: 0, perLiUnit: false, liQty: 0, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: false })
         continue
-      }
-      const rateRec: RateRecord = {
-        name: rate.name, cost: rate.cost, price: rate.price, markup: rate.markup,
-        production_rate: rate.production_rate ?? undefined,
-        setup_charge: rate.setup_charge ?? undefined,
-        other_charge: rate.other_charge ?? undefined,
       }
 
       if (hasDmAttachNum) {
-        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: dmAttachNumQty, unitCost: rate.cost, unitPrice: rate.price, totalCost: dmAttachNumQty * rate.cost, totalPrice: dmAttachNumQty * rate.price, active: true, rateFound: true, isMaterial: false })
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 1, units: rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty: dmAttachNumQty, totalCost: rate.cost * dmAttachNumQty, totalPrice: rate.price * dmAttachNumQty, active: true, rateFound: true, isMaterial: false })
       } else {
-        const result = computeLineItem(rateRec, 1, q)
-        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: result.displayQty * q, unitCost: rate.cost, unitPrice: rate.price, totalCost: result.totalCost, totalPrice: result.totalPrice, active: true, rateFound: true, isMaterial: false })
+        const liQty = rate.per_li_unit ? q : 1
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 1, units: rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty, totalCost: rate.cost * liQty, totalPrice: rate.price * liQty, active: true, rateFound: true, isMaterial: false })
       }
     }
 
@@ -450,35 +425,23 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
     setGrandTotalPrice(gPrice)
   }
 
-  // ── auto-recalculate with debounce ────────────────────────────
+  // FIX 5: debounce uses ratesReadyRef (ref) so the check is never stale
   useEffect(() => {
-    if (!ratesReady) return
-    if (!((modVals['Width'] ?? 0) > 0 || (modVals['Height'] ?? 0) > 0)) return
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(handleCalculate, 400)
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [modVals, dropdownVals, ratesReady]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!ratesReadyRef.current) return
+    if ((modVals['Width'] ?? 0) === 0 && (modVals['Height'] ?? 0) === 0) return
+    const timer = setTimeout(() => { handleCalculate() }, 400)
+    return () => clearTimeout(timer)
+  }, [modVals, dropdownVals]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── guard clauses ─────────────────────────────────────────────
   if (!shopvoxData) {
-    return (
-      <div className="text-xs text-gray-400 italic py-6 text-center">
-        No ShopVOX data available.
-      </div>
-    )
+    return <div className="text-xs text-gray-400 italic py-6 text-center">No ShopVOX data available.</div>
   }
   if (defaultItems.length === 0) {
-    return (
-      <div className="text-xs text-gray-400 italic py-6 text-center">
-        No default items found in ShopVOX data.
-      </div>
-    )
+    return <div className="text-xs text-gray-400 italic py-6 text-center">No default items found in ShopVOX data.</div>
   }
 
-  const overallMargin =
-    grandTotalPrice > 0 ? ((grandTotalPrice - grandTotalCost) / grandTotalPrice) * 100 : 0
+  const overallMargin = grandTotalPrice > 0 ? ((grandTotalPrice - grandTotalCost) / grandTotalPrice) * 100 : 0
 
   const boolMods = modifiers.filter(m => {
     const t = (m?.type ?? m?.Type ?? '').toLowerCase()
@@ -491,17 +454,12 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
 
   return (
     <div className="space-y-3 text-xs overflow-x-hidden">
-      {/* 1. Header */}
+      {/* Header */}
       <div>
-        <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
-          ShopVOX Reference Pricing
-        </p>
-        <p className="text-[10px] text-gray-400 italic">
-          Compare this to the PrintOS Builder on the right →
-        </p>
+        <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">ShopVOX Reference Pricing</p>
+        <p className="text-[10px] text-gray-400 italic">Compare this to the PrintOS Builder on the right →</p>
       </div>
 
-      {/* Rates status */}
       {ratesLoading && (
         <div className="flex items-center gap-2 text-gray-400 py-1">
           <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" />
@@ -510,15 +468,15 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
       )}
       {ratesError && <p className="text-red-500">{ratesError}</p>}
 
-      {/* 2. QTY input */}
+      {/* QTY */}
       <div className="flex items-center gap-2 mb-3">
         <span className="text-xs text-gray-500 font-medium">QTY</span>
         <input type="number" min={1} value={qty}
-          onChange={e => setQty(parseInt(e.target.value)||1)}
+          onChange={e => setQty(parseInt(e.target.value) || 1)}
           className="w-16 border border-gray-300 rounded px-1.5 py-1 text-xs" />
       </div>
 
-      {/* 3. Modifiers (numeric grid) */}
+      {/* Numeric modifiers */}
       {nonBoolMods.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-2">
           <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1.5">Modifiers</p>
@@ -551,7 +509,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         </div>
       )}
 
-      {/* 4. Options (boolean checkboxes) */}
+      {/* Boolean checkboxes */}
       {boolMods.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-2 space-y-1">
           <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Options</p>
@@ -571,22 +529,24 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         </div>
       )}
 
-      {/* 5. Dropdown Selections */}
+      {/* Dropdowns — FIX 1: always start blank; FIX 4: scraped items or material_type filter */}
       {dropdownMenus.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-2">
           <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1.5">Dropdown Selections</p>
           {dropdownMenus.map((dm, i) => {
             const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
+            if (!menuName) return null
             const selectedItems: string[] = dm?.selected_items ?? []
             const dmCategory: string | undefined = dm?.category
+            // FIX 4: scraped selected_items wins; fallback filters by material_type
             const items: string[] = selectedItems.length > 0
               ? selectedItems
-              : dmCategory
-                ? Object.values(fullMaterialMap).filter(mat => mat.material_category === dmCategory).map(mat => mat.name)
+              : (dmCategory && dmCategory !== '-')
+                ? Object.values(fullMaterialMap)
+                    .filter(mat => mat.material_type === dmCategory)
+                    .map(mat => mat.name)
+                    .sort()
                 : []
-            const isOptional = !!dm?.optional ||
-              (dm?.menu_name ?? dm?.name ?? '').toLowerCase().includes('optional')
-            if (!menuName) return null
             return (
               <div key={i}>
                 <label className="block text-[10px] text-gray-500 uppercase">{menuName}</label>
@@ -595,14 +555,13 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
                   value={dropdownVals[menuName] ?? ''}
                   onChange={e => setDropdownVals(p => ({ ...p, [menuName]: e.target.value }))}
                 >
-                  {isOptional && <option value="">— None —</option>}
+                  <option value="">— None —</option>
                   {items.length === 0
                     ? <option value="" disabled>No options available</option>
-                    : items.map((item, j) => (
-                        <option key={j} value={typeof item === 'string' ? item : (item as any).name ?? ''}>
-                          {typeof item === 'string' ? item : (item as any).name ?? ''}
-                        </option>
-                      ))
+                    : items.map((item, j) => {
+                        const label = typeof item === 'string' ? item : (item as any).name ?? ''
+                        return <option key={j} value={label}>{label}</option>
+                      })
                   }
                 </select>
               </div>
@@ -611,57 +570,50 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
         </div>
       )}
 
-      {/* 6. Calculate button */}
+      {/* Calculate button */}
       <button type="button" onClick={handleCalculate} disabled={materialsLoading}
         className="w-full rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
         {materialsLoading ? 'Loading materials…' : 'Calculate Price'}
       </button>
 
-      {/* 7. Results */}
+      {/* FIX 3: Results table — Name | Qty | Unit | Unit Cost | Unit Price | LI Qty | Total Cost | Total Price */}
       {results && (
-        <div className="space-y-2">
+        <div className="space-y-1">
           <div className="overflow-x-auto rounded border border-gray-200">
             <table className="min-w-full text-xs">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500 min-w-[180px] resize-x overflow-auto">Item</th>
-                  <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Type</th>
-                  <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Formula</th>
+                  <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500 min-w-[160px]">Name</th>
                   <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Qty</th>
-                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Cost</th>
-                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Total</th>
-                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Sell</th>
+                  <th className="px-2 py-1.5 text-left font-medium uppercase tracking-wide text-gray-500">Unit</th>
+                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Unit Cost</th>
+                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Unit Price</th>
+                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">LI Qty</th>
+                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Total Cost</th>
+                  <th className="px-2 py-1.5 text-right font-medium uppercase tracking-wide text-gray-500">Total Price</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {results.map((line, i) => (
                   <tr key={i} className={line.active ? '' : 'text-gray-300'}>
-                    <td className="px-2 py-1.5 min-w-[180px] max-w-[220px] resize-x overflow-auto">
-                      <span className={`truncate block ${!line.rateFound && line.active ? 'text-amber-600' : ''}`} title={line.name}>
-                        {line.name}
-                      </span>
-                      {!line.rateFound && line.active && (
-                        <span className="text-[9px] text-amber-500">rate not found</span>
-                      )}
-                      {!line.active && (
-                        <span className="text-[9px] text-gray-400 italic">inactive</span>
-                      )}
+                    <td className="px-2 py-1.5 min-w-[160px] max-w-[220px]">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className={`truncate ${!line.rateFound && line.active ? 'text-amber-600' : ''}`} title={line.name}>
+                          {line.name}
+                        </span>
+                        <TypeBadge type={line.itemType} />
+                      </div>
+                      {!line.rateFound && line.active && <span className="text-[9px] text-amber-500">rate not found</span>}
+                      {!line.active && <span className="text-[9px] text-gray-400 italic">inactive</span>}
                     </td>
-                    <td className="px-2 py-1.5 whitespace-nowrap"><TypeBadge type={line.itemType} /></td>
-                    <td className="px-2 py-1.5 font-mono whitespace-nowrap">{line.formula}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{line.displayQty.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-gray-500">{line.units}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{fmt(line.unitCost)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">
-                      {line.breakdown ? (
-                        <div>
-                          {line.breakdown.map((b, j) => (
-                            <div key={j} className="text-[9px] text-gray-400 whitespace-nowrap text-left">{b}</div>
-                          ))}
-                          <div className="font-semibold">{fmt(line.totalCost)}</div>
-                        </div>
-                      ) : fmt(line.totalCost)}
-                    </td>
-                    <td className={`px-2 py-1.5 text-right tabular-nums ${line.active && line.totalPrice > 0 ? 'font-semibold text-green-700' : ''}`}>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(line.unitPrice)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{line.liQty}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(line.totalCost)}</td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${line.active && line.totalPrice > 0 ? 'font-semibold' : ''}`}
+                      style={line.active && line.totalPrice > 0 ? { color: '#93ca3b' } : undefined}>
                       {fmt(line.totalPrice)}
                     </td>
                   </tr>
@@ -669,29 +621,25 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName, orgSlug 
               </tbody>
             </table>
           </div>
-
-          {/* Totals */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
-            <span className="text-gray-600">
-              Total Cost: <span className="font-semibold tabular-nums">{fmt(grandTotalCost)}</span>
-            </span>
-            <span className="font-bold text-green-700">
-              Sell Price: <span className="tabular-nums">{fmt(grandTotalPrice)}</span>
-            </span>
-            <span className="font-bold text-green-700">
-              Margin: <span className="tabular-nums">{overallMargin.toFixed(1)}%</span>
-            </span>
-            {qty > 1 && (
-              <span className="text-gray-500 text-xs">× {qty} units</span>
-            )}
-          </div>
-
           <p className="text-[10px] text-gray-400">
-            ● Active &nbsp; ○ Inactive &nbsp;
-            <span className="text-amber-500">rate not found</span> = not in PrintOS yet
+            ● Active &nbsp;○ Inactive &nbsp;<span className="text-amber-500">rate not found</span> = not in PrintOS yet
           </p>
         </div>
       )}
+
+      {/* FIX 6: Sticky totals bar — always visible at bottom of scroll container */}
+      <div className="sticky bottom-0 bg-white border-t-2 border-green-500 p-3 flex flex-wrap gap-4 items-center z-10 shadow-md">
+        <span className="text-gray-600 text-xs">
+          Cost: <span className="font-semibold tabular-nums">{results ? fmt(grandTotalCost) : '—'}</span>
+        </span>
+        <span className="text-xs font-bold" style={{ color: '#93ca3b' }}>
+          Sell: <span className="tabular-nums">{results ? fmt(grandTotalPrice) : '—'}</span>
+        </span>
+        <span className="text-xs font-semibold text-gray-700">
+          Margin: <span className="tabular-nums">{results ? `${overallMargin.toFixed(1)}%` : '—'}</span>
+        </span>
+        {results && qty > 1 && <span className="text-gray-500 text-xs">× {qty} units</span>}
+      </div>
     </div>
   )
 }
