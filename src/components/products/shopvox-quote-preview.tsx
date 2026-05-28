@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { computeLineItem, computeMaterialLineItem, type RateRecord } from '@/lib/pricing/compute-line-item'
 import { fetchMaterialsForQuote } from '@/app/(dashboard)/dashboard/[slug]/products/[id]/migrate/actions'
 
 interface Props {
@@ -42,7 +43,7 @@ interface LineResult {
   name: string
   itemType: string
   formula: string
-  displayQty: number
+  displayQty: number   // computed_qty: time/area after production_rate, per piece
   units: string
   unitCost: number
   unitPrice: number
@@ -59,12 +60,17 @@ function fmt(n: number) {
   return '$' + n.toFixed(2)
 }
 
+// Format qty to 3dp, trim trailing zeros (e.g. 0.267, 32, 0.16)
+function fmtQty(n: number): string {
+  return n.toFixed(3).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') || '0'
+}
+
 function formulaToUnits(formula: string): string {
   const f = (formula ?? '').toLowerCase().trim()
-  if (f === 'area' || f.includes('area')) return 'sqft'
-  if (f === 'perimeter' || f.includes('perim')) return 'ft'
-  if (f === 'height' || f === 'width') return 'ft'
-  return 'unit'
+  if (f === 'area' || f.includes('area')) return 'Sqft'
+  if (f === 'perimeter' || f.includes('perim')) return 'Ft'
+  if (f === 'height' || f === 'width') return 'Ft'
+  return 'Unit'
 }
 
 function computeFormula(formula: string, widthFt: number, heightFt: number): number {
@@ -135,6 +141,21 @@ function TypeBadge({ type }: { type: string }) {
   return null
 }
 
+// Build a RateRecord for computeLineItem from a local RateRow
+function toRateRecord(rate: RateRow): RateRecord {
+  return {
+    name: rate.name,
+    cost: rate.cost,
+    price: rate.price,
+    markup: rate.markup,
+    production_rate: rate.production_rate ?? undefined,
+    setup_charge: rate.setup_charge ?? undefined,
+    other_charge: rate.other_charge ?? undefined,
+    units: rate.units ?? undefined,
+    per_li_unit: rate.per_li_unit,
+  }
+}
+
 export default function ShopvoxQuotePreview({ shopvoxData, productName: _productName, orgSlug }: Props) {
   const modifiers: any[] = shopvoxData?.modifiers ?? []
   const dropdownMenus: any[] = shopvoxData?.dropdown_menus ?? []
@@ -144,7 +165,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
   const [qty, setQty] = useState(1)
   const [modVals, setModVals] = useState<Record<string, any>>({})
 
-  // FIX 1: all dropdowns start blank — user always picks
+  // all dropdowns start blank — user always picks
   const [dropdownVals, setDropdownVals] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {}
     for (const dm of (shopvoxData?.dropdown_menus ?? [])) {
@@ -160,7 +181,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
   const [machineMap, setMachineMap] = useState<RateMap>({})
   const [fullMaterialMap, setFullMaterialMap] = useState<FullMaterialMap>({})
   const fullMaterialMapRef = useRef<FullMaterialMap>({})
-  // FIX 5: use a ref so the debounce effect never reads stale ratesReady
+  // use a ref so the debounce effect never reads stale ratesReady
   const ratesReadyRef = useRef(false)
   const [materialsLoading, setMaterialsLoading] = useState(true)
 
@@ -188,7 +209,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
     setModVals(init)
   }, [shopvoxData]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // FIX 1: init all dropdowns to blank on shopvoxData change
+  // init all dropdowns to blank on shopvoxData change
   useEffect(() => {
     if (!shopvoxData?.dropdown_menus?.length) return
     const init: Record<string, string> = {}
@@ -217,7 +238,6 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
         if (orgErr || !orgRow) throw new Error('Organization not found')
         const orgId = (orgRow as { id: string }).id
 
-        // FIX 2: fetch per_li_unit and units from both rate tables
         const [laborRes, machineRes, matRows] = await Promise.all([
           supabase.from('labor_rates')
             .select('name, cost, price, markup, production_rate, setup_charge, other_charge, per_li_unit, units')
@@ -246,7 +266,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
           setFullMaterialMap(matData)
           fullMaterialMapRef.current = matData
           setMaterialsLoading(false)
-          ratesReadyRef.current = true  // FIX 5: set ref before any debounce fires
+          ratesReadyRef.current = true
         }
       } catch (e) {
         if (!cancelled) setRatesError(e instanceof Error ? e.message : 'Failed to load rates')
@@ -316,22 +336,34 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
       const isMat = typeLower === 'material'
 
       if (isMat) {
+        // ── material line item ───────────────────────────────────
         const mat = findMaterial(fullMaterialMapRef.current, name)
-        const formulaQty = computeFormula(mat?.formula ?? itemFormula, widthFt, heightFt) * multiplier * numModFactor
         const matUnits = formulaToUnits(mat?.formula ?? itemFormula)
-        // FIX 3: materials always per_li_unit; liQty = order qty when active
+        // Call with qty=1,perLiUnit=false to get per-piece cost; caller applies liQty
+        let displayQty = multiplier * numModFactor
+        let perPieceCost = 0
+        let perPiecePrice = 0
+        if (mat) {
+          const res = computeMaterialLineItem(
+            { cost: mat.cost, formula: mat.formula ?? itemFormula, fixed_side: mat.fixed_side, width: mat.width, height: mat.height, wastage_markup: mat.wastage_markup, calculate_wastage: mat.calculate_wastage },
+            widthInches, heightInches, 1, multiplier * numModFactor, false
+          )
+          displayQty = res.finalQty
+          perPieceCost = res.lineTotal
+          perPiecePrice = mat.price > 0 && mat.cost > 0 ? res.lineTotal * (mat.price / mat.cost) : res.lineTotal
+        }
         const liQty = active ? q : 0
-        const totalCost = active && mat ? mat.cost * formulaQty * liQty : 0
-        const totalPrice = active && mat ? mat.price * formulaQty * liQty : 0
         lines.push({
           name, itemType: rawType, formula: itemFormula,
-          displayQty: formulaQty, units: matUnits,
+          displayQty, units: matUnits,
           unitCost: mat?.cost ?? 0, unitPrice: mat?.price ?? 0,
           perLiUnit: true, liQty,
-          totalCost, totalPrice,
+          totalCost: active && mat ? perPieceCost * liQty : 0,
+          totalPrice: active && mat ? perPiecePrice * liQty : 0,
           active, rateFound: !!mat, isMaterial: true,
         })
       } else {
+        // ── rate line item (labor / machine) ─────────────────────
         const perPiece = computeFormula(itemFormula, widthFt, heightFt)
         const formulaQty = perPiece * multiplier * numModFactor
         const rateMap =
@@ -339,17 +371,30 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
           : typeLower === 'machinerate' || typeLower === 'machine' ? machineMap
           : laborMap
         const rate = rateMap[name.trim().toLowerCase()]
-        // FIX 3: use rate.per_li_unit to determine liQty
         const perLiUnit = rate?.per_li_unit ?? false
-        const liQty = active && rate ? (perLiUnit ? q : 1) : 0
-        const totalCost = active && rate ? rate.cost * formulaQty * liQty : 0
-        const totalPrice = active && rate ? rate.price * formulaQty * liQty : 0
+        const liQty = perLiUnit ? q : 1
+
+        let displayQty = formulaQty
+        let perPieceCost = 0
+        let perPiecePrice = 0
+        let rateUnits = rate?.units ?? ''
+
+        if (rate) {
+          // Pass qty=1 to get per-piece cost; production_rate is applied inside
+          const res = computeLineItem(toRateRecord(rate), formulaQty, 1)
+          displayQty = res.computed_qty  // chargeableUnits (formulaQty / production_rate or formulaQty)
+          rateUnits = res.units ?? rate.units ?? ''
+          perPieceCost = res.totalCost   // chargeableUnits × rate.cost (per 1 piece)
+          perPiecePrice = res.totalPrice // chargeableUnits × rate.price (per 1 piece)
+        }
+
         lines.push({
           name, itemType: rawType, formula: itemFormula,
-          displayQty: formulaQty, units: rate?.units ?? '',
+          displayQty, units: rateUnits,
           unitCost: rate?.cost ?? 0, unitPrice: rate?.price ?? 0,
-          perLiUnit, liQty,
-          totalCost, totalPrice,
+          perLiUnit, liQty: active ? liQty : 0,
+          totalCost: active && rate ? perPieceCost * liQty : 0,
+          totalPrice: active && rate ? perPiecePrice * liQty : 0,
           active, rateFound: !!rate, isMaterial: false,
         })
       }
@@ -367,22 +412,27 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
       const hasDmAttachNum = !!dmAttachNum
 
       if (hasDmAttachNum && dmAttachNumQty <= 0) {
-        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 1, units: 'unit', unitCost: 0, unitPrice: 0, perLiUnit: true, liQty: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: true })
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 1, units: 'Unit', unitCost: 0, unitPrice: 0, perLiUnit: true, liQty: 0, totalCost: 0, totalPrice: 0, active: false, rateFound: true, isMaterial: true })
         continue
       }
 
       const mat = findMaterial(fullMaterialMapRef.current, selectedVal)
       if (!mat) {
-        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Area', displayQty: 0, units: 'sqft', unitCost: 0, unitPrice: 0, perLiUnit: true, liQty: q, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: true })
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Area', displayQty: 0, units: 'Sqft', unitCost: 0, unitPrice: 0, perLiUnit: true, liQty: q, totalCost: 0, totalPrice: 0, active: true, rateFound: false, isMaterial: true })
         continue
       }
 
       if (hasDmAttachNum) {
-        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 1, units: 'unit', unitCost: mat.cost, unitPrice: mat.price, perLiUnit: true, liQty: dmAttachNumQty, totalCost: mat.cost * dmAttachNumQty, totalPrice: mat.price * dmAttachNumQty, active: true, rateFound: true, isMaterial: true })
+        // attach_num_modifier overrides qty: charge dmAttachNumQty × unit price
+        lines.push({ name: selectedVal, itemType: 'Material', formula: 'Unit', displayQty: 1, units: formulaToUnits(mat.formula ?? 'Area'), unitCost: mat.cost, unitPrice: mat.price, perLiUnit: true, liQty: dmAttachNumQty, totalCost: mat.cost * dmAttachNumQty, totalPrice: mat.price * dmAttachNumQty, active: true, rateFound: true, isMaterial: true })
       } else {
-        const formulaQty = computeFormula(mat.formula ?? 'Area', widthFt, heightFt)
+        const res = computeMaterialLineItem(
+          { cost: mat.cost, formula: mat.formula ?? 'Area', fixed_side: mat.fixed_side, width: mat.width, height: mat.height, wastage_markup: mat.wastage_markup, calculate_wastage: mat.calculate_wastage },
+          widthInches, heightInches, 1, 1, false
+        )
         const matUnits = formulaToUnits(mat.formula ?? 'Area')
-        lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: formulaQty, units: matUnits, unitCost: mat.cost, unitPrice: mat.price, perLiUnit: true, liQty: q, totalCost: mat.cost * formulaQty * q, totalPrice: mat.price * formulaQty * q, active: true, rateFound: true, isMaterial: true })
+        const perPiecePrice = mat.price > 0 && mat.cost > 0 ? res.lineTotal * (mat.price / mat.cost) : res.lineTotal
+        lines.push({ name: selectedVal, itemType: 'Material', formula: mat.formula ?? 'Area', displayQty: res.finalQty, units: matUnits, unitCost: mat.cost, unitPrice: mat.price, perLiUnit: true, liQty: q, totalCost: res.lineTotal * q, totalPrice: perPiecePrice * q, active: true, rateFound: true, isMaterial: true })
       }
     }
 
@@ -411,10 +461,13 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
       }
 
       if (hasDmAttachNum) {
+        // attach_num_modifier overrides qty
         lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 1, units: rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty: dmAttachNumQty, totalCost: rate.cost * dmAttachNumQty, totalPrice: rate.price * dmAttachNumQty, active: true, rateFound: true, isMaterial: false })
       } else {
+        // formulaQty=1 for dropdown rates (they're Unit-based; selection picks the rate)
+        const res = computeLineItem(toRateRecord(rate), 1, 1)
         const liQty = rate.per_li_unit ? q : 1
-        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 1, units: rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty, totalCost: rate.cost * liQty, totalPrice: rate.price * liQty, active: true, rateFound: true, isMaterial: false })
+        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: res.computed_qty, units: res.units ?? rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty, totalCost: res.totalCost * liQty, totalPrice: res.totalPrice * liQty, active: true, rateFound: true, isMaterial: false })
       }
     }
 
@@ -425,7 +478,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
     setGrandTotalPrice(gPrice)
   }
 
-  // FIX 5: debounce uses ratesReadyRef (ref) so the check is never stale
+  // debounce uses ratesReadyRef (ref) so the check is never stale
   useEffect(() => {
     if (!ratesReadyRef.current) return
     if ((modVals['Width'] ?? 0) === 0 && (modVals['Height'] ?? 0) === 0) return
@@ -529,7 +582,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
         </div>
       )}
 
-      {/* Dropdowns — FIX 1: always start blank; FIX 4: scraped items or material_type filter */}
+      {/* Dropdowns — all start blank; fallback filters by material_type */}
       {dropdownMenus.length > 0 && (
         <div className="rounded-lg border border-gray-200 bg-white p-2">
           <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1.5">Dropdown Selections</p>
@@ -538,7 +591,6 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
             if (!menuName) return null
             const selectedItems: string[] = dm?.selected_items ?? []
             const dmCategory: string | undefined = dm?.category
-            // FIX 4: scraped selected_items wins; fallback filters by material_type
             const items: string[] = selectedItems.length > 0
               ? selectedItems
               : (dmCategory && dmCategory !== '-')
@@ -576,7 +628,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
         {materialsLoading ? 'Loading materials…' : 'Calculate Price'}
       </button>
 
-      {/* FIX 3: Results table — Name | Qty | Unit | Unit Cost | Unit Price | LI Qty | Total Cost | Total Price */}
+      {/* Results table — Name | Qty | Unit | Unit Cost | Unit Price | LI Qty | Total Cost | Total Price */}
       {results && (
         <div className="space-y-1">
           <div className="overflow-x-auto rounded border border-gray-200">
@@ -606,7 +658,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
                       {!line.rateFound && line.active && <span className="text-[9px] text-amber-500">rate not found</span>}
                       {!line.active && <span className="text-[9px] text-gray-400 italic">inactive</span>}
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{line.displayQty.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmtQty(line.displayQty)}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap text-gray-500">{line.units}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{fmt(line.unitCost)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{fmt(line.unitPrice)}</td>
@@ -627,7 +679,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
         </div>
       )}
 
-      {/* FIX 6: Sticky totals bar — always visible at bottom of scroll container */}
+      {/* Sticky totals bar — always visible at bottom of scroll container */}
       <div className="sticky bottom-0 bg-white border-t-2 border-green-500 p-3 flex flex-wrap gap-4 items-center z-10 shadow-md">
         <span className="text-gray-600 text-xs">
           Cost: <span className="font-semibold tabular-nums">{results ? fmt(grandTotalCost) : '—'}</span>

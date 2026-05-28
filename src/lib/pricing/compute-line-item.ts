@@ -9,6 +9,7 @@ export interface RateRecord {
   units?: string             // "Hr", "SqFt", "Each", etc.
   setup_charge?: number
   other_charge?: number
+  per_li_unit?: boolean
 }
 
 // ── Material cost formula ─────────────────────────────────────────────────────
@@ -97,7 +98,7 @@ export function computeLineItem(
   rate: RateRecord,
   formulaQty: number,   // per-piece formula quantity (area in sqft, perimeter in ft, etc.)
   qty: number,          // order quantity (number of pieces)
-): { totalCost: number; totalPrice: number; displayQty: number } {
+): { totalCost: number; totalPrice: number; displayQty: number; computed_qty: number; units: string | null; per_li_unit: boolean } {
   const prodRate  = rate.production_rate ?? 0
   const setupCost = rate.setup_charge    ?? 0
   const otherCost = rate.other_charge    ?? 0
@@ -119,5 +120,8 @@ export function computeLineItem(
     totalCost,
     totalPrice,
     displayQty: parseFloat(chargeableUnits.toFixed(4)),
+    computed_qty: chargeableUnits,
+    units: rate.units ?? null,
+    per_li_unit: rate.per_li_unit ?? false,
   }
 }
