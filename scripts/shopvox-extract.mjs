@@ -434,6 +434,88 @@ async function closeOpenModal(page) {
   await sleep(500)
 }
 
+// Scrape selected items by clicking the plus button on a dropdown menu row.
+// Returns string[] of selected item names, or [] on any failure.
+async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
+  try {
+    await closeOpenModal(page)
+
+    const buttons = rowLoc.locator('button')
+    if ((await buttons.count()) < 1) return []
+
+    // Button index 0 = green plus (opens item picker panel)
+    try {
+      await buttons.nth(0).scrollIntoViewIfNeeded()
+      await buttons.nth(0).click({ timeout: 3000, force: true })
+    } catch (e) {
+      console.log(`    [DD ${rowIndex}] plus click failed: ${e.message.split('\n')[0]}`)
+      return []
+    }
+
+    // Wait for "Show Only Selected Items" checkbox/button to appear in the picker.
+    let showSelectedBtn = null
+    for (let t = 0; t < 20; t++) {
+      await sleep(300)
+      const cand = page.locator('button, label, input[type="checkbox"]').filter({ hasText: 'Show Only Selected' })
+      if ((await cand.count()) > 0) { showSelectedBtn = cand.first(); break }
+    }
+
+    if (!showSelectedBtn) {
+      console.log(`    [DD ${rowIndex}] "Show Only Selected Items" not found — scraping all visible`)
+    } else {
+      await showSelectedBtn.click({ timeout: 3000, force: true }).catch(() => {})
+      await sleep(1000)
+    }
+
+    // Scrape visible item names from the picker list.
+    const items = await page.evaluate(() => {
+      // Try structured list containers first.
+      const panels = [
+        ...document.querySelectorAll('[class*="picker"], [class*="Picker"]'),
+        ...document.querySelectorAll('[role="list"], [role="listbox"]'),
+        ...document.querySelectorAll('[class*="list"], [class*="List"]'),
+      ]
+      let bestRows = []
+      for (const panel of panels) {
+        const rows = panel.querySelectorAll(
+          '[class*="row"], [class*="Row"], [class*="item"], [class*="Item"], li, [role="listitem"], [role="option"]'
+        )
+        if (rows.length > bestRows.length) bestRows = Array.from(rows)
+      }
+      if (bestRows.length > 0) {
+        return bestRows
+          .map(r => (r.innerText || '').trim().split('\n')[0].trim())
+          .filter(t => t.length > 1)
+          .slice(0, 200)
+      }
+      // Fallback: checkbox labels anywhere on page.
+      const SKIP = new Set(['Show Only Selected Items', 'Cancel', 'Save', 'Close'])
+      return Array.from(document.querySelectorAll('label'))
+        .map(l => (l.innerText || '').trim())
+        .filter(t => t.length > 1 && !SKIP.has(t))
+        .slice(0, 200)
+    })
+    console.log(`    [DD ${rowIndex}] selected items: ${items.length}`)
+
+    // Close the picker panel.
+    await page.keyboard.press('Escape')
+    await sleep(300)
+    try {
+      const closeBtn = page
+        .locator('button:has-text("Cancel"), button:has-text("Close"), button[aria-label="Close"]')
+        .first()
+      if ((await closeBtn.count()) > 0) await closeBtn.click({ timeout: 2000, force: true }).catch(() => {})
+    } catch {}
+    await sleep(300)
+
+    return items
+  } catch (e) {
+    console.log(`    [DD ${rowIndex}] scrapeDropdownSelectedItems failed: ${e.message.split('\n')[0]}`)
+    try { await page.keyboard.press('Escape') } catch {}
+    return []
+  }
+}
+
 // ── Extraction: one product (page.evaluate-only) ──────────────────────
 // Every DOM interaction happens inside page.evaluate — no Playwright
 // locator strings, no :text-is, no :has. Text-based header matching
@@ -577,15 +659,40 @@ async function extractProduct(page, product, shopvoxUrl) {
   }
 
   // 3b. Dropdown Menus (green + at index 0, pencil at index 1)
+  // Per row: pencil → flatten modal fields to top level; plus → selected items.
   const afterDD = await expandSection('Dropdown Menus')
   if (afterDD != null) {
     for (let i = offset; i < afterDD; i++) {
       const row = page.locator(ROWS_SEL).nth(i)
       const text = (await row.innerText()).trim()
       const c = parseCells(text)
-      const base = { menu_name: c[0] ?? null, item_type: c[1] ?? null, category: c[2] ?? null, raw: text }
-      base.modal = await openAndExtractModal(row, 1, 'Dropdown Menus', i)
-      dropdown_menus.push(base)
+
+      // Pencil (button 1) — edit modal with all config fields
+      const modal = await openAndExtractModal(row, 1, 'Dropdown Menus', i)
+
+      // Plus (button 0) — item picker to scrape selected items
+      const selected_items = await scrapeDropdownSelectedItems(page, row, i)
+
+      // Flatten modal fields to top level (no nested modal key).
+      // numeric_modifier → attach_num_modifier, checkbox_modifier → attach_chk_modifier.
+      dropdown_menus.push({
+        menu_name:             c[0] ?? null,
+        item_type:             c[1] ?? null,
+        category:              c[2] ?? null,
+        reference:             modal?.reference ?? null,
+        formula:               modal?.formula ?? null,
+        multiplier:            modal?.multiplier ?? null,
+        fixed_quantity:        modal?.fixed_quantity ?? null,
+        percentage_of_base:    modal?.percentage_of_base ?? null,
+        charge_per_li_unit:    modal?.charge_per_li_unit ?? null,
+        include_in_base_price: modal?.include_in_base_price ?? null,
+        optional:              modal?.optional ?? null,
+        use_item_per_li_unit:  modal?.use_item_per_li_unit ?? null,
+        attach_num_modifier:   modal?.numeric_modifier ?? null,
+        attach_chk_modifier:   modal?.checkbox_modifier ?? null,
+        selected_items,
+        raw: text,
+      })
     }
     offset = afterDD
   }
@@ -625,16 +732,34 @@ async function extractProduct(page, product, shopvoxUrl) {
 
 // ── Save back to DB ───────────────────────────────────────────────────
 async function saveToDb(product, extracted) {
-  // Merge — preserve existing fields (basic, pricing already populated by CSV extractor).
   const existing = product.shopvox_data || {}
   const mergedPricing = { ...(existing.pricing ?? {}), ...extracted.pricing }
   // Drop nulls we failed to read so existing CSV values win over scraped nulls.
   for (const k of Object.keys(mergedPricing)) if (mergedPricing[k] == null || mergedPricing[k] === '') delete mergedPricing[k]
+
+  // Merge dropdown_menus: spread existing entry first, then new scraped entry on top.
+  // This preserves selected_items (and any other fields) from previous browser-extract
+  // runs while adding/updating the modal fields captured in this Playwright run.
+  // Matching is case-insensitive and handles both menu_name and 'Menu Name' key formats.
+  const getMenuKey = (e) => ((e.menu_name || e['Menu Name']) ?? '').toLowerCase().trim()
+  const existingDDs = existing.dropdown_menus || []
+  const existingDDMap = new Map(existingDDs.map(e => [getMenuKey(e), e]))
+
+  const mergedDDs = extracted.dropdown_menus.map(entry => {
+    const existingEntry = existingDDMap.get(getMenuKey(entry))
+    return existingEntry ? { ...existingEntry, ...entry } : entry
+  })
+  // Preserve any existing entries the new scrape didn't touch (e.g. scrape was partial).
+  const scrapedKeys = new Set(extracted.dropdown_menus.map(getMenuKey))
+  for (const e of existingDDs) {
+    if (!scrapedKeys.has(getMenuKey(e))) mergedDDs.push(e)
+  }
+
   const next = {
     ...existing,
     pricing: { ...(existing.pricing ?? {}), ...mergedPricing },
     modifiers: extracted.modifiers,
-    dropdown_menus: extracted.dropdown_menus,
+    dropdown_menus: mergedDDs,
     default_items: extracted.default_items,
     extracted_at: new Date().toISOString(),
     extraction_version: 2,
