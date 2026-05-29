@@ -403,15 +403,35 @@ async function extractModalFields(page) {
   })
 }
 
-// Close the currently-open modal by clicking its Cancel button.
+// Dismiss any open modal and wait for its overlay to fully leave the DOM.
+// Safe to call when no modal is open — returns immediately in that case.
 async function closeOpenModal(page) {
+  // Fast-path: if no overlay is present at all, nothing to do.
+  const overlayVisible = await page.locator('._ModalOverlay_1tz2y_28').count()
+  if (overlayVisible === 0) return
+
+  // Try clicking Cancel/Close/X inside the modal first (most reliable dismiss).
+  try {
+    const cancelBtn = page
+      .locator('button:has-text("Cancel"), button:has-text("Close"), button[aria-label="Close"]')
+      .first()
+    if ((await cancelBtn.count()) > 0) {
+      await cancelBtn.click({ timeout: 2000, force: true })
+      await sleep(300)
+    }
+  } catch {}
+
+  // Escape as a fallback for keyboard-dismissible modals.
   await page.keyboard.press('Escape')
-  await sleep(500)
-  // Wait for the modal overlay to actually disappear so the next pencil
-  // click doesn't hit the overlay instead of the intended button.
+  await sleep(300)
+
+  // Wait until the overlay is fully gone (hidden or detached).
   await page
-    .waitForSelector('._ModalOverlay_1tz2y_28', { state: 'hidden', timeout: 3000 })
+    .waitForSelector('._ModalOverlay_1tz2y_28', { state: 'hidden', timeout: 10000 })
     .catch(() => {})
+
+  // Extra buffer so the next click doesn't land on a residual overlay.
+  await sleep(500)
 }
 
 // ── Extraction: one product (page.evaluate-only) ──────────────────────
@@ -437,12 +457,20 @@ async function extractProduct(page, product, shopvoxUrl) {
   if (!loaded) console.log('  WARNING: Product may not have fully loaded')
   console.log('  Page URL:', page.url())
 
+  // Global guard: dismiss any modal overlay left over from a previous product
+  // before touching anything on this page.
+  await closeOpenModal(page)
+
   // Make sure we're on Configure Pricing — cheap no-op if already active.
   const cpTab = page.locator('text="Configure Pricing"').first()
   if (await cpTab.count() > 0) {
     await cpTab.click().catch(() => {})
     await sleep(1000)
   }
+
+  // Guard again after tab switch — tab navigation can occasionally re-trigger
+  // a previously open modal in ShopVOX's SPA.
+  await closeOpenModal(page)
 
   const parseCells = (t) =>
     t.split(/[\t\n|]+/).map((s) => s.trim()).filter(Boolean)
@@ -451,6 +479,9 @@ async function extractProduct(page, product, shopvoxUrl) {
   // total sortable-row count afterward. Sections are processed in order,
   // so new rows appear at indices [prev_count .. new_count).
   const expandSection = async (sectionName) => {
+    // Dismiss any open modal before clicking a section header — the overlay
+    // intercepts clicks even on elements outside the modal.
+    await closeOpenModal(page)
     const header = page.locator(`text="${sectionName}"`).first()
     if ((await header.count()) === 0) {
       console.log(`  No "${sectionName}" header found`)
@@ -466,16 +497,9 @@ async function extractProduct(page, product, shopvoxUrl) {
 
   // STEP 3/4: Click pencil, poll for modal, extract, close.
   const openAndExtractModal = async (rowLoc, buttonIndex, sectionLabel, rowIndex) => {
-    // Force-close any lingering modal/overlay from a previous row before
-    // attempting the next click. Escape handles keyboard-dismissible modals;
-    // if that misses, clicking the overlay element itself dismisses it.
-    await page.keyboard.press('Escape')
-    await sleep(300)
-    await page.evaluate(() => {
-      const overlay = document.querySelector('._ModalOverlay_1tz2y_28')
-      if (overlay) overlay.click()
-    })
-    await sleep(300)
+    // Ensure any lingering modal/overlay from a previous row is fully gone
+    // before clicking the pencil — the overlay intercepts all pointer events.
+    await closeOpenModal(page)
 
     const buttons = rowLoc.locator('button')
     const btnCount = await buttons.count()
@@ -488,8 +512,8 @@ async function extractProduct(page, product, shopvoxUrl) {
       // "element is hidden by overlay") which were blocking the click.
       await buttons.nth(buttonIndex).click({ timeout: 3000, force: true })
     } catch (e) {
-      // First line only — Playwright click errors are verbose multi-line.
       console.log(`    click failed: ${e.message.split('\n')[0]}`)
+      await closeOpenModal(page)
       return null
     }
 
@@ -512,10 +536,20 @@ async function extractProduct(page, product, shopvoxUrl) {
         return m ? m.innerHTML.substring(0, 500) : 'no modal found'
       })
       console.log('  Modal HTML preview:', modalHtml)
+      await closeOpenModal(page)
       return null
     }
 
-    const fields = await extractModalFields(page)
+    // Wrap extraction in try/catch — if it times out, close and continue to
+    // the next row rather than aborting the whole product.
+    let fields = null
+    try {
+      fields = await extractModalFields(page)
+    } catch (e) {
+      console.log(`    extractModalFields failed: ${e.message.split('\n')[0]}`)
+    }
+    // Always close after each modal, and wait for overlay to clear before
+    // the next pencil click.
     await closeOpenModal(page)
     return fields
   }
