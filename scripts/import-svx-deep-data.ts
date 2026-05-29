@@ -58,6 +58,20 @@ interface SvxDropdown {
   selectedItems: string[];
   totalSelected: number;
   hasFilter: boolean;
+  // Playwright modal fields (snake_case, optional — only present after deep scrape)
+  formula?: string | null;
+  multiplier?: string | null;
+  fixed_quantity?: string | null;
+  percentage_of_base?: string | null;
+  charge_per_li_unit?: boolean | null;
+  include_in_base_price?: boolean | null;
+  optional?: boolean | null;
+  use_item_per_li_unit?: boolean | null;
+  numeric_modifier?: string | null;
+  checkbox_modifier?: string | null;
+  item_category?: string | null;
+  item_kind?: string | null;
+  reference?: string | null;
 }
 
 interface SvxDefaultItem {
@@ -148,10 +162,21 @@ function mergeDeepData(existingData: any, svxProduct: SvxProduct): any {
       if (!scraped) return existing;
       return {
         ...existing,
-        selected_items:  scraped.selectedItems || [],
-        total_selected:  scraped.totalSelected || 0,
-        item_type:       scraped.Item || existing.item_type,
-        category:        scraped['Item Type'] || existing.category,
+        selected_items:        scraped.selectedItems || [],
+        total_selected:        scraped.totalSelected || 0,
+        item_type:             scraped['Item Type'] || existing.item_type,
+        category:              scraped.item_category || scraped['Item Category' as keyof typeof scraped] || existing.category,
+        formula:               scraped.formula ?? existing.formula ?? null,
+        multiplier:            scraped.multiplier ?? existing.multiplier ?? null,
+        fixed_quantity:        scraped.fixed_quantity ?? existing.fixed_quantity ?? null,
+        percentage_of_base:    scraped.percentage_of_base ?? existing.percentage_of_base ?? null,
+        charge_per_li_unit:    scraped.charge_per_li_unit ?? existing.charge_per_li_unit ?? null,
+        include_in_base_price: scraped.include_in_base_price ?? existing.include_in_base_price ?? null,
+        optional:              scraped.optional ?? existing.optional ?? null,
+        use_item_per_li_unit:  scraped.use_item_per_li_unit ?? existing.use_item_per_li_unit ?? null,
+        attach_num_modifier:   scraped.numeric_modifier ?? existing.attach_num_modifier ?? null,
+        attach_chk_modifier:   scraped.checkbox_modifier ?? existing.attach_chk_modifier ?? null,
+        reference:             scraped.reference ?? existing.reference ?? null,
       };
     });
 
@@ -160,11 +185,22 @@ function mergeDeepData(existingData: any, svxProduct: SvxProduct): any {
     svxProduct.dropdownMenus.forEach(scraped => {
       if (!existingMenuNames.has(scraped['Menu Name']?.toLowerCase())) {
         enrichedDDs.push({
-          menu_name:      scraped['Menu Name'],
-          item_type:      scraped.Item,
-          category:       scraped['Item Type'],
-          selected_items: scraped.selectedItems || [],
-          total_selected: scraped.totalSelected || 0,
+          menu_name:             scraped['Menu Name'],
+          item_type:             scraped['Item Type'] || null,
+          category:              scraped.item_category || null,
+          selected_items:        scraped.selectedItems || [],
+          total_selected:        scraped.totalSelected || 0,
+          formula:               scraped.formula ?? null,
+          multiplier:            scraped.multiplier ?? null,
+          fixed_quantity:        scraped.fixed_quantity ?? null,
+          percentage_of_base:    scraped.percentage_of_base ?? null,
+          charge_per_li_unit:    scraped.charge_per_li_unit ?? null,
+          include_in_base_price: scraped.include_in_base_price ?? null,
+          optional:              scraped.optional ?? null,
+          use_item_per_li_unit:  scraped.use_item_per_li_unit ?? null,
+          attach_num_modifier:   scraped.numeric_modifier ?? null,
+          attach_chk_modifier:   scraped.checkbox_modifier ?? null,
+          reference:             scraped.reference ?? null,
         });
       }
     });
