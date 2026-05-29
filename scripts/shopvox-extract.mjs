@@ -467,33 +467,26 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       await sleep(1000)
     }
 
-    // Scrape visible item names from the picker list.
+    // Scrape selected items via checked checkboxes — avoids picking up UI controls.
     const items = await page.evaluate(() => {
-      // Try structured list containers first.
-      const panels = [
-        ...document.querySelectorAll('[class*="picker"], [class*="Picker"]'),
-        ...document.querySelectorAll('[role="list"], [role="listbox"]'),
-        ...document.querySelectorAll('[class*="list"], [class*="List"]'),
-      ]
-      let bestRows = []
-      for (const panel of panels) {
-        const rows = panel.querySelectorAll(
-          '[class*="row"], [class*="Row"], [class*="item"], [class*="Item"], li, [role="listitem"], [role="option"]'
-        )
-        if (rows.length > bestRows.length) bestRows = Array.from(rows)
-      }
-      if (bestRows.length > 0) {
-        return bestRows
-          .map(r => (r.innerText || '').trim().split('\n')[0].trim())
-          .filter(t => t.length > 1)
+      const UI_LABELS = new Set([
+        'Add Product Template', 'Filter by Name', 'Filter by Category',
+        'Show Only Selected Items', 'Buying Cost', 'Pricing Type', 'Formula',
+        'Cancel', 'Save', 'Close', 'Select All', 'Deselect All',
+      ])
+      const checked = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
+      if (checked.length > 0) {
+        return checked
+          .map(cb => {
+            const label = cb.closest('label') || cb.parentElement
+            const row = cb.closest('li, [role="listitem"], [role="option"], [class*="row"], [class*="Row"], [class*="item"]') || label
+            const text = (row?.innerText || label?.innerText || '').trim().split('\n')[0].trim()
+            return text
+          })
+          .filter(t => t.length > 1 && !UI_LABELS.has(t))
           .slice(0, 200)
       }
-      // Fallback: checkbox labels anywhere on page.
-      const SKIP = new Set(['Show Only Selected Items', 'Cancel', 'Save', 'Close'])
-      return Array.from(document.querySelectorAll('label'))
-        .map(l => (l.innerText || '').trim())
-        .filter(t => t.length > 1 && !SKIP.has(t))
-        .slice(0, 200)
+      return []
     })
     console.log(`    [DD ${rowIndex}] selected items: ${items.length}`)
 
@@ -599,15 +592,37 @@ async function extractProduct(page, product, shopvoxUrl) {
       return null
     }
 
-    // Poll up to 3s for Edit modal heading.
-    const modalHeading = page.locator('h2, h3, h4').filter({ hasText: 'Edit' }).first()
+    // Poll up to 15s for Edit modal heading. Try specific _ModalContent_1tz2y_44
+    // selectors in order — the generic h2/h3 locator was missing the heading
+    // when it lives inside the scoped modal content wrapper.
     let heading = null
-    for (let t = 0; t < 15; t++) {
-      await sleep(200)
-      if ((await modalHeading.count()) > 0) {
-        heading = (await modalHeading.innerText()).trim()
-        break
-      }
+    for (let t = 0; t < 50; t++) {
+      await sleep(300)
+      heading = await page.evaluate(() => {
+        const SELECTORS = [
+          '._ModalContent_1tz2y_44 h2',
+          '._ModalContent_1tz2y_44 h3',
+          '._ModalContent_1tz2y_44 [class*="heading"]',
+          '._ModalContent_1tz2y_44 [class*="title"]',
+        ]
+        for (const sel of SELECTORS) {
+          const el = document.querySelector(sel)
+          if (el) {
+            const t = (el.innerText || '').trim()
+            if (t) return t
+          }
+        }
+        // Fallback: first shallow element inside modal content whose text starts with "Edit"
+        const content = document.querySelector('._ModalContent_1tz2y_44')
+        if (content) {
+          const el = Array.from(content.querySelectorAll('*')).find(
+            (e) => (e.innerText || '').trim().startsWith('Edit') && e.children.length <= 3
+          )
+          if (el) return (el.innerText || '').trim().split('\n')[0].trim()
+        }
+        return null
+      })
+      if (heading) break
     }
     console.log(`  Modal heading: ${heading || 'NOT FOUND'}`)
     if (!heading) {
