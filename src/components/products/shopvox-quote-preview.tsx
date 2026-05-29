@@ -21,6 +21,7 @@ type RateRow = {
   other_charge: number | null
   per_li_unit: boolean
   units: string | null
+  formula: string | null
 }
 type RateMap = Record<string, RateRow>
 
@@ -96,6 +97,7 @@ function buildRateMap(rows: any[]): RateMap {
         other_charge: r.other_charge ?? null,
         per_li_unit: r.per_li_unit ?? false,
         units: r.units ?? null,
+        formula: r.formula ?? null,
       }
     }
   }
@@ -153,6 +155,7 @@ function toRateRecord(rate: RateRow): RateRecord {
     other_charge: rate.other_charge ?? undefined,
     units: rate.units ?? undefined,
     per_li_unit: rate.per_li_unit,
+    formula: rate.formula ?? undefined,
   }
 }
 
@@ -240,10 +243,10 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
 
         const [laborRes, machineRes, matRows] = await Promise.all([
           supabase.from('labor_rates')
-            .select('name, cost, price, markup, production_rate, setup_charge, other_charge, per_li_unit, units')
+            .select('name, cost, price, markup, production_rate, setup_charge, other_charge, per_li_unit, units, formula')
             .eq('organization_id', orgId).eq('active', true),
           supabase.from('machine_rates')
-            .select('name, cost, price, markup, production_rate, setup_charge, other_charge, per_li_unit, units')
+            .select('name, cost, price, markup, production_rate, setup_charge, other_charge, per_li_unit, units, formula')
             .eq('organization_id', orgId).eq('active', true),
           fetchMaterialsForQuote(orgId),
         ])
@@ -460,15 +463,12 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
         continue
       }
 
-      if (hasDmAttachNum) {
-        // attach_num_modifier overrides qty
-        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: 1, units: rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty: dmAttachNumQty, totalCost: rate.cost * dmAttachNumQty, totalPrice: rate.price * dmAttachNumQty, active: true, rateFound: true, isMaterial: false })
-      } else {
-        // formulaQty=1 for dropdown rates (they're Unit-based; selection picks the rate)
-        const res = computeLineItem(toRateRecord(rate), 1, 1)
-        const liQty = rate.per_li_unit ? q : 1
-        lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: 'Unit', displayQty: res.computed_qty, units: res.units ?? rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty, totalCost: res.totalCost * liQty, totalPrice: res.totalPrice * liQty, active: true, rateFound: true, isMaterial: false })
-      }
+      const rateFormula = rate.formula ?? 'unit'
+      const baseFormulaQty = computeFormula(rateFormula, widthFt, heightFt)
+      const formulaQty = hasDmAttachNum ? baseFormulaQty * dmAttachNumQty : baseFormulaQty
+      const res = computeLineItem(toRateRecord(rate), formulaQty, 1)
+      const liQty = rate.per_li_unit ? q : 1
+      lines.push({ name: selectedVal, itemType: dm?.item_type ?? 'MachineRate', formula: rateFormula, displayQty: res.computed_qty, units: res.units ?? rate.units ?? '', unitCost: rate.cost, unitPrice: rate.price, perLiUnit: rate.per_li_unit, liQty, totalCost: res.totalCost * liQty, totalPrice: res.totalPrice * liQty, active: true, rateFound: true, isMaterial: false })
     }
 
     const gCost = lines.reduce((s, l) => s + l.totalCost, 0)
