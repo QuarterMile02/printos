@@ -373,19 +373,24 @@ async function extractModalFields(page) {
     console.log('Modal heading found:', heading)
 
     if (heading.includes('Default Item')) {
+      const _formula      = getDropdownValue('Formula') || getDropdownValue('System Formula')
+      const _numMod       = getDropdownValue('Attach to a Numeric Modifier')
+      const _chkMod       = getDropdownValue('Attach to a Checkbox Modifier')
+      const _itemType     = getDropdownValue('Item Type') || getField('Item Type')
+      console.log('[DI debug] formula:', _formula, '| numeric_modifier:', _numMod, '| checkbox_modifier:', _chkMod, '| item_type:', _itemType)
       return {
         type: 'default_item',
         heading,
-        item_type:             getDropdownValue('Item Type') || getField('Item Type'),
+        item_type:             _itemType,
         item_sub_type:         getDropdownValue('Item Sub Type'),
         category:              getDropdownValue('Category'),
         material:              getDropdownValue('Material'),
-        formula:               getDropdownValue('Formula') || getDropdownValue('System Formula'),
+        formula:               _formula,
         multiplier:            getField('Multiplier'),
         per_li_unit:           getCheckbox('Per LI Unit'),
         include_in_base_price: getCheckbox('Include in Base Price'),
-        numeric_modifier:      getDropdownValue('Attach to a Numeric Modifier'),
-        checkbox_modifier:     getDropdownValue('Attach to a Checkbox Modifier'),
+        numeric_modifier:      _numMod,
+        checkbox_modifier:     _chkMod,
       }
     }
 
@@ -454,7 +459,7 @@ async function closeOpenModal(page) {
     .catch(() => {})
 
   // Extra buffer so the next click doesn't land on a residual overlay.
-  await sleep(500)
+  await sleep(300)
 }
 
 // Scrape selected items by clicking the plus button on a dropdown menu row.
@@ -487,7 +492,7 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       console.log(`    [DD ${rowIndex}] "Show Only Selected Items" not found — scraping all visible`)
     } else {
       await showSelectedBtn.click({ timeout: 3000, force: true }).catch(() => {})
-      await sleep(1000)
+      await sleep(500)
     }
 
     // Scrape selected items via checked checkboxes — avoids picking up UI controls.
@@ -495,7 +500,7 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       const UI_PREFIXES = [
         'Add Product Template', 'Filter by Name', 'Filter by Category',
         'Show Only Selected Items', 'Buying Cost', 'Pricing Type', 'Formula',
-        'Cancel', 'Save', 'Close', 'Select All', 'Deselect All',
+        'Cancel', 'Save', 'Close', 'Select All', 'Deselect All', 'Products',
       ]
       const isUiLabel = (t) => UI_PREFIXES.some((p) => t === p || t.startsWith(p + ' ') || t.startsWith(p + '('))
       const checked = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
@@ -564,7 +569,7 @@ async function extractProduct(page, product, shopvoxUrl) {
   const cpTab = page.locator('text="Configure Pricing"').first()
   if (await cpTab.count() > 0) {
     await cpTab.click().catch(() => {})
-    await sleep(1000)
+    await sleep(500)
   }
 
   // Guard again after tab switch — tab navigation can occasionally re-trigger
@@ -588,7 +593,7 @@ async function extractProduct(page, product, shopvoxUrl) {
     }
     await header.scrollIntoViewIfNeeded()
     await header.click()
-    await sleep(2000)
+    await sleep(1000)
     const total = await page.locator(ROWS_SEL).count()
     console.log(`  ${sectionName}: ${total} total sortable rows after expand`)
     return total
