@@ -297,10 +297,13 @@ function extractShopvoxId(href) {
 // Returns a discriminated-union object keyed by `type`, or null if no modal.
 async function extractModalFields(page) {
   return await page.evaluate(() => {
-    const modal = Array.from(document.querySelectorAll('div')).find((d) => {
-      const h = d.querySelector('h2, h3, h4')
-      return h && (h.innerText || '').includes('Edit')
-    })
+    // Find modal: prefer the known CSS class, fall back to scanning all divs.
+    const modal =
+      document.querySelector('._ModalContent_1tz2y_44') ||
+      Array.from(document.querySelectorAll('div')).find((d) => {
+        const h = d.querySelector('h2, h3, h4')
+        return h && (h.innerText || '').includes('Edit')
+      })
     console.log('Modal element:', modal?.className)
     if (!modal) return null
 
@@ -346,7 +349,27 @@ async function extractModalFields(page) {
       return null
     }
 
-    const heading = (modal.querySelector('h2, h3, h4')?.innerText || '').trim()
+    // Find heading using cascade of selectors, then fall back to old h2/h3/h4.
+    let heading = ''
+    for (const sel of [
+      '._ModalContent_1tz2y_44 h2',
+      '._ModalContent_1tz2y_44 h3',
+      '._ModalContent_1tz2y_44 [class*="heading"]',
+      '._ModalContent_1tz2y_44 [class*="title"]',
+    ]) {
+      const el = document.querySelector(sel)
+      if (el) { const t = (el.innerText || '').trim(); if (t) { heading = t; break } }
+    }
+    if (!heading) {
+      const content = document.querySelector('._ModalContent_1tz2y_44')
+      if (content) {
+        const el = Array.from(content.querySelectorAll('div')).find(
+          (e) => (e.innerText || '').trim().startsWith('Edit') && e.children.length <= 3,
+        )
+        if (el) heading = (el.innerText || '').trim().split('\n')[0].trim()
+      }
+    }
+    if (!heading) heading = (modal.querySelector('h2, h3, h4')?.innerText || '').trim()
     console.log('Modal heading found:', heading)
 
     if (heading.includes('Default Item')) {
@@ -469,11 +492,12 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
 
     // Scrape selected items via checked checkboxes — avoids picking up UI controls.
     const items = await page.evaluate(() => {
-      const UI_LABELS = new Set([
+      const UI_PREFIXES = [
         'Add Product Template', 'Filter by Name', 'Filter by Category',
         'Show Only Selected Items', 'Buying Cost', 'Pricing Type', 'Formula',
         'Cancel', 'Save', 'Close', 'Select All', 'Deselect All',
-      ])
+      ]
+      const isUiLabel = (t) => UI_PREFIXES.some((p) => t === p || t.startsWith(p + ' ') || t.startsWith(p + '('))
       const checked = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
       if (checked.length > 0) {
         return checked
@@ -483,7 +507,7 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
             const text = (row?.innerText || label?.innerText || '').trim().split('\n')[0].trim()
             return text
           })
-          .filter(t => t.length > 1 && !UI_LABELS.has(t))
+          .filter(t => t.length > 1 && !isUiLabel(t))
           .slice(0, 200)
       }
       return []
