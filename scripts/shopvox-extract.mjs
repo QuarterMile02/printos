@@ -980,9 +980,11 @@ async function main() {
       }
       const extracted = await Promise.race([
         extractProduct(page, extractContext, sv.url),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 90s')), 90000)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 300s')), 300000)),
       ])
       const ms = Date.now() - productStart
+      console.log('  [DEBUG] first dropdown_menu:', JSON.stringify(extracted.dropdown_menus[0] ?? null, null, 2))
+      console.log('  [DEBUG] first default_item: ', JSON.stringify(extracted.default_items[0]  ?? null, null, 2))
       if (printosProduct) {
         await saveToDb(printosProduct, extracted)
         console.log(`OK (${ms}ms, mods=${extracted.modifiers.length}, dd=${extracted.dropdown_menus.length}, items=${extracted.default_items.length})`)
