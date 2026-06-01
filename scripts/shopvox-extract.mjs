@@ -55,8 +55,6 @@ const CDP_URL = getFlag('--cdp')
 
 // Diagnostic snapshot is taken only on the first product we extract.
 let firstProduct = true
-// Modal HTML dump fires only on the first Edit Default Item modal seen.
-let savedDefaultItemModal = false
 
 // ── .env.local ────────────────────────────────────────────────────────
 const envText = readFileSync(resolve(repoRoot, '.env.local'), 'utf8')
@@ -309,10 +307,12 @@ async function extractModalFields(page) {
     console.log('Modal element:', modal?.className)
     if (!modal) return null
 
+    const norm = (s) => (s || '').trim().replace(/^\*\s*/, '')
+
     const getField = (labelText) => {
       const allEls = Array.from(modal.querySelectorAll('*'))
       const label = allEls.find(
-        (el) => (el.innerText || '').trim() === labelText && el.children.length <= 2,
+        (el) => norm(el.innerText) === labelText && el.children.length <= 2,
       )
       if (!label) return null
       const container = label.closest('div')
@@ -325,7 +325,7 @@ async function extractModalFields(page) {
 
     const getCheckbox = (labelText) => {
       const cands = Array.from(modal.querySelectorAll('label, span, p'))
-      const label = cands.find((el) => (el.innerText || '').trim() === labelText)
+      const label = cands.find((el) => norm(el.innerText) === labelText)
       if (!label) return false
       const cb =
         label.closest('div')?.querySelector('input[type="checkbox"]') ||
@@ -337,15 +337,19 @@ async function extractModalFields(page) {
     const getDropdownValue = (labelText) => {
       const allEls = Array.from(modal.querySelectorAll('*'))
       const label = allEls.find(
-        (el) => (el.innerText || '').trim() === labelText && el.tagName !== 'OPTION',
+        (el) => norm(el.innerText) === labelText && el.tagName !== 'OPTION',
       )
       if (!label) return null
       const container =
         label.closest('div[class*="select"], div[class*="dropdown"]') ||
         label.parentElement?.parentElement
       if (!container) return null
-      const displayed = container.querySelector('[class*="value"], [class*="selected"]')
-      if (displayed) return (displayed.innerText || '').trim()
+      // ShopVOX uses react-select; the selected value lives in a class containing
+      // "singleValue" (capital V) — [class*="value"] (lowercase) never matched it.
+      const displayed =
+        container.querySelector('[class*="singleValue"]') ||
+        container.querySelector('[class*="value"], [class*="selected"]')
+      if (displayed) return (displayed.innerText || '').trim() || null
       const select = container.querySelector('select')
       if (select) return select.options[select.selectedIndex]?.text
       return null
@@ -354,6 +358,7 @@ async function extractModalFields(page) {
     // Find heading using cascade of selectors, then fall back to old h2/h3/h4.
     let heading = ''
     for (const sel of [
+      '._ModalContent_1tz2y_44 h1',
       '._ModalContent_1tz2y_44 h2',
       '._ModalContent_1tz2y_44 h3',
       '._ModalContent_1tz2y_44 [class*="heading"]',
@@ -371,7 +376,7 @@ async function extractModalFields(page) {
         if (el) heading = (el.innerText || '').trim().split('\n')[0].trim()
       }
     }
-    if (!heading) heading = (modal.querySelector('h2, h3, h4')?.innerText || '').trim()
+    if (!heading) heading = (modal.querySelector('h1, h2, h3, h4')?.innerText || '').trim()
     console.log('Modal heading found:', heading)
 
     if (heading.includes('Default Item')) {
@@ -631,6 +636,7 @@ async function extractProduct(page, product, shopvoxUrl) {
       await sleep(300)
       heading = await page.evaluate(() => {
         const SELECTORS = [
+          '._ModalContent_1tz2y_44 h1',
           '._ModalContent_1tz2y_44 h2',
           '._ModalContent_1tz2y_44 h3',
           '._ModalContent_1tz2y_44 [class*="heading"]',
@@ -656,12 +662,6 @@ async function extractProduct(page, product, shopvoxUrl) {
       if (heading) break
     }
     console.log(`  Modal heading: ${heading || 'NOT FOUND'}`)
-    if (heading && heading.includes('Default Item') && !savedDefaultItemModal) {
-      savedDefaultItemModal = true
-      if (!existsSync(DEBUG_DIR)) mkdirSync(DEBUG_DIR, { recursive: true })
-      writeFileSync(resolve(DEBUG_DIR, 'modal-default-item.html'), await page.content(), 'utf8')
-      console.log('  [DEBUG] Saved modal-default-item.html')
-    }
     if (!heading) {
       // Dump whatever is in the modal container so we can iterate on
       // either the heading detection or the close logic offline.
@@ -996,8 +996,6 @@ async function main() {
         new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 300s')), 300000)),
       ])
       const ms = Date.now() - productStart
-      console.log('  [DEBUG] first dropdown_menu:', JSON.stringify(extracted.dropdown_menus[0] ?? null, null, 2))
-      console.log('  [DEBUG] first default_item: ', JSON.stringify(extracted.default_items[0]  ?? null, null, 2))
       if (printosProduct) {
         await saveToDb(printosProduct, extracted)
         console.log(`OK (${ms}ms, mods=${extracted.modifiers.length}, dd=${extracted.dropdown_menus.length}, items=${extracted.default_items.length})`)
