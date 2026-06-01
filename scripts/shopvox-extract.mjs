@@ -384,7 +384,7 @@ async function extractModalFields(page) {
       const _numMod       = getDropdownValue('Attach to a Numeric Modifier')
       const _chkMod       = getDropdownValue('Attach to a Checkbox Modifier')
       const _itemType     = getDropdownValue('Item Type') || getField('Item Type')
-      console.log('[DI debug] formula:', _formula, '| numeric_modifier:', _numMod, '| checkbox_modifier:', _chkMod, '| item_type:', _itemType)
+
       return {
         type: 'default_item',
         heading,
