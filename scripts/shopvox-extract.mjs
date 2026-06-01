@@ -55,6 +55,8 @@ const CDP_URL = getFlag('--cdp')
 
 // Diagnostic snapshot is taken only on the first product we extract.
 let firstProduct = true
+// Modal HTML dump fires only on the first Edit Default Item modal seen.
+let savedDefaultItemModal = false
 
 // ── .env.local ────────────────────────────────────────────────────────
 const envText = readFileSync(resolve(repoRoot, '.env.local'), 'utf8')
@@ -654,6 +656,12 @@ async function extractProduct(page, product, shopvoxUrl) {
       if (heading) break
     }
     console.log(`  Modal heading: ${heading || 'NOT FOUND'}`)
+    if (heading && heading.includes('Default Item') && !savedDefaultItemModal) {
+      savedDefaultItemModal = true
+      if (!existsSync(DEBUG_DIR)) mkdirSync(DEBUG_DIR, { recursive: true })
+      writeFileSync(resolve(DEBUG_DIR, 'modal-default-item.html'), await page.content(), 'utf8')
+      console.log('  [DEBUG] Saved modal-default-item.html')
+    }
     if (!heading) {
       // Dump whatever is in the modal container so we can iterate on
       // either the heading detection or the close logic offline.
