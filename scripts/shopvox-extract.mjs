@@ -440,33 +440,52 @@ async function extractModalFields(page) {
 
 // Dismiss any open modal and wait for its overlay to fully leave the DOM.
 // Safe to call when no modal is open — returns immediately in that case.
+// Tries progressively more aggressive dismissal methods, ending with a
+// hard DOM removal if nothing else works.
 async function closeOpenModal(page) {
   // Fast-path: if no overlay is present at all, nothing to do.
-  const overlayVisible = await page.locator('._ModalOverlay_1tz2y_28').count()
-  if (overlayVisible === 0) return
+  if (!(await page.$('._ModalOverlay_1tz2y_28'))) return
 
-  // Try clicking Cancel/Close/X inside the modal first (most reliable dismiss).
+  const overlayGone = async () => !(await page.$('._ModalOverlay_1tz2y_28'))
+
+  // 1. Click the X button (_button_pckdd_26) inside the modal content wrapper.
+  try {
+    const xBtn = page.locator('._button_pckdd_26 button, ._button_pckdd_26').first()
+    if ((await xBtn.count()) > 0) {
+      await xBtn.click({ timeout: 1000, force: true })
+      await sleep(300)
+      if (await overlayGone()) { await sleep(300); return }
+    }
+  } catch {}
+
+  // 2. Escape key.
+  await page.keyboard.press('Escape')
+  await sleep(300)
+  if (await overlayGone()) { await sleep(300); return }
+
+  // 3. Cancel/Close button anywhere inside the modal.
   try {
     const cancelBtn = page
       .locator('button:has-text("Cancel"), button:has-text("Close"), button[aria-label="Close"]')
       .first()
     if ((await cancelBtn.count()) > 0) {
-      await cancelBtn.click({ timeout: 2000, force: true })
+      await cancelBtn.click({ timeout: 1000, force: true })
       await sleep(300)
+      if (await overlayGone()) { await sleep(300); return }
     }
   } catch {}
 
-  // Escape as a fallback for keyboard-dismissible modals.
-  await page.keyboard.press('Escape')
-  await sleep(300)
+  // 4. Click the overlay itself at a corner (outside the modal content box).
+  try {
+    await page.locator('._ModalOverlay_1tz2y_28').click({ timeout: 1000, force: true, position: { x: 10, y: 10 } })
+    await sleep(300)
+    if (await overlayGone()) { await sleep(300); return }
+  } catch {}
 
-  // Wait until the overlay is fully gone (hidden or detached).
-  await page
-    .waitForSelector('._ModalOverlay_1tz2y_28', { state: 'hidden', timeout: 10000 })
-    .catch(() => {})
-
-  // Extra buffer so the next click doesn't land on a residual overlay.
-  await sleep(300)
+  // 5. Hard dismiss: force-remove the overlay node from the DOM.
+  await page.evaluate(() => { document.querySelector('._ModalOverlay_1tz2y_28')?.remove() })
+  await sleep(500)
+  console.log('  WARNING: closeOpenModal — hard DOM removal needed (overlay was stuck)')
 }
 
 // Scrape selected items by clicking the plus button on a dropdown menu row.
