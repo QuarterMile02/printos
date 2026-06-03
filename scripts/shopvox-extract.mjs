@@ -515,11 +515,15 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
     }
 
     if (!showSelectedBtn) {
-      console.log(`    [DD ${rowIndex}] "Show Only Selected Items" not found — scraping all visible`)
-    } else {
-      await showSelectedBtn.click({ timeout: 3000, force: true }).catch(() => {})
-      await sleep(500)
+      // No "Show Only Selected Items" button means nothing is selected yet.
+      // Close the picker and return empty rather than scraping UI noise.
+      console.log(`    [DD ${rowIndex}] no selected-items button — 0 selected`)
+      await page.keyboard.press('Escape')
+      await sleep(300)
+      return []
     }
+    await showSelectedBtn.click({ timeout: 3000, force: true }).catch(() => {})
+    await sleep(500)
 
     // Scrape selected items via checked checkboxes — avoids picking up UI controls.
     const items = await page.evaluate(() => {
@@ -612,13 +616,34 @@ async function extractProduct(page, product, shopvoxUrl) {
     // Dismiss any open modal before clicking a section header — the overlay
     // intercepts clicks even on elements outside the modal.
     await closeOpenModal(page)
+
+    // Guard: if a click somehow navigated away from the product page, go back.
+    const productPath = shopvoxUrl.split('?')[0]
+    if (!page.url().startsWith(productPath)) {
+      console.log(`  URL drift before "${sectionName}" (${page.url()}) — navigating back`)
+      await page.goto(shopvoxUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      await sleep(1000)
+      await closeOpenModal(page)
+    }
+
+    // Find the section header with a short timeout — some products simply don't
+    // have all three sections; treat absence as a skip, not a failure.
     const header = page.locator(`text="${sectionName}"`).first()
-    if ((await header.count()) === 0) {
-      console.log(`  No "${sectionName}" header found`)
+    try {
+      await header.waitFor({ state: 'visible', timeout: 5000 })
+    } catch {
+      console.log(`  Section "${sectionName}" not found — skipping`)
       return null
     }
-    await header.scrollIntoViewIfNeeded()
-    await header.click()
+
+    try {
+      await header.scrollIntoViewIfNeeded()
+      await header.click({ timeout: 5000 })
+    } catch (e) {
+      console.log(`  Section "${sectionName}" click failed: ${e.message.split('\n')[0]} — skipping`)
+      return null
+    }
+
     await sleep(1000)
     const total = await page.locator(ROWS_SEL).count()
     console.log(`  ${sectionName}: ${total} total sortable rows after expand`)
