@@ -522,32 +522,61 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       await sleep(300)
       return []
     }
-    await showSelectedBtn.click({ timeout: 3000, force: true }).catch(() => {})
-    await sleep(500)
 
-    // Scrape selected items via checked checkboxes — avoids picking up UI controls.
-    const items = await page.evaluate(() => {
+    // Capture expected count from button label e.g. "Show Only Selected Items (3)".
+    const btnText = await showSelectedBtn.innerText().catch(() => '')
+    const expectedMatch = btnText.match(/\((\d+)\)/)
+    const expectedCount = expectedMatch ? parseInt(expectedMatch[1]) : null
+
+    await showSelectedBtn.click({ timeout: 3000, force: true }).catch(() => {})
+    await sleep(1000)
+
+    // Helper: collect all checked checkboxes in the picker, filtering UI chrome.
+    const scrapeChecked = () => page.evaluate(() => {
       const UI_PREFIXES = [
         'Add Product Template', 'Filter by Name', 'Filter by Category',
         'Show Only Selected Items', 'Buying Cost', 'Pricing Type', 'Formula',
         'Cancel', 'Save', 'Close', 'Select All', 'Deselect All', 'Products',
       ]
       const isUiLabel = (t) => UI_PREFIXES.some((p) => t === p || t.startsWith(p + ' ') || t.startsWith(p + '('))
-      const checked = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
-      if (checked.length > 0) {
-        return checked
-          .map(cb => {
-            const label = cb.closest('label') || cb.parentElement
-            const row = cb.closest('li, [role="listitem"], [role="option"], [class*="row"], [class*="Row"], [class*="item"]') || label
-            const text = (row?.innerText || label?.innerText || '').trim().split('\n')[0].trim()
-            return text
-          })
-          .filter(t => t.length > 1 && !isUiLabel(t))
-          .slice(0, 200)
-      }
-      return []
+      return Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(cb => {
+          const label = cb.closest('label') || cb.parentElement
+          const row = cb.closest('li, [role="listitem"], [role="option"], [class*="row"], [class*="Row"], [class*="item"]') || label
+          return (row?.innerText || label?.innerText || '').trim().split('\n')[0].trim()
+        })
+        .filter(t => t.length > 1 && !isUiLabel(t))
     })
-    console.log(`    [DD ${rowIndex}] selected items: ${items.length}`)
+
+    // Initial scrape — retry up to 3× if expectedCount > 0 but we got nothing
+    // (filter animation may not have settled yet).
+    let items = []
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(500)
+      items = await scrapeChecked()
+      if (items.length > 0 || !expectedCount) break
+      console.log(`    [DD ${rowIndex}] retry ${attempt + 1}: 0 items but expected ${expectedCount}`)
+    }
+
+    // Load-more loop: some pickers paginate. Click any "load more / show more"
+    // button (case-insensitive, excluding the "Show Only Selected" toggle) and
+    // re-scrape. Full re-scrape each time avoids duplicate tracking.
+    for (let pg = 0; pg < 10; pg++) {
+      const loadMoreBtn = page.locator('button').filter({ hasText: /more|load/i }).first()
+      if ((await loadMoreBtn.count()) === 0) break
+      const loadMoreText = (await loadMoreBtn.innerText().catch(() => '')).trim()
+      if (/show only selected/i.test(loadMoreText)) break
+      console.log(`    [DD ${rowIndex}] load-more: "${loadMoreText}"`)
+      await loadMoreBtn.click({ timeout: 3000, force: true }).catch(() => {})
+      await sleep(1000)
+      items = await scrapeChecked()
+    }
+
+    // Dedupe preserving order, cap at 200.
+    const seen = new Set()
+    items = items.filter(t => { if (seen.has(t)) return false; seen.add(t); return true }).slice(0, 200)
+
+    console.log(`    [DD ${rowIndex}] selected items: ${items.length}${expectedCount != null ? ` (expected ${expectedCount})` : ''}`)
 
     // Close the picker panel.
     await page.keyboard.press('Escape')
