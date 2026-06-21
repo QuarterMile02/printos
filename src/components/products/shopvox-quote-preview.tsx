@@ -590,12 +590,13 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
             const menuName = dm?.menu_name ?? dm?.['Menu Name'] ?? dm?.name ?? ''
             if (!menuName) return null
             const selectedItems: string[] = dm?.selected_items ?? []
+            const dmItemType: string = (dm?.item_type ?? '').toLowerCase()
             const dmCategory: string | undefined = dm?.category
             const items: string[] = selectedItems.length > 0
               ? selectedItems
-              : (dmCategory && dmCategory !== '-')
+              : (dmItemType === 'material' && dmCategory && dmCategory !== '-')
                 ? Object.values(fullMaterialMap)
-                    .filter(mat => mat.material_type === dmCategory)
+                    .filter(mat => mat.material_type?.toLowerCase() === dmCategory.toLowerCase())
                     .map(mat => mat.name)
                     .sort()
                 : []
