@@ -36,7 +36,7 @@ type FullMaterialRow = {
   wastage_markup: number | null
   calculate_wastage: boolean | null
   material_category: string | null
-  material_type: string | null
+  material_type_name: string | null
 }
 type FullMaterialMap = Record<string, FullMaterialRow>
 
@@ -263,7 +263,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
               width: r.width ?? null, height: r.height ?? null,
               wastage_markup: r.wastage_markup ?? null, calculate_wastage: r.calculate_wastage ?? null,
               material_category: r.material_category ?? null,
-              material_type: r.material_type ?? null,
+              material_type_name: (r.material_types as any)?.name ?? null,
             }
           }
           setFullMaterialMap(matData)
@@ -596,7 +596,7 @@ export default function ShopvoxQuotePreview({ shopvoxData, productName: _product
               ? selectedItems
               : (dmItemType === 'material' && dmCategory && dmCategory !== '-')
                 ? Object.values(fullMaterialMap)
-                    .filter(mat => mat.material_type?.toLowerCase() === dmCategory.toLowerCase())
+                    .filter(mat => mat.material_type_name?.toLowerCase() === dmCategory.toLowerCase())
                     .map(mat => mat.name)
                     .sort()
                 : []
