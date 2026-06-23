@@ -327,7 +327,9 @@ async function extractModalFields(page) {
       const cands = Array.from(modal.querySelectorAll('label, span, p'))
       const label = cands.find((el) => norm(el.innerText) === labelText)
       if (!label) return false
+      const wrapper = label.parentElement?.tagName === 'LABEL' ? label.parentElement : null
       const cb =
+        wrapper?.querySelector('input[type="checkbox"]') ||
         label.closest('div')?.querySelector('input[type="checkbox"]') ||
         label.previousElementSibling?.querySelector('input[type="checkbox"]') ||
         label.querySelector('input[type="checkbox"]')
