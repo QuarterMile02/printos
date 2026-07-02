@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { SalesOrderStatus, JobStatus } from '@/types/database'
 import { updateSalesOrderStatus } from '../actions'
@@ -91,13 +92,35 @@ export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, canSeePricing,
   initialContactId, initialContactName, canReassignCustomer,
 }: Props) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [status, setStatus] = useState<SalesOrderStatus>(salesOrder.status)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [creatingInvoice, setCreatingInvoice] = useState(false)
+  const [invoiceError, setInvoiceError] = useState<string | null>(null)
 
   function flash(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
     setTimeout(() => setToast(null), 4000)
+  }
+
+  async function handleCreateInvoice() {
+    setCreatingInvoice(true)
+    setInvoiceError(null)
+    try {
+      const res = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sales_order_id: salesOrder.id, org_slug: orgSlug }),
+      })
+      const data = await res.json() as { id?: string; error?: string }
+      if (!res.ok) throw new Error(data.error ?? 'Failed to create invoice')
+      router.push(`/dashboard/${orgSlug}/invoices/${data.id}`)
+    } catch (err: unknown) {
+      setInvoiceError(err instanceof Error ? err.message : 'Failed to create invoice')
+    } finally {
+      setCreatingInvoice(false)
+    }
   }
 
   function handleStatusChange(next: SalesOrderStatus) {
@@ -223,6 +246,22 @@ export default function SoDetailClient({
             </button>
           ))}
         </div>
+
+        {status === 'completed' && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={handleCreateInvoice}
+              disabled={creatingInvoice}
+              className="w-full rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {creatingInvoice ? 'Creating Invoice…' : '+ Create Invoice'}
+            </button>
+            {invoiceError && (
+              <p className="mt-2 text-sm text-red-600">{invoiceError}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Child jobs */}

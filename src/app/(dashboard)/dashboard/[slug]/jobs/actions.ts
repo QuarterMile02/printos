@@ -6,6 +6,7 @@ import type { JobStatus, JobFlag, OrgRole } from '@/types/database'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
+import { createInvoiceFromSO } from '@/app/(dashboard)/dashboard/[slug]/invoices/actions'
 
 function toE164(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -132,6 +133,48 @@ export async function updateJobStatus(
     from_value: prev?.status,
     to_value: status,
   })
+
+  // Auto-create invoice when job is marked complete and the linked SO is
+  // already completed but has no invoice yet (non-fatal if it fails).
+  if (status === 'completed') {
+    try {
+      const { data: jobData } = await service
+        .from('jobs')
+        .select('source_quote_id, organization_id')
+        .eq('id', jobId)
+        .maybeSingle() as { data: { source_quote_id: string | null; organization_id: string } | null; error: unknown }
+
+      if (jobData?.source_quote_id) {
+        const { data: soRow } = await service
+          .from('sales_orders')
+          .select('id, status')
+          .eq('quote_id', jobData.source_quote_id)
+          .maybeSingle() as { data: { id: string; status: string } | null; error: unknown }
+
+        if (soRow && soRow.status === 'completed') {
+          const { data: existingInv } = await service
+            .from('invoices')
+            .select('id')
+            .eq('sales_order_id', soRow.id)
+            .maybeSingle()
+
+          if (!existingInv) {
+            const { data: orgRow } = await service
+              .from('organizations')
+              .select('slug')
+              .eq('id', jobData.organization_id)
+              .maybeSingle() as { data: { slug: string } | null; error: unknown }
+
+            if (orgRow?.slug) {
+              await createInvoiceFromSO(soRow.id, orgRow.slug, 30)
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[updateJobStatus] Auto-invoice failed:', e)
+    }
+  }
 
   // Notify customer when job is ready for pickup
   let notifiedJobNumber: number | undefined

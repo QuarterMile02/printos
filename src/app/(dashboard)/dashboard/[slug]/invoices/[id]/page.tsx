@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { formatInvNumber, formatCents, INV_STATUS_STYLES, INV_STATUS_LABELS } from '../format'
-import { recordPayment } from './actions'
+import { recordPayment } from '../actions'
 
 export const dynamic = 'force-dynamic'
 
