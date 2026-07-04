@@ -193,8 +193,11 @@ async function scrapeVisibleLinks(page, byHref) {
 // Dropdown button is inside div[aria-haspopup="dialog"] and shows the
 // current view's name; clicking it opens a dialog with the view options.
 async function switchToView(page, currentView, targetView) {
+  // The view switcher button contains a <span> with the view name plus a chevron
+  // SVG. The adjacent sort button has only an SVG — no span. :has(span) is the
+  // stable distinguisher regardless of which view is currently selected.
   const dropdownBtn = page
-    .locator(`div[aria-haspopup="dialog"] button:has-text("${currentView}")`)
+    .locator('div[aria-haspopup="dialog"] button:has(span)')
     .first()
   await dropdownBtn.click({ timeout: 5000 })
   await sleep(400)
@@ -210,6 +213,30 @@ async function switchToView(page, currentView, targetView) {
 
 async function collectAllProductUrls(page) {
   const byHref = new Map()
+
+  // Wait for the list to stabilize after ENTER. Take an initial count after
+  // 3 seconds, then keep polling until the count stops changing. Timeout after
+  // 2 minutes in case something is genuinely stuck.
+  console.log('  Waiting 3s for initial row count…')
+  await sleep(3000)
+  let baseline = await page.locator(SELECTORS.productListRow).count()
+  console.log(`  Baseline: ${baseline} rows — watching for changes…`)
+  const stabilizeDeadline = Date.now() + 120_000
+  while (true) {
+    await sleep(1000)
+    const current = await page.locator(SELECTORS.productListRow).count()
+    if (current !== baseline) {
+      baseline = current
+      console.log(`  Still loading… ${baseline} rows`)
+    } else {
+      break
+    }
+    if (Date.now() > stabilizeDeadline) {
+      console.warn(`  ⚠ Timed out waiting for row count to stabilize — proceeding with ${baseline}`)
+      break
+    }
+  }
+  console.log(`  Row count stable: ${baseline} rows`)
 
   // Phase 1 — scrape the "Load All" state the user set up manually.
   await screenshot(page, 'list-load-all')
@@ -905,7 +932,7 @@ async function launchBrowser() {
     return { browser, context, isPersistent: false }
   }
   // Remove stale lock files that prevent Chrome from re-attaching to the session
-  for (const lock of ['SingletonLock', 'lockfile']) {
+  for (const lock of ['SingletonLock', 'lockfile', 'Default/LOCK']) {
     const lockPath = resolve(SESSION_DIR, lock)
     if (existsSync(lockPath)) {
       try { unlinkSync(lockPath) } catch {}
@@ -922,73 +949,36 @@ async function launchBrowser() {
 }
 
 async function ensureLoggedIn(page) {
+  // Kick-start navigation — best-effort. If the user isn't logged in this
+  // lands on the login screen; if they are, they see the products list.
+  // Either way we defer to the user to confirm readiness via ENTER.
   // waitUntil: 'domcontentloaded' (not 'networkidle') because Angular apps
   // often keep a live connection and never go idle.
   await page
     .goto(URLS.products, { timeout: 30000, waitUntil: 'domcontentloaded' })
     .catch(() => {})
 
-  // If we landed on the login page, wait for the user to log in manually
-  if (SELECTORS.loggedOutUrlPattern.test(page.url())) {
-    console.log('\n────────────────────────────────────────────────────────')
-    console.log('  Log into ShopVOX in the open Chromium window.')
-    console.log('  The script will continue automatically once logged in.')
-    console.log('────────────────────────────────────────────────────────\n')
-    await page.waitForURL(
-      (url) => !SELECTORS.loggedOutUrlPattern.test(url.href),
-      { timeout: 300000 },
-    )
-    await page
-      .goto(URLS.products, { timeout: 30000, waitUntil: 'domcontentloaded' })
-      .catch(() => {})
-  }
+  console.log('\n────────────────────────────────────────────────────────')
+  console.log('  MANUAL STEP — in the open Chromium window:')
+  console.log('    1. Log into ShopVOX if not already logged in')
+  console.log(`    2. Navigate to ${URLS.products}`)
+  console.log('    3. Click "Load All" so every product row is visible')
+  console.log('    4. Confirm the product list is fully rendered')
+  console.log('  Then press ENTER here to continue.')
+  console.log('  (No timeout — the script will wait as long as you need.')
+  console.log('   The browser will stay open until you press ENTER.)')
+  console.log('────────────────────────────────────────────────────────\n')
 
-  // Wait for the product list container to be present
-  await page.waitForSelector(SELECTORS.productListContainer, { timeout: 30000, state: 'visible' })
+  // Wait FOREVER for ENTER. No race, no timeout wrapper, no browser
+  // interaction — nothing can close the script or the browser here.
+  process.stdin.resume()
+  process.stdin.setEncoding('utf8')
+  await new Promise((resolve) => process.stdin.once('data', () => resolve()))
+  process.stdin.pause()
 
-  // Click "Load All" if the button exists
-  const loadAllBtn = page.getByRole('button', { name: /load all/i }).first()
-  if (await loadAllBtn.count() > 0) {
-    console.log('  Clicking "Load All"…')
-    await loadAllBtn.click()
-  } else {
-    const fallback = page.locator('button, a').filter({ hasText: /^load all$/i }).first()
-    if (await fallback.count() > 0) {
-      console.log('  Clicking "Load All" (fallback selector)…')
-      await fallback.click()
-    } else {
-      console.log('  ("Load All" button not found — assuming list is already fully loaded)')
-    }
-  }
-
-  // Wait for at least one row to appear
-  try {
-    await page.waitForSelector(SELECTORS.productListRow, { timeout: 30000, state: 'visible' })
-  } catch {
-    console.error('\n✗ Could not find product list rows — check shopvox-debug/products-list.html')
-    if (!existsSync(DEBUG_DIR)) mkdirSync(DEBUG_DIR, { recursive: true })
-    try { writeFileSync(resolve(DEBUG_DIR, 'products-list.html'), await page.content(), 'utf8') } catch {}
-    try { await page.context().close() } catch {}
-    process.exit(1)
-  }
-
-  // Wait for the list to stabilize: no new rows added for 2 consecutive seconds
-  console.log('  Waiting for product list to stabilize…')
-  let stableFor = 0
-  let lastCount = -1
-  while (stableFor < 4) {
-    await sleep(500)
-    const count = await page.locator(SELECTORS.productListRow).count()
-    if (count > 0 && count === lastCount) {
-      stableFor++
-    } else {
-      stableFor = 0
-      lastCount = count
-    }
-  }
-  console.log(`  Product list stable: ${lastCount} rows`)
-
-  // Diagnostic snapshot
+  // Only now — AFTER ENTER — do we touch the browser again. Capture a
+  // diagnostic snapshot so if selector detection fails we can inspect
+  // the real DOM offline.
   if (!existsSync(DEBUG_DIR)) mkdirSync(DEBUG_DIR, { recursive: true })
   const shotPath = resolve(DEBUG_DIR, 'products-list.png')
   const htmlPath = resolve(DEBUG_DIR, 'products-list.html')
@@ -996,6 +986,15 @@ async function ensureLoggedIn(page) {
   try { writeFileSync(htmlPath, await page.content(), 'utf8') } catch (e) { console.log(`  (HTML dump failed: ${e.message})`) }
   console.log(`  Saved snapshot → ${shotPath}`)
   console.log(`  Saved HTML     → ${htmlPath}`)
+
+  // Confirmed selector from the live HTML dump — 752 rows on a single page.
+  try {
+    await page.waitForSelector(SELECTORS.productListRow, { timeout: 15000, state: 'visible' })
+  } catch {
+    console.error('\n✗ Could not find product list — check shopvox-debug/products-list.html')
+    try { await page.context().close() } catch {}
+    process.exit(1)
+  }
   console.log(`  Product list selector matched: ${SELECTORS.productListRow}`)
 }
 
