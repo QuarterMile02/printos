@@ -526,7 +526,7 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
     const buttons = rowLoc.locator('button')
     if ((await buttons.count()) < 1) return []
 
-    // Button index 0 = green plus (opens item picker panel)
+    // Step 1: Open the item picker (green plus button at index 0).
     try {
       await buttons.nth(0).scrollIntoViewIfNeeded()
       await buttons.nth(0).click({ timeout: 3000, force: true })
@@ -535,79 +535,57 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       return []
     }
 
-    // Wait for "Show Only Selected Items" checkbox/button to appear in the picker.
-    let showSelectedBtn = null
+    // Step 2: Wait for the picker to appear — "Show Only Selected" label is the signal.
+    let showSelectedEl = null
     for (let t = 0; t < 20; t++) {
       await sleep(300)
       const cand = page.locator('button, label, input[type="checkbox"]').filter({ hasText: 'Show Only Selected' })
-      if ((await cand.count()) > 0) { showSelectedBtn = cand.first(); break }
+      if ((await cand.count()) > 0) { showSelectedEl = cand.first(); break }
     }
-
-    if (!showSelectedBtn) {
-      // No "Show Only Selected Items" button means nothing is selected yet.
-      // Close the picker and return empty rather than scraping UI noise.
-      console.log(`    [DD ${rowIndex}] no selected-items button — 0 selected`)
+    if (!showSelectedEl) {
+      console.log(`    [DD ${rowIndex}] picker did not appear — 0 selected`)
       await page.keyboard.press('Escape')
       await sleep(300)
       return []
     }
 
-    // Capture expected count from button label e.g. "Show Only Selected Items (3)".
-    const btnText = await showSelectedBtn.innerText().catch(() => '')
-    const expectedMatch = btnText.match(/\((\d+)\)/)
-    const expectedCount = expectedMatch ? parseInt(expectedMatch[1]) : null
-
-    await showSelectedBtn.click({ timeout: 3000, force: true }).catch(() => {})
-    await sleep(1000)
-
-    // Helper: collect all checked checkboxes in the picker, filtering UI chrome.
-    const scrapeChecked = () => page.evaluate(() => {
-      const UI_PREFIXES = [
-        'Add Product Template', 'Filter by Name', 'Filter by Category',
-        'Show Only Selected Items', 'Buying Cost', 'Pricing Type', 'Formula',
-        'Cancel', 'Save', 'Close', 'Select All', 'Deselect All', 'Products',
-      ]
-      const isUiLabel = (t) => UI_PREFIXES.some((p) => t === p || t.startsWith(p + ' ') || t.startsWith(p + '('))
-      return Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
-        .map(cb => {
-          const label = cb.closest('label') || cb.parentElement
-          const row = cb.closest('li, [role="listitem"], [role="option"], [class*="row"], [class*="Row"], [class*="item"]') || label
-          return (row?.innerText || label?.innerText || '').trim().split('\n')[0].trim()
-        })
-        .filter(t => t.length > 1 && !isUiLabel(t))
-    })
-
-    // Initial scrape — retry up to 3× if expectedCount > 0 but we got nothing
-    // (filter animation may not have settled yet).
-    let items = []
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await sleep(500)
-      items = await scrapeChecked()
-      if (items.length > 0 || !expectedCount) break
-      console.log(`    [DD ${rowIndex}] retry ${attempt + 1}: 0 items but expected ${expectedCount}`)
+    // Step 3: Before touching "Show Only Selected", load all items.
+    // Click "Load X Remaining" if present and wait up to 30s for it to disappear.
+    const loadRemainingBtn = page.locator('button').filter({ hasText: /load.*remaining/i }).first()
+    if ((await loadRemainingBtn.count()) > 0) {
+      const loadText = (await loadRemainingBtn.innerText().catch(() => '')).trim()
+      console.log(`    [DD ${rowIndex}] clicking "${loadText}"…`)
+      await loadRemainingBtn.click({ timeout: 5000, force: true }).catch(() => {})
+      const deadline = Date.now() + 30_000
+      while (Date.now() < deadline) {
+        await sleep(500)
+        if ((await page.locator('button').filter({ hasText: /load.*remaining/i }).count()) === 0) break
+      }
+      await sleep(500)
     }
 
-    // Load-more loop: some pickers paginate. Click any "load more / show more"
-    // button (case-insensitive, excluding the "Show Only Selected" toggle) and
-    // re-scrape. Full re-scrape each time avoids duplicate tracking.
-    for (let pg = 0; pg < 10; pg++) {
-      const loadMoreBtn = page.locator('button').filter({ hasText: /more|load/i }).first()
-      if ((await loadMoreBtn.count()) === 0) break
-      const loadMoreText = (await loadMoreBtn.innerText().catch(() => '')).trim()
-      if (/show only selected/i.test(loadMoreText)) break
-      console.log(`    [DD ${rowIndex}] load-more: "${loadMoreText}"`)
-      await loadMoreBtn.click({ timeout: 3000, force: true }).catch(() => {})
-      await sleep(1000)
-      items = await scrapeChecked()
+    // Step 4: Read the count from "Show Only Selected (N)".
+    const labelText = await showSelectedEl.innerText().catch(() => '')
+    const countMatch = labelText.match(/\((\d+)\)/)
+    const selectedCount = countMatch ? parseInt(countMatch[1], 10) : 0
+    console.log(`    [DD ${rowIndex}] "${labelText.trim()}" → count=${selectedCount}`)
+
+    // Step 5: If count is 0, nothing selected — return empty.
+    if (selectedCount === 0) {
+      await page.keyboard.press('Escape')
+      await sleep(300)
+      return []
     }
 
-    // Dedupe preserving order, cap at 200.
-    const seen = new Set()
-    items = items.filter(t => { if (seen.has(t)) return false; seen.add(t); return true }).slice(0, 200)
+    // Step 5 (count > 0): Click "Show Only Selected", wait 2s, read last N name cells.
+    await showSelectedEl.click({ timeout: 3000, force: true }).catch(() => {})
+    await sleep(2000)
 
-    console.log(`    [DD ${rowIndex}] selected items: ${items.length}${expectedCount != null ? ` (expected ${expectedCount})` : ''}`)
+    const allNameCells = await page.locator('[class*="_contentCell_"][header="Name"]').allInnerTexts()
+    const items = allNameCells.map(t => t.trim()).filter(t => t.length > 0).slice(-selectedCount)
+    console.log(`    [DD ${rowIndex}] selected items: ${items.length} (expected ${selectedCount})`)
 
-    // Close the picker panel.
+    // Step 7: Close the picker.
     await page.keyboard.press('Escape')
     await sleep(300)
     try {
