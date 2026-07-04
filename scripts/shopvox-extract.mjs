@@ -581,17 +581,16 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
     await showSelectedEl.click({ timeout: 3000, force: true }).catch(() => {})
     await sleep(2000)
 
-    // Scope the name-cell query to the picker container only — walk up from the
-    // "Show Only Selected" element until we find an ancestor that owns the cells,
-    // so we don't pick up stale cells from previously-opened pickers.
-    const items = await showSelectedEl.evaluate((el, count) => {
-      let container = el.parentElement
-      while (container && container !== document.body) {
-        if (container.querySelectorAll('[class*="_contentCell_"][header="Name"]').length > 0) break
-        container = container.parentElement
-      }
-      const cells = Array.from((container ?? document).querySelectorAll('[class*="_contentCell_"][header="Name"]'))
-      return cells.map(c => (c.innerText || '').trim()).filter(t => t.length > 0).slice(-count)
+    // Read only visible name cells — after "Show Only Selected" is active, only
+    // the selected items remain on screen; stale cells from prior pickers are
+    // hidden (zero dimensions) and filtered out by the visibility check.
+    const items = await page.evaluate((count) => {
+      const cells = Array.from(document.querySelectorAll('[class*="_contentCell_"][header="Name"]'))
+      const visible = cells.filter(el => {
+        const rect = el.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0 && rect.top >= 0
+      })
+      return visible.map(el => el.innerText.trim()).filter(t => t.length > 0).slice(-count)
     }, selectedCount)
     console.log(`    [DD ${rowIndex}] selected items: ${items.length} (expected ${selectedCount})`)
 
