@@ -577,21 +577,25 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       return []
     }
 
-    // Step 5 (count > 0): Click "Show Only Selected", wait 2s, read last N name cells.
-    await showSelectedEl.click({ timeout: 3000, force: true }).catch(() => {})
-    await sleep(2000)
-
-    // Read only visible name cells — after "Show Only Selected" is active, only
-    // the selected items remain on screen; stale cells from prior pickers are
-    // hidden (zero dimensions) and filtered out by the visibility check.
-    const items = await page.evaluate((count) => {
+    // Step 5 (count > 0): before/after diff approach — snapshot visible name cells
+    // before clicking "Show Only Selected", then again after, and return only the
+    // texts that are new. Items accumulated from previously opened pickers were
+    // already in the "before" snapshot and are subtracted out.
+    const getVisibleNameCells = () => page.evaluate(() => {
       const cells = Array.from(document.querySelectorAll('[class*="_contentCell_"][header="Name"]'))
-      const visible = cells.filter(el => {
-        const rect = el.getBoundingClientRect()
-        return rect.width > 0 && rect.height > 0 && rect.top >= 0
-      })
-      return visible.map(el => el.innerText.trim()).filter(t => t.length > 0).slice(-count)
-    }, selectedCount)
+      return cells
+        .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= 0 })
+        .map(el => el.innerText.trim())
+        .filter(t => t.length > 0)
+    })
+
+    const beforeTexts = new Set(await getVisibleNameCells())
+
+    await showSelectedEl.click({ timeout: 3000, force: true }).catch(() => {})
+    await sleep(1000)
+
+    const afterTexts = await getVisibleNameCells()
+    const items = afterTexts.filter(t => !beforeTexts.has(t))
     console.log(`    [DD ${rowIndex}] selected items: ${items.length} (expected ${selectedCount})`)
 
     // Step 7: Close the picker.
