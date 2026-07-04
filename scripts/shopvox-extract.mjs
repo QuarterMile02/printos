@@ -909,12 +909,19 @@ async function saveToDb(product, extracted) {
     if (!scrapedKeys.has(getMenuKey(e))) mergedDDs.push(e)
   }
 
+  const promotedDefaultItems = extracted.default_items.map((item) => ({
+    ...item,
+    per_li_unit: item.modal?.per_li_unit ?? null,
+    formula:     item.modal?.formula     ?? null,
+    multiplier:  item.modal?.multiplier  ?? null,
+  }))
+
   const next = {
     ...existing,
     pricing: { ...(existing.pricing ?? {}), ...mergedPricing },
     modifiers: extracted.modifiers,
     dropdown_menus: mergedDDs,
-    default_items: extracted.default_items,
+    default_items: promotedDefaultItems,
     extracted_at: new Date().toISOString(),
     extraction_version: 2,
   }
