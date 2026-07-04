@@ -28,7 +28,7 @@
 
 import { chromium } from 'playwright'
 import { createClient } from '@supabase/supabase-js'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
@@ -904,6 +904,14 @@ async function launchBrowser() {
     const context = contexts[0] ?? await browser.newContext()
     return { browser, context, isPersistent: false }
   }
+  // Remove stale lock files that prevent Chrome from re-attaching to the session
+  for (const lock of ['SingletonLock', 'lockfile']) {
+    const lockPath = resolve(SESSION_DIR, lock)
+    if (existsSync(lockPath)) {
+      try { unlinkSync(lockPath) } catch {}
+      console.log(`  Removed stale lock: ${lock}`)
+    }
+  }
   console.log(`Launching persistent Chromium (session: ${SESSION_DIR})`)
   const context = await chromium.launchPersistentContext(SESSION_DIR, {
     headless: false,
@@ -914,36 +922,73 @@ async function launchBrowser() {
 }
 
 async function ensureLoggedIn(page) {
-  // Kick-start navigation — best-effort. If the user isn't logged in this
-  // lands on the login screen; if they are, they see the products list.
-  // Either way we defer to the user to confirm readiness via ENTER.
   // waitUntil: 'domcontentloaded' (not 'networkidle') because Angular apps
   // often keep a live connection and never go idle.
   await page
     .goto(URLS.products, { timeout: 30000, waitUntil: 'domcontentloaded' })
     .catch(() => {})
 
-  console.log('\n────────────────────────────────────────────────────────')
-  console.log('  MANUAL STEP — in the open Chromium window:')
-  console.log('    1. Log into ShopVOX if not already logged in')
-  console.log(`    2. Navigate to ${URLS.products}`)
-  console.log('    3. Click "Load All" so every product row is visible')
-  console.log('    4. Confirm the product list is fully rendered')
-  console.log('  Then press ENTER here to continue.')
-  console.log('  (No timeout — the script will wait as long as you need.')
-  console.log('   The browser will stay open until you press ENTER.)')
-  console.log('────────────────────────────────────────────────────────\n')
+  // If we landed on the login page, wait for the user to log in manually
+  if (SELECTORS.loggedOutUrlPattern.test(page.url())) {
+    console.log('\n────────────────────────────────────────────────────────')
+    console.log('  Log into ShopVOX in the open Chromium window.')
+    console.log('  The script will continue automatically once logged in.')
+    console.log('────────────────────────────────────────────────────────\n')
+    await page.waitForURL(
+      (url) => !SELECTORS.loggedOutUrlPattern.test(url.href),
+      { timeout: 300000 },
+    )
+    await page
+      .goto(URLS.products, { timeout: 30000, waitUntil: 'domcontentloaded' })
+      .catch(() => {})
+  }
 
-  // Wait FOREVER for ENTER. No race, no timeout wrapper, no browser
-  // interaction — nothing can close the script or the browser here.
-  process.stdin.resume()
-  process.stdin.setEncoding('utf8')
-  await new Promise((resolve) => process.stdin.once('data', () => resolve()))
-  process.stdin.pause()
+  // Wait for the product list container to be present
+  await page.waitForSelector(SELECTORS.productListContainer, { timeout: 30000, state: 'visible' })
 
-  // Only now — AFTER ENTER — do we touch the browser again. Capture a
-  // diagnostic snapshot so if selector detection fails we can inspect
-  // the real DOM offline.
+  // Click "Load All" if the button exists
+  const loadAllBtn = page.getByRole('button', { name: /load all/i }).first()
+  if (await loadAllBtn.count() > 0) {
+    console.log('  Clicking "Load All"…')
+    await loadAllBtn.click()
+  } else {
+    const fallback = page.locator('button, a').filter({ hasText: /^load all$/i }).first()
+    if (await fallback.count() > 0) {
+      console.log('  Clicking "Load All" (fallback selector)…')
+      await fallback.click()
+    } else {
+      console.log('  ("Load All" button not found — assuming list is already fully loaded)')
+    }
+  }
+
+  // Wait for at least one row to appear
+  try {
+    await page.waitForSelector(SELECTORS.productListRow, { timeout: 30000, state: 'visible' })
+  } catch {
+    console.error('\n✗ Could not find product list rows — check shopvox-debug/products-list.html')
+    if (!existsSync(DEBUG_DIR)) mkdirSync(DEBUG_DIR, { recursive: true })
+    try { writeFileSync(resolve(DEBUG_DIR, 'products-list.html'), await page.content(), 'utf8') } catch {}
+    try { await page.context().close() } catch {}
+    process.exit(1)
+  }
+
+  // Wait for the list to stabilize: no new rows added for 2 consecutive seconds
+  console.log('  Waiting for product list to stabilize…')
+  let stableFor = 0
+  let lastCount = -1
+  while (stableFor < 4) {
+    await sleep(500)
+    const count = await page.locator(SELECTORS.productListRow).count()
+    if (count > 0 && count === lastCount) {
+      stableFor++
+    } else {
+      stableFor = 0
+      lastCount = count
+    }
+  }
+  console.log(`  Product list stable: ${lastCount} rows`)
+
+  // Diagnostic snapshot
   if (!existsSync(DEBUG_DIR)) mkdirSync(DEBUG_DIR, { recursive: true })
   const shotPath = resolve(DEBUG_DIR, 'products-list.png')
   const htmlPath = resolve(DEBUG_DIR, 'products-list.html')
@@ -951,15 +996,6 @@ async function ensureLoggedIn(page) {
   try { writeFileSync(htmlPath, await page.content(), 'utf8') } catch (e) { console.log(`  (HTML dump failed: ${e.message})`) }
   console.log(`  Saved snapshot → ${shotPath}`)
   console.log(`  Saved HTML     → ${htmlPath}`)
-
-  // Confirmed selector from the live HTML dump — 752 rows on a single page.
-  try {
-    await page.waitForSelector(SELECTORS.productListRow, { timeout: 15000, state: 'visible' })
-  } catch {
-    console.error('\n✗ Could not find product list — check shopvox-debug/products-list.html')
-    try { await page.context().close() } catch {}
-    process.exit(1)
-  }
   console.log(`  Product list selector matched: ${SELECTORS.productListRow}`)
 }
 
