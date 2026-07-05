@@ -577,25 +577,19 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       return []
     }
 
-    // Step 5 (count > 0): before/after diff approach — snapshot visible name cells
-    // before clicking "Show Only Selected", then again after, and return only the
-    // texts that are new. Items accumulated from previously opened pickers were
-    // already in the "before" snapshot and are subtracted out.
-    const getVisibleNameCells = () => page.evaluate(() => {
+    // Step 5 (count > 0): click "Show Only Selected" — the list filters to show
+    // exactly the selected items and nothing else. Read ALL visible name cells
+    // after the filter applies; no slicing or diffing needed.
+    await showSelectedEl.click({ timeout: 3000, force: true }).catch(() => {})
+    await sleep(1500)
+
+    const items = await page.evaluate(() => {
       const cells = Array.from(document.querySelectorAll('[class*="_contentCell_"][header="Name"]'))
       return cells
-        .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= 0 })
+        .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
         .map(el => el.innerText.trim())
         .filter(t => t.length > 0)
     })
-
-    const beforeTexts = new Set(await getVisibleNameCells())
-
-    await showSelectedEl.click({ timeout: 3000, force: true }).catch(() => {})
-    await sleep(1000)
-
-    const afterTexts = await getVisibleNameCells()
-    const items = afterTexts.filter(t => !beforeTexts.has(t))
     console.log(`    [DD ${rowIndex}] selected items: ${items.length} (expected ${selectedCount})`)
 
     // Step 7: Close the picker.
