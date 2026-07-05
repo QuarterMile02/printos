@@ -577,22 +577,32 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       return []
     }
 
-    // Step 5 (count > 0): click "Show Only Selected" — the list filters to show
-    // exactly the selected items and nothing else. Read ALL visible name cells
-    // after the filter applies; no slicing or diffing needed.
-    await showSelectedEl.click({ timeout: 3000, force: true }).catch(() => {})
-    await sleep(1500)
+    // Step 5 (count > 0): close and reopen the picker fresh to get a clean DOM
+    // with only this picker's items — avoids contamination from previously opened
+    // pickers whose cells accumulate in the page DOM across iterations.
+    await page.keyboard.press('Escape')
+    await sleep(500)
 
-    const items = await page.evaluate(() => {
-      const cells = Array.from(document.querySelectorAll('[class*="_contentCell_"][header="Name"]'))
-      return cells
-        .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
-        .map(el => el.innerText.trim())
-        .filter(t => t.length > 0)
-    })
+    try {
+      await buttons.nth(0).click({ timeout: 3000, force: true })
+    } catch (e) {
+      console.log(`    [DD ${rowIndex}] reopen click failed: ${e.message.split('\n')[0]}`)
+      return []
+    }
+    await sleep(1000)
+
+    // Click "Show Only Selected" in the freshly opened picker.
+    const freshShowSelected = page.locator('button, label, input[type="checkbox"]').filter({ hasText: 'Show Only Selected' }).first()
+    await freshShowSelected.click({ timeout: 3000, force: true }).catch(() => {})
+    await sleep(1000)
+
+    // Read all name cells and take the last selectedCount — in a fresh picker
+    // the only cells present are from this dropdown, so slice(-N) is reliable.
+    const allCells = await page.locator('[class*="_contentCell_"][header="Name"]').allInnerTexts()
+    const items = allCells.map(t => t.trim()).filter(t => t.length > 0).slice(-selectedCount)
     console.log(`    [DD ${rowIndex}] selected items: ${items.length} (expected ${selectedCount})`)
 
-    // Step 7: Close the picker.
+    // Close the picker.
     await page.keyboard.press('Escape')
     await sleep(300)
     try {
