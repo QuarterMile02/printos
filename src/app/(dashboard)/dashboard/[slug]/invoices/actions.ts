@@ -34,7 +34,7 @@ export async function recordPayment(formData: FormData): Promise<void> {
       balance_due: newBalanceDue,
       status: newStatus,
       updated_at: new Date().toISOString(),
-    })
+    } as any)
     .eq('id', invoiceId)
 
   if (error) throw new Error(error.message)
