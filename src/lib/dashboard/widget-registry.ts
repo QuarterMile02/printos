@@ -65,8 +65,8 @@ export const WIDGET_META: Record<string, WidgetMeta> = {
   payment_promise_tracker: { label: 'Payment Promise Tracker',     defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isAccounting(r) || isOwner(r) || isManagerOrLead(t) },
 
   // ── Sales Manager / Owner approvals ───────────────────────────────────────
-  quotes_needing_approval: { label: 'Quotes Needing Approval', defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || (isSales(r) && t === 'manager') },
-  rescue_list:             { label: 'Rescue List',             defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || (isSales(r) && t === 'manager') },
+  quotes_needing_approval: { label: 'Quotes Needing Approval', defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) },
+  rescue_list:             { label: 'Rescue List',             defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) },
 
   // ── Production / Installer (+ owner + managers) ───────────────────────────
   department_queue:    { label: 'Department Queue',            defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isProduction(r) || isOwner(r) || isManagerOrLead(t) },

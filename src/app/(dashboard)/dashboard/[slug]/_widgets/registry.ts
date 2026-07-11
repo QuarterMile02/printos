@@ -61,8 +61,8 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'payment_promise_tracker', title: 'Payment Promise Tracker',     visibleTo: (r, t) => isAccounting(r) || isOwner(r) || isManagerOrLead(t),              span: 6,  built: true  },
 
   // ─── Sales Manager / Owner approvals ─────────────────────────────────
-  { id: 'quotes_needing_approval', title: 'Quotes Needing Approval', visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || (isSales(r) && t === 'manager'),  span: 6,  built: true  },
-  { id: 'rescue_list',             title: 'Rescue List',             visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || (isSales(r) && t === 'manager'),  span: 6,  built: true  },
+  { id: 'quotes_needing_approval', title: 'Quotes Needing Approval', visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t),  span: 6,  built: true  },
+  { id: 'rescue_list',             title: 'Rescue List',             visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t),  span: 6,  built: true  },
 
   // ─── Production + Installer (+ owner + managers) ─────────────────────
   { id: 'department_queue',    title: 'Department Queue',            visibleTo: (r, t) => isProductionFloor(r) || isOwner(r) || isManagerOrLead(t),              span: 6,  built: true  },
