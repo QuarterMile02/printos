@@ -13,6 +13,8 @@ import DashboardGrid from './_widgets/dashboard-grid'
 import DashboardAlertStrip from './dashboard-alert-strip'
 
 // Widget components
+import ApproachingDeadlineWidget from './_widgets/ApproachingDeadlineWidget'
+import FileErrorWidget from './_widgets/FileErrorWidget'
 import AlertBar from './_widgets/alert-bar'
 import QuickCreate from './_widgets/quick-create'
 import MyJobAssignments from './_widgets/my-job-assignments'
@@ -62,14 +64,16 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
   let role: Role = 'production'
   let tier: Tier = 'staff'
   let displayName: string | null = null
+  let userDepartments: string[] = []
   const { data: profile } = await service
-    .from('profiles').select('role, tier, full_name').eq('id', user.id).maybeSingle() as {
-      data: { role: Role | null; tier: Tier | null; full_name: string | null } | null; error: unknown
+    .from('profiles').select('role, tier, full_name, departments').eq('id', user.id).maybeSingle() as {
+      data: { role: Role | null; tier: Tier | null; full_name: string | null; departments: string[] | null } | null; error: unknown
     }
   if (profile) {
     role = (profile.role as Role) ?? 'production'
     tier = (profile.tier as Tier) ?? 'staff'
     displayName = profile.full_name
+    userDepartments = profile.departments ?? []
   } else {
     const { data: mem } = await service
       .from('organization_members').select('role').eq('user_id', user.id).eq('organization_id', org.id).maybeSingle() as {
@@ -116,7 +120,7 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
       case 'alert_bar':           return <AlertBar service={service} orgId={org!.id} orgSlug={slug} />
       case 'quick_create':        return <QuickCreate orgSlug={slug} role={role} canCreateQuotes={canCreateQuotes} canCreateCustomers={canCreateCustomers} />
       case 'my_job_assignments':  return <MyJobAssignments service={service} orgSlug={slug} orgId={org!.id} userId={user!.id} />
-      case 'my_tasks':            return <MyTasks />
+      case 'my_tasks':            return <MyTasks service={service} orgId={org!.id} userId={user!.id} orgSlug={slug} />
       case 'recent_activity':     return <RecentActivity service={service} orgId={org!.id} orgSlug={slug} userId={user!.id} role={role} />
       case 'bi_stats':            return <BiStats service={service} orgId={org!.id} orgSlug={slug} preset={biPreset} mode={biMode} />
       case 'production_control':  return <ProductionControl service={service} orgId={org!.id} orgSlug={slug} />
@@ -128,7 +132,9 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
       case 'payment_promise_tracker': return <PaymentPromiseTracker service={service} orgId={org!.id} orgSlug={slug} />
       case 'quotes_needing_approval': return <QuotesNeedingApproval service={service} orgId={org!.id} orgSlug={slug} />
       case 'rescue_list':         return <RescueList service={service} orgId={org!.id} orgSlug={slug} />
-      case 'department_queue':    return <DepartmentQueueWidget orgId={org!.id} orgSlug={slug} />
+      case 'department_queue':    return <DepartmentQueueWidget service={service} orgId={org!.id} orgSlug={slug} role={role} userDepartments={userDepartments} />
+      case 'approaching_deadline': return <ApproachingDeadlineWidget service={service} orgId={org!.id} orgSlug={slug} userId={user!.id} role={role} />
+      case 'file_error':          return <FileErrorWidget service={service} orgId={org!.id} orgSlug={slug} />
       case 'design_queue':        return <DesignQueueWidget service={service} orgId={org!.id} orgSlug={slug} />
       case 'low_stock_materials': return <LowStockWidget service={service} orgId={org!.id} orgSlug={slug} />
       case 'sales_leads':         return <MySalesLeads service={service} orgId={org!.id} orgSlug={slug} userId={user!.id} />

@@ -34,6 +34,7 @@ type QuoteRow = {
   total: number | null
   status: string
   created_at: string
+  customer_id: string | null
   customers: { company_name: string | null; first_name: string; last_name: string } | null
 }
 
@@ -41,17 +42,41 @@ export default async function QuotesPriorityWidget({ service, orgId, orgSlug }: 
   try {
     const { data, error } = await service
       .from('quotes')
-      .select('id, quote_number, title, total, status, created_at, customers(company_name, first_name, last_name)')
+      .select('id, quote_number, title, total, status, created_at, customer_id')
       .eq('organization_id', orgId)
-      .not('status', 'in', `(${EXCLUDED.map(s => `"${s}"`).join(',')})`)
+      .not('status', 'in', `(${EXCLUDED.join(',')})`)
       .order('total', { ascending: false, nullsFirst: false })
-      .limit(10) as { data: QuoteRow[] | null; error: unknown }
+      .limit(10) as { data: Omit<QuoteRow, 'customers'>[] | null; error: unknown }
 
-    if (error || !data) throw new Error()
+    if (error) {
+      console.error('[quotes-priority] query error:', error)
+      throw new Error()
+    }
+    if (!data) throw new Error()
+
+    // Fetch customers separately (avoids PostgREST join brittleness)
+    const customerIds = [...new Set(data.map(q => q.customer_id).filter((id): id is string => !!id))]
+    const custMap = new Map<string, { company_name: string | null; first_name: string; last_name: string }>()
+    if (customerIds.length > 0) {
+      const { data: custs } = await service
+        .from('customers')
+        .select('id, company_name, first_name, last_name')
+        .in('id', customerIds) as {
+          data: { id: string; company_name: string | null; first_name: string; last_name: string }[] | null
+          error: unknown
+        }
+      for (const c of custs ?? []) {
+        custMap.set(c.id, { company_name: c.company_name, first_name: c.first_name, last_name: c.last_name })
+      }
+    }
+    const rows: QuoteRow[] = data.map(q => ({
+      ...q,
+      customers: q.customer_id ? (custMap.get(q.customer_id) ?? null) : null,
+    }))
 
     return (
       <WidgetCard title="Quotes Priority" span={6}>
-        {data.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="text-sm text-gray-400">No open quotes</p>
         ) : (
           <div className="overflow-hidden rounded-lg border border-gray-100">
@@ -66,7 +91,7 @@ export default async function QuotesPriorityWidget({ service, orgId, orgSlug }: 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {data.map((q) => {
+                {rows.map((q) => {
                   const year = new Date(q.created_at).getFullYear()
                   const num  = `Q-${year}-${String(q.quote_number).padStart(4, '0')}`
                   const cust = q.customers

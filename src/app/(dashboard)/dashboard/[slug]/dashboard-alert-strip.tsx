@@ -160,17 +160,18 @@ export default async function DashboardAlertStrip({ service, orgId, orgSlug }: P
   })()
 
   // ── PILL 4 — Proofs past deadline ────────────────────────────────────
-  // proof_due_date and/or proof_status may not exist on the live jobs
-  // table. If the query fails (column missing or anything else), the
-  // pill silently shows 0 — never surfaces the error to the user.
+  // Counts jobs where proof_status = 'revision_requested' AND the proof
+  // was sent more than 48 hours ago (i.e. client hasn't responded).
+  // Columns may not exist on the live schema — silently falls back to 0.
   const proofsOverduePromise: Promise<number> = (async () => {
     try {
+      const cutoff = new Date(Date.now() - 48 * 3_600_000).toISOString()
       const r = await service
         .from('jobs')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', orgId)
-        .lt('proof_due_date', todayDate)
-        .neq('proof_status', 'approved')
+        .eq('proof_status', 'revision_requested')
+        .lt('proof_sent_at', cutoff)
       if (r.error) {
         console.warn('[alert-strip] proofs-overdue query failed (likely missing columns):', r.error.message)
         return 0

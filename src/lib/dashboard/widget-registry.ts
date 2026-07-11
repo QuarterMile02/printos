@@ -21,13 +21,8 @@ export type { WidgetId } from '@/app/(dashboard)/dashboard/[slug]/_widgets/regis
 
 export type WidgetMeta = {
   label: string
-  // Default 12-column grid span. 6 = half-width on lg, 12 = full-width.
   defaultSpan: 6 | 12
-  // Pinned widgets always show and cannot be removed by the user.
-  // Alerts and Quick Create are operational, not decorative.
   pinned: boolean
-  // Same predicate as _widgets/registry.ts visibleTo — determines whether
-  // this widget appears in the "Add Widget" modal for a given role.
   visibleTo: (role: Role, tier: Tier) => boolean
 }
 
@@ -36,7 +31,6 @@ const isSales           = (r: Role) => r === 'sales'
 const isAccounting      = (r: Role) => r === 'accounting'
 const isDesigner        = (r: Role) => r === 'designer'
 const isProduction      = (r: Role) => r === 'production' || r === 'installer'
-const isOwnerOrSalesMgr = (r: Role, t: Tier) => r === 'owner' || (r === 'sales' && t === 'manager')
 const isManagerOrLead   = (t: Tier) => t === 'manager' || t === 'lead'
 
 export const WIDGET_META: Record<string, WidgetMeta> = {
@@ -49,36 +43,39 @@ export const WIDGET_META: Record<string, WidgetMeta> = {
   my_tasks:           { label: 'My Tasks',                    defaultSpan: 6,  pinned: false, visibleTo: () => true },
   recent_activity:    { label: 'Recent Activity',             defaultSpan: 12, pinned: false, visibleTo: () => true },
 
-  // ── Owner / Sales Manager ─────────────────────────────────────────────────
-  bi_stats:           { label: 'Business Intelligence',       defaultSpan: 12, pinned: false, visibleTo: (r, t) => isOwnerOrSalesMgr(r, t) },
-  production_control: { label: 'Production Control',          defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwnerOrSalesMgr(r, t) },
-  aging_buckets:      { label: 'Overdue Invoice Aging',       defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwnerOrSalesMgr(r, t) },
-  sales_chart:        { label: 'Sales Chart',                 defaultSpan: 12, pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) || isAccounting(r) },
-  conversion_ratio:   { label: 'Conversion Ratio',            defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) || isAccounting(r) },
+  // ── Owner / Manager analytics ─────────────────────────────────────────────
+  bi_stats:           { label: 'Business Intelligence',       defaultSpan: 12, pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) },
+  production_control: { label: 'Production Control',          defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) },
+  aging_buckets:      { label: 'Overdue Invoice Aging',       defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) },
+  sales_chart:        { label: 'Sales Chart',                 defaultSpan: 12, pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || isAccounting(r) },
+  conversion_ratio:   { label: 'Conversion Ratio',            defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || isAccounting(r) },
 
-  // ── Sales ─────────────────────────────────────────────────────────────────
-  quotes_priority:        { label: 'Quotes Priority',             defaultSpan: 6,  pinned: false, visibleTo: (r) => isSales(r) || isOwner(r) },
-  sales_leads:            { label: 'My Sales Leads',              defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isSales(r) || isOwner(r) || isOwnerOrSalesMgr(r, t) },
-  quotes_without_contact: { label: 'Quotes Without Contact',      defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isSales(r) || isOwner(r) || isOwnerOrSalesMgr(r, t) },
-  sales_pipeline:         { label: 'Sales Team Pipeline',         defaultSpan: 12, pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) },
+  // ── Sales (+ owner / managers) ────────────────────────────────────────────
+  quotes_priority:        { label: 'Quotes Priority',             defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isSales(r) || isOwner(r) || isManagerOrLead(t) },
+  sales_leads:            { label: 'My Sales Leads',              defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isSales(r) || isOwner(r) || isManagerOrLead(t) },
+  quotes_without_contact: { label: 'Quotes Without Contact',      defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isSales(r) || isOwner(r) || isManagerOrLead(t) },
+  sales_pipeline:         { label: 'Sales Team Pipeline',         defaultSpan: 12, pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) },
 
   // ── Owner only ────────────────────────────────────────────────────────────
   kpi_summary:            { label: 'KPI Department Summary',      defaultSpan: 12, pinned: false, visibleTo: (r) => isOwner(r) },
 
-  // ── Accounting ────────────────────────────────────────────────────────────
-  collection_calls:        { label: 'Collection Calls',          defaultSpan: 6,  pinned: false, visibleTo: (r) => isAccounting(r) || isOwner(r) },
-  payment_promise_tracker: { label: 'Payment Promise Tracker',   defaultSpan: 6,  pinned: false, visibleTo: (r) => isAccounting(r) || isOwner(r) },
+  // ── Accounting (+ owner / managers) ──────────────────────────────────────
+  completed_not_invoiced:  { label: 'Completed Jobs Not Invoiced', defaultSpan: 6, pinned: false, visibleTo: (r, t) => isAccounting(r) || isOwner(r) || isManagerOrLead(t) },
+  collection_calls:        { label: 'Collection Calls',            defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isAccounting(r) || isOwner(r) || isManagerOrLead(t) },
+  payment_promise_tracker: { label: 'Payment Promise Tracker',     defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isAccounting(r) || isOwner(r) || isManagerOrLead(t) },
 
   // ── Sales Manager / Owner approvals ───────────────────────────────────────
-  quotes_needing_approval: { label: 'Quotes Needing Approval',   defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) },
-  rescue_list:             { label: 'Rescue List',               defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isOwnerOrSalesMgr(r, t) },
+  quotes_needing_approval: { label: 'Quotes Needing Approval', defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || (isSales(r) && t === 'manager') },
+  rescue_list:             { label: 'Rescue List',             defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isOwner(r) || isManagerOrLead(t) || (isSales(r) && t === 'manager') },
 
-  // ── Production / Installer ────────────────────────────────────────────────
-  department_queue:   { label: 'Department Queue',            defaultSpan: 6,  pinned: false, visibleTo: (r) => isProduction(r) || isOwner(r) },
-  low_stock_materials:{ label: 'Low Stock Materials',         defaultSpan: 12, pinned: false, visibleTo: (r) => isProduction(r) || isOwner(r) || isAccounting(r) },
+  // ── Production / Installer (+ owner + managers) ───────────────────────────
+  department_queue:    { label: 'Department Queue',            defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isProduction(r) || isOwner(r) || isManagerOrLead(t) },
+  low_stock_materials: { label: 'Low Stock Materials',         defaultSpan: 12, pinned: false, visibleTo: (r, t) => isProduction(r) || isOwner(r) || isAccounting(r) || isManagerOrLead(t) },
 
-  // ── Designer ─────────────────────────────────────────────────────────────
-  design_queue:       { label: 'Design Queue',                defaultSpan: 12, pinned: false, visibleTo: (r, t) => isDesigner(r) || isOwner(r) || isManagerOrLead(t) },
+  // ── Designer (+ owner + managers) ────────────────────────────────────────
+  design_queue:         { label: 'Design Queue',              defaultSpan: 12, pinned: false, visibleTo: (r, t) => isDesigner(r) || isOwner(r) || isManagerOrLead(t) },
+  approaching_deadline: { label: 'Approaching Deadlines',     defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isDesigner(r) || isOwner(r) || isManagerOrLead(t) },
+  file_error:           { label: 'File Errors',               defaultSpan: 6,  pinned: false, visibleTo: (r, t) => isDesigner(r) || isOwner(r) || isManagerOrLead(t) },
 }
 
 // ── Saved config types ────────────────────────────────────────────────────────
@@ -96,14 +93,6 @@ export type WidgetConfig = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// Returns the full ordered list of widget IDs to render for a user,
-// merging their saved config against the role default.
-//
-// Rules:
-//   1. Pinned widgets always show at position 0 and 1, regardless of saved config.
-//   2. Saved visible widgets appear next, in their saved order.
-//   3. New widgets (not in saved config but in role's allowed list) are appended.
-//   4. Widgets no longer in the role's allowed list are silently dropped.
 export function resolveWidgetOrder(
   role: Role,
   tier: Tier,
@@ -118,22 +107,18 @@ export function resolveWidgetOrder(
   }
 
   const pinnedIds = allowed.filter((id) => WIDGET_META[id]?.pinned)
-  const savedMap  = new Map(saved.widgets.map((w) => [w.id, w]))
 
-  // Saved visible, non-pinned, still in allowed — in saved order
   const savedVisible = saved.widgets
     .filter((w) => w.visible && !WIDGET_META[w.id]?.pinned && allowed.includes(w.id))
     .sort((a, b) => a.order - b.order)
     .map((w) => w.id)
 
-  // New allowed widgets the user hasn't seen yet (appended at the end)
-  const savedIds  = new Set(saved.widgets.map((w) => w.id))
+  const savedIds   = new Set(saved.widgets.map((w) => w.id))
   const newWidgets = allowed.filter((id) => !savedIds.has(id) && !WIDGET_META[id]?.pinned)
 
   return [...pinnedIds, ...savedVisible, ...newWidgets]
 }
 
-// Converts an ordered WidgetId array back into WidgetConfig for persistence.
 export function widgetOrderToConfig(orderedIds: string[]): WidgetConfig {
   return {
     version: 1,
