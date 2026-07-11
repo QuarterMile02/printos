@@ -27,14 +27,14 @@ export async function recordPayment(formData: FormData): Promise<void> {
   const newBalanceDue = Math.max(0, invoice.total - newAmountPaid)
   const newStatus = newBalanceDue <= 0 ? 'paid' : 'partial'
 
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('invoices')
     .update({
       amount_paid: newAmountPaid,
       balance_due: newBalanceDue,
       status: newStatus,
       updated_at: new Date().toISOString(),
-    } as any)
+    })
     .eq('id', invoiceId)
 
   if (error) throw new Error(error.message)
