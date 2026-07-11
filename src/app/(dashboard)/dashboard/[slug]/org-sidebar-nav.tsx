@@ -285,6 +285,17 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
             )
           })}
 
+          {/* Display Board — opens in new tab for TV display */}
+          <a
+            href={`${basePath}/display`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-qm-black hover:bg-qm-surface"
+          >
+            <span className="text-base leading-none">📺</span>
+            Display Board
+          </a>
+
           {/* Settings section */}
           <div className="pt-4 mt-4 border-t border-gray-200">
             <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-qm-gray">Settings</p>
