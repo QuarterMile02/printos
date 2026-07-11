@@ -19,7 +19,7 @@ export async function recordPayment(formData: FormData): Promise<void> {
     .from('invoices')
     .select('total, amount_paid, balance_due')
     .eq('id', invoiceId)
-    .single()
+    .single() as any
 
   if (fetchError || !invoice) throw new Error('Invoice not found')
 
