@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
-import { REPORT_DEFS } from '@/lib/reports/report-utils'
+import { REPORT_DEFS, FINANCIAL_REPORT_DEFS } from '@/lib/reports/report-utils'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -29,9 +29,6 @@ function ageInDays(dueIso: string | null): number {
 
 async function loadAgingBuckets(supabase: Awaited<ReturnType<typeof createClient>>, orgId: string): Promise<Bucket[] | null> {
   try {
-    // invoices.total / balance_due are integer cents per migration 026.
-    // Exclude paid/cancelled/draft using the in-list syntax PostgREST
-    // accepts for text columns (invoices.status is text, not an enum).
     const r = await supabase
       .from('invoices')
       .select('id, total, balance_due, due_date')
@@ -77,7 +74,6 @@ export default async function ReportsIndex({ params }: PageProps) {
     .maybeSingle() as { data: { id: string; name: string } | null; error: unknown }
   if (!org) notFound()
 
-  // Anyone with reports.quotes (owner/sales/accounting) can land here.
   const { allowed } = await checkPermission(org.id, 'reports.quotes')
   if (!allowed) notFound()
 
@@ -92,38 +88,67 @@ export default async function ReportsIndex({ params }: PageProps) {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 items-start">
-        {REPORT_DEFS.map((r) => {
-          if (r.type === 'invoices') {
+      {/* Core Reports */}
+      <div className="mb-8">
+        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Reports</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 items-start">
+          {REPORT_DEFS.map((r) => {
+            if (r.type === 'invoices') {
+              return (
+                <InvoicesAgingCard
+                  key={r.type}
+                  href={`/dashboard/${slug}/reports/${r.type}`}
+                  title={r.title}
+                  fallbackDescription={r.description}
+                  buckets={buckets}
+                />
+              )
+            }
             return (
-              <InvoicesAgingCard
+              <ReportCard
                 key={r.type}
                 href={`/dashboard/${slug}/reports/${r.type}`}
                 title={r.title}
-                fallbackDescription={r.description}
-                buckets={buckets}
+                description={r.description}
               />
             )
-          }
-          return (
-            <Link
+          })}
+        </div>
+      </div>
+
+      {/* Financial & Performance Reports */}
+      <div>
+        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Financial &amp; Performance</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 items-start">
+          {FINANCIAL_REPORT_DEFS.map((r) => (
+            <ReportCard
               key={r.type}
               href={`/dashboard/${slug}/reports/${r.type}`}
-              className="group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-[#93ca3b] hover:shadow-md"
-            >
-              <h2 className="text-base font-bold text-[#1A1A1A] group-hover:text-[#93ca3b]">{r.title}</h2>
-              <p className="mt-1 text-sm text-gray-600">{r.description}</p>
-              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#93ca3b]">
-                Open report
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-                </svg>
-              </span>
-            </Link>
-          )
-        })}
+              title={r.title}
+              description={r.description}
+            />
+          ))}
+        </div>
       </div>
     </div>
+  )
+}
+
+function ReportCard({ href, title, description }: { href: string; title: string; description: string }) {
+  return (
+    <Link
+      href={href}
+      className="group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-[#93ca3b] hover:shadow-md"
+    >
+      <h2 className="text-base font-bold text-[#1A1A1A] group-hover:text-[#93ca3b]">{title}</h2>
+      <p className="mt-1 text-sm text-gray-600">{description}</p>
+      <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#93ca3b]">
+        Open report
+        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+        </svg>
+      </span>
+    </Link>
   )
 }
 

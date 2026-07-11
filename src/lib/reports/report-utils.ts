@@ -13,6 +13,13 @@ export type ReportType =
   | 'products'
   | 'shipments'
 
+export type FinancialReportType =
+  | 'collections'
+  | 'sales-by-rep'
+  | 'productivity'
+  | 'sales-tax'
+  | 'revenue-by-unit'
+
 export const REPORT_DEFS: { type: ReportType; title: string; description: string }[] = [
   { type: 'quotes',          title: 'Quotes',          description: 'All quotes by status, sales rep, and date range.' },
   { type: 'sales-orders',    title: 'Sales Orders',    description: 'Open and completed sales orders with deposit and total.' },
@@ -103,6 +110,14 @@ export function buildCsv(headers: string[], rows: (string | number | null | unde
   for (const r of rows) lines.push(r.map(csvCell).join(','))
   return lines.join('\r\n') + '\r\n'
 }
+
+export const FINANCIAL_REPORT_DEFS: { type: FinancialReportType; title: string; description: string }[] = [
+  { type: 'collections',      title: 'Collections',       description: 'Outstanding invoices with collection call history and days overdue.' },
+  { type: 'sales-by-rep',     title: 'Sales by Rep',      description: 'Quote totals and win rates grouped by sales representative.' },
+  { type: 'productivity',     title: 'Productivity',      description: 'Jobs completed, in progress, and overdue per team member.' },
+  { type: 'sales-tax',        title: 'Sales Tax',         description: 'Tax collected per invoice with subtotal and total breakdown.' },
+  { type: 'revenue-by-unit',  title: 'Revenue by Unit',   description: 'Invoice revenue attributed to each production department.' },
+]
 
 export const PAGE_SIZE = 50
 
