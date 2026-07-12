@@ -639,13 +639,23 @@ async function scrapeGridPricing(page) {
   });
   await page.waitForTimeout(1000);
 
-  // Step 2: Find finish tab names via scoped tab wrapper class
+  // Step 2: Find finish tab names scoped to the Finish group only
   const finishTabNames = await page.evaluate(() => {
-    const tabs = Array.from(document.querySelectorAll('[class*="_wrapper_p6s6a_1"]'));
-    return tabs.map(t => t.innerText.trim()).filter(t => t.length > 0 && t.length < 30);
+    const all = Array.from(document.querySelectorAll('*'));
+    const finishHeader = all.find(el =>
+      el.tagName === 'SPAN' &&
+      el.innerText?.trim() === 'Finish' &&
+      el.parentElement?.className?.includes('f-direction-c')
+    );
+    if (!finishHeader) return [];
+    const finishGrandParent = finishHeader.parentElement?.parentElement;
+    if (!finishGrandParent) return [];
+    return Array.from(finishGrandParent.querySelectorAll('[class*="_wrapper_p6s6a_1"]'))
+      .map(el => el.innerText.trim())
+      .filter(t => t.length > 0 && t.length < 30);
   })
 
-  if (!finishTabNames) {
+  if (!finishTabNames.length) {
     console.log('  Grid: no finish tabs found')
     return { grid_pricing: { finishes: {} } }
   }
@@ -654,28 +664,46 @@ async function scrapeGridPricing(page) {
   // Step 3: For each finish tab, click and read the pricing grid
   const finishes = {}
   for (const finishName of finishTabNames) {
-    // Click finish tab by scoped wrapper class and exact text match
+    // Click finish tab scoped to the Finish group container
     await page.evaluate((tabName) => {
-      const tabs = Array.from(document.querySelectorAll('[class*="_wrapper_p6s6a_1"]'));
-      const tab = tabs.find(t => t.innerText.trim() === tabName);
+      const all = Array.from(document.querySelectorAll('*'));
+      const finishHeader = all.find(el =>
+        el.tagName === 'SPAN' &&
+        el.innerText?.trim() === 'Finish' &&
+        el.parentElement?.className?.includes('f-direction-c')
+      );
+      const finishGrandParent = finishHeader?.parentElement?.parentElement;
+      const tab = finishGrandParent
+        ? Array.from(finishGrandParent.querySelectorAll('[class*="_wrapper_p6s6a_1"]'))
+            .find(el => el.innerText.trim() === tabName)
+        : null;
       if (tab) tab.click();
     }, finishName);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
 
-    // Read grid table: capture raw headers and cell values for structured mapping
+    // Read grid data from input elements grouped by run size row
     const gridRows = await page.evaluate(() => {
-      const table = document.querySelector('table');
-      if (!table) return [];
-      const headers = Array.from(table.querySelectorAll('th')).map(h => h.innerText.trim());
-      const rows = Array.from(table.querySelectorAll('tr')).slice(1).map(r => {
-        const cells = Array.from(r.querySelectorAll('td')).map(c => c.innerText.trim());
-        return cells;
-      });
-      return { headers, rows };
+      const inputs = Array.from(document.querySelectorAll('input'));
+      const rows = [];
+      const seen = new Set();
+
+      for (const inp of inputs) {
+        const val = inp.value?.trim();
+        if (!val || seen.has(inp)) continue;
+        if (val.match(/^(100|200|300|400|500|1000|2000|5000|unit)$/i)) {
+          const row = inp.closest('div, tr, [class*="row"]');
+          if (row) {
+            const rowInputs = Array.from(row.querySelectorAll('input')).map(i => i.value.trim());
+            rows.push(rowInputs);
+            row.querySelectorAll('input').forEach(i => seen.add(i));
+          }
+        }
+      }
+      return rows;
     });
 
     finishes[finishName] = gridRows
-    console.log(`  Grid: finish "${finishName}" → ${Array.isArray(gridRows) ? gridRows.length : (gridRows?.rows?.length ?? 0)} rows`)
+    console.log(`  Grid: finish "${finishName}" → ${gridRows.length} rows`)
   }
 
   return { grid_pricing: { finishes } }
