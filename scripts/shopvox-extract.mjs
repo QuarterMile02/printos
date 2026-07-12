@@ -296,6 +296,7 @@ async function collectAllProductUrls(page) {
     // href whose trailing segment isn't a real UUID.
     const id = extractShopvoxId(href)
     if (!id || !UUID_RE.test(id)) {
+      console.warn(`  SKIP non-UUID id "${id}" from href "${href}" (name: "${trimmed}")`)
       filtered++
       continue
     }
@@ -621,6 +622,65 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
   }
 }
 
+// ── Grid pricing scraper ──────────────────────────────────────────────
+// SAFETY: only clicks "Show Cost columns" checkbox and finish tab buttons.
+// Never touches Grid Type, Fixed Ordering, Export/Import Grid, Add/Delete buttons.
+async function scrapeGridPricing(page) {
+  // Step 1: Enable "Show Cost columns" only if currently unchecked
+  await page.evaluate(() => {
+    const labels = Array.from(document.querySelectorAll('label'));
+    const costLabel = labels.find(l => l.innerText?.trim().includes("Show 'Cost'") || l.innerText?.trim().includes('Show "Cost"'));
+    if (costLabel) {
+      const cb = costLabel.querySelector('input[type="checkbox"]');
+      if (cb && !cb.checked) {
+        costLabel.click();
+      }
+    }
+  });
+  await page.waitForTimeout(1000);
+
+  // Step 2: Find finish tab names via scoped tab wrapper class
+  const finishTabNames = await page.evaluate(() => {
+    const tabs = Array.from(document.querySelectorAll('[class*="_wrapper_p6s6a_1"]'));
+    return tabs.map(t => t.innerText.trim()).filter(t => t.length > 0 && t.length < 30);
+  })
+
+  if (!finishTabNames) {
+    console.log('  Grid: no finish tabs found')
+    return { grid_pricing: { finishes: {} } }
+  }
+  console.log(`  Grid: finish tabs = ${JSON.stringify(finishTabNames)}`)
+
+  // Step 3: For each finish tab, click and read the pricing grid
+  const finishes = {}
+  for (const finishName of finishTabNames) {
+    // Click finish tab by scoped wrapper class and exact text match
+    await page.evaluate((tabName) => {
+      const tabs = Array.from(document.querySelectorAll('[class*="_wrapper_p6s6a_1"]'));
+      const tab = tabs.find(t => t.innerText.trim() === tabName);
+      if (tab) tab.click();
+    }, finishName);
+    await page.waitForTimeout(1000);
+
+    // Read grid table: capture raw headers and cell values for structured mapping
+    const gridRows = await page.evaluate(() => {
+      const table = document.querySelector('table');
+      if (!table) return [];
+      const headers = Array.from(table.querySelectorAll('th')).map(h => h.innerText.trim());
+      const rows = Array.from(table.querySelectorAll('tr')).slice(1).map(r => {
+        const cells = Array.from(r.querySelectorAll('td')).map(c => c.innerText.trim());
+        return cells;
+      });
+      return { headers, rows };
+    });
+
+    finishes[finishName] = gridRows
+    console.log(`  Grid: finish "${finishName}" → ${Array.isArray(gridRows) ? gridRows.length : (gridRows?.rows?.length ?? 0)} rows`)
+  }
+
+  return { grid_pricing: { finishes } }
+}
+
 // ── Extraction: one product (page.evaluate-only) ──────────────────────
 // Every DOM interaction happens inside page.evaluate — no Playwright
 // locator strings, no :text-is, no :has. Text-based header matching
@@ -652,12 +712,37 @@ async function extractProduct(page, product, shopvoxUrl) {
   const cpTab = page.locator('text="Configure Pricing"').first()
   if (await cpTab.count() > 0) {
     await cpTab.click().catch(() => {})
-    await sleep(500)
+    // Wait for tab content to render before reading any values from it.
+    await page.waitForSelector('text="Pricing Settings"', { timeout: 10000 }).catch(() => null)
+    await sleep(1000)
   }
 
   // Guard again after tab switch — tab navigation can occasionally re-trigger
   // a previously open modal in ShopVOX's SPA.
   await closeOpenModal(page)
+
+  // Detect pricing type from the React-Select singleValue element.
+  const pricingType = await page.evaluate(() => {
+    const singleValue = document.querySelector('[class*="singleValue"]');
+    return singleValue?.innerText?.trim() || 'Unknown';
+  })
+  console.log(`  Pricing type: ${pricingType}`)
+
+  // DEBUG: find exact elements containing pricing type keywords
+  const debugPricingType = await page.evaluate(() => {
+    const allEls = Array.from(document.querySelectorAll('*'));
+    const matches = allEls
+      .filter(el => el.children.length === 0 && el.innerText?.trim().match(/^(Grid|Formula|Basic|Pricing Type)$/i))
+      .map(el => ({
+        tag: el.tagName,
+        text: el.innerText.trim(),
+        class: el.className?.toString().substring(0,50),
+        parentTag: el.parentElement?.tagName,
+        parentText: el.parentElement?.innerText?.trim().substring(0,80)
+      }));
+    return matches.slice(0,10);
+  });
+  console.log('DEBUG pricing type elements:', JSON.stringify(debugPricingType, null, 2));
 
   const parseCells = (t) =>
     t.split(/[\t\n|]+/).map((s) => s.trim()).filter(Boolean)
@@ -785,79 +870,87 @@ async function extractProduct(page, product, shopvoxUrl) {
     return fields
   }
 
-  // SECTIONS — expand one, process all its rows, then next.
-  // Row-index tracking: sections render sequentially, so the rows added
-  // by this expand are at indices [offset .. countAfterExpand).
-  let offset = 0
-  const modifiers = []
-  const dropdown_menus = []
-  const default_items = []
+  // SECTIONS — Grid products use scrapeGridPricing(); others expand the three sections.
+  let modifiers = []
+  let dropdown_menus = []
+  let default_items = []
+  const pricing = { pricing_type: pricingType }
 
-  // 3a. Modifiers — buttons: [0]=pencil, [1]=delete (disabled), [2]=drag
-  const afterMod = await expandSection('Modifiers')
-  if (afterMod != null) {
-    for (let i = offset; i < afterMod; i++) {
-      const row = page.locator(ROWS_SEL).nth(i)
-      const text = (await row.innerText()).trim()
-      const c = parseCells(text)
-      const base = { name: c[0] ?? null, type: c[1] ?? null, default: c[2] ?? null, raw: text }
-      base.modal = await openAndExtractModal(row, 0, 'Modifiers', i)
-      modifiers.push(base)
+  if (pricingType === 'Grid') {
+    console.log('  Skipping Modifiers/Dropdown Menus/Default Items — Grid pricing product')
+    const gridResult = await scrapeGridPricing(page)
+    pricing.grid_pricing = gridResult.grid_pricing
+  } else {
+    // Row-index tracking: sections render sequentially, so the rows added
+    // by this expand are at indices [offset .. countAfterExpand).
+    let offset = 0
+
+    // 3a. Modifiers — buttons: [0]=pencil, [1]=delete (disabled), [2]=drag
+    const afterMod = await expandSection('Modifiers')
+    if (afterMod != null) {
+      for (let i = offset; i < afterMod; i++) {
+        const row = page.locator(ROWS_SEL).nth(i)
+        const text = (await row.innerText()).trim()
+        const c = parseCells(text)
+        const base = { name: c[0] ?? null, type: c[1] ?? null, default: c[2] ?? null, raw: text }
+        base.modal = await openAndExtractModal(row, 0, 'Modifiers', i)
+        modifiers.push(base)
+      }
+      offset = afterMod
     }
-    offset = afterMod
-  }
 
-  // 3b. Dropdown Menus (green + at index 0, pencil at index 1)
-  // Per row: pencil → flatten modal fields to top level; plus → selected items.
-  const afterDD = await expandSection('Dropdown Menus')
-  if (afterDD != null) {
-    for (let i = offset; i < afterDD; i++) {
-      const row = page.locator(ROWS_SEL).nth(i)
-      const text = (await row.innerText()).trim()
-      const c = parseCells(text)
+    // 3b. Dropdown Menus (green + at index 0, pencil at index 1)
+    // Per row: pencil → flatten modal fields to top level; plus → selected items.
+    const afterDD = await expandSection('Dropdown Menus')
+    if (afterDD != null) {
+      for (let i = offset; i < afterDD; i++) {
+        const row = page.locator(ROWS_SEL).nth(i)
+        const text = (await row.innerText()).trim()
+        const c = parseCells(text)
 
-      // Pencil (button 1) — edit modal with all config fields
-      const modal = await openAndExtractModal(row, 1, 'Dropdown Menus', i)
+        // Pencil (button 1) — edit modal with all config fields
+        const modal = await openAndExtractModal(row, 1, 'Dropdown Menus', i)
 
-      // Plus (button 0) — item picker to scrape selected items
-      const selected_items = await scrapeDropdownSelectedItems(page, row, i)
+        // Plus (button 0) — item picker to scrape selected items
+        const selected_items = await scrapeDropdownSelectedItems(page, row, i)
 
-      // Flatten modal fields to top level (no nested modal key).
-      // numeric_modifier → attach_num_modifier, checkbox_modifier → attach_chk_modifier.
-      dropdown_menus.push({
-        menu_name:             c[0] ?? null,
-        item_type:             c[1] ?? null,
-        category:              c[2] ?? null,
-        reference:             modal?.reference ?? null,
-        formula:               modal?.formula ?? null,
-        multiplier:            modal?.multiplier ?? null,
-        fixed_quantity:        modal?.fixed_quantity ?? null,
-        percentage_of_base:    modal?.percentage_of_base ?? null,
-        charge_per_li_unit:    modal?.charge_per_li_unit ?? null,
-        include_in_base_price: modal?.include_in_base_price ?? null,
-        optional:              modal?.optional ?? null,
-        use_item_per_li_unit:  modal?.use_item_per_li_unit ?? null,
-        attach_num_modifier:   modal?.numeric_modifier ?? null,
-        attach_chk_modifier:   modal?.checkbox_modifier ?? null,
-        selected_items,
-        raw: text,
-      })
+        // Flatten modal fields to top level (no nested modal key).
+        // numeric_modifier → attach_num_modifier, checkbox_modifier → attach_chk_modifier.
+        dropdown_menus.push({
+          menu_name:             c[0] ?? null,
+          item_type:             c[1] ?? null,
+          category:              c[2] ?? null,
+          reference:             modal?.reference ?? null,
+          formula:               modal?.formula ?? null,
+          multiplier:            modal?.multiplier ?? null,
+          fixed_quantity:        modal?.fixed_quantity ?? null,
+          percentage_of_base:    modal?.percentage_of_base ?? null,
+          charge_per_li_unit:    modal?.charge_per_li_unit ?? null,
+          include_in_base_price: modal?.include_in_base_price ?? null,
+          optional:              modal?.optional ?? null,
+          use_item_per_li_unit:  modal?.use_item_per_li_unit ?? null,
+          attach_num_modifier:   modal?.numeric_modifier ?? null,
+          attach_chk_modifier:   modal?.checkbox_modifier ?? null,
+          selected_items,
+          raw: text,
+        })
+      }
+      offset = afterDD
     }
-    offset = afterDD
-  }
 
-  // 3c. Default Items (no green + — pencil is at index 0)
-  const afterDI = await expandSection('Default Items')
-  if (afterDI != null) {
-    for (let i = offset; i < afterDI; i++) {
-      const row = page.locator(ROWS_SEL).nth(i)
-      const text = (await row.innerText()).trim()
-      const c = parseCells(text)
-      const base = { name: c[0] ?? null, item_type: c[1] ?? null, raw: text }
-      base.modal = await openAndExtractModal(row, 0, 'Default Items', i)
-      default_items.push(base)
+    // 3c. Default Items (no green + — pencil is at index 0)
+    const afterDI = await expandSection('Default Items')
+    if (afterDI != null) {
+      for (let i = offset; i < afterDI; i++) {
+        const row = page.locator(ROWS_SEL).nth(i)
+        const text = (await row.innerText()).trim()
+        const c = parseCells(text)
+        const base = { name: c[0] ?? null, item_type: c[1] ?? null, raw: text }
+        base.modal = await openAndExtractModal(row, 0, 'Default Items', i)
+        default_items.push(base)
+      }
+      offset = afterDI
     }
-    offset = afterDI
   }
 
   // First-product verification: dump expanded HTML + log all extractions.
@@ -868,15 +961,22 @@ async function extractProduct(page, product, shopvoxUrl) {
     writeFileSync(htmlPath, await page.content(), 'utf8')
     console.log(`\n  First-product expanded HTML → ${htmlPath}`)
     console.log(`  Extracted (first product):`)
-    console.log(`    modifiers (${modifiers.length}):`)
-    for (const m of modifiers) console.log(`      ${JSON.stringify(m)}`)
-    console.log(`    dropdown_menus (${dropdown_menus.length}):`)
-    for (const d of dropdown_menus) console.log(`      ${JSON.stringify(d)}`)
-    console.log(`    default_items (${default_items.length}):`)
-    for (const di of default_items) console.log(`      ${JSON.stringify(di)}`)
+    console.log(`    pricing_type: ${pricingType}`)
+    if (pricingType === 'Grid') {
+      const finishes = pricing.grid_pricing?.finishes ?? {}
+      for (const [name, rows] of Object.entries(finishes))
+        console.log(`    grid finish "${name}": ${rows.length} rows`)
+    } else {
+      console.log(`    modifiers (${modifiers.length}):`)
+      for (const m of modifiers) console.log(`      ${JSON.stringify(m)}`)
+      console.log(`    dropdown_menus (${dropdown_menus.length}):`)
+      for (const d of dropdown_menus) console.log(`      ${JSON.stringify(d)}`)
+      console.log(`    default_items (${default_items.length}):`)
+      for (const di of default_items) console.log(`      ${JSON.stringify(di)}`)
+    }
   }
 
-  return { pricing: {}, modifiers, dropdown_menus, default_items }
+  return { pricing, modifiers, dropdown_menus, default_items }
 }
 
 // ── Save back to DB ───────────────────────────────────────────────────
@@ -1026,9 +1126,9 @@ async function main() {
   // known-good Banner product. Saves time during selector iteration.
   let shopvoxProducts
   if (DEBUG && LIMIT === 1) {
-    const TEST_URL  = 'https://express.shopvox.com/settings/products/a2adac04-caa0-40f3-a57e-a9c2e412a580'
-    const TEST_NAME = 'Vinyl Regular- Digital'
-    const TEST_UUID = 'a2adac04-caa0-40f3-a57e-a9c2e412a580'
+    const TEST_URL  = 'https://express.shopvox.com/settings/products/20174def-2827-4d5d-b7df-6e4296bf4d80'
+    const TEST_NAME = 'Business Cards 12pt'
+    const TEST_UUID = '20174def-2827-4d5d-b7df-6e4296bf4d80'
     console.log(`DEBUG MODE: Using hardcoded test URL: ${TEST_NAME}`)
     shopvoxProducts = [{ url: TEST_URL, name: TEST_NAME, shopvoxId: TEST_UUID }]
   } else {
