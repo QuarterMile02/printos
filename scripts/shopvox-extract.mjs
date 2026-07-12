@@ -691,7 +691,11 @@ async function scrapeGridPricing(page) {
       const runSizes = [100, 200, 300, 400, 500, 1000, 2000, 5000];
       const rows = [];
 
-      for (let i = 0; i < values.length; i++) {
+      // Skip everything before the first valid run size — avoids $0 minimum price fields
+      const firstRunSizeIdx = values.findIndex(v => runSizes.includes(parseFloat(v.replace(/[$,]/g, ''))));
+      if (firstRunSizeIdx === -1) return [];
+
+      for (let i = firstRunSizeIdx; i < values.length; i++) {
         const num = parseFloat(values[i].replace(/[$,]/g, ''));
         if (runSizes.includes(num)) {
           const rowData = [values[i]];
