@@ -650,9 +650,11 @@ async function scrapeGridPricing(page) {
     if (!finishHeader) return [];
     const finishGrandParent = finishHeader.parentElement?.parentElement;
     if (!finishGrandParent) return [];
-    return Array.from(finishGrandParent.querySelectorAll('[class*="_wrapper_p6s6a_1"]'))
+    const tabs = Array.from(finishGrandParent.querySelectorAll('[class*="_wrapper_p6s6a_1"]'))
       .map(el => el.innerText.trim())
       .filter(t => t.length > 0 && t.length < 30);
+    // First element is always the "Finish" section header — skip it
+    return tabs.slice(1);
   })
 
   if (!finishTabNames.length) {
@@ -681,22 +683,28 @@ async function scrapeGridPricing(page) {
     }, finishName);
     await page.waitForTimeout(1500);
 
-    // Read grid data from input elements grouped by run size row
+    // Read grid data: find run size inputs then collect trailing price/cost values
     const gridRows = await page.evaluate(() => {
       const inputs = Array.from(document.querySelectorAll('input'));
-      const rows = [];
-      const seen = new Set();
+      const values = inputs.map(i => i.value.trim()).filter(v => v.length > 0);
 
-      for (const inp of inputs) {
-        const val = inp.value?.trim();
-        if (!val || seen.has(inp)) continue;
-        if (val.match(/^(100|200|300|400|500|1000|2000|5000|unit)$/i)) {
-          const row = inp.closest('div, tr, [class*="row"]');
-          if (row) {
-            const rowInputs = Array.from(row.querySelectorAll('input')).map(i => i.value.trim());
-            rows.push(rowInputs);
-            row.querySelectorAll('input').forEach(i => seen.add(i));
+      const runSizes = [100, 200, 300, 400, 500, 1000, 2000, 5000];
+      const rows = [];
+
+      for (let i = 0; i < values.length; i++) {
+        const num = parseFloat(values[i].replace(/[$,]/g, ''));
+        if (runSizes.includes(num)) {
+          const rowData = [values[i]];
+          let j = i + 1;
+          while (j < values.length && j < i + 5) {
+            const nextNum = parseFloat(values[j].replace(/[$,]/g, ''));
+            if (runSizes.includes(nextNum)) break;
+            if (!isNaN(nextNum) && nextNum >= 0) {
+              rowData.push(values[j]);
+            }
+            j++;
           }
+          rows.push(rowData);
         }
       }
       return rows;
