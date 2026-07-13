@@ -48,6 +48,7 @@ function parseRate(fd: FormData) {
     per_li_unit: fd.get('per_li_unit') === 'on',
     cog_account: strOrNull(fd.get('cog_account')),
     volume_discount_id: strOrNull(fd.get('volume_discount_id')),
+    department_id: strOrNull(fd.get('department_id')),
     calc_equipment_cost: numOrNull(fd.get('calc_equipment_cost')),
     calc_life_expectancy_years: numOrNull(fd.get('calc_life_expectancy_years')),
     calc_days_per_year: numOrNull(fd.get('calc_days_per_year')),

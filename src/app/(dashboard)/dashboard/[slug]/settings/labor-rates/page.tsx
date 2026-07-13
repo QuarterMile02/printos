@@ -48,11 +48,13 @@ type Rate = {
   per_li_unit: boolean | null
   cog_account: string | null
   volume_discount_id: string | null
+  department_id: string | null
 }
 
 type MaterialCategory = { id: string; name: string }
 type MachineRateOption = { id: string; name: string }
 type DiscountOption = { id: string; name: string }
+type DepartmentOption = { id: string; name: string }
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -106,7 +108,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   const [ratesRes, countRes] = await Promise.all([
     supabase
       .from('labor_rates')
-      .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, machine_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_machine_rate_id, operator_attendance_percent, production_factor, production_rate_prompt, production_rate_prompt_detail, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id')
+      .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, machine_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_machine_rate_id, operator_attendance_percent, production_factor, production_rate_prompt, production_rate_prompt_detail, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, department_id')
       .eq('organization_id', org.id)
       .order('name')
       .limit(1000),
@@ -137,11 +139,13 @@ async function PageInner({ params, searchParams }: PageProps) {
   let materialCategories: MaterialCategory[] = []
   let machineRates: MachineRateOption[] = []
   let discounts: DiscountOption[] = []
+  let departments: DepartmentOption[] = []
   if (isPanelOpen) {
-    const [mcRes, mrRes, dRes] = await Promise.all([
+    const [mcRes, mrRes, dRes, deptRes] = await Promise.all([
       supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('machine_rates').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('discounts').select('id, name').eq('organization_id', org.id).order('name'),
+      supabase.from('departments').select('id, name').eq('organization_id', org.id).order('sort_order', { ascending: true }),
     ])
     if (mcRes.error) console.error('[labor-rates] material_categories SELECT:', mcRes.error)
     if (mrRes.error) console.error('[labor-rates] machine_rates SELECT:', mrRes.error)
@@ -149,6 +153,7 @@ async function PageInner({ params, searchParams }: PageProps) {
     materialCategories = (mcRes.data ?? []) as MaterialCategory[]
     machineRates = (mrRes.data ?? []) as MachineRateOption[]
     discounts = (dRes.data ?? []) as DiscountOption[]
+    departments = (deptRes.data ?? []) as DepartmentOption[]
   }
 
   // Used-in count for editing rate
@@ -228,6 +233,13 @@ async function PageInner({ params, searchParams }: PageProps) {
                   <label className={labelCls}>External Name</label>
                   <input type="text" name="external_name" defaultValue={editRate?.external_name ?? ''} className={inputCls} />
                 </div>
+              </div>
+              <div>
+                <label className={labelCls}>Department</label>
+                <select name="department_id" defaultValue={editRate?.department_id ?? ''} className={inputCls}>
+                  <option value="">— None —</option>
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
               </div>
             </div>
 

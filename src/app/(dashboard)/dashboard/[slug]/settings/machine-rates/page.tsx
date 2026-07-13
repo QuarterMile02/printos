@@ -46,6 +46,7 @@ type Rate = {
   per_li_unit: boolean | null
   cog_account: string | null
   volume_discount_id: string | null
+  department_id: string | null
   calc_equipment_cost: number | null
   calc_life_expectancy_years: number | null
   calc_days_per_year: number | null
@@ -56,6 +57,7 @@ type Rate = {
 type MaterialCategory = { id: string; name: string }
 type LaborRateOption = { id: string; name: string }
 type DiscountOption = { id: string; name: string }
+type DepartmentOption = { id: string; name: string }
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -109,7 +111,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   const [ratesRes, countRes] = await Promise.all([
     supabase
       .from('machine_rates')
-      .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, labor_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_labor_rate_id, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, calc_equipment_cost, calc_life_expectancy_years, calc_days_per_year, calc_hours_per_day, calc_productivity_percent')
+      .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, labor_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_labor_rate_id, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, department_id, calc_equipment_cost, calc_life_expectancy_years, calc_days_per_year, calc_hours_per_day, calc_productivity_percent')
       .eq('organization_id', org.id)
       .order('name')
       .limit(1000),
@@ -140,11 +142,13 @@ async function PageInner({ params, searchParams }: PageProps) {
   let materialCategories: MaterialCategory[] = []
   let laborRates: LaborRateOption[] = []
   let discounts: DiscountOption[] = []
+  let departments: DepartmentOption[] = []
   if (isPanelOpen) {
-    const [mcRes, lrRes, dRes] = await Promise.all([
+    const [mcRes, lrRes, dRes, deptRes] = await Promise.all([
       supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('labor_rates').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('discounts').select('id, name').eq('organization_id', org.id).order('name'),
+      supabase.from('departments').select('id, name').eq('organization_id', org.id).order('sort_order', { ascending: true }),
     ])
     if (mcRes.error) console.error('[machine-rates] material_categories SELECT:', mcRes.error)
     if (lrRes.error) console.error('[machine-rates] labor_rates SELECT:', lrRes.error)
@@ -152,6 +156,7 @@ async function PageInner({ params, searchParams }: PageProps) {
     materialCategories = (mcRes.data ?? []) as MaterialCategory[]
     laborRates = (lrRes.data ?? []) as LaborRateOption[]
     discounts = (dRes.data ?? []) as DiscountOption[]
+    departments = (deptRes.data ?? []) as DepartmentOption[]
   }
 
   let usedInCount = 0
@@ -227,6 +232,13 @@ async function PageInner({ params, searchParams }: PageProps) {
                   <label className={labelCls}>External Name</label>
                   <input type="text" name="external_name" defaultValue={editRate?.external_name ?? ''} className={inputCls} />
                 </div>
+              </div>
+              <div>
+                <label className={labelCls}>Department</label>
+                <select name="department_id" defaultValue={editRate?.department_id ?? ''} className={inputCls}>
+                  <option value="">— None —</option>
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
               </div>
             </div>
 

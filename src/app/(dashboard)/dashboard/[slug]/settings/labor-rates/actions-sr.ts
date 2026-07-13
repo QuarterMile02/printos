@@ -52,6 +52,7 @@ function parseRate(fd: FormData) {
     per_li_unit: fd.get('per_li_unit') === 'on',
     cog_account: strOrNull(fd.get('cog_account')),
     volume_discount_id: strOrNull(fd.get('volume_discount_id')),
+    department_id: strOrNull(fd.get('department_id')),
     updated_at: new Date().toISOString(),
   }
 }
