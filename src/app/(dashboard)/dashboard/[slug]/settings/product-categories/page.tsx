@@ -5,12 +5,11 @@ import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
-type ProductType = { id: string; name: string; sort_order: number }
+type ProductType = { id: string; name: string }
 type ProductCategory = {
   id: string
   name: string
   product_type_id: string | null
-  sort_order: number
   is_active: boolean
   created_at: string
 }
@@ -61,16 +60,15 @@ async function PageInner({ params, searchParams }: PageProps) {
   const [categoriesRes, typesRes] = await Promise.all([
     supabase
       .from('product_categories')
-      .select('id, name, product_type_id, sort_order, is_active, created_at')
+      .select('id, name, product_type_id, is_active, created_at')
       .eq('organization_id', org.id)
-      .order('sort_order', { ascending: true })
       .order('name'),
     supabase
       .from('product_types')
-      .select('id, name, sort_order')
+      .select('id, name')
       .eq('organization_id', org.id)
       .eq('is_active', true)
-      .order('sort_order', { ascending: true }),
+      .order('name'),
   ])
 
   const allCategories = (categoriesRes.data ?? []) as ProductCategory[]
@@ -177,18 +175,6 @@ async function PageInner({ params, searchParams }: PageProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Sort Order</label>
-                <input
-                  type="number"
-                  name="sort_order"
-                  defaultValue={editCategory?.sort_order ?? (allCategories.length + 1) * 10}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -220,7 +206,6 @@ async function PageInner({ params, searchParams }: PageProps) {
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Product Type</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Sort</th>
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Products</th>
               <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
@@ -229,7 +214,7 @@ async function PageInner({ params, searchParams }: PageProps) {
           <tbody className="divide-y divide-gray-100">
             {categories.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
                   {typeFilter ? 'No categories for this product type.' : 'No product categories yet.'}
                 </td>
               </tr>
@@ -248,7 +233,6 @@ async function PageInner({ params, searchParams }: PageProps) {
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {c.product_type_id ? (typeMap.get(c.product_type_id) ?? '—') : '—'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 text-right tabular-nums">{c.sort_order}</td>
                   <td className="px-4 py-3 text-sm text-gray-500 text-right tabular-nums">
                     {usageCounts[c.id] ?? 0}
                   </td>

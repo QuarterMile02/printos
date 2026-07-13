@@ -9,7 +9,6 @@ export async function saveProductCategory(formData: FormData) {
   const orgSlug = formData.get('orgSlug') as string
   const name = (formData.get('name') as string).trim()
   const product_type_id = (formData.get('product_type_id') as string) || null
-  const sort_order = parseInt(formData.get('sort_order') as string) || 0
   const is_active = formData.get('is_active') === 'on'
 
   const service = createServiceClient()
@@ -17,12 +16,12 @@ export async function saveProductCategory(formData: FormData) {
   if (id) {
     await service
       .from('product_categories')
-      .update({ name, product_type_id, sort_order, is_active })
+      .update({ name, product_type_id, is_active })
       .eq('id', id)
   } else {
     const { data } = await service
       .from('product_categories')
-      .insert({ organization_id: orgId, name, product_type_id, sort_order, is_active })
+      .insert({ organization_id: orgId, name, product_type_id, is_active })
       .select('id')
       .single()
     savedId = (data as { id: string } | null)?.id ?? null

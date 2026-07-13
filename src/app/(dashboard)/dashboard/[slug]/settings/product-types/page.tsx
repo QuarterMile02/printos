@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic'
 type ProductType = {
   id: string
   name: string
-  sort_order: number
   is_active: boolean
   created_at: string
 }
@@ -58,9 +57,8 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   const { data: typesData } = await supabase
     .from('product_types')
-    .select('id, name, sort_order, is_active, created_at')
+    .select('id, name, is_active, created_at')
     .eq('organization_id', org.id)
-    .order('sort_order', { ascending: true })
     .order('name')
 
   const types = (typesData ?? []) as ProductType[]
@@ -121,20 +119,9 @@ async function PageInner({ params, searchParams }: PageProps) {
             <input type="hidden" name="orgId" value={org.id} />
             <input type="hidden" name="orgSlug" value={slug} />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={labelCls}>Name *</label>
-                <input type="text" name="name" required defaultValue={editType?.name ?? ''} className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls}>Sort Order</label>
-                <input
-                  type="number"
-                  name="sort_order"
-                  defaultValue={editType?.sort_order ?? (types.length + 1) * 10}
-                  className={inputCls}
-                />
-              </div>
+            <div>
+              <label className={labelCls}>Name *</label>
+              <input type="text" name="name" required defaultValue={editType?.name ?? ''} className={inputCls} />
             </div>
 
             <label className="flex items-center gap-2 cursor-pointer">
@@ -167,7 +154,6 @@ async function PageInner({ params, searchParams }: PageProps) {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Sort</th>
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Products</th>
               <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
@@ -176,7 +162,7 @@ async function PageInner({ params, searchParams }: PageProps) {
           <tbody className="divide-y divide-gray-100">
             {types.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">
                   No product types yet. Add your first type above.
                 </td>
               </tr>
@@ -192,7 +178,6 @@ async function PageInner({ params, searchParams }: PageProps) {
                       {t.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 text-right tabular-nums">{t.sort_order}</td>
                   <td className="px-4 py-3 text-sm text-gray-500 text-right tabular-nums">
                     {usageCounts[t.id] ?? 0}
                   </td>
