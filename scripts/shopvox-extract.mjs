@@ -784,6 +784,45 @@ async function extractProduct(page, product, shopvoxUrl) {
   });
   console.log('DEBUG pricing type elements:', JSON.stringify(debugPricingType, null, 2));
 
+  // Read basic pricing fields — always visible on Configure Pricing tab for all product types.
+  const basicPricing = await page.evaluate(() => {
+    const getInputVal = (labelText) => {
+      const wrappers = Array.from(document.querySelectorAll('[class*="_floatingWrapper"], .field-wrapper-container'));
+      const wrapper = wrappers.find(w => {
+        const label = w.querySelector('label, [class*="_floatingLabel"]');
+        return label?.innerText?.trim().replace('*', '').trim() === labelText;
+      });
+      if (!wrapper) return null;
+      const input = wrapper.querySelector('input');
+      return input?.value?.trim() || null;
+    };
+
+    const getDropdownVal = (labelText) => {
+      const wrappers = Array.from(document.querySelectorAll('[class*="_floatingWrapper"], .field-wrapper-container'));
+      const wrapper = wrappers.find(w => {
+        const label = w.querySelector('label, [class*="_floatingLabel"]');
+        return label?.innerText?.trim().replace('*', '').trim() === labelText;
+      });
+      if (!wrapper) return null;
+      const selected = wrapper.querySelector('[class*="singleValue"]');
+      if (selected) return selected.innerText?.trim() || null;
+      const input = wrapper.querySelector('input, select');
+      return input?.value?.trim() || null;
+    };
+
+    return {
+      buying_cost:         getInputVal('Buying Cost ($)'),
+      cost:                getInputVal('Cost ($)'),
+      markup:              getInputVal('Markup (X)'),
+      price:               getInputVal('Price ($)'),
+      units:               getDropdownVal('Units'),
+      buying_units:        getDropdownVal('Buying Units'),
+      conversion_factor:   getInputVal('Conversion Factor'),
+      allow_multiple_qty:  document.querySelector('input[type="checkbox"]')?.checked || false,
+    };
+  });
+  console.log(`  Basic pricing: ${JSON.stringify(basicPricing)}`)
+
   const parseCells = (t) =>
     t.split(/[\t\n|]+/).map((s) => s.trim()).filter(Boolean)
 
@@ -914,7 +953,7 @@ async function extractProduct(page, product, shopvoxUrl) {
   let modifiers = []
   let dropdown_menus = []
   let default_items = []
-  const pricing = { pricing_type: pricingType }
+  const pricing = { pricing_type: pricingType, ...basicPricing }
 
   if (pricingType === 'Grid') {
     console.log('  Skipping Modifiers/Dropdown Menus/Default Items — Grid pricing product')
@@ -1166,9 +1205,9 @@ async function main() {
   // known-good Banner product. Saves time during selector iteration.
   let shopvoxProducts
   if (DEBUG && LIMIT === 1) {
-    const TEST_URL  = 'https://express.shopvox.com/settings/products/20174def-2827-4d5d-b7df-6e4296bf4d80'
-    const TEST_NAME = 'Business Cards 12pt'
-    const TEST_UUID = '20174def-2827-4d5d-b7df-6e4296bf4d80'
+    const TEST_URL  = 'https://express.shopvox.com/settings/products/0e3930ee-27b1-4405-a965-c95e5858ac02'
+    const TEST_NAME = 'Local SEO'
+    const TEST_UUID = '0e3930ee-27b1-4405-a965-c95e5858ac02'
     console.log(`DEBUG MODE: Using hardcoded test URL: ${TEST_NAME}`)
     shopvoxProducts = [{ url: TEST_URL, name: TEST_NAME, shopvoxId: TEST_UUID }]
   } else {
