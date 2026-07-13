@@ -138,17 +138,27 @@ async function PageInner({ params, searchParams }: PageProps) {
   const editRate = editId ? rates.find(r => r.id === editId) ?? null : null
   const isPanelOpen = Boolean(editRate || showAdd)
 
+  // Departments — always fetched (needed for both list and panel form)
+  let departments: DepartmentOption[] = []
+  try {
+    const { data: deptData } = await supabase
+      .from('departments')
+      .select('id, name')
+      .eq('organization_id', org.id)
+      .order('sort_order', { ascending: true }) as { data: DepartmentOption[] | null; error: unknown }
+    departments = deptData ?? []
+  } catch { /* departments table may not exist */ }
+  const deptMap = new Map(departments.map(d => [d.id, d.name]))
+
   // Lookups for dropdowns (only fetched when panel is open)
   let materialCategories: MaterialCategory[] = []
   let laborRates: LaborRateOption[] = []
   let discounts: DiscountOption[] = []
-  let departments: DepartmentOption[] = []
   if (isPanelOpen) {
-    const [mcRes, lrRes, dRes, deptRes] = await Promise.all([
+    const [mcRes, lrRes, dRes] = await Promise.all([
       supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('labor_rates').select('id, name').eq('organization_id', org.id).order('name'),
       supabase.from('discounts').select('id, name').eq('organization_id', org.id).order('name'),
-      supabase.from('departments').select('id, name').eq('organization_id', org.id).order('sort_order', { ascending: true }),
     ])
     if (mcRes.error) console.error('[machine-rates] material_categories SELECT:', mcRes.error)
     if (lrRes.error) console.error('[machine-rates] labor_rates SELECT:', lrRes.error)
@@ -156,7 +166,6 @@ async function PageInner({ params, searchParams }: PageProps) {
     materialCategories = (mcRes.data ?? []) as MaterialCategory[]
     laborRates = (lrRes.data ?? []) as LaborRateOption[]
     discounts = (dRes.data ?? []) as DiscountOption[]
-    departments = (deptRes.data ?? []) as DepartmentOption[]
   }
 
   let usedInCount = 0
@@ -502,6 +511,7 @@ async function PageInner({ params, searchParams }: PageProps) {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Ext. Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Department</th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Cost</th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Markup</th>
@@ -513,11 +523,12 @@ async function PageInner({ params, searchParams }: PageProps) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {rates.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">No machine rates{search ? ` matching "${search}"` : ''}.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-400">No machine rates{search ? ` matching "${search}"` : ''}.</td></tr>
               ) : rates.map(r => (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><Link href={`/dashboard/${slug}/settings/machine-rates?edit=${r.id}`} className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia">{r.name}</Link></td>
                   <td className="px-4 py-3 text-sm text-gray-500">{r.external_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{r.department_id ? (deptMap.get(r.department_id) ?? '—') : '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${n(r.cost).toFixed(2)}</td>
                   <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${n(r.price).toFixed(2)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{n(r.markup, 1).toFixed(2)}x</td>
