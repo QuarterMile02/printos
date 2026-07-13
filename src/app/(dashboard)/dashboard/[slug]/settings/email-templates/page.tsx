@@ -10,8 +10,13 @@ const EVENT_LABELS: Record<string, string> = {
   payment_reminder: 'Payment Reminder',
 }
 
-export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+export default async function Page({ params, searchParams }: {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ sort?: string }>
+}) {
   const { slug } = await params
+  const sp = await searchParams
+  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -23,7 +28,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       .from('email_templates')
       .select('id, name, subject, trigger_event, is_active')
       .eq('organization_id', org.id)
-      .order('name')
+      .order('name', { ascending: !sortDesc })
       .limit(1000),
     supabase
       .from('email_templates')
@@ -43,9 +48,17 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
 
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Email Templates <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
-        <Link href={`/dashboard/${slug}/settings/email-templates/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
-          + New Template
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={sortDesc ? `/dashboard/${slug}/settings/email-templates` : `/dashboard/${slug}/settings/email-templates?sort=desc`}
+            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+          >
+            {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
+          </Link>
+          <Link href={`/dashboard/${slug}/settings/email-templates/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
+            + New Template
+          </Link>
+        </div>
       </div>
 
       {totalCount > 1000 && (

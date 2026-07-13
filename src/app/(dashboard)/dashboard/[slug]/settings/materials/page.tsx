@@ -26,13 +26,14 @@ const STATUS_LABEL: Record<StockStatus, string> = {
 
 export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ search?: string; low_stock?: string; type?: string }>
+  searchParams: Promise<{ search?: string; low_stock?: string; type?: string; sort?: string }>
 }) {
   const { slug } = await params
   const sp = await searchParams
   const search   = sp.search?.trim().toLowerCase() ?? ''
   const lowOnly  = sp.low_stock === '1'
   const typeFilter = sp.type?.trim() ?? ''
+  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase
@@ -54,7 +55,7 @@ export default async function Page({ params, searchParams }: {
       .from('materials')
       .select('id, name, cost, price, multiplier, formula, selling_units, active, material_type_id, material_type, material_category, current_stock, min_stock_level')
       .eq('organization_id', org.id)
-      .order('name')
+      .order('name', { ascending: !sortDesc })
       .limit(1000),
     supabase
       .from('materials')
@@ -115,6 +116,21 @@ export default async function Page({ params, searchParams }: {
           )}
         </h1>
         <div className="flex gap-2">
+          {(() => {
+            const p = new URLSearchParams()
+            if (sp.search) p.set('search', sp.search)
+            if (sp.low_stock) p.set('low_stock', sp.low_stock)
+            if (sp.type) p.set('type', sp.type)
+            if (!sortDesc) p.set('sort', 'desc')
+            return (
+              <Link
+                href={`/dashboard/${slug}/settings/materials?${p}`}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
+              </Link>
+            )
+          })()}
           <a href={`/api/export/materials?orgId=${org.id}`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Export CSV</a>
           <Link href={`/dashboard/${slug}/settings/materials/import`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Import CSV</Link>
           <Link href={`/dashboard/${slug}/settings/materials/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">+ New Material</Link>

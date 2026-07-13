@@ -58,7 +58,7 @@ type DepartmentOption = { id: string; name: string }
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ search?: string; formula?: string; status?: string; edit?: string; add?: string; saved?: string }>
+  searchParams: Promise<{ search?: string; formula?: string; status?: string; edit?: string; add?: string; saved?: string; sort?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -86,6 +86,7 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
+  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -110,7 +111,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       .from('labor_rates')
       .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, machine_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_machine_rate_id, operator_attendance_percent, production_factor, production_rate_prompt, production_rate_prompt_detail, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, department_id')
       .eq('organization_id', org.id)
-      .order('name')
+      .order('name', { ascending: !sortDesc })
       .limit(1000),
     supabase
       .from('labor_rates')
@@ -197,6 +198,21 @@ async function PageInner({ params, searchParams }: PageProps) {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Labor Rates <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
         <div className="flex gap-2">
+          {(() => {
+            const p = new URLSearchParams()
+            if (sp.search) p.set('search', sp.search)
+            if (sp.formula) p.set('formula', sp.formula)
+            if (sp.status) p.set('status', sp.status)
+            if (!sortDesc) p.set('sort', 'desc')
+            return (
+              <Link
+                href={`/dashboard/${slug}/settings/labor-rates?${p}`}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
+              </Link>
+            )
+          })()}
           <a href={`/api/export/labor-rates?orgId=${org.id}`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Export CSV</a>
           <Link href={`/dashboard/${slug}/settings/labor-rates/import`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Import CSV</Link>
           <Link href={`/dashboard/${slug}/settings/labor-rates?add=1`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">+ New Rate</Link>
@@ -204,6 +220,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       </div>
 
       <form className="mb-4 flex flex-wrap gap-3">
+        {sortDesc && <input type="hidden" name="sort" value="desc" />}
         <input type="text" name="search" defaultValue={search} placeholder="Search by name..." className="rounded-md border border-gray-300 px-3 py-2 text-sm w-64 focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
         <select name="formula" defaultValue={sp.formula ?? ''} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
           <option value="">All Formulas</option>

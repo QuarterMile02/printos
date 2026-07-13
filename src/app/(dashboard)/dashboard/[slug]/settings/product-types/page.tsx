@@ -14,7 +14,7 @@ type ProductType = {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string; sort?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -37,6 +37,7 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
+  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -59,7 +60,7 @@ async function PageInner({ params, searchParams }: PageProps) {
     .from('product_types')
     .select('id, name, is_active, created_at')
     .eq('organization_id', org.id)
-    .order('name')
+    .order('name', { ascending: !sortDesc })
 
   const types = (typesData ?? []) as ProductType[]
 
@@ -96,12 +97,20 @@ async function PageInner({ params, searchParams }: PageProps) {
         <h1 className="text-2xl font-bold text-gray-900">
           Product Types <span className="text-sm font-normal text-gray-400">({types.length})</span>
         </h1>
-        <Link
-          href={`/dashboard/${slug}/settings/product-types?add=1`}
-          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-        >
-          + New Type
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={sortDesc ? `/dashboard/${slug}/settings/product-types` : `/dashboard/${slug}/settings/product-types?sort=desc`}
+            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+          >
+            {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
+          </Link>
+          <Link
+            href={`/dashboard/${slug}/settings/product-types?add=1`}
+            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+          >
+            + New Type
+          </Link>
+        </div>
       </div>
 
       {isPanelOpen && (

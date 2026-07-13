@@ -16,7 +16,7 @@ type ProductCategory = {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string; sort?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -39,6 +39,7 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
+  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -62,7 +63,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       .from('product_categories')
       .select('id, name, product_type_id, is_active, created_at')
       .eq('organization_id', org.id)
-      .order('name'),
+      .order('name', { ascending: !sortDesc }),
     supabase
       .from('product_types')
       .select('id, name')
@@ -114,16 +115,33 @@ async function PageInner({ params, searchParams }: PageProps) {
         <h1 className="text-2xl font-bold text-gray-900">
           Product Categories <span className="text-sm font-normal text-gray-400">({categories.length})</span>
         </h1>
-        <Link
-          href={`/dashboard/${slug}/settings/product-categories?add=1`}
-          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-        >
-          + New Category
-        </Link>
+        <div className="flex items-center gap-2">
+          {(() => {
+            const p = new URLSearchParams()
+            if (typeFilter) p.set('type', typeFilter)
+            if (!sortDesc) p.set('sort', 'desc')
+            const qs = p.toString()
+            return (
+              <Link
+                href={`/dashboard/${slug}/settings/product-categories${qs ? `?${qs}` : ''}`}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
+              </Link>
+            )
+          })()}
+          <Link
+            href={`/dashboard/${slug}/settings/product-categories?add=1`}
+            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+          >
+            + New Category
+          </Link>
+        </div>
       </div>
 
       {/* Filter bar */}
       <form className="mb-4 flex flex-wrap gap-3">
+        {sortDesc && <input type="hidden" name="sort" value="desc" />}
         <select
           name="type"
           defaultValue={typeFilter}

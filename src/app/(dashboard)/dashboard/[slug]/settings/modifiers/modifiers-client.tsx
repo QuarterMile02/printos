@@ -55,6 +55,7 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
   const [typeFilter, setTypeFilter] = useState<'all' | ModifierType>('all')
   const [customerFilter, setCustomerFilter] = useState<'all' | 'yes' | 'no'>('all')
 
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [form, setForm] = useState<ModifierFormData>(emptyForm())
@@ -88,7 +89,7 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    return modifiers.filter((m) => {
+    const items = modifiers.filter((m) => {
       if (typeFilter !== 'all' && m.modifier_type !== typeFilter) return false
       if (customerFilter === 'yes' && !m.show_customer) return false
       if (customerFilter === 'no' && m.show_customer) return false
@@ -98,7 +99,9 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
       }
       return true
     })
-  }, [modifiers, search, typeFilter, customerFilter])
+    if (sortDir === 'desc') return [...items].sort((a, b) => b.display_name.localeCompare(a.display_name))
+    return items
+  }, [modifiers, search, typeFilter, customerFilter, sortDir])
 
   function handleSave() {
     setFormError(null)
@@ -139,12 +142,20 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
             {modifiers.length}
           </span>
         </div>
-        <button onClick={openNew} className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all">
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          Add New Modifier
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${sortDir === 'asc' ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+          >
+            {sortDir === 'asc' ? 'A-Z ↑' : 'Z-A ↓'}
+          </button>
+          <button onClick={openNew} className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Add New Modifier
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

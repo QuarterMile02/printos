@@ -17,6 +17,7 @@ function Dash() { return <span className="text-gray-300">—</span> }
 
 export default function VendorsListClient({ initialRows, totalCount, orgSlug, orgId }: Props) {
   const [rows, setRows] = useState<VendorListRow[]>(initialRows)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<VendorListRow[] | null>(null)
   const [isSearching, setIsSearching] = useState(false)
@@ -67,7 +68,10 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
   }
 
   // ── Search + display ─────────────────────────────────────────────────────
-  const displayed = searchResults ?? rows
+  const rawDisplayed = searchResults ?? rows
+  const displayed = sortDir === 'desc'
+    ? [...rawDisplayed].sort((a, b) => (b.name ?? '').localeCompare(a.name ?? ''))
+    : rawDisplayed
   const hasMore = rows.length < totalCount
 
   function handleLoadMore() {
@@ -81,6 +85,12 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+          className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${sortDir === 'asc' ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+        >
+          {sortDir === 'asc' ? 'A-Z ↑' : 'Z-A ↓'}
+        </button>
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           {isSearching ? (
             <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-lime animate-spin" fill="none" viewBox="0 0 24 24">
