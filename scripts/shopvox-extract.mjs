@@ -658,8 +658,41 @@ async function scrapeGridPricing(page) {
   })
 
   if (!finishTabNames.length) {
-    console.log('  Grid: no finish tabs found')
-    return { grid_pricing: { finishes: {} } }
+    // Attribute 1 style grid — no finish tabs, rows are named attributes (e.g. "10ft x 10ft")
+    console.log('  Grid: no finish tabs — trying Attribute 1 style grid')
+    await page.evaluate(() => {
+      const labels = Array.from(document.querySelectorAll('label'));
+      const costLabel = labels.find(l => l.innerText?.trim().includes("Show 'Cost'"));
+      if (costLabel) {
+        const cb = costLabel.querySelector('input[type="checkbox"]');
+        if (cb && !cb.checked) costLabel.click();
+      }
+    });
+    await page.waitForTimeout(1000);
+
+    const attrRows = await page.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll('input'));
+      const values = inputs.map(i => i.value.trim()).filter(v => v && !['false', 'true', 'grid', 'standard', '$0'].includes(v.toLowerCase()));
+      const rows = [];
+      for (let i = 0; i < values.length; i++) {
+        const isPriceOrCost = values[i].startsWith('$')
+        if (!isPriceOrCost && values[i].length > 0) {
+          const rowData = [values[i]];
+          let j = i + 1;
+          while (j < values.length && j < i + 5) {
+            if (values[j].startsWith('$') || !isNaN(parseFloat(values[j].replace(/[$,]/g, '')))) {
+              rowData.push(values[j]);
+            }
+            j++;
+          }
+          if (rowData.length > 1) rows.push(rowData);
+        }
+      }
+      return rows;
+    });
+
+    console.log(`  Grid: attribute rows = ${attrRows.length}`)
+    return { grid_pricing: { type: 'attribute', rows: attrRows } };
   }
   console.log(`  Grid: finish tabs = ${JSON.stringify(finishTabNames)}`)
 
