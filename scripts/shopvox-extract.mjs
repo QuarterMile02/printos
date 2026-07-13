@@ -1205,9 +1205,9 @@ async function main() {
   // known-good Banner product. Saves time during selector iteration.
   let shopvoxProducts
   if (DEBUG && LIMIT === 1) {
-    const TEST_URL  = 'https://express.shopvox.com/settings/products/0e3930ee-27b1-4405-a965-c95e5858ac02'
-    const TEST_NAME = 'Local SEO'
-    const TEST_UUID = '0e3930ee-27b1-4405-a965-c95e5858ac02'
+    const TEST_URL  = 'https://express.shopvox.com/settings/products/a2adac04-caa0-40f3-a57e-a9c2e412a580'
+    const TEST_NAME = 'Vinyl Regular- Digital'
+    const TEST_UUID = 'a2adac04-caa0-40f3-a57e-a9c2e412a580'
     console.log(`DEBUG MODE: Using hardcoded test URL: ${TEST_NAME}`)
     shopvoxProducts = [{ url: TEST_URL, name: TEST_NAME, shopvoxId: TEST_UUID }]
   } else {
