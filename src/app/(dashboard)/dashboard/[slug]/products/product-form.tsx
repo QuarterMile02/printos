@@ -19,6 +19,7 @@ import CheckPricingPanel from './check-pricing-panel'
 type MaterialOption = Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>
 type LaborRateOption = Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>
 type MachineRateOption = Pick<MachineRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>
+type ProductTypeOption = { id: string; name: string; sort_order: number }
 
 export type ExistingDropdownMenu = {
   menu_name: string
@@ -30,6 +31,7 @@ type Props = {
   orgId: string
   orgSlug: string
   product: Product | null
+  productTypes: ProductTypeOption[]
   categories: ProductCategory[]
   workflows: WorkflowTemplate[]
   discounts: Discount[]
@@ -114,7 +116,8 @@ type DropdownMenuRow = {
 function emptyForm(): ProductFormData {
   return {
     // Tab 1
-    name: '', description: null, product_type: null, category_id: null,
+    name: '', description: null, product_type: null, product_type_id: null,
+    category_id: null, product_category_id: null,
     secondary_category: null, workflow_template_id: null, complexity_value: 3,
     image_url: null, status: 'draft',
     // Tab 2
@@ -137,7 +140,9 @@ function emptyForm(): ProductFormData {
 function toFormData(p: Product): ProductFormData {
   return {
     name: p.name, description: p.description, product_type: p.product_type,
-    category_id: p.category_id, secondary_category: p.secondary_category,
+    product_type_id: (p as unknown as Record<string, unknown>).product_type_id as string | null ?? null,
+    category_id: p.category_id, product_category_id: (p as unknown as Record<string, unknown>).product_category_id as string | null ?? null,
+    secondary_category: p.secondary_category,
     workflow_template_id: p.workflow_template_id, complexity_value: p.complexity_value ?? 3,
     image_url: p.image_url, status: p.status ?? 'draft',
     income_account: p.income_account, income_account_number: p.income_account_number,
@@ -163,7 +168,7 @@ function toFormData(p: Product): ProductFormData {
 
 export default function ProductForm({
   orgId, orgSlug, product,
-  categories, workflows, discounts,
+  productTypes, categories, workflows, discounts,
   materials, laborRates, machineRates, modifiersList,
   existingDefaultItems, existingModifiers, existingDropdownMenus, existingCustomFields,
   secondaryCategoryOptions,
@@ -598,10 +603,10 @@ export default function ProductForm({
               <textarea value={form.description ?? ''} onChange={(e) => setForm({ ...form, description: e.target.value || null })} rows={4} className={inputClass} placeholder="Detailed product description" />
             </Field>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Type / Unit of Business">
-                <select value={form.product_type ?? ''} onChange={(e) => setForm({ ...form, product_type: e.target.value || null })} className={inputClass}>
+              <Field label="Product Type">
+                <select value={form.product_type_id ?? ''} onChange={(e) => setForm({ ...form, product_type_id: e.target.value || null })} className={inputClass}>
                   <option value="">— Select a type —</option>
-                  {PRODUCT_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {productTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </Field>
               <Field label="Workflow Template">
@@ -612,8 +617,8 @@ export default function ProductForm({
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Category">
-                <select value={form.category_id ?? ''} onChange={(e) => setForm({ ...form, category_id: e.target.value || null })} className={inputClass}>
+              <Field label="Product Category">
+                <select value={form.product_category_id ?? ''} onChange={(e) => setForm({ ...form, product_category_id: e.target.value || null })} className={inputClass}>
                   <option value="">— None —</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>

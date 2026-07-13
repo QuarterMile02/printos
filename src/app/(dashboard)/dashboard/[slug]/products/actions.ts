@@ -12,7 +12,9 @@ export type ProductFormData = {
   name: string
   description: string | null
   product_type: string | null
+  product_type_id: string | null
   category_id: string | null
+  product_category_id: string | null
   secondary_category: string | null
   workflow_template_id: string | null
   complexity_value: number | null
@@ -125,7 +127,9 @@ function buildRecord(data: ProductFormData) {
     name: data.name.trim(),
     description: data.description?.trim() || null,
     product_type: data.product_type?.trim() || null,
+    product_type_id: data.product_type_id,
     category_id: data.category_id,
+    product_category_id: data.product_category_id,
     secondary_category: data.secondary_category?.trim() || null,
     workflow_template_id: data.workflow_template_id,
     complexity_value: data.complexity_value,

@@ -23,6 +23,7 @@ export default async function NewProductPage({ params }: PageProps) {
 
   const [
     categoriesRes,
+    productTypesRes,
     workflowsRes,
     discountsRes,
     materialsRes,
@@ -32,6 +33,7 @@ export default async function NewProductPage({ params }: PageProps) {
     secondaryCategoriesRes,
   ] = await Promise.all([
     supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
+    supabase.from('product_types').select('id, name, sort_order').eq('organization_id', org.id).eq('is_active', true).order('sort_order', { ascending: true }),
     supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
     supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
     supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name'),
@@ -53,6 +55,7 @@ export default async function NewProductPage({ params }: PageProps) {
         orgId={org.id}
         orgSlug={slug}
         product={null}
+        productTypes={(productTypesRes.data ?? []) as { id: string; name: string; sort_order: number }[]}
         categories={(categoriesRes.data ?? []) as ProductCategory[]}
         workflows={(workflowsRes.data ?? []) as WorkflowTemplate[]}
         discounts={(discountsRes.data ?? []) as Discount[]}
