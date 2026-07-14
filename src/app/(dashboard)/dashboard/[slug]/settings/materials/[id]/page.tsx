@@ -70,28 +70,39 @@ export default async function Page({ params, searchParams }: {
   }
   const canDelete = sp.edit === '1' && usedProductIds.length === 0
 
-  // Edit-mode prerequisites: distinct categories for datalist + active discounts
-  let categorySuggestions: string[] = []
+  // Category name (FK fallback for view mode)
+  let categoryName = m.material_category ?? ''
+  if (!m.material_category && m.category_id) {
+    const { data: c } = await supabase.from('material_categories').select('name').eq('id', m.category_id).single()
+    categoryName = (c as { name: string } | null)?.name ?? ''
+  }
+
+  // Edit-mode prerequisites: material types, categories + active discounts
+  let materialTypes: { id: string; name: string }[] = []
+  let materialCategories: { id: string; name: string }[] = []
   let discounts: { id: string; name: string }[] = []
   if (editing) {
-    const [catRes, dRes] = await Promise.all([
+    const [typesRes, catsRes, dRes] = await Promise.all([
       supabase
-        .from('materials')
-        .select('material_category')
+        .from('material_types')
+        .select('id, name')
         .eq('organization_id', org.id)
-        .not('material_category', 'is', null),
+        .eq('is_active', true)
+        .order('name'),
+      supabase
+        .from('material_categories')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('name'),
       supabase
         .from('discounts')
         .select('id, name')
         .eq('organization_id', org.id)
         .order('name'),
     ])
-    const seen = new Set<string>()
-    for (const r of (catRes.data ?? []) as { material_category: string | null }[]) {
-      const v = r.material_category?.trim()
-      if (v && !seen.has(v)) { seen.add(v); categorySuggestions.push(v) }
-    }
-    categorySuggestions.sort((a, b) => a.localeCompare(b))
+    materialTypes = (typesRes.data ?? []) as { id: string; name: string }[]
+    materialCategories = (catsRes.data ?? []) as { id: string; name: string }[]
     discounts = (dRes.data ?? []) as { id: string; name: string }[]
   }
 
@@ -116,7 +127,8 @@ export default async function Page({ params, searchParams }: {
               orgId={org.id}
               orgSlug={slug}
               canEditInventory={canEditInventory}
-              categorySuggestions={categorySuggestions}
+              materialTypes={materialTypes}
+              materialCategories={materialCategories}
               discounts={discounts}
             />
           </div>
@@ -129,7 +141,7 @@ export default async function Page({ params, searchParams }: {
               <h1 className="text-2xl font-extrabold text-gray-900">{m.name}</h1>
               {m.external_name && <p className="text-sm text-gray-500">Display: {m.external_name}</p>}
               <p className="mt-1 text-sm text-gray-500">
-                {typeName}{m.material_category ? ` › ${m.material_category}` : ''} &middot; {m.formula ?? 'Area'} &middot; {m.selling_units ?? 'Each'}
+                {typeName}{categoryName ? ` › ${categoryName}` : ''} &middot; {m.formula ?? 'Area'} &middot; {m.selling_units ?? 'Each'}
               </p>
             </div>
             <div className="flex items-center gap-3">

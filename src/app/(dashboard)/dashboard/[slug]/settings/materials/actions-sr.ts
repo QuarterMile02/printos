@@ -43,9 +43,11 @@ export async function saveMaterial(formData: FormData) {
     machine_charge: parseFloat(formData.get('machine_charge') as string) || 0,
     setup_charge: parseFloat(formData.get('setup_charge') as string) || 0,
     active: formData.get('active') === 'on',
-    // Migration 047 fields
-    material_type: strOrNull(formData.get('material_type')),
-    material_category: strOrNull(formData.get('material_category')),
+    // FK classification fields
+    material_type_id: strOrNull(formData.get('material_type_id')),
+    category_id: strOrNull(formData.get('category_id')),
+    material_type: null,
+    material_category: null,
     unit_width: numOrNull(formData.get('unit_width')),
     unit_height: numOrNull(formData.get('unit_height')),
     unit_cost: numOrNull(formData.get('unit_cost')),

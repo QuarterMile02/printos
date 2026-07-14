@@ -15,25 +15,27 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
 
   const { allowed: canEditInventory } = await checkPermission(org.id, 'materials.edit_inventory')
 
-  const [catRes, dRes] = await Promise.all([
+  const [typesRes, catsRes, dRes] = await Promise.all([
     supabase
-      .from('materials')
-      .select('material_category')
+      .from('material_types')
+      .select('id, name')
       .eq('organization_id', org.id)
-      .not('material_category', 'is', null),
+      .eq('is_active', true)
+      .order('name'),
+    supabase
+      .from('material_categories')
+      .select('id, name')
+      .eq('organization_id', org.id)
+      .eq('is_active', true)
+      .order('name'),
     supabase
       .from('discounts')
       .select('id, name')
       .eq('organization_id', org.id)
       .order('name'),
   ])
-  const seen = new Set<string>()
-  const categorySuggestions: string[] = []
-  for (const r of (catRes.data ?? []) as { material_category: string | null }[]) {
-    const v = r.material_category?.trim()
-    if (v && !seen.has(v)) { seen.add(v); categorySuggestions.push(v) }
-  }
-  categorySuggestions.sort((a, b) => a.localeCompare(b))
+  const materialTypes = (typesRes.data ?? []) as { id: string; name: string }[]
+  const materialCategories = (catsRes.data ?? []) as { id: string; name: string }[]
   const discounts = (dRes.data ?? []) as { id: string; name: string }[]
 
   return (
@@ -54,7 +56,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
           orgId={org.id}
           orgSlug={slug}
           canEditInventory={canEditInventory}
-          categorySuggestions={categorySuggestions}
+          materialTypes={materialTypes}
+          materialCategories={materialCategories}
           discounts={discounts}
         />
       </div>

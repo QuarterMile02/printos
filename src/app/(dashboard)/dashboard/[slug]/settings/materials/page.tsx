@@ -45,7 +45,7 @@ export default async function Page({ params, searchParams }: {
     id: string; name: string
     cost: number | null; price: number | null; multiplier: number | null
     formula: string | null; selling_units: string | null
-    active: boolean | null; material_type_id: string | null
+    active: boolean | null; material_type_id: string | null; category_id: string | null
     material_type: string | null; material_category: string | null
     current_stock: number | null; min_stock_level: number | null
   }
@@ -53,7 +53,7 @@ export default async function Page({ params, searchParams }: {
   const [rowsRes, countRes] = await Promise.all([
     supabase
       .from('materials')
-      .select('id, name, cost, price, multiplier, formula, selling_units, active, material_type_id, material_type, material_category, current_stock, min_stock_level')
+      .select('id, name, cost, price, multiplier, formula, selling_units, active, material_type_id, category_id, material_type, material_category, current_stock, min_stock_level')
       .eq('organization_id', org.id)
       .order('name', { ascending: !sortDesc })
       .limit(1000),
@@ -77,6 +77,19 @@ export default async function Page({ params, searchParams }: {
   }
   const resolveType = (m: MatRow): string =>
     m.material_type ?? (m.material_type_id ? typeMap.get(m.material_type_id) ?? '—' : '—')
+
+  // Resolve category names from FK
+  const legacyCatIds = [...new Set(
+    materials.filter(m => !m.material_category && m.category_id).map(m => m.category_id) as string[]
+  )]
+  const catMap = new Map<string, string>()
+  if (legacyCatIds.length > 0) {
+    const { data: cats } = await supabase
+      .from('material_categories').select('id, name').in('id', legacyCatIds)
+    for (const c of (cats ?? []) as { id: string; name: string }[]) catMap.set(c.id, c.name)
+  }
+  const resolveCategory = (m: MatRow): string =>
+    m.material_category ?? (m.category_id ? catMap.get(m.category_id) ?? '—' : '—')
 
   // Distinct types for the filter dropdown
   const typeSet = new Set<string>()
@@ -181,7 +194,7 @@ export default async function Page({ params, searchParams }: {
                       className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia">{m.name}</Link>
                   </td>
                   <td className="px-5 py-3 text-sm text-gray-600">{resolveType(m)}</td>
-                  <td className="px-5 py-3 text-sm text-gray-600">{m.material_category ?? '—'}</td>
+                  <td className="px-5 py-3 text-sm text-gray-600">{resolveCategory(m)}</td>
                   <td className="px-5 py-3 text-sm text-gray-900 text-right tabular-nums">${Number(m.cost ?? 0).toFixed(4)}</td>
                   <td className="px-5 py-3 text-sm text-gray-900 text-right tabular-nums">${Number(m.price ?? 0).toFixed(4)}</td>
                   <td className="px-5 py-3 text-sm text-gray-600 text-right tabular-nums">{Number(m.multiplier ?? 1).toFixed(2)}x</td>

@@ -17,7 +17,10 @@ type MaterialData = {
   min_stock_level?: number | null
   reorder_quantity?: number | null
   last_inventory_count_at?: string | null
-  // Migration 047 fields
+  // FK classification (preferred over legacy text fields)
+  material_type_id?: string | null
+  category_id?: string | null
+  // Migration 047 legacy text fields (kept for display only)
   material_type?: string | null
   material_category?: string | null
   unit_width?: number | null
@@ -43,27 +46,21 @@ type MaterialData = {
 }
 
 type DiscountOption = { id: string; name: string }
+type MaterialTypeOption = { id: string; name: string }
+type MaterialCategoryOption = { id: string; name: string }
 
 type Props = {
   material: MaterialData | null
   orgId: string
   orgSlug: string
   canEditInventory: boolean
-  categorySuggestions: string[]
+  materialTypes: MaterialTypeOption[]
+  materialCategories: MaterialCategoryOption[]
   discounts: DiscountOption[]
 }
 
 const UNITS = ['Each', 'Sqft', 'Roll', 'Sheet', 'Feet', 'Inch', 'Yard', 'Hr', 'Linear Ft']
 const FORMULAS = ['Area', 'Perimeter', 'Width', 'Height', 'Unit', 'Fixed Qty', 'Sheet']
-const MATERIAL_TYPES = [
-  'Accessories', 'Artwork', 'Backdrop', 'Channel Letter Materials',
-  'Commercial Printing', 'Consumables', 'Digital Advertising',
-  'Digital Printing', 'Digital Screens', 'Electrical', 'Fabrication Materials',
-  'Finishing', 'Flags', 'Ink', 'Ink- Large Format', 'Laminates',
-  'Prefabricated Cabinets', 'Rigid Substrates- Sheets', 'Roll Materials',
-  'Stock Photos', 'Table Cloths', 'Tent', 'Trade Show',
-  'Vacuum Form Face Outsource',
-]
 const WEIGHT_UOMS = ['lbs', 'kg', 'oz', 'g']
 const QB_ITEM_TYPES = ['Non Inventory', 'Inventory', 'Service', 'Other Charge']
 
@@ -74,7 +71,7 @@ const sectionTitleCls = 'text-xs font-bold uppercase tracking-wider text-gray-50
 const labelCls = 'block text-sm font-medium text-gray-700'
 
 export default function MaterialForm({
-  material, orgId, orgSlug, canEditInventory, categorySuggestions, discounts,
+  material, orgId, orgSlug, canEditInventory, materialTypes, materialCategories, discounts,
 }: Props) {
   const m = material
   const isEdit = !!m?.id
@@ -99,21 +96,17 @@ export default function MaterialForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>Type</label>
-            <select name="material_type" defaultValue={m?.material_type ?? ''} className={inp()}>
-              <option value="">—</option>
-              {MATERIAL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            <select name="material_type_id" defaultValue={m?.material_type_id ?? ''} className={inp()}>
+              <option value="">— None —</option>
+              {materialTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
           <div>
             <label className={labelCls}>Category</label>
-            <input
-              type="text" name="material_category" list="material-category-suggestions"
-              defaultValue={m?.material_category ?? ''} className={inp()}
-              placeholder="Type or pick from existing…"
-            />
-            <datalist id="material-category-suggestions">
-              {categorySuggestions.map(c => <option key={c} value={c} />)}
-            </datalist>
+            <select name="category_id" defaultValue={m?.category_id ?? ''} className={inp()}>
+              <option value="">— None —</option>
+              {materialCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           </div>
         </div>
       </div>
