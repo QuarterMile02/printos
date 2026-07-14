@@ -61,6 +61,22 @@ export default async function SalesOrdersPage({ params, searchParams }: PageProp
   const [rowsRes, countRes] = await Promise.all([query.limit(1000), countQuery])
   const rows = (rowsRes.data ?? []) as SoRow[]
   const totalCount = countRes.count ?? 0
+
+  // Fetch shipment counts for displayed SOs
+  const shipmentCountMap = new Map<string, number>()
+  try {
+    const soIds = rows.map(r => r.id)
+    if (soIds.length > 0) {
+      const { data: shipData } = await supabase
+        .from('shipments')
+        .select('sales_order_id')
+        .in('sales_order_id', soIds) as { data: { sales_order_id: string }[] | null; error: unknown }
+      for (const s of (shipData ?? [])) {
+        shipmentCountMap.set(s.sales_order_id, (shipmentCountMap.get(s.sales_order_id) ?? 0) + 1)
+      }
+    }
+  } catch { /* shipments table not yet applied */ }
+
   const salesOrders = rows.map((r) => ({
     id: r.id,
     so_number: r.so_number,
@@ -68,6 +84,7 @@ export default async function SalesOrdersPage({ params, searchParams }: PageProp
     status: r.status,
     total: r.total ?? 0,
     created_at: r.created_at,
+    shipmentCount: shipmentCountMap.get(r.id) ?? 0,
     customer: r.customers,
   }))
 

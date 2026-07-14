@@ -19,6 +19,7 @@ export type SoRow = {
   status: SalesOrderStatus
   total: number
   created_at: string
+  shipmentCount?: number
   customer: {
     first_name: string
     last_name: string
@@ -97,6 +98,7 @@ export default function SalesOrderTable({
                 {canSeePricing && (
                   <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Total</th>
                 )}
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Shipments</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Created</th>
               </tr>
@@ -131,6 +133,15 @@ export default function SalesOrderTable({
                       ${formatCents(so.total)}
                     </td>
                   )}
+                  <td className="whitespace-nowrap px-6 py-4">
+                    {so.shipmentCount != null && so.shipmentCount > 0
+                      ? (
+                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+                          {so.shipmentCount}
+                        </span>
+                      )
+                      : <span className="text-gray-300 text-sm">—</span>}
+                  </td>
                   <td className="whitespace-nowrap px-6 py-4">
                     <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${SO_STATUS_STYLES[so.status]}`}>
                       {SO_STATUS_LABELS[so.status]}

@@ -5,10 +5,15 @@ import type { SalesOrderStatus, JobStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
 import SoDetailClient from './so-detail-client'
 
-type PageProps = { params: Promise<{ slug: string; id: string }> }
+type PageProps = {
+  params: Promise<{ slug: string; id: string }>
+  searchParams?: Promise<Record<string, string | undefined>>
+}
 
-export default async function SalesOrderDetailPage({ params }: PageProps) {
+export default async function SalesOrderDetailPage({ params, searchParams }: PageProps) {
   const { slug, id } = await params
+  const sp = searchParams ? await searchParams : {}
+  const shipmentSaved = sp.shipment_saved === '1'
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
@@ -105,6 +110,27 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
     .eq('organization_id', org.id)
     .order('job_number', { ascending: true }) as { data: JobRow[] | null; error: unknown }
 
+  // Fetch shipments for this SO
+  type ShipmentRow = {
+    id: string
+    carrier: string | null
+    tracking_number: string | null
+    shipped_date: string | null
+    estimated_delivery: string | null
+    notes: string | null
+    status: string
+    created_at: string
+  }
+  let shipments: ShipmentRow[] = []
+  try {
+    const { data: shipData } = await supabase
+      .from('shipments')
+      .select('id, carrier, tracking_number, shipped_date, estimated_delivery, notes, status, created_at')
+      .eq('sales_order_id', id)
+      .order('created_at', { ascending: false }) as { data: ShipmentRow[] | null; error: unknown }
+    shipments = shipData ?? []
+  } catch { /* shipments table not yet applied */ }
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -142,6 +168,8 @@ export default async function SalesOrderDetailPage({ params }: PageProps) {
         initialContactId={soContactId}
         initialContactName={soContactName}
         canReassignCustomer={canReassignSoCustomer}
+        shipments={shipments}
+        shipmentSaved={shipmentSaved}
       />
     </div>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { SalesOrderStatus, JobStatus } from '@/types/database'
@@ -12,6 +12,7 @@ import {
   SO_STATUS_LABELS,
 } from '../format'
 import SoCustomerPicker from './so-customer-picker'
+import { saveShipment, deleteShipment } from './shipments/actions-sr'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New',
@@ -55,6 +56,40 @@ type QuoteRef = {
   created_at: string
 }
 
+type Shipment = {
+  id: string
+  carrier: string | null
+  tracking_number: string | null
+  shipped_date: string | null
+  estimated_delivery: string | null
+  notes: string | null
+  status: string
+  created_at: string
+}
+
+const SHIP_STATUS_STYLES: Record<string, string> = {
+  pending:   'bg-gray-100  text-gray-700',
+  shipped:   'bg-blue-50   text-blue-700',
+  delivered: 'bg-green-50  text-green-700',
+  returned:  'bg-red-50    text-red-700',
+}
+const SHIP_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending', shipped: 'Shipped', delivered: 'Delivered', returned: 'Returned',
+}
+
+function trackingUrl(carrier: string | null, tracking: string | null): string | null {
+  if (!tracking) return null
+  if (carrier === 'UPS')   return `https://www.ups.com/track?tracknum=${tracking}`
+  if (carrier === 'FedEx') return `https://www.fedex.com/fedextrack/?trknbr=${tracking}`
+  if (carrier === 'USPS')  return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tracking}`
+  return null
+}
+
+function fmtDate(iso: string | null) {
+  if (!iso) return '—'
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 type Job = {
   id: string
   job_number: number
@@ -73,6 +108,8 @@ type Props = {
   initialContactId: string | null
   initialContactName: string | null
   canReassignCustomer: boolean
+  shipments: Shipment[]
+  shipmentSaved?: boolean
 }
 
 const MANUAL_STATUSES: { value: SalesOrderStatus; label: string }[] = [
@@ -91,6 +128,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, canSeePricing,
   initialContactId, initialContactName, canReassignCustomer,
+  shipments, shipmentSaved,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -98,6 +136,13 @@ export default function SoDetailClient({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [creatingInvoice, setCreatingInvoice] = useState(false)
   const [invoiceError, setInvoiceError] = useState<string | null>(null)
+  const [showShipForm, setShowShipForm] = useState(false)
+  const [editShipmentId, setEditShipmentId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (shipmentSaved) flash('Shipment saved.', 'success')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function flash(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
@@ -263,6 +308,170 @@ export default function SoDetailClient({
           </div>
         )}
       </div>
+
+      {/* Shipments */}
+      {(() => {
+        const editShip = editShipmentId ? shipments.find(s => s.id === editShipmentId) ?? null : null
+        const panelOpen = showShipForm || editShipmentId !== null
+        const inp = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
+        return (
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                Shipments
+                {shipments.length > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                    {shipments.length}
+                  </span>
+                )}
+              </h2>
+              <div className="flex items-center gap-2">
+                {!panelOpen && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowShipForm(true); setEditShipmentId(null) }}
+                    className="rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
+                  >
+                    + Add Shipment
+                  </button>
+                )}
+                <Link
+                  href={`/dashboard/${orgSlug}/sales-orders/${salesOrder.id}/shipments`}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  View all →
+                </Link>
+              </div>
+            </div>
+
+            {panelOpen && (
+              <div className="border-b border-gray-200 bg-gray-50 px-6 py-5">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">
+                  {editShip ? 'Edit Shipment' : 'New Shipment'}
+                </h3>
+                <form key={editShipmentId ?? 'new'} action={saveShipment} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {editShip && <input type="hidden" name="id" value={editShip.id} />}
+                  <input type="hidden" name="orgId" value={orgId} />
+                  <input type="hidden" name="orgSlug" value={orgSlug} />
+                  <input type="hidden" name="soId" value={salesOrder.id} />
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Carrier</label>
+                    <select name="carrier" defaultValue={editShip?.carrier ?? ''} className={inp}>
+                      <option value="">— Select carrier —</option>
+                      <option value="UPS">UPS</option>
+                      <option value="FedEx">FedEx</option>
+                      <option value="USPS">USPS</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Tracking Number</label>
+                    <input type="text" name="tracking_number" defaultValue={editShip?.tracking_number ?? ''} placeholder="1Z999AA10123456784" className={inp} />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Shipped Date</label>
+                    <input type="date" name="shipped_date" defaultValue={editShip?.shipped_date ?? ''} className={inp} />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Est. Delivery</label>
+                    <input type="date" name="estimated_delivery" defaultValue={editShip?.estimated_delivery ?? ''} className={inp} />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Status</label>
+                    <select name="status" defaultValue={editShip?.status ?? 'pending'} className={inp}>
+                      <option value="pending">Pending</option>
+                      <option value="shipped">Shipped</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="returned">Returned</option>
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500">Notes</label>
+                    <textarea name="notes" rows={2} defaultValue={editShip?.notes ?? ''} className={inp + ' resize-y'} />
+                  </div>
+
+                  <div className="sm:col-span-2 flex gap-2">
+                    <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowShipForm(false); setEditShipmentId(null) }}
+                      className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {shipments.length === 0 && !panelOpen ? (
+              <div className="py-10 text-center text-sm text-gray-500">No shipments yet.</div>
+            ) : shipments.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Carrier</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Tracking</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Shipped</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Est. Delivery</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {shipments.map(s => {
+                      const tUrl = trackingUrl(s.carrier, s.tracking_number)
+                      return (
+                        <tr key={s.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-3 text-sm text-gray-900">{s.carrier ?? <span className="text-gray-300">—</span>}</td>
+                          <td className="px-6 py-3 text-sm font-mono">
+                            {s.tracking_number
+                              ? tUrl
+                                ? <a href={tUrl} target="_blank" rel="noopener noreferrer" className="text-qm-fuchsia hover:underline">{s.tracking_number}</a>
+                                : <span className="text-gray-700">{s.tracking_number}</span>
+                              : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-6 py-3 text-sm text-gray-500 whitespace-nowrap">{fmtDate(s.shipped_date)}</td>
+                          <td className="px-6 py-3 text-sm text-gray-500 whitespace-nowrap">{fmtDate(s.estimated_delivery)}</td>
+                          <td className="px-6 py-3 whitespace-nowrap">
+                            <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${SHIP_STATUS_STYLES[s.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                              {SHIP_STATUS_LABELS[s.status] ?? s.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => { setEditShipmentId(s.id); setShowShipForm(false) }}
+                              className="text-sm text-qm-lime hover:underline mr-3"
+                            >
+                              Edit
+                            </button>
+                            <form action={deleteShipment} className="inline">
+                              <input type="hidden" name="id" value={s.id} />
+                              <input type="hidden" name="orgSlug" value={orgSlug} />
+                              <input type="hidden" name="soId" value={salesOrder.id} />
+                              <button type="submit" className="text-sm text-red-500 hover:underline">Delete</button>
+                            </form>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        )
+      })()}
 
       {/* Child jobs */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
