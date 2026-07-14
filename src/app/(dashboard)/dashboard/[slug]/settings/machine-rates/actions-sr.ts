@@ -48,7 +48,7 @@ function parseRate(fd: FormData) {
     per_li_unit: fd.get('per_li_unit') === 'on',
     cog_account: strOrNull(fd.get('cog_account')),
     volume_discount_id: strOrNull(fd.get('volume_discount_id')),
-    department_id: strOrNull(fd.get('department_id')),
+    department_id: fd.getAll('department_ids').map(v => v as string).filter(Boolean)[0] ?? null,
     calc_equipment_cost: numOrNull(fd.get('calc_equipment_cost')),
     calc_life_expectancy_years: numOrNull(fd.get('calc_life_expectancy_years')),
     calc_days_per_year: numOrNull(fd.get('calc_days_per_year')),
@@ -62,6 +62,7 @@ export async function saveMachineRate(formData: FormData) {
   const id = formData.get('id') as string | null
   const orgId = formData.get('orgId') as string
   const orgSlug = formData.get('orgSlug') as string
+  const deptIds = formData.getAll('department_ids').map(v => v as string).filter(Boolean)
   const fields = parseRate(formData)
   const service = createServiceClient()
 
@@ -76,6 +77,16 @@ export async function saveMachineRate(formData: FormData) {
       .single()
     savedId = (inserted as { id: string } | null)?.id ?? null
   }
+
+  if (savedId) {
+    await service.from('machine_rate_departments').delete().eq('machine_rate_id', savedId)
+    if (deptIds.length > 0) {
+      await service.from('machine_rate_departments').insert(
+        deptIds.map(dId => ({ machine_rate_id: savedId!, department_id: dId }))
+      )
+    }
+  }
+
   redirect(savedId
     ? `/dashboard/${orgSlug}/settings/machine-rates?edit=${savedId}&saved=1`
     : `/dashboard/${orgSlug}/settings/machine-rates`)

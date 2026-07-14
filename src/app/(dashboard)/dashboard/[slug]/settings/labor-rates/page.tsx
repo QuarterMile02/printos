@@ -148,6 +148,23 @@ async function PageInner({ params, searchParams }: PageProps) {
   } catch { /* departments table may not exist */ }
   const deptMap = new Map(departments.map(d => [d.id, d.name]))
 
+  // Junction table: rate → assigned dept IDs
+  const rateDeptMap = new Map<string, string[]>()
+  if (rates.length > 0) {
+    try {
+      const { data: lrdData } = await supabase
+        .from('labor_rate_departments')
+        .select('labor_rate_id, department_id')
+        .in('labor_rate_id', rates.map(r => r.id))
+      for (const row of (lrdData ?? []) as { labor_rate_id: string; department_id: string }[]) {
+        const arr = rateDeptMap.get(row.labor_rate_id) ?? []
+        arr.push(row.department_id)
+        rateDeptMap.set(row.labor_rate_id, arr)
+      }
+    } catch { /* table may not exist yet */ }
+  }
+  const selectedDeptIds = new Set(editRate ? (rateDeptMap.get(editRate.id) ?? []) : [])
+
   // Lookups for dropdowns (only when panel is open)
   let materialCategories: MaterialCategory[] = []
   let machineRates: MachineRateOption[] = []
@@ -261,11 +278,24 @@ async function PageInner({ params, searchParams }: PageProps) {
                 </div>
               </div>
               <div>
-                <label className={labelCls}>Department</label>
-                <select name="department_id" defaultValue={editRate?.department_id ?? ''} className={inputCls}>
-                  <option value="">— None —</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
+                <label className={labelCls}>Departments</label>
+                {departments.length === 0 ? (
+                  <p className="mt-1 text-xs text-gray-400 italic">No departments defined.</p>
+                ) : (
+                  <details className="mt-1 rounded-md border border-gray-300 bg-white">
+                    <summary className="cursor-pointer px-3 py-2 text-sm text-gray-700 select-none">
+                      {selectedDeptIds.size === 0 ? 'Select departments…' : `${selectedDeptIds.size} selected`}
+                    </summary>
+                    <div className="border-t border-gray-200 px-3 py-2 max-h-48 overflow-y-auto space-y-1">
+                      {departments.map(d => (
+                        <label key={d.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
+                          <input type="checkbox" name="department_ids" value={d.id} defaultChecked={selectedDeptIds.has(d.id)} className="h-4 w-4 accent-qm-lime" />
+                          <span>{d.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
             </div>
 
@@ -570,7 +600,13 @@ async function PageInner({ params, searchParams }: PageProps) {
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3"><Link href={`/dashboard/${slug}/settings/labor-rates?edit=${r.id}`} className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia">{r.name}</Link></td>
                   <td className="px-4 py-3 text-sm text-gray-500">{r.external_name ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{r.department_id ? (deptMap.get(r.department_id) ?? '—') : '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">
+                    {(() => {
+                      const dIds = rateDeptMap.get(r.id) ?? []
+                      if (dIds.length > 0) return dIds.map(id => deptMap.get(id)).filter(Boolean).join(', ') || '—'
+                      return r.department_id ? (deptMap.get(r.department_id) ?? '—') : '—'
+                    })()}
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${n(r.cost).toFixed(2)}</td>
                   <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${n(r.price).toFixed(2)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{n(r.markup, 1).toFixed(2)}x</td>

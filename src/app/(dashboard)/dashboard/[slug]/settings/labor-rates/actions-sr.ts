@@ -52,7 +52,7 @@ function parseRate(fd: FormData) {
     per_li_unit: fd.get('per_li_unit') === 'on',
     cog_account: strOrNull(fd.get('cog_account')),
     volume_discount_id: strOrNull(fd.get('volume_discount_id')),
-    department_id: strOrNull(fd.get('department_id')),
+    department_id: fd.getAll('department_ids').map(v => v as string).filter(Boolean)[0] ?? null,
     updated_at: new Date().toISOString(),
   }
 }
@@ -61,6 +61,7 @@ export async function saveLaborRate(formData: FormData) {
   const id = formData.get('id') as string | null
   const orgId = formData.get('orgId') as string
   const orgSlug = formData.get('orgSlug') as string
+  const deptIds = formData.getAll('department_ids').map(v => v as string).filter(Boolean)
   const fields = parseRate(formData)
   const service = createServiceClient()
 
@@ -75,6 +76,16 @@ export async function saveLaborRate(formData: FormData) {
       .single()
     savedId = (inserted as { id: string } | null)?.id ?? null
   }
+
+  if (savedId) {
+    await service.from('labor_rate_departments').delete().eq('labor_rate_id', savedId)
+    if (deptIds.length > 0) {
+      await service.from('labor_rate_departments').insert(
+        deptIds.map(dId => ({ labor_rate_id: savedId!, department_id: dId }))
+      )
+    }
+  }
+
   redirect(savedId
     ? `/dashboard/${orgSlug}/settings/labor-rates?edit=${savedId}&saved=1`
     : `/dashboard/${orgSlug}/settings/labor-rates`)
