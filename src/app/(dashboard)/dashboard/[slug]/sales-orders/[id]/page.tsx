@@ -120,16 +120,39 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
     notes: string | null
     status: string
     created_at: string
+    shipping_method_id: string | null
+    shipping_profile_id: string | null
+    weight_lbs: number | null
+    length_in: number | null
+    width_in: number | null
+    height_in: number | null
+    quoted_rate: number | null
+    actual_cost: number | null
+    label_url: string | null
   }
   let shipments: ShipmentRow[] = []
   try {
     const { data: shipData } = await supabase
       .from('shipments')
-      .select('id, carrier, tracking_number, shipped_date, estimated_delivery, notes, status, created_at')
+      .select('id, carrier, tracking_number, shipped_date, estimated_delivery, notes, status, created_at, shipping_method_id, shipping_profile_id, weight_lbs, length_in, width_in, height_in, quoted_rate, actual_cost, label_url')
       .eq('sales_order_id', id)
       .order('created_at', { ascending: false }) as { data: ShipmentRow[] | null; error: unknown }
     shipments = shipData ?? []
   } catch { /* shipments table not yet applied */ }
+
+  // Fetch shipping methods and profiles for the org
+  type ShipMethodRow = { id: string; name: string; carrier: string | null; is_active: boolean }
+  type ShipProfileRow = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
+  let shippingMethods: ShipMethodRow[] = []
+  let shippingProfiles: ShipProfileRow[] = []
+  try {
+    const [mRes, pRes] = await Promise.all([
+      supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).order('name'),
+      supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).order('name'),
+    ])
+    shippingMethods = (mRes.data ?? []) as ShipMethodRow[]
+    shippingProfiles = (pRes.data ?? []) as ShipProfileRow[]
+  } catch { /* tables not yet applied */ }
 
   return (
     <div className="p-8 max-w-6xl">
@@ -170,6 +193,8 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
         canReassignCustomer={canReassignSoCustomer}
         shipments={shipments}
         shipmentSaved={shipmentSaved}
+        shippingMethods={shippingMethods}
+        shippingProfiles={shippingProfiles}
       />
     </div>
   )

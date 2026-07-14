@@ -56,6 +56,14 @@ type QuoteRef = {
   created_at: string
 }
 
+type Job = {
+  id: string
+  job_number: number
+  title: string
+  status: JobStatus
+  due_date: string | null
+}
+
 type Shipment = {
   id: string
   carrier: string | null
@@ -65,6 +73,32 @@ type Shipment = {
   notes: string | null
   status: string
   created_at: string
+  shipping_method_id: string | null
+  shipping_profile_id: string | null
+  weight_lbs: number | null
+  length_in: number | null
+  width_in: number | null
+  height_in: number | null
+  quoted_rate: number | null
+  actual_cost: number | null
+  label_url: string | null
+}
+
+type ShippingMethod = {
+  id: string
+  name: string
+  carrier: string | null
+  is_active: boolean
+}
+
+type ShippingProfile = {
+  id: string
+  name: string
+  length_in: number | null
+  width_in: number | null
+  height_in: number | null
+  max_weight_lbs: number | null
+  is_active: boolean
 }
 
 const SHIP_STATUS_STYLES: Record<string, string> = {
@@ -78,24 +112,17 @@ const SHIP_STATUS_LABELS: Record<string, string> = {
 }
 
 function trackingUrl(carrier: string | null, tracking: string | null): string | null {
-  if (!tracking) return null
-  if (carrier === 'UPS')   return `https://www.ups.com/track?tracknum=${tracking}`
-  if (carrier === 'FedEx') return `https://www.fedex.com/fedextrack/?trknbr=${tracking}`
-  if (carrier === 'USPS')  return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tracking}`
+  if (!tracking || !carrier) return null
+  const c = carrier.toLowerCase()
+  if (c === 'ups')   return `https://www.ups.com/track?tracknum=${tracking}`
+  if (c === 'fedex') return `https://www.fedex.com/fedextrack/?trknbr=${tracking}`
+  if (c === 'usps')  return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${tracking}`
   return null
 }
 
 function fmtDate(iso: string | null) {
   if (!iso) return '—'
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-type Job = {
-  id: string
-  job_number: number
-  title: string
-  status: JobStatus
-  due_date: string | null
 }
 
 type Props = {
@@ -110,6 +137,8 @@ type Props = {
   canReassignCustomer: boolean
   shipments: Shipment[]
   shipmentSaved?: boolean
+  shippingMethods: ShippingMethod[]
+  shippingProfiles: ShippingProfile[]
 }
 
 const MANUAL_STATUSES: { value: SalesOrderStatus; label: string }[] = [
@@ -128,7 +157,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, canSeePricing,
   initialContactId, initialContactName, canReassignCustomer,
-  shipments, shipmentSaved,
+  shipments, shipmentSaved, shippingMethods, shippingProfiles,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -136,13 +165,53 @@ export default function SoDetailClient({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [creatingInvoice, setCreatingInvoice] = useState(false)
   const [invoiceError, setInvoiceError] = useState<string | null>(null)
+
+  // Shipment panel state
   const [showShipForm, setShowShipForm] = useState(false)
   const [editShipmentId, setEditShipmentId] = useState<string | null>(null)
+  // Dimension auto-fill state
+  const [shipProfileId, setShipProfileId] = useState('')
+  const [shipDimL, setShipDimL] = useState('')
+  const [shipDimW, setShipDimW] = useState('')
+  const [shipDimH, setShipDimH] = useState('')
 
   useEffect(() => {
     if (shipmentSaved) flash('Shipment saved.', 'success')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Sync dims when switching edit target
+  useEffect(() => {
+    if (editShipmentId) {
+      const s = shipments.find(s => s.id === editShipmentId)
+      setShipProfileId(s?.shipping_profile_id ?? '')
+      setShipDimL(s?.length_in != null ? String(s.length_in) : '')
+      setShipDimW(s?.width_in != null ? String(s.width_in) : '')
+      setShipDimH(s?.height_in != null ? String(s.height_in) : '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editShipmentId])
+
+  function closeShipForm() {
+    setShowShipForm(false)
+    setEditShipmentId(null)
+    setShipProfileId('')
+    setShipDimL('')
+    setShipDimW('')
+    setShipDimH('')
+  }
+
+  function handleProfileSelect(profileId: string) {
+    setShipProfileId(profileId)
+    if (profileId) {
+      const p = shippingProfiles.find(p => p.id === profileId)
+      if (p) {
+        setShipDimL(p.length_in != null ? String(p.length_in) : '')
+        setShipDimW(p.width_in != null ? String(p.width_in) : '')
+        setShipDimH(p.height_in != null ? String(p.height_in) : '')
+      }
+    }
+  }
 
   function flash(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
@@ -186,6 +255,9 @@ export default function SoDetailClient({
     ? `${salesOrder.customer.first_name} ${salesOrder.customer.last_name}`
     : null
   const companyName = salesOrder.customer?.company_name
+
+  const inp = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
+  const lbl = 'block text-xs font-medium text-gray-500'
 
   return (
     <>
@@ -313,7 +385,6 @@ export default function SoDetailClient({
       {(() => {
         const editShip = editShipmentId ? shipments.find(s => s.id === editShipmentId) ?? null : null
         const panelOpen = showShipForm || editShipmentId !== null
-        const inp = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
         return (
           <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -355,34 +426,18 @@ export default function SoDetailClient({
                   <input type="hidden" name="orgSlug" value={orgSlug} />
                   <input type="hidden" name="soId" value={salesOrder.id} />
 
+                  {/* Row 1: Method + Status */}
                   <div>
-                    <label className="block text-xs font-medium text-gray-500">Carrier</label>
-                    <select name="carrier" defaultValue={editShip?.carrier ?? ''} className={inp}>
-                      <option value="">— Select carrier —</option>
-                      <option value="UPS">UPS</option>
-                      <option value="FedEx">FedEx</option>
-                      <option value="USPS">USPS</option>
-                      <option value="Other">Other</option>
+                    <label className={lbl}>Shipping Method</label>
+                    <select name="shipping_method_id" defaultValue={editShip?.shipping_method_id ?? ''} className={inp}>
+                      <option value="">— Select method —</option>
+                      {shippingMethods.filter(m => m.is_active).map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
                     </select>
                   </div>
-
                   <div>
-                    <label className="block text-xs font-medium text-gray-500">Tracking Number</label>
-                    <input type="text" name="tracking_number" defaultValue={editShip?.tracking_number ?? ''} placeholder="1Z999AA10123456784" className={inp} />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500">Shipped Date</label>
-                    <input type="date" name="shipped_date" defaultValue={editShip?.shipped_date ?? ''} className={inp} />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500">Est. Delivery</label>
-                    <input type="date" name="estimated_delivery" defaultValue={editShip?.estimated_delivery ?? ''} className={inp} />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500">Status</label>
+                    <label className={lbl}>Status</label>
                     <select name="status" defaultValue={editShip?.status ?? 'pending'} className={inp}>
                       <option value="pending">Pending</option>
                       <option value="shipped">Shipped</option>
@@ -391,8 +446,73 @@ export default function SoDetailClient({
                     </select>
                   </div>
 
+                  {/* Row 2: Tracking + Weight */}
+                  <div>
+                    <label className={lbl}>Tracking Number</label>
+                    <input type="text" name="tracking_number" defaultValue={editShip?.tracking_number ?? ''} placeholder="1Z999AA10123456784" className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Weight (lbs)</label>
+                    <input type="number" step="0.01" min="0" name="weight_lbs" defaultValue={editShip?.weight_lbs ?? ''} className={inp} />
+                  </div>
+
+                  {/* Row 3: Dates */}
+                  <div>
+                    <label className={lbl}>Shipped Date</label>
+                    <input type="date" name="shipped_date" defaultValue={editShip?.shipped_date ?? ''} className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Est. Delivery</label>
+                    <input type="date" name="estimated_delivery" defaultValue={editShip?.estimated_delivery ?? ''} className={inp} />
+                  </div>
+
+                  {/* Row 4: Rates */}
+                  <div>
+                    <label className={lbl}>Quoted Rate ($)</label>
+                    <input type="number" step="0.01" min="0" name="quoted_rate" defaultValue={editShip?.quoted_rate ?? ''} className={inp} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Actual Cost ($)</label>
+                    <input type="number" step="0.01" min="0" name="actual_cost" defaultValue={editShip?.actual_cost ?? ''} className={inp} />
+                  </div>
+
+                  {/* Row 5: Profile (auto-fills dims) */}
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-gray-500">Notes</label>
+                    <label className={lbl}>Box Profile <span className="text-gray-400 font-normal">(auto-fills dimensions)</span></label>
+                    <select
+                      name="shipping_profile_id"
+                      value={shipProfileId}
+                      onChange={e => handleProfileSelect(e.target.value)}
+                      className={inp}
+                    >
+                      <option value="">— Select profile —</option>
+                      {shippingProfiles.filter(p => p.is_active).map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.length_in != null ? ` (${p.length_in}×${p.width_in}×${p.height_in}")` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Row 6: Dimensions */}
+                  <div className="sm:col-span-2 grid grid-cols-3 gap-3">
+                    <div>
+                      <label className={lbl}>Length (in)</label>
+                      <input type="number" step="0.01" min="0" name="length_in" value={shipDimL} onChange={e => setShipDimL(e.target.value)} className={inp} />
+                    </div>
+                    <div>
+                      <label className={lbl}>Width (in)</label>
+                      <input type="number" step="0.01" min="0" name="width_in" value={shipDimW} onChange={e => setShipDimW(e.target.value)} className={inp} />
+                    </div>
+                    <div>
+                      <label className={lbl}>Height (in)</label>
+                      <input type="number" step="0.01" min="0" name="height_in" value={shipDimH} onChange={e => setShipDimH(e.target.value)} className={inp} />
+                    </div>
+                  </div>
+
+                  {/* Row 7: Notes */}
+                  <div className="sm:col-span-2">
+                    <label className={lbl}>Notes</label>
                     <textarea name="notes" rows={2} defaultValue={editShip?.notes ?? ''} className={inp + ' resize-y'} />
                   </div>
 
@@ -400,11 +520,7 @@ export default function SoDetailClient({
                     <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
                       Save
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => { setShowShipForm(false); setEditShipmentId(null) }}
-                      className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    >
+                    <button type="button" onClick={closeShipForm} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                       Cancel
                     </button>
                   </div>
@@ -419,35 +535,49 @@ export default function SoDetailClient({
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Carrier</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Tracking</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Shipped</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Est. Delivery</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Method</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Tracking</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Weight</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Shipped</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Cost</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {shipments.map(s => {
-                      const tUrl = trackingUrl(s.carrier, s.tracking_number)
+                      const method = shippingMethods.find(m => m.id === s.shipping_method_id)
+                      const carrier = method?.carrier ?? s.carrier
+                      const tUrl = trackingUrl(carrier, s.tracking_number)
                       return (
                         <tr key={s.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-3 text-sm text-gray-900">{s.carrier ?? <span className="text-gray-300">—</span>}</td>
-                          <td className="px-6 py-3 text-sm font-mono">
+                          <td className="px-4 py-3 text-sm text-gray-900 max-w-[160px]">
+                            <span className="truncate block">{method?.name ?? s.carrier ?? <span className="text-gray-300">—</span>}</span>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-mono">
                             {s.tracking_number
                               ? tUrl
                                 ? <a href={tUrl} target="_blank" rel="noopener noreferrer" className="text-qm-fuchsia hover:underline">{s.tracking_number}</a>
                                 : <span className="text-gray-700">{s.tracking_number}</span>
                               : <span className="text-gray-300">—</span>}
                           </td>
-                          <td className="px-6 py-3 text-sm text-gray-500 whitespace-nowrap">{fmtDate(s.shipped_date)}</td>
-                          <td className="px-6 py-3 text-sm text-gray-500 whitespace-nowrap">{fmtDate(s.estimated_delivery)}</td>
-                          <td className="px-6 py-3 whitespace-nowrap">
+                          <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                            {s.weight_lbs != null ? `${s.weight_lbs} lbs` : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">{fmtDate(s.shipped_date)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                            {s.actual_cost != null
+                              ? `$${Number(s.actual_cost).toFixed(2)}`
+                              : s.quoted_rate != null
+                                ? <span className="text-gray-400">${Number(s.quoted_rate).toFixed(2)} est.</span>
+                                : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
                             <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${SHIP_STATUS_STYLES[s.status] ?? 'bg-gray-100 text-gray-700'}`}>
                               {SHIP_STATUS_LABELS[s.status] ?? s.status}
                             </span>
                           </td>
-                          <td className="px-6 py-3 text-right whitespace-nowrap">
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => { setEditShipmentId(s.id); setShowShipForm(false) }}
@@ -498,16 +628,11 @@ export default function SoDetailClient({
                 {jobs.map((job) => (
                   <tr key={job.id} className="hover:bg-gray-50">
                     <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
-                      <Link
-                        href={`/dashboard/${orgSlug}/jobs/${job.id}`}
-                        className="text-qm-fuchsia hover:underline"
-                      >
+                      <Link href={`/dashboard/${orgSlug}/jobs/${job.id}`} className="text-qm-fuchsia hover:underline">
                         JOB-{String(job.job_number).padStart(4, '0')}
                       </Link>
                     </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">
-                      {job.title}
-                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">{job.title}</td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${JOB_STATUS_STYLES[job.status]}`}>
                         {JOB_STATUS_LABELS[job.status]}
