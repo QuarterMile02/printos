@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
 import type { QuoteStatus } from '@/types/database'
 import { resolveDateRange, paginate, PAGE_SIZE } from '@/lib/reports/report-utils'
@@ -52,17 +52,39 @@ export default async function QuotesReport({ params, searchParams }: PageProps) 
   const range = resolveDateRange(sp.preset as 'today' | 'this_week' | 'this_month' | 'last_30' | 'last_90' | 'ytd' | 'custom' | undefined, sp.start, sp.end)
   const page = parseInt(sp.page ?? '1', 10) || 1
 
-  // Sales reps for the filter dropdown — owners + admins + members.
-  type TeamRow = { user_id: string; profiles: { full_name: string | null; email: string } | null }
-  const { data: teamRows } = await supabase
+  // Sales reps for the filter dropdown via service client (bypasses RLS).
+  type RawMemberRow = { user_id: string }
+  const { data: memberRows } = await supabase
     .from('organization_members')
-    .select('user_id, profiles(full_name, email)')
+    .select('user_id')
     .eq('organization_id', org.id)
-    .in('role', ['owner','admin','member']) as { data: TeamRow[] | null; error: unknown }
-  const salesReps: SalesRep[] = (teamRows ?? []).map((t) => ({
-    id: t.user_id,
-    name: t.profiles?.full_name || t.profiles?.email || t.user_id,
-  })).sort((a, b) => a.name.localeCompare(b.name))
+    .in('role', ['owner', 'admin', 'member']) as { data: RawMemberRow[] | null; error: unknown }
+
+  const memberUserIds = (memberRows ?? []).map(m => m.user_id)
+  const service = createServiceClient()
+  const repNameMap = new Map<string, string>()
+
+  if (memberUserIds.length > 0) {
+    type ProfileRow = { id: string; full_name: string | null }
+    const { data: profileRows } = await service
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    for (const p of profileRows ?? []) {
+      repNameMap.set(p.id, p.full_name ?? p.id)
+    }
+    const missing = memberUserIds.filter(id => !repNameMap.has(id))
+    if (missing.length > 0) {
+      const { data: { users: authUsers } } = await service.auth.admin.listUsers()
+      for (const u of authUsers ?? []) {
+        if (!repNameMap.has(u.id) && u.email) repNameMap.set(u.id, u.email)
+      }
+    }
+  }
+
+  const salesReps: SalesRep[] = memberUserIds
+    .map(id => ({ id, name: repNameMap.get(id) ?? id }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   // Build base query (count + paged data) honouring filters.
   function buildBase() {

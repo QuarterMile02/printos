@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
 import { resolveDateRange, type DateRangePreset } from '@/lib/reports/report-utils'
 import ReportShell from '../report-shell'
@@ -43,18 +43,35 @@ export default async function SalesByRepReport({ params, searchParams }: PagePro
 
   const range = resolveDateRange(sp.preset as DateRangePreset | undefined, sp.start, sp.end)
 
-  // Fetch team members for name resolution
-  type TeamRow = { user_id: string; profiles: { full_name: string | null; email: string } | null }
-  const { data: teamRows } = await supabase
+  // Fetch team members for name resolution via service client (bypasses RLS).
+  type RawMemberRow = { user_id: string }
+  const { data: memberRows } = await supabase
     .from('organization_members')
-    .select('user_id, profiles(full_name, email)')
+    .select('user_id')
     .eq('organization_id', org.id)
-    .in('role', ['owner', 'admin', 'member']) as { data: TeamRow[] | null; error: unknown }
+    .in('role', ['owner', 'admin', 'member']) as { data: RawMemberRow[] | null; error: unknown }
 
-  const nameById = new Map((teamRows ?? []).map(t => [
-    t.user_id,
-    t.profiles?.full_name || t.profiles?.email || t.user_id,
-  ]))
+  const memberUserIds = (memberRows ?? []).map(m => m.user_id)
+  const service = createServiceClient()
+  const nameById = new Map<string, string>()
+
+  if (memberUserIds.length > 0) {
+    type ProfileRow = { id: string; full_name: string | null }
+    const { data: profileRows } = await service
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    for (const p of profileRows ?? []) {
+      nameById.set(p.id, p.full_name ?? p.id)
+    }
+    const missing = memberUserIds.filter(id => !nameById.has(id))
+    if (missing.length > 0) {
+      const { data: { users: authUsers } } = await service.auth.admin.listUsers()
+      for (const u of authUsers ?? []) {
+        if (!nameById.has(u.id) && u.email) nameById.set(u.id, u.email)
+      }
+    }
+  }
 
   // Fetch all quotes in range (aggregate in JS — reps count is small)
   const { data: quotes } = await supabase
