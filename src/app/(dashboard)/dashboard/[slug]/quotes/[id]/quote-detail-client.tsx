@@ -76,6 +76,9 @@ type Quote = {
 
 type TeamMember = { id: string; name: string }
 
+type ShippingAddress = { id: string; label: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; country: string; is_default: boolean }
+type ShippingProfile  = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
+
 type LineItem = {
   id: string
   product_id: string | null
@@ -115,6 +118,8 @@ type Props = {
   canSeePricing: boolean
   canExportPdf: boolean
   modifierDefs: ModifierDefSummary[]
+  shippingAddresses: ShippingAddress[]
+  shippingProfiles: ShippingProfile[]
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -127,8 +132,25 @@ function dollarsToCents(s: string): number {
   return Math.round(n * 100)
 }
 
+function smCarrierCardStyle(carrier: string): string {
+  const c = carrier.toUpperCase()
+  if (c.includes('UPS'))   return 'border-amber-200  bg-amber-50/60'
+  if (c.includes('FEDEX')) return 'border-purple-200 bg-purple-50/60'
+  if (c.includes('USPS'))  return 'border-blue-200   bg-blue-50/60'
+  if (c.includes('DHL'))   return 'border-yellow-200 bg-yellow-50/60'
+  return 'border-gray-200 bg-white'
+}
+function smCarrierBadgeStyle(carrier: string): string {
+  const c = carrier.toUpperCase()
+  if (c.includes('UPS'))   return 'bg-amber-100  text-amber-800'
+  if (c.includes('FEDEX')) return 'bg-purple-100 text-purple-800'
+  if (c.includes('USPS'))  return 'bg-blue-100   text-blue-800'
+  if (c.includes('DHL'))   return 'bg-yellow-100 text-yellow-800'
+  return 'bg-gray-100 text-gray-700'
+}
+
 export default function QuoteDetailClient({
-  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing, canExportPdf, modifierDefs,
+  orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing, canExportPdf, modifierDefs, shippingAddresses, shippingProfiles,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -179,8 +201,13 @@ export default function QuoteDetailClient({
   const [productionNotes, setProductionNotes] = useState<string>(quote.production_notes ?? '')
   const [convertedSo, setConvertedSo] = useState(salesOrder)
 
-  // Add Shipping modal state
-  const [showShippingModal, setShowShippingModal]           = useState(false)
+  // Shipping section state
+  const [showShippingSection, setShowShippingSection]       = useState(false)
+  const [smAddrMode, setSmAddrMode]                         = useState<'billing' | 'saved' | 'new'>('billing')
+  const [smSavedAddrId, setSmSavedAddrId]                   = useState('')
+  const [smProfileId, setSmProfileId]                       = useState('')
+  const [smToName, setSmToName]                             = useState('')
+  const [smToStreet, setSmToStreet]                         = useState('')
   const [smWeight, setSmWeight]                             = useState('')
   const [smLength, setSmLength]                             = useState('')
   const [smWidth, setSmWidth]                               = useState('')
@@ -196,7 +223,9 @@ export default function QuoteDetailClient({
   const [smAddingItem, setSmAddingItem]                     = useState(false)
 
   function closeShippingModal() {
-    setShowShippingModal(false)
+    setShowShippingSection(false)
+    setSmAddrMode('billing'); setSmSavedAddrId(''); setSmProfileId('')
+    setSmToName(''); setSmToStreet('')
     setSmWeight('')
     setSmLength('')
     setSmWidth('')
@@ -208,6 +237,36 @@ export default function QuoteDetailClient({
     setSmRatesError(null)
     setSmSelectedRateId(null)
     setSmEasypostShipmentId(null)
+  }
+
+  function smPrefillBilling() {
+    const c = quote.customer
+    if (!c) return
+    setSmToName(c.company_name || `${c.first_name} ${c.last_name}`)
+    setSmToStreet(c.street ?? ''); setSmCity(c.city ?? '')
+    setSmState(c.state ?? ''); setSmZip(c.zip ?? '')
+  }
+
+  function smHandleAddrMode(mode: 'billing' | 'saved' | 'new') {
+    setSmAddrMode(mode)
+    setSmRates([]); setSmRatesError(null); setSmSelectedRateId(null)
+    if (mode === 'billing') { smPrefillBilling() }
+    else if (mode === 'new') { setSmToName(''); setSmToStreet(''); setSmCity(''); setSmState(''); setSmZip('') }
+  }
+
+  function smHandleSavedAddr(id: string) {
+    setSmSavedAddrId(id)
+    setSmRates([]); setSmRatesError(null); setSmSelectedRateId(null)
+    const a = shippingAddresses.find(a => a.id === id)
+    if (a) { setSmToName(a.label ?? ''); setSmToStreet(a.street ?? ''); setSmCity(a.city ?? ''); setSmState(a.state ?? ''); setSmZip(a.zip ?? '') }
+  }
+
+  function smHandleProfile(profileId: string) {
+    setSmProfileId(profileId)
+    if (profileId) {
+      const p = shippingProfiles.find(p => p.id === profileId)
+      if (p) { setSmLength(p.length_in != null ? String(p.length_in) : ''); setSmWidth(p.width_in != null ? String(p.width_in) : ''); setSmHeight(p.height_in != null ? String(p.height_in) : '') }
+    }
   }
 
   async function handleShippingGetRates() {
@@ -900,7 +959,7 @@ export default function QuoteDetailClient({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setShowShippingModal(true)}
+                onClick={() => { setShowShippingSection(true); smPrefillBilling() }}
                 className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
               >
                 + Add Shipping
@@ -1433,104 +1492,148 @@ export default function QuoteDetailClient({
         )}
       </div>
 
-      {/* Add Shipping Modal */}
-      {showShippingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={e => { if (e.target === e.currentTarget) closeShippingModal() }}>
-          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <h2 className="text-base font-bold text-gray-900">Add Shipping Line Item</h2>
-              <button type="button" onClick={closeShippingModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+      {/* ── Shipping Estimate Section ──────────────────────────────── */}
+      {isEditing && showShippingSection && (
+        <div className="mt-6 rounded-xl border border-indigo-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-indigo-100 bg-indigo-50/40 px-6 py-4">
+            <h2 className="text-base font-bold text-gray-900">Shipping Estimate</h2>
+            <button type="button" onClick={closeShippingModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+          </div>
+          <div className="px-6 py-5 space-y-5">
+            {/* Ship To */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Ship To</p>
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="radio" checked={smAddrMode === 'billing'} onChange={() => smHandleAddrMode('billing')} className="mt-0.5 accent-indigo-600" />
+                  <span className="text-sm text-gray-700">
+                    Billing address
+                    {quote.customer?.zip && <span className="ml-1.5 text-gray-400 text-xs">{[quote.customer.street, quote.customer.city, quote.customer.state, quote.customer.zip].filter(Boolean).join(' · ')}</span>}
+                  </span>
+                </label>
+                {shippingAddresses.length > 0 && (
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" checked={smAddrMode === 'saved'} onChange={() => smHandleAddrMode('saved')} className="accent-indigo-600" />
+                      <span className="text-sm text-gray-700">Saved shipping address</span>
+                    </label>
+                    {smAddrMode === 'saved' && (
+                      <select value={smSavedAddrId} onChange={e => smHandleSavedAddr(e.target.value)}
+                        className="mt-2 ml-6 block w-auto min-w-[260px] rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
+                        <option value="">— Select saved address —</option>
+                        {shippingAddresses.map(a => (
+                          <option key={a.id} value={a.id}>{a.label ? `${a.label} · ` : ''}{a.street}, {a.city} {a.state} {a.zip}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" checked={smAddrMode === 'new'} onChange={() => smHandleAddrMode('new')} className="accent-indigo-600" />
+                  <span className="text-sm text-gray-700">New address</span>
+                </label>
+                {smAddrMode === 'new' && (
+                  <div className="ml-6 mt-2 grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-500">Recipient Name</label>
+                      <input type="text" value={smToName} onChange={e => setSmToName(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <label className="block text-xs font-medium text-gray-500">Street</label>
+                      <input type="text" value={smToStreet} onChange={e => setSmToStreet(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-gray-500">City</label>
+                      <input type="text" value={smCity} onChange={e => setSmCity(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500">State</label>
+                      <input type="text" maxLength={2} value={smState} onChange={e => setSmState(e.target.value.toUpperCase())} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500">ZIP *</label>
+                      <input type="text" value={smZip} onChange={e => setSmZip(e.target.value)} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                    </div>
+                  </div>
+                )}
+                {smAddrMode !== 'new' && (
+                  <div className="ml-6 mt-2 max-w-[180px]">
+                    <label className="block text-xs font-medium text-gray-500">Destination ZIP</label>
+                    <input type="text" value={smZip} onChange={e => setSmZip(e.target.value)} placeholder="78041" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="px-6 py-5 space-y-4">
-              {/* Package details */}
-              <div className="grid grid-cols-2 gap-3">
+
+            {/* Package */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Package</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-500">Box Profile <span className="text-gray-400 font-normal">(auto-fills dims)</span></label>
+                  <select value={smProfileId} onChange={e => smHandleProfile(e.target.value)}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
+                    <option value="">— Select profile —</option>
+                    {shippingProfiles.filter(p => p.is_active).map(p => (
+                      <option key={p.id} value={p.id}>{p.name}{p.length_in != null ? ` (${p.length_in}×${p.width_in}×${p.height_in}")` : ''}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-500">Weight (lbs) *</label>
-                  <input type="number" step="0.01" min="0" value={smWeight} onChange={e => setSmWeight(e.target.value)} placeholder="2.5" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                  <input type="number" step="0.01" min="0" value={smWeight} onChange={e => setSmWeight(e.target.value)} placeholder="2.5" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500">Length (in) *</label>
-                  <input type="number" step="0.1" min="0" value={smLength} onChange={e => setSmLength(e.target.value)} placeholder="12" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                  <label className="block text-xs font-medium text-gray-500">L (in) *</label>
+                  <input type="number" step="0.1" min="0" value={smLength} onChange={e => setSmLength(e.target.value)} placeholder="12" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500">Width (in) *</label>
-                  <input type="number" step="0.1" min="0" value={smWidth} onChange={e => setSmWidth(e.target.value)} placeholder="8" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                  <label className="block text-xs font-medium text-gray-500">W (in) *</label>
+                  <input type="number" step="0.1" min="0" value={smWidth} onChange={e => setSmWidth(e.target.value)} placeholder="8" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500">Height (in) *</label>
-                  <input type="number" step="0.1" min="0" value={smHeight} onChange={e => setSmHeight(e.target.value)} placeholder="4" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                  <label className="block text-xs font-medium text-gray-500">H (in) *</label>
+                  <input type="number" step="0.1" min="0" value={smHeight} onChange={e => setSmHeight(e.target.value)} placeholder="4" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
                 </div>
               </div>
+            </div>
 
-              {/* Destination */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-3">
-                  <label className="block text-xs font-medium text-gray-500">Destination — City, State, ZIP</label>
-                </div>
-                <div>
-                  <input type="text" value={smCity} onChange={e => setSmCity(e.target.value)} placeholder="City" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
-                </div>
-                <div>
-                  <input type="text" maxLength={2} value={smState} onChange={e => setSmState(e.target.value.toUpperCase())} placeholder="TX" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
-                </div>
-                <div>
-                  <input type="text" value={smZip} onChange={e => setSmZip(e.target.value)} placeholder="ZIP *" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
-                </div>
-              </div>
+            <button type="button" onClick={handleShippingGetRates} disabled={smRatesLoading}
+              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+              {smRatesLoading ? 'Fetching rates…' : 'Get Shipping Estimate'}
+            </button>
 
-              <button
-                type="button"
-                onClick={handleShippingGetRates}
-                disabled={smRatesLoading}
-                className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {smRatesLoading ? 'Fetching rates…' : 'Get Live Rates'}
-              </button>
+            {smRatesError && <p className="text-sm text-red-600">{smRatesError}</p>}
 
-              {smRatesError && <p className="text-sm text-red-600">{smRatesError}</p>}
-
-              {smRates.length > 0 && (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+            {smRates.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Select Rate</p>
+                <div className="space-y-2">
                   {smRates.map(r => (
-                    <label
-                      key={r.id}
+                    <label key={r.id}
                       className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
                         smSelectedRateId === r.id
-                          ? 'border-indigo-400 bg-indigo-50 shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-indigo-200'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="sm_rate"
-                        value={r.id}
-                        checked={smSelectedRateId === r.id}
-                        onChange={() => setSmSelectedRateId(r.id)}
-                        className="accent-indigo-600"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <span className="font-semibold text-sm text-gray-900">{r.carrier} {r.service}</span>
-                        {r.delivery_days != null && (
-                          <span className="ml-2 text-xs text-gray-500">{r.delivery_days} day{r.delivery_days !== 1 ? 's' : ''}</span>
-                        )}
+                          ? `${smCarrierCardStyle(r.carrier)} ring-2 ring-indigo-400`
+                          : `${smCarrierCardStyle(r.carrier)} hover:ring-1 hover:ring-indigo-200`
+                      }`}>
+                      <input type="radio" name="sm_rate" value={r.id} checked={smSelectedRateId === r.id} onChange={() => setSmSelectedRateId(r.id)} className="accent-indigo-600" />
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-bold ${smCarrierBadgeStyle(r.carrier)}`}>{r.carrier}</span>
+                        <span className="text-sm font-medium text-gray-800">{r.service}</span>
+                        {r.delivery_days != null && <span className="text-xs text-gray-400">{r.delivery_days} day{r.delivery_days !== 1 ? 's' : ''}</span>}
                       </div>
                       <span className="text-sm font-bold tabular-nums text-gray-900">${parseFloat(r.rate).toFixed(2)}</span>
                     </label>
                   ))}
                 </div>
-              )}
-
-              {smSelectedRateId && (
-                <button
-                  type="button"
-                  onClick={handleAddShippingLineItem}
-                  disabled={smAddingItem}
-                  className="w-full rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-                >
-                  {smAddingItem ? 'Adding…' : 'Add to Quote'}
-                </button>
-              )}
-            </div>
+                {smSelectedRateId && (
+                  <button type="button" onClick={handleAddShippingLineItem} disabled={smAddingItem}
+                    className="mt-3 rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+                    {smAddingItem ? 'Adding…' : 'Add to Quote'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import type { JobStatus, QuoteStatus } from '@/types/database'
 import CustomerDetailClient from './customer-detail-client'
 import CustomerContactsSection from './customer-contacts'
 import CustomerActionMenu from './customer-action-menu'
+import ShippingAddressesSection from './shipping-addresses-section'
 import { QUOTE_STATUS_STYLES } from '../../quotes/format'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
@@ -125,6 +126,18 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     .eq('organization_id', org.id).eq('customer_id', customerId)
     .order('created_at', { ascending: false }) as { data: InvoiceRow[] | null; error: unknown }
 
+  // Fetch saved shipping addresses
+  type ShipAddrRow = { id: string; label: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; country: string; is_default: boolean }
+  let shippingAddresses: ShipAddrRow[] = []
+  try {
+    const { data: saData } = await supabase
+      .from('shipping_addresses')
+      .select('id, label, street, city, state, zip, country, is_default')
+      .eq('customer_id', customerId).eq('organization_id', org.id)
+      .order('is_default', { ascending: false }).order('created_at', { ascending: true }) as { data: ShipAddrRow[] | null; error: unknown }
+    shippingAddresses = saData ?? []
+  } catch { /* migration 076 not yet applied */ }
+
   const openJobs = openJobRows ?? []
   const quotes = (quoteRows ?? []).map((q) => ({ ...q, total: perQuoteTotals.get(q.id) ?? 0 }))
   const invoices = invoiceRows ?? []
@@ -245,6 +258,14 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           special_notes: customer.special_notes,
           sms_consent: customer.sms_consent,
         }}
+      />
+
+      {/* Shipping Addresses */}
+      <ShippingAddressesSection
+        customerId={customer.id}
+        orgId={org.id}
+        orgSlug={slug}
+        initialAddresses={shippingAddresses}
       />
 
       {/* Open Jobs */}

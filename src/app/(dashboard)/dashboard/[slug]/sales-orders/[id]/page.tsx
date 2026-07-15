@@ -144,11 +144,13 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
     shipments = shipData ?? []
   } catch { /* shipments table not yet applied */ }
 
-  // Fetch shipping methods and profiles for the org
+  // Fetch shipping methods, profiles, and customer saved addresses
   type ShipMethodRow = { id: string; name: string; carrier: string | null; is_active: boolean }
   type ShipProfileRow = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
+  type ShipAddrRow = { id: string; label: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; country: string; is_default: boolean }
   let shippingMethods: ShipMethodRow[] = []
   let shippingProfiles: ShipProfileRow[] = []
+  let customerShippingAddresses: ShipAddrRow[] = []
   try {
     const [mRes, pRes] = await Promise.all([
       supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).order('name'),
@@ -157,6 +159,17 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
     shippingMethods = (mRes.data ?? []) as ShipMethodRow[]
     shippingProfiles = (pRes.data ?? []) as ShipProfileRow[]
   } catch { /* tables not yet applied */ }
+
+  if (so.customer_id) {
+    try {
+      const { data: saData } = await supabase
+        .from('shipping_addresses')
+        .select('id, label, street, city, state, zip, country, is_default')
+        .eq('customer_id', so.customer_id).eq('organization_id', org.id)
+        .order('is_default', { ascending: false }).order('created_at', { ascending: true }) as { data: ShipAddrRow[] | null; error: unknown }
+      customerShippingAddresses = saData ?? []
+    } catch { /* migration 076 not yet applied */ }
+  }
 
   return (
     <div className="p-8 max-w-6xl">
@@ -199,6 +212,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
         shipmentSaved={shipmentSaved}
         shippingMethods={shippingMethods}
         shippingProfiles={shippingProfiles}
+        customerShippingAddresses={customerShippingAddresses}
       />
     </div>
   )

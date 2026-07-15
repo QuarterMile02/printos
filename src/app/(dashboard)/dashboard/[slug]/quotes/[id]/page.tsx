@@ -282,6 +282,27 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     }
   } catch { /* migration 058 not yet applied — skip */ }
 
+  // Fetch shipping data for the quote
+  type ShipAddrRow = { id: string; label: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; country: string; is_default: boolean }
+  type ShipProfileRow = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
+  let quoteShippingAddresses: ShipAddrRow[] = []
+  let quoteShippingProfiles: ShipProfileRow[] = []
+  try {
+    const { data: spData } = await supabase
+      .from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active')
+      .eq('organization_id', org.id).order('name') as { data: ShipProfileRow[] | null; error: unknown }
+    quoteShippingProfiles = spData ?? []
+  } catch { /* migration guard */ }
+  if (quote.customer_id) {
+    try {
+      const { data: saData } = await supabase
+        .from('shipping_addresses').select('id, label, street, city, state, zip, country, is_default')
+        .eq('customer_id', quote.customer_id).eq('organization_id', org.id)
+        .order('is_default', { ascending: false }).order('created_at', { ascending: true }) as { data: ShipAddrRow[] | null; error: unknown }
+      quoteShippingAddresses = saData ?? []
+    } catch { /* migration 076 guard */ }
+  }
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -385,6 +406,8 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         canSeePricing={canSeePricing}
         canExportPdf={canExportPdf}
         modifierDefs={modifierDefs}
+        shippingAddresses={quoteShippingAddresses}
+        shippingProfiles={quoteShippingProfiles}
       />
       </div>
     </div>
