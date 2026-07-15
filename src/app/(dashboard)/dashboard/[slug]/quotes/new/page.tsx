@@ -33,16 +33,6 @@ export default async function NewQuotePage({ params }: PageProps) {
     name: m.profiles?.full_name || m.profiles?.email || m.user_id,
   }))
 
-  // Products for the inline line item picker
-  type ProductOption = { id: string; name: string; formula: string | null }
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, name, formula')
-    .eq('organization_id', org.id)
-    .eq('active', true)
-    .order('name', { ascending: true })
-    .limit(2000) as { data: ProductOption[] | null; error: unknown }
-
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
@@ -61,7 +51,6 @@ export default async function NewQuotePage({ params }: PageProps) {
         orgSlug={slug}
         teamMembers={teamMembers}
         currentUserId={currentUserId}
-        products={products ?? []}
       />
     </div>
   )
