@@ -158,8 +158,9 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const newErrors: Record<string, string> = {}
-    if (!customerId)   newErrors.customerId = 'Customer is required.'
-    if (!title.trim()) newErrors.title      = 'Title is required.'
+    if (!customerId)                    newErrors.customerId = 'Customer is required.'
+    if (!contactInputValue.trim())      newErrors.contact    = 'Contact is required.'
+    if (!title.trim())                  newErrors.title      = 'Title is required.'
     if (!salesRepId || !teamMembers.some(m => m.id === salesRepId)) newErrors.salesRepId = 'Sales Rep is required.'
     if (Object.keys(newErrors).length) { setErrors(newErrors); return }
     setErrors({})
@@ -258,7 +259,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
       {/* Contact — always visible; becomes a combobox once customer is selected */}
       <div ref={contactDropRef} className="relative">
         <label className="block text-sm font-medium text-gray-700">
-          Contact <span className="text-xs font-normal text-gray-400">(optional)</span>
+          Contact <span className="text-red-500">*</span>
         </label>
         <input
           type="text"
@@ -267,6 +268,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
             setContactInputValue(e.target.value)
             setContactId('')
             if (customerId) setContactOpen(true)
+            if (errors.contact) setErrors(er => ({ ...er, contact: '' }))
           }}
           onFocus={() => {
             if (customerId) {
@@ -275,9 +277,10 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
             }
           }}
           placeholder={customerId ? 'Search contacts or type a name…' : 'Contact name'}
-          className={inp}
+          className={`${inp}${errors.contact ? ' ' + errBorder : ''}`}
           autoComplete="off"
         />
+        {errors.contact && <p className="mt-1 text-xs text-red-500">{errors.contact}</p>}
         {/* Dropdown — only when customer is selected */}
         {customerId && contactOpen && (
           <div className="absolute z-20 left-0 top-full mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
