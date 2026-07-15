@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 
@@ -56,9 +57,38 @@ async function sendEmail(to: string, subject: string, html: string) {
 }
 
 export async function POST(req: NextRequest) {
+  // ── Signature verification ────────────────────────────────────────────────
+  const secret = process.env.EASYPOST_WEBHOOK_SECRET
+  if (!secret) {
+    console.error('EASYPOST_WEBHOOK_SECRET is not set')
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
+  }
+
+  const rawBody = await req.text()
+  const sigHeader = req.headers.get('X-Hmac-Signature') ?? ''
+
+  // EasyPost signs with: "hmac-sha256-hex=<hex_digest>"
+  const PREFIX = 'hmac-sha256-hex='
+  if (!sigHeader.startsWith(PREFIX)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const receivedHex = sigHeader.slice(PREFIX.length)
+  const computedHex = createHmac('sha256', secret).update(rawBody).digest('hex')
+
+  const receivedBuf = Buffer.from(receivedHex, 'hex')
+  const computedBuf = Buffer.from(computedHex, 'hex')
+  const sigValid =
+    receivedBuf.length === computedBuf.length &&
+    timingSafeEqual(receivedBuf, computedBuf)
+
+  if (!sigValid) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   let body: Record<string, unknown>
   try {
-    body = await req.json() as Record<string, unknown>
+    body = JSON.parse(rawBody) as Record<string, unknown>
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
