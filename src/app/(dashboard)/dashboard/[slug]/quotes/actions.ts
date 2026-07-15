@@ -146,9 +146,14 @@ const VALID_STATUSES: QuoteStatus[] = [
 ]
 
 type LineItemInput = {
+  product_id?: string | null
   description: string
+  width?: number | null
+  height?: number | null
   quantity: number
   unit_price: number
+  discount_percent?: number
+  taxable?: boolean
 }
 
 export async function createQuote(
@@ -157,6 +162,7 @@ export async function createQuote(
   data: {
     title: string
     customerId: string | null
+    contactId?: string | null
     description: string | null
     expiresAt: string | null
     terms: string | null
@@ -212,6 +218,7 @@ export async function createQuote(
   if (data.poNumber)        insert.po_number = data.poNumber.trim()
   if (data.installAddress)  insert.install_address = data.installAddress.trim()
   if (data.productionNotes) insert.production_notes = data.productionNotes.trim()
+  if (data.contactId)       insert.contact_id = data.contactId
 
   const { data: quote, error: quoteError } = await service
     .from('quotes')
@@ -224,10 +231,15 @@ export async function createQuote(
   if (data.lineItems.length > 0) {
     const lineItemRows = data.lineItems.map((item, i) => ({
       quote_id: quote.id,
+      product_id: item.product_id ?? null,
       description: item.description.trim(),
+      width: item.width ?? null,
+      height: item.height ?? null,
       quantity: item.quantity,
       unit_price: item.unit_price,
-      total_price: item.quantity * item.unit_price,
+      discount_percent: item.discount_percent ?? 0,
+      taxable: item.taxable !== false,
+      total_price: Math.round(item.quantity * item.unit_price * (1 - (item.discount_percent ?? 0) / 100)),
       sort_order: i,
     }))
 

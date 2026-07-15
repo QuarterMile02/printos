@@ -155,7 +155,7 @@ export default function QuoteDetailClient({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
-  const [isEditing, setIsEditing] = useState(false)
+  const [isEditing] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [isSavingItem, setIsSavingItem] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
@@ -762,17 +762,6 @@ export default function QuoteDetailClient({
               Download PDF
             </a>
           )}
-          <button
-            type="button"
-            onClick={() => setIsEditing((prev) => !prev)}
-            className={`rounded-md border px-4 py-2 text-sm font-medium ${
-              isEditing
-                ? 'border-qm-lime bg-qm-lime text-white'
-                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            {isEditing ? 'Done Editing' : 'Edit'}
-          </button>
         </div>
 
         {convertedSo && (

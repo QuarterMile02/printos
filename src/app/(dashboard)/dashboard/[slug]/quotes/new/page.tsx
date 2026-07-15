@@ -17,15 +17,10 @@ export default async function NewQuotePage({ params }: PageProps) {
     .maybeSingle() as { data: OrgRow | null; error: unknown }
   if (!org) notFound()
 
-  // Customers for the searchable dropdown
-  type CustomerRow = { id: string; first_name: string; last_name: string; company_name: string | null }
-  const { data: customerRows } = await supabase
-    .from('customers')
-    .select('id, first_name, last_name, company_name')
-    .eq('organization_id', org.id)
-    .order('last_name', { ascending: true }) as { data: CustomerRow[] | null; error: unknown }
+  const { data: { user } } = await supabase.auth.getUser()
+  const currentUserId = user?.id ?? null
 
-  // Team members for the sales rep dropdown (owner, admin, member)
+  // Team members for the sales rep dropdown
   type TeamMember = { user_id: string; role: string; profiles: { full_name: string | null; email: string } | null }
   const { data: teamRows } = await supabase
     .from('organization_members')
@@ -37,6 +32,16 @@ export default async function NewQuotePage({ params }: PageProps) {
     id: m.user_id,
     name: m.profiles?.full_name || m.profiles?.email || m.user_id,
   }))
+
+  // Products for the inline line item picker
+  type ProductOption = { id: string; name: string; formula: string | null }
+  const { data: products } = await supabase
+    .from('products')
+    .select('id, name, formula')
+    .eq('organization_id', org.id)
+    .eq('active', true)
+    .order('name', { ascending: true })
+    .limit(2000) as { data: ProductOption[] | null; error: unknown }
 
   return (
     <div className="p-8 max-w-3xl">
@@ -54,8 +59,9 @@ export default async function NewQuotePage({ params }: PageProps) {
       <NewQuoteForm
         orgId={org.id}
         orgSlug={slug}
-        customers={customerRows ?? []}
         teamMembers={teamMembers}
+        currentUserId={currentUserId}
+        products={products ?? []}
       />
     </div>
   )
