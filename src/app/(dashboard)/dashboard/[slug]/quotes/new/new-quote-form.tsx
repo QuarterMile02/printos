@@ -170,6 +170,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
         title,
         customerId: customerId || null,
         contactId: contactId || null,
+        contactName: !contactId && contactInputValue.trim() ? contactInputValue.trim() : null,
         description: null,
         expiresAt: null,
         terms: null,

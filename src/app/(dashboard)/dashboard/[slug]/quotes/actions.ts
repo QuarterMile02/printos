@@ -163,6 +163,7 @@ export async function createQuote(
     title: string
     customerId: string | null
     contactId?: string | null
+    contactName?: string | null
     description: string | null
     expiresAt: string | null
     terms: string | null
@@ -218,7 +219,8 @@ export async function createQuote(
   if (data.poNumber)        insert.po_number = data.poNumber.trim()
   if (data.installAddress)  insert.install_address = data.installAddress.trim()
   if (data.productionNotes) insert.production_notes = data.productionNotes.trim()
-  if (data.contactId)       insert.contact_id = data.contactId
+  if (data.contactId)       insert.contact_id   = data.contactId
+  if (data.contactName)     insert.contact_name = data.contactName.trim()
 
   const { data: quote, error: quoteError } = await service
     .from('quotes')
