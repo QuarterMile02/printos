@@ -26,6 +26,7 @@ export async function saveShipment(formData: FormData) {
   const height_in = numOrNull(formData.get('height_in'))
   const quoted_rate = numOrNull(formData.get('quoted_rate'))
   const actual_cost = numOrNull(formData.get('actual_cost'))
+  const label_url = ((formData.get('label_url') as string) ?? '').trim() || null
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -45,6 +46,7 @@ export async function saveShipment(formData: FormData) {
     height_in,
     quoted_rate,
     actual_cost,
+    label_url,
   }
 
   if (id) {

@@ -12,6 +12,7 @@ import {
 } from '../actions'
 import type { EmailTemplate } from '../actions'
 import SendEmailModal from './send-email-modal'
+import type { EasypostRate } from '@/lib/easypost'
 type ModifierDef = {
   id: string
   system_lookup_name: string
@@ -177,6 +178,119 @@ export default function QuoteDetailClient({
   const [installAddress, setInstallAddress] = useState<string>(quote.install_address ?? '')
   const [productionNotes, setProductionNotes] = useState<string>(quote.production_notes ?? '')
   const [convertedSo, setConvertedSo] = useState(salesOrder)
+
+  // Add Shipping modal state
+  const [showShippingModal, setShowShippingModal]           = useState(false)
+  const [smWeight, setSmWeight]                             = useState('')
+  const [smLength, setSmLength]                             = useState('')
+  const [smWidth, setSmWidth]                               = useState('')
+  const [smHeight, setSmHeight]                             = useState('')
+  const [smCity, setSmCity]                                 = useState('')
+  const [smState, setSmState]                               = useState('')
+  const [smZip, setSmZip]                                   = useState('')
+  const [smRatesLoading, setSmRatesLoading]                 = useState(false)
+  const [smRates, setSmRates]                               = useState<EasypostRate[]>([])
+  const [smRatesError, setSmRatesError]                     = useState<string | null>(null)
+  const [smSelectedRateId, setSmSelectedRateId]             = useState<string | null>(null)
+  const [smEasypostShipmentId, setSmEasypostShipmentId]     = useState<string | null>(null)
+  const [smAddingItem, setSmAddingItem]                     = useState(false)
+
+  function closeShippingModal() {
+    setShowShippingModal(false)
+    setSmWeight('')
+    setSmLength('')
+    setSmWidth('')
+    setSmHeight('')
+    setSmCity('')
+    setSmState('')
+    setSmZip('')
+    setSmRates([])
+    setSmRatesError(null)
+    setSmSelectedRateId(null)
+    setSmEasypostShipmentId(null)
+  }
+
+  async function handleShippingGetRates() {
+    if (!smZip) { setSmRatesError('Enter a destination ZIP code.'); return }
+    const w = parseFloat(smWeight)
+    if (isNaN(w) || w <= 0) { setSmRatesError('Enter package weight (lbs).'); return }
+    const l = parseFloat(smLength), wi = parseFloat(smWidth), h = parseFloat(smHeight)
+    if (isNaN(l) || isNaN(wi) || isNaN(h)) { setSmRatesError('Enter all three dimensions (L × W × H).'); return }
+
+    setSmRatesLoading(true)
+    setSmRatesError(null)
+    setSmRates([])
+    setSmSelectedRateId(null)
+    setSmEasypostShipmentId(null)
+
+    try {
+      const res = await fetch('/api/shipping/rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_address: {
+            name: 'Customer',
+            street1: '1 Main St',
+            city: smCity || smZip,
+            state: smState || 'TX',
+            zip: smZip,
+            country: 'US',
+          },
+          parcel: { length: l, width: wi, height: h, weight: w * 16 },
+        }),
+      })
+      const data = await res.json() as { shipmentId?: string; rates?: EasypostRate[]; error?: string }
+      if (!res.ok) throw new Error(data.error ?? 'Failed to fetch rates')
+      setSmEasypostShipmentId(data.shipmentId ?? null)
+      setSmRates(data.rates ?? [])
+    } catch (err: unknown) {
+      setSmRatesError(err instanceof Error ? err.message : 'Failed to fetch rates')
+    } finally {
+      setSmRatesLoading(false)
+    }
+  }
+
+  async function handleAddShippingLineItem() {
+    const rate = smRates.find(r => r.id === smSelectedRateId)
+    if (!rate) return
+    setSmAddingItem(true)
+    try {
+      const cents = Math.round(parseFloat(rate.rate) * 100)
+      const desc = `Shipping – ${rate.carrier} ${rate.service}${rate.delivery_days != null ? ` (${rate.delivery_days} day${rate.delivery_days !== 1 ? 's' : ''})` : ''}`
+      const res = await addQuoteLineItem(quote.id, orgId, orgSlug, {
+        product_id: null,
+        description: desc,
+        width: null,
+        height: null,
+        quantity: 1,
+        unit_price: cents,
+        discount_percent: 0,
+        taxable: false,
+      })
+      if (res.error || !res.id) {
+        flash(res.error ?? 'Failed to add shipping line item', 'error')
+        return
+      }
+      setItems(cur => [...cur, {
+        id: res.id!,
+        product_id: null,
+        description: desc,
+        width: null,
+        height: null,
+        quantity: 1,
+        unit_price: cents,
+        discount_percent: 0,
+        total_price: cents,
+        taxable: false,
+        sort_order: cur.length,
+        material_name: null,
+      }])
+      flash(`Added ${desc}`)
+      closeShippingModal()
+    } finally {
+      setSmAddingItem(false)
+    }
+  }
 
   const productMap = useMemo(() => {
     const m = new Map<string, ProductOption>()
@@ -783,13 +897,22 @@ export default function QuoteDetailClient({
         <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
           <h2 className="text-base font-bold text-gray-900">Line Items</h2>
           {isEditing && !showAddForm && (
-            <button
-              type="button"
-              onClick={handleShowAddForm}
-              className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-            >
-              + Add Line Item
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowShippingModal(true)}
+                className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
+              >
+                + Add Shipping
+              </button>
+              <button
+                type="button"
+                onClick={handleShowAddForm}
+                className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+              >
+                + Add Line Item
+              </button>
+            </div>
           )}
         </div>
 
@@ -1309,6 +1432,108 @@ export default function QuoteDetailClient({
           </div>
         )}
       </div>
+
+      {/* Add Shipping Modal */}
+      {showShippingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={e => { if (e.target === e.currentTarget) closeShippingModal() }}>
+          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-base font-bold text-gray-900">Add Shipping Line Item</h2>
+              <button type="button" onClick={closeShippingModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {/* Package details */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-500">Weight (lbs) *</label>
+                  <input type="number" step="0.01" min="0" value={smWeight} onChange={e => setSmWeight(e.target.value)} placeholder="2.5" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">Length (in) *</label>
+                  <input type="number" step="0.1" min="0" value={smLength} onChange={e => setSmLength(e.target.value)} placeholder="12" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">Width (in) *</label>
+                  <input type="number" step="0.1" min="0" value={smWidth} onChange={e => setSmWidth(e.target.value)} placeholder="8" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">Height (in) *</label>
+                  <input type="number" step="0.1" min="0" value={smHeight} onChange={e => setSmHeight(e.target.value)} placeholder="4" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                </div>
+              </div>
+
+              {/* Destination */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-3">
+                  <label className="block text-xs font-medium text-gray-500">Destination — City, State, ZIP</label>
+                </div>
+                <div>
+                  <input type="text" value={smCity} onChange={e => setSmCity(e.target.value)} placeholder="City" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                </div>
+                <div>
+                  <input type="text" maxLength={2} value={smState} onChange={e => setSmState(e.target.value.toUpperCase())} placeholder="TX" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                </div>
+                <div>
+                  <input type="text" value={smZip} onChange={e => setSmZip(e.target.value)} placeholder="ZIP *" className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleShippingGetRates}
+                disabled={smRatesLoading}
+                className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {smRatesLoading ? 'Fetching rates…' : 'Get Live Rates'}
+              </button>
+
+              {smRatesError && <p className="text-sm text-red-600">{smRatesError}</p>}
+
+              {smRates.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {smRates.map(r => (
+                    <label
+                      key={r.id}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
+                        smSelectedRateId === r.id
+                          ? 'border-indigo-400 bg-indigo-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-indigo-200'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="sm_rate"
+                        value={r.id}
+                        checked={smSelectedRateId === r.id}
+                        onChange={() => setSmSelectedRateId(r.id)}
+                        className="accent-indigo-600"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-semibold text-sm text-gray-900">{r.carrier} {r.service}</span>
+                        {r.delivery_days != null && (
+                          <span className="ml-2 text-xs text-gray-500">{r.delivery_days} day{r.delivery_days !== 1 ? 's' : ''}</span>
+                        )}
+                      </div>
+                      <span className="text-sm font-bold tabular-nums text-gray-900">${parseFloat(r.rate).toFixed(2)}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {smSelectedRateId && (
+                <button
+                  type="button"
+                  onClick={handleAddShippingLineItem}
+                  disabled={smAddingItem}
+                  className="w-full rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+                >
+                  {smAddingItem ? 'Adding…' : 'Add to Quote'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <SendEmailModal
         open={showEmailModal}

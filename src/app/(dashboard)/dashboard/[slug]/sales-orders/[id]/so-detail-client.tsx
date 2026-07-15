@@ -13,6 +13,7 @@ import {
 } from '../format'
 import SoCustomerPicker from './so-customer-picker'
 import { saveShipment, deleteShipment } from './shipments/actions-sr'
+import type { EasypostRate } from '@/lib/easypost'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New',
@@ -169,18 +170,39 @@ export default function SoDetailClient({
   // Shipment panel state
   const [showShipForm, setShowShipForm] = useState(false)
   const [editShipmentId, setEditShipmentId] = useState<string | null>(null)
-  // Dimension auto-fill state
-  const [shipProfileId, setShipProfileId] = useState('')
-  const [shipDimL, setShipDimL] = useState('')
-  const [shipDimW, setShipDimW] = useState('')
-  const [shipDimH, setShipDimH] = useState('')
+
+  // Controlled shipment form fields (needed for auto-fill + buy-label)
+  const [shipProfileId, setShipProfileId]     = useState('')
+  const [shipDimL, setShipDimL]               = useState('')
+  const [shipDimW, setShipDimW]               = useState('')
+  const [shipDimH, setShipDimH]               = useState('')
+  const [shipWeightLbs, setShipWeightLbs]     = useState('')
+  const [shipStatus, setShipStatus]           = useState('pending')
+  const [shipTracking, setShipTracking]       = useState('')
+  const [shipActualCost, setShipActualCost]   = useState('')
+  const [shipLabelUrl, setShipLabelUrl]       = useState('')
+
+  // Ship-to address for rate shopping
+  const [shipToName, setShipToName]   = useState('')
+  const [shipToStreet, setShipToStreet] = useState('')
+  const [shipToCity, setShipToCity]   = useState('')
+  const [shipToState, setShipToState] = useState('')
+  const [shipToZip, setShipToZip]     = useState('')
+
+  // EasyPost live rates state
+  const [ratesLoading, setRatesLoading]             = useState(false)
+  const [fetchedRates, setFetchedRates]             = useState<EasypostRate[]>([])
+  const [ratesError, setRatesError]                 = useState<string | null>(null)
+  const [selectedRateId, setSelectedRateId]         = useState<string | null>(null)
+  const [easypostShipmentId, setEasypostShipmentId] = useState<string | null>(null)
+  const [buyingLabel, setBuyingLabel]               = useState(false)
 
   useEffect(() => {
     if (shipmentSaved) flash('Shipment saved.', 'success')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Sync dims when switching edit target
+  // Sync controlled fields when switching edit target
   useEffect(() => {
     if (editShipmentId) {
       const s = shipments.find(s => s.id === editShipmentId)
@@ -188,6 +210,11 @@ export default function SoDetailClient({
       setShipDimL(s?.length_in != null ? String(s.length_in) : '')
       setShipDimW(s?.width_in != null ? String(s.width_in) : '')
       setShipDimH(s?.height_in != null ? String(s.height_in) : '')
+      setShipWeightLbs(s?.weight_lbs != null ? String(s.weight_lbs) : '')
+      setShipStatus(s?.status ?? 'pending')
+      setShipTracking(s?.tracking_number ?? '')
+      setShipActualCost(s?.actual_cost != null ? String(s.actual_cost) : '')
+      setShipLabelUrl(s?.label_url ?? '')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editShipmentId])
@@ -199,6 +226,20 @@ export default function SoDetailClient({
     setShipDimL('')
     setShipDimW('')
     setShipDimH('')
+    setShipWeightLbs('')
+    setShipStatus('pending')
+    setShipTracking('')
+    setShipActualCost('')
+    setShipLabelUrl('')
+    setShipToName('')
+    setShipToStreet('')
+    setShipToCity('')
+    setShipToState('')
+    setShipToZip('')
+    setFetchedRates([])
+    setRatesError(null)
+    setSelectedRateId(null)
+    setEasypostShipmentId(null)
   }
 
   function handleProfileSelect(profileId: string) {
@@ -216,6 +257,77 @@ export default function SoDetailClient({
   function flash(message: string, type: 'success' | 'error' = 'success') {
     setToast({ message, type })
     setTimeout(() => setToast(null), 4000)
+  }
+
+  async function handleGetRates() {
+    if (!shipToZip) { setRatesError('Enter a destination ZIP code.'); return }
+    const wLbs = parseFloat(shipWeightLbs)
+    if (isNaN(wLbs) || wLbs <= 0) { setRatesError('Enter weight (lbs) before getting rates.'); return }
+    const l = parseFloat(shipDimL), w = parseFloat(shipDimW), h = parseFloat(shipDimH)
+    if (isNaN(l) || isNaN(w) || isNaN(h)) { setRatesError('Enter box dimensions (L×W×H) before getting rates.'); return }
+
+    setRatesLoading(true)
+    setRatesError(null)
+    setFetchedRates([])
+    setSelectedRateId(null)
+    setEasypostShipmentId(null)
+
+    try {
+      const res = await fetch('/api/shipping/rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_address: {
+            name: shipToName || 'Recipient',
+            street1: shipToStreet || '1 Main St',
+            city: shipToCity || shipToZip,
+            state: shipToState || 'TX',
+            zip: shipToZip,
+            country: 'US',
+          },
+          parcel: {
+            length: l,
+            width: w,
+            height: h,
+            weight: wLbs * 16, // convert lbs → oz for EasyPost
+          },
+        }),
+      })
+      const data = await res.json() as { shipmentId?: string; rates?: EasypostRate[]; error?: string }
+      if (!res.ok) throw new Error(data.error ?? 'Failed to fetch rates')
+      setEasypostShipmentId(data.shipmentId ?? null)
+      setFetchedRates(data.rates ?? [])
+    } catch (err: unknown) {
+      setRatesError(err instanceof Error ? err.message : 'Failed to fetch rates')
+    } finally {
+      setRatesLoading(false)
+    }
+  }
+
+  async function handleBuyLabel() {
+    if (!easypostShipmentId || !selectedRateId) return
+    setBuyingLabel(true)
+    try {
+      const res = await fetch('/api/shipping/buy-label', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ easypostShipmentId, rateId: selectedRateId }),
+      })
+      const data = await res.json() as {
+        trackingCode?: string; labelUrl?: string;
+        actualCost?: number; carrier?: string; error?: string
+      }
+      if (!res.ok) throw new Error(data.error ?? 'Failed to purchase label')
+      setShipTracking(data.trackingCode ?? '')
+      setShipLabelUrl(data.labelUrl ?? '')
+      setShipActualCost(data.actualCost != null ? String(data.actualCost) : '')
+      setShipStatus('shipped')
+      flash('Label purchased! Click Save to record this shipment.', 'success')
+    } catch (err: unknown) {
+      flash(err instanceof Error ? err.message : 'Failed to purchase label', 'error')
+    } finally {
+      setBuyingLabel(false)
+    }
   }
 
   async function handleCreateInvoice() {
@@ -425,8 +537,9 @@ export default function SoDetailClient({
                   <input type="hidden" name="orgId" value={orgId} />
                   <input type="hidden" name="orgSlug" value={orgSlug} />
                   <input type="hidden" name="soId" value={salesOrder.id} />
+                  <input type="hidden" name="label_url" value={shipLabelUrl} />
 
-                  {/* Row 1: Method + Status */}
+                  {/* Method + Status */}
                   <div>
                     <label className={lbl}>Shipping Method</label>
                     <select name="shipping_method_id" defaultValue={editShip?.shipping_method_id ?? ''} className={inp}>
@@ -438,7 +551,7 @@ export default function SoDetailClient({
                   </div>
                   <div>
                     <label className={lbl}>Status</label>
-                    <select name="status" defaultValue={editShip?.status ?? 'pending'} className={inp}>
+                    <select name="status" value={shipStatus} onChange={e => setShipStatus(e.target.value)} className={inp}>
                       <option value="pending">Pending</option>
                       <option value="shipped">Shipped</option>
                       <option value="delivered">Delivered</option>
@@ -446,17 +559,17 @@ export default function SoDetailClient({
                     </select>
                   </div>
 
-                  {/* Row 2: Tracking + Weight */}
+                  {/* Tracking + Weight */}
                   <div>
                     <label className={lbl}>Tracking Number</label>
-                    <input type="text" name="tracking_number" defaultValue={editShip?.tracking_number ?? ''} placeholder="1Z999AA10123456784" className={inp} />
+                    <input type="text" name="tracking_number" value={shipTracking} onChange={e => setShipTracking(e.target.value)} placeholder="1Z999AA10123456784" className={inp} />
                   </div>
                   <div>
                     <label className={lbl}>Weight (lbs)</label>
-                    <input type="number" step="0.01" min="0" name="weight_lbs" defaultValue={editShip?.weight_lbs ?? ''} className={inp} />
+                    <input type="number" step="0.01" min="0" name="weight_lbs" value={shipWeightLbs} onChange={e => setShipWeightLbs(e.target.value)} className={inp} />
                   </div>
 
-                  {/* Row 3: Dates */}
+                  {/* Dates */}
                   <div>
                     <label className={lbl}>Shipped Date</label>
                     <input type="date" name="shipped_date" defaultValue={editShip?.shipped_date ?? ''} className={inp} />
@@ -466,25 +579,20 @@ export default function SoDetailClient({
                     <input type="date" name="estimated_delivery" defaultValue={editShip?.estimated_delivery ?? ''} className={inp} />
                   </div>
 
-                  {/* Row 4: Rates */}
+                  {/* Rates */}
                   <div>
                     <label className={lbl}>Quoted Rate ($)</label>
                     <input type="number" step="0.01" min="0" name="quoted_rate" defaultValue={editShip?.quoted_rate ?? ''} className={inp} />
                   </div>
                   <div>
                     <label className={lbl}>Actual Cost ($)</label>
-                    <input type="number" step="0.01" min="0" name="actual_cost" defaultValue={editShip?.actual_cost ?? ''} className={inp} />
+                    <input type="number" step="0.01" min="0" name="actual_cost" value={shipActualCost} onChange={e => setShipActualCost(e.target.value)} className={inp} />
                   </div>
 
-                  {/* Row 5: Profile (auto-fills dims) */}
+                  {/* Profile (auto-fills dims) */}
                   <div className="sm:col-span-2">
                     <label className={lbl}>Box Profile <span className="text-gray-400 font-normal">(auto-fills dimensions)</span></label>
-                    <select
-                      name="shipping_profile_id"
-                      value={shipProfileId}
-                      onChange={e => handleProfileSelect(e.target.value)}
-                      className={inp}
-                    >
+                    <select name="shipping_profile_id" value={shipProfileId} onChange={e => handleProfileSelect(e.target.value)} className={inp}>
                       <option value="">— Select profile —</option>
                       {shippingProfiles.filter(p => p.is_active).map(p => (
                         <option key={p.id} value={p.id}>
@@ -494,7 +602,7 @@ export default function SoDetailClient({
                     </select>
                   </div>
 
-                  {/* Row 6: Dimensions */}
+                  {/* Dimensions */}
                   <div className="sm:col-span-2 grid grid-cols-3 gap-3">
                     <div>
                       <label className={lbl}>Length (in)</label>
@@ -510,10 +618,112 @@ export default function SoDetailClient({
                     </div>
                   </div>
 
-                  {/* Row 7: Notes */}
+                  {/* Notes */}
                   <div className="sm:col-span-2">
                     <label className={lbl}>Notes</label>
                     <textarea name="notes" rows={2} defaultValue={editShip?.notes ?? ''} className={inp + ' resize-y'} />
+                  </div>
+
+                  {/* ── Live Rates section ─────────────────────────────── */}
+                  <div className="sm:col-span-2">
+                    <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
+                      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-indigo-700">
+                        Live Rates via EasyPost <span className="font-normal text-indigo-500">(optional)</span>
+                      </p>
+
+                      {/* Ship-to address */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
+                        <div className="sm:col-span-2">
+                          <label className={lbl}>Recipient Name</label>
+                          <input type="text" value={shipToName} onChange={e => setShipToName(e.target.value)} placeholder="Customer Name" className={inp} />
+                        </div>
+                        <div className="sm:col-span-3">
+                          <label className={lbl}>Street Address</label>
+                          <input type="text" value={shipToStreet} onChange={e => setShipToStreet(e.target.value)} placeholder="123 Main St" className={inp} />
+                        </div>
+                        <div>
+                          <label className={lbl}>City</label>
+                          <input type="text" value={shipToCity} onChange={e => setShipToCity(e.target.value)} placeholder="City" className={inp} />
+                        </div>
+                        <div>
+                          <label className={lbl}>State</label>
+                          <input type="text" maxLength={2} value={shipToState} onChange={e => setShipToState(e.target.value.toUpperCase())} placeholder="TX" className={inp} />
+                        </div>
+                        <div>
+                          <label className={lbl}>ZIP *</label>
+                          <input type="text" value={shipToZip} onChange={e => setShipToZip(e.target.value)} placeholder="78041" className={inp} />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleGetRates}
+                        disabled={ratesLoading}
+                        className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {ratesLoading ? 'Fetching rates…' : 'Get Live Rates'}
+                      </button>
+
+                      {ratesError && (
+                        <p className="mt-2 text-sm text-red-600">{ratesError}</p>
+                      )}
+
+                      {fetchedRates.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {fetchedRates.map(r => (
+                            <label
+                              key={r.id}
+                              className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
+                                selectedRateId === r.id
+                                  ? 'border-indigo-400 bg-indigo-50 shadow-sm'
+                                  : 'border-gray-200 bg-white hover:border-indigo-200'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="ep_rate"
+                                value={r.id}
+                                checked={selectedRateId === r.id}
+                                onChange={() => setSelectedRateId(r.id)}
+                                className="accent-indigo-600"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <span className="font-semibold text-sm text-gray-900">{r.carrier} {r.service}</span>
+                                {r.delivery_days != null && (
+                                  <span className="ml-2 text-xs text-gray-500">{r.delivery_days} day{r.delivery_days !== 1 ? 's' : ''}</span>
+                                )}
+                              </div>
+                              <span className="text-sm font-bold tabular-nums text-gray-900">${parseFloat(r.rate).toFixed(2)}</span>
+                            </label>
+                          ))}
+
+                          {selectedRateId && !shipLabelUrl && (
+                            <button
+                              type="button"
+                              onClick={handleBuyLabel}
+                              disabled={buyingLabel}
+                              className="mt-2 rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+                            >
+                              {buyingLabel ? 'Purchasing…' : 'Buy Label'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {shipLabelUrl && (
+                        <div className="mt-3 flex items-center gap-3">
+                          <span className="text-sm text-green-700 font-medium">✓ Label purchased</span>
+                          <a
+                            href={shipLabelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Print Label ↗
+                          </a>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="sm:col-span-2 flex gap-2">
@@ -573,9 +783,14 @@ export default function SoDetailClient({
                                 : <span className="text-gray-300">—</span>}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap">
-                            <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${SHIP_STATUS_STYLES[s.status] ?? 'bg-gray-100 text-gray-700'}`}>
-                              {SHIP_STATUS_LABELS[s.status] ?? s.status}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${SHIP_STATUS_STYLES[s.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                                {SHIP_STATUS_LABELS[s.status] ?? s.status}
+                              </span>
+                              {s.label_url && (
+                                <a href={s.label_url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline">Label ↗</a>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-right whitespace-nowrap">
                             <button
