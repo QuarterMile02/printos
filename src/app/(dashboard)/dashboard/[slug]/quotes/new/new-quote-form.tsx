@@ -119,7 +119,9 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
 
   // ── Form fields ──────────────────────────────────────────────────────────
   const [title, setTitle]                       = useState('')
-  const [salesRepId, setSalesRepId]             = useState(currentUserId ?? '')
+  // Default to currentUserId only if they're actually in the teamMembers list
+  const defaultRepId = teamMembers.some(m => m.id === currentUserId) ? (currentUserId ?? '') : ''
+  const [salesRepId, setSalesRepId]             = useState(defaultRepId)
   const [dueDate, setDueDate]                   = useState('')
   const [poNumber, setPoNumber]                 = useState('')
   const [installAddress, setInstallAddress]     = useState('')
@@ -158,7 +160,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
     const newErrors: Record<string, string> = {}
     if (!customerId)   newErrors.customerId = 'Customer is required.'
     if (!title.trim()) newErrors.title      = 'Title is required.'
-    if (!salesRepId)   newErrors.salesRepId = 'Sales Rep is required.'
+    if (!salesRepId || !teamMembers.some(m => m.id === salesRepId)) newErrors.salesRepId = 'Sales Rep is required.'
     if (Object.keys(newErrors).length) { setErrors(newErrors); return }
     setErrors({})
 

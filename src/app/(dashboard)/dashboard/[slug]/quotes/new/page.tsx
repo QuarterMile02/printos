@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import NewQuoteForm from './new-quote-form'
@@ -20,18 +20,48 @@ export default async function NewQuotePage({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
   const currentUserId = user?.id ?? null
 
-  // Team members for the sales rep dropdown
-  type TeamMember = { user_id: string; role: string; profiles: { full_name: string | null; email: string } | null }
-  const { data: teamRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role, profiles(full_name, email)')
-    .eq('organization_id', org.id)
-    .in('role', ['owner', 'admin', 'member']) as { data: TeamMember[] | null; error: unknown }
+  // ── Team members for the sales rep dropdown ──────────────────────────────
+  // Must use service client for profiles — the only RLS SELECT policy on
+  // profiles is `auth.uid() = id` (migration 001), so a regular client can
+  // only see its own row. organization_members.user_id also FKs to auth.users,
+  // not to profiles, so PostgREST embedded joins don't work here.
 
-  const teamMembers = (teamRows ?? []).map((m) => ({
-    id: m.user_id,
-    name: m.profiles?.full_name || m.profiles?.email || m.user_id,
-  }))
+  type RawMemberRow = { user_id: string }
+  const { data: rawMembers } = await supabase
+    .from('organization_members')
+    .select('user_id')
+    .eq('organization_id', org.id)
+    .in('role', ['owner', 'admin', 'member']) as { data: RawMemberRow[] | null; error: unknown }
+
+  const memberUserIds = (rawMembers ?? []).map(m => m.user_id)
+
+  const service = createServiceClient()
+  const nameMap = new Map<string, string>()
+
+  if (memberUserIds.length > 0) {
+    // Fetch full_name from profiles via service client (bypasses RLS)
+    type ProfileRow = { id: string; full_name: string | null }
+    const { data: profileRows } = await service
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    for (const p of profileRows ?? []) {
+      if (p.full_name) nameMap.set(p.id, p.full_name)
+    }
+
+    // Fetch emails from auth.users as fallback for members without a full_name
+    const missing = memberUserIds.filter(id => !nameMap.has(id))
+    if (missing.length > 0) {
+      const { data: { users: authUsers } } = await service.auth.admin.listUsers()
+      for (const u of authUsers ?? []) {
+        if (!nameMap.has(u.id) && u.email) nameMap.set(u.id, u.email)
+      }
+    }
+  }
+
+  const teamMembers = memberUserIds
+    .map(id => ({ id, name: nameMap.get(id) ?? id }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   return (
     <div className="p-8 max-w-3xl">
