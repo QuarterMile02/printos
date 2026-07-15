@@ -47,6 +47,10 @@ type SalesOrder = {
     company_name: string | null
     email: string | null
     phone: string | null
+    street: string | null
+    city: string | null
+    state: string | null
+    zip: string | null
   } | null
 }
 
@@ -512,7 +516,19 @@ export default function SoDetailClient({
                 {!panelOpen && (
                   <button
                     type="button"
-                    onClick={() => { setShowShipForm(true); setEditShipmentId(null) }}
+                    onClick={() => {
+                      setShowShipForm(true)
+                      setEditShipmentId(null)
+                      // Pre-fill ship-to from customer address
+                      const c = salesOrder.customer
+                      if (c) {
+                        setShipToName(c.company_name || `${c.first_name} ${c.last_name}`)
+                        setShipToStreet(c.street ?? '')
+                        setShipToCity(c.city ?? '')
+                        setShipToState(c.state ?? '')
+                        setShipToZip(c.zip ?? '')
+                      }
+                    }}
                     className="rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
                   >
                     + Add Shipment
