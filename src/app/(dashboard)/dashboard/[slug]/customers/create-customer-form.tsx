@@ -266,11 +266,11 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Lbl required>First name</Lbl>
-                      <input name="first_name" type="text" required maxLength={80} placeholder="Jane" className={ic} />
+                      <input name="first_name" type="text" maxLength={80} placeholder="Jane" className={ic} />
                     </div>
                     <div>
                       <Lbl required>Last name</Lbl>
-                      <input name="last_name" type="text" required maxLength={80} placeholder="Smith" className={ic} />
+                      <input name="last_name" type="text" maxLength={80} placeholder="Smith" className={ic} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -432,7 +432,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                 <button type="button" onClick={() => setOpen(false)} disabled={isPending} className="rounded-md px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit" disabled={isPending} className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+                <button type="submit" disabled={isPending} className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50" onClick={() => console.log('Submit clicked')}>
                   {isPending ? 'Saving…' : 'Add Customer'}
                 </button>
               </div>
