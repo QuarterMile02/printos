@@ -168,7 +168,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
               </button>
             </div>
 
-            <form ref={formRef} action={handleSubmit}>
+            <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(new FormData(e.currentTarget)); }}>
               <div className="px-6 py-5 space-y-6">
                 {error && (
                   <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
@@ -432,7 +432,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                 <button type="button" onClick={() => setOpen(false)} disabled={isPending} className="rounded-md px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">
                   Cancel
                 </button>
-                <button type="submit" disabled={isPending} className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50" onClick={() => console.log('Submit clicked')}>
+                <button type="submit" disabled={isPending} className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
                   {isPending ? 'Saving…' : 'Add Customer'}
                 </button>
               </div>
