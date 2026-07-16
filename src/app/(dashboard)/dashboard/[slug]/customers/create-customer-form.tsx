@@ -143,12 +143,14 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
 
   return (
     <>
-      <button
-        onClick={() => { setOpen(true); setError(null) }}
-        className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-qm-fuchsia focus:ring-offset-2"
-      >
-        Add Customer
-      </button>
+      {!initialOpen && (
+        <button
+          onClick={() => { setOpen(true); setError(null) }}
+          className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-qm-fuchsia focus:ring-offset-2"
+        >
+          Add Customer
+        </button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-8 px-4">
@@ -159,7 +161,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Add Customer</h2>
-                <p className="mt-0.5 text-sm text-gray-500">Company name, contact, and phone are required.</p>
+                <p className="mt-0.5 text-sm text-gray-500">First and last name are required.</p>
               </div>
               <button type="button" onClick={() => setOpen(false)} disabled={isPending} className="text-gray-400 hover:text-gray-600">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -168,7 +170,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
               </button>
             </div>
 
-            <form ref={formRef} onSubmit={(e) => { e.preventDefault(); handleSubmit(new FormData(e.currentTarget)); }}>
+            <form ref={formRef} onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); handleSubmit(new FormData(e.currentTarget)); }}>
               <div className="px-6 py-5 space-y-6">
                 {error && (
                   <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{error}</div>
