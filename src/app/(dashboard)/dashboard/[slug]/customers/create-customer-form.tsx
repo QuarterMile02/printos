@@ -13,6 +13,7 @@ type Props = {
   orgSlug: string
   salesReps: SalesRep[]
   initialOpen?: boolean
+  onSuccess?: () => void
 }
 
 const INDUSTRY_OPTIONS = [
@@ -46,7 +47,7 @@ function SectionHead({ title }: { title: string }) {
   return <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 border-b border-gray-100 pb-1.5 mb-3">{title}</p>
 }
 
-export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialOpen = false }: Props) {
+export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialOpen = false, onSuccess }: Props) {
   const [open, setOpen] = useState(initialOpen)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -135,6 +136,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
       } else {
         resetAll()
         setOpen(false)
+        onSuccess?.()
       }
     })
   }

@@ -3,11 +3,12 @@
 import { useState, useTransition, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createQuote } from '../actions'
-import { searchCustomers, createCustomer, saveContact } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
+import { searchCustomers, saveContact } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
 import {
   fetchContactsForCustomer,
   type ContactOption,
 } from '@/app/(dashboard)/dashboard/[slug]/assign-actions'
+import CreateCustomerForm from '@/app/(dashboard)/dashboard/[slug]/customers/create-customer-form'
 
 type CustomerResult = {
   id: string
@@ -44,16 +45,10 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchSeqRef = useRef(0)
   const custDropRef  = useRef<HTMLDivElement>(null)
+  const [showCustModal, setShowCustModal] = useState(false)
+  const [custCreatedMsg, setCustCreatedMsg] = useState('')
 
-  // ── Inline new customer ──────────────────────────────────────────────────
-  const [showNewCust, setShowNewCust]         = useState(false)
-  const [newCustCompany, setNewCustCompany]   = useState('')
-  const [newCustFirst, setNewCustFirst]       = useState('')
-  const [newCustLast, setNewCustLast]         = useState('')
-  const [newCustEmail, setNewCustEmail]       = useState('')
-  const [newCustPhone, setNewCustPhone]       = useState('')
-  const [newCustSaving, setNewCustSaving]     = useState(false)
-  const [newCustError, setNewCustError]       = useState('')
+  // ── New customer modal ──────────────────────────────────────────────────
 
   // ── Inline new contact ───────────────────────────────────────────────────
   const [showNewContact, setShowNewContact]       = useState(false)
@@ -67,18 +62,18 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
     function handle(e: MouseEvent) {
       if (custDropRef.current && !custDropRef.current.contains(e.target as Node)) {
         setCustOpen(false)
-        if (!showNewCust) return
+        if (!showCustModal) return
       }
     }
     document.addEventListener('mousedown', handle)
     return () => document.removeEventListener('mousedown', handle)
-  }, [showNewCust])
+  }, [showCustModal])
 
   function handleCustSearchChange(val: string) {
     setCustSearch(val)
     setCustomerId('')
     setCustomerDisplay('')
-    setShowNewCust(false)
+    setShowCustModal(false)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     const term = val.trim()
     if (term.length < 2) { setCustResults([]); setIsSearching(false); return }
@@ -98,7 +93,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
     setCustSearch('')
     setCustOpen(false)
     setCustResults([])
-    setShowNewCust(false)
+    setShowCustModal(false)
     setContactId('')
     setContactInputValue('')
     setContactOptions([])
@@ -110,34 +105,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
   function clearCustomer() {
     setCustomerId(''); setCustomerDisplay(''); setCustSearch('')
     setContactId(''); setContactInputValue(''); setContactOptions([])
-    setShowNewCust(false); setShowNewContact(false)
-    setNewCustCompany(''); setNewCustFirst(''); setNewCustLast('')
-    setNewCustEmail(''); setNewCustPhone(''); setNewCustError('')
-  }
-
-  async function handleCreateCustomer() {
-    if (!newCustFirst.trim()) { setNewCustError('First name is required.'); return }
-    if (!newCustLast.trim())  { setNewCustError('Last name is required.');  return }
-    setNewCustError('')
-    setNewCustSaving(true)
-    const fd = new FormData()
-    fd.set('first_name', newCustFirst.trim())
-    fd.set('last_name',  newCustLast.trim())
-    if (newCustCompany.trim()) fd.set('company_name', newCustCompany.trim())
-    if (newCustEmail.trim())   fd.set('email', newCustEmail.trim())
-    if (newCustPhone.trim())   fd.set('phone', newCustPhone.trim())
-    fd.set('status', 'lead')
-    const result = await createCustomer(orgId, orgSlug, fd)
-    if (result.error) { setNewCustError(result.error); setNewCustSaving(false); return }
-    // Find the newly created customer
-    const term = newCustCompany.trim() || `${newCustFirst.trim()} ${newCustLast.trim()}`
-    const rows = await searchCustomers(orgId, term, {})
-    const match = rows.find(r => r.first_name === newCustFirst.trim() && r.last_name === newCustLast.trim())
-    if (match) selectCustomer(match.id, `${match.first_name} ${match.last_name}`, match.company_name)
-    setNewCustSaving(false)
-    setShowNewCust(false)
-    setNewCustCompany(''); setNewCustFirst(''); setNewCustLast('')
-    setNewCustEmail(''); setNewCustPhone('')
+    setShowCustModal(false); setShowNewContact(false); setCustCreatedMsg('')
   }
 
   // ── Contact ──────────────────────────────────────────────────────────────
@@ -306,7 +274,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
         {errors.customerId && <p className="mt-1 text-xs text-red-500">{errors.customerId}</p>}
 
         {/* Search dropdown */}
-        {custOpen && !customerId && !showNewCust && (
+        {custOpen && !customerId && !showCustModal && (
           <div className="absolute z-20 left-0 top-full mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
             <div className="max-h-52 overflow-y-auto">
               {custResults.length > 0 ? (
@@ -331,7 +299,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
             <div className="border-t border-gray-100">
               <button
                 type="button"
-                onClick={() => { setShowNewCust(true); setCustOpen(false) }}
+                onClick={() => { setShowCustModal(true); setCustOpen(false) }}
                 className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-qm-lime hover:bg-qm-lime-light transition-colors"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -343,34 +311,23 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
           </div>
         )}
 
-        {/* Inline new customer form */}
-        {showNewCust && !customerId && (
-          <div className="mt-2 rounded-md border border-qm-lime/40 bg-green-50 p-3 space-y-2">
-            <p className="text-xs font-semibold text-gray-700">New Customer</p>
-            <input type="text" placeholder="Company name (optional)" value={newCustCompany}
-              onChange={e => setNewCustCompany(e.target.value)} className={inpSm} autoFocus />
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" placeholder="First name *" value={newCustFirst}
-                onChange={e => setNewCustFirst(e.target.value)} className={inpSm} />
-              <input type="text" placeholder="Last name *" value={newCustLast}
-                onChange={e => setNewCustLast(e.target.value)} className={inpSm} />
-            </div>
-            <input type="text" placeholder="Email" value={newCustEmail}
-              onChange={e => setNewCustEmail(e.target.value)} className={inpSm} />
-            <input type="text" placeholder="Phone" value={newCustPhone}
-              onChange={e => setNewCustPhone(e.target.value)} className={inpSm} />
-            {newCustError && <p className="text-xs text-red-500">{newCustError}</p>}
-            <div className="flex gap-2 pt-1">
-              <button type="button" onClick={handleCreateCustomer} disabled={newCustSaving}
-                className="rounded-md bg-qm-fuchsia px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-50">
-                {newCustSaving ? 'Saving…' : 'Create & Select'}
-              </button>
-              <button type="button" onClick={() => { setShowNewCust(false); setNewCustError('') }}
-                className="rounded-md px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100">
-                Cancel
-              </button>
-            </div>
-          </div>
+        {/* Customer created success message */}
+        {custCreatedMsg && (
+          <div className="mt-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">{custCreatedMsg}</div>
+        )}
+        {/* Full Add Customer modal */}
+        {showCustModal && (
+          <CreateCustomerForm
+            orgId={orgId}
+            orgSlug={orgSlug}
+            salesReps={teamMembers.map(m => ({ id: m.id, full_name: m.name }))}
+            initialOpen={true}
+            onSuccess={() => {
+              setShowCustModal(false)
+              setCustCreatedMsg('Customer created! Search by name above to select them.')
+              setTimeout(() => setCustCreatedMsg(''), 8000)
+            }}
+          />
         )}
       </div>
 
