@@ -180,7 +180,6 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                   <input
                     name="company_name"
                     type="text"
-                    required
                     autoFocus
                     maxLength={120}
                     placeholder="Acme Corp"
@@ -281,7 +280,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                     </div>
                     <div>
                       <Lbl>Website</Lbl>
-                      <input name="website" type="url" maxLength={200} placeholder="https://…" className={ic} />
+                      <input name="website" type="text" maxLength={200} placeholder="https://…" className={ic} />
                     </div>
                   </div>
                 </div>
