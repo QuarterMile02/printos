@@ -14,9 +14,12 @@ export default async function ForgotPasswordPage({
     const email = formData.get('email') as string
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/reset-password`,
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback?type=recovery`,
     })
-    if (error) redirect(`/forgot-password?error=${encodeURIComponent(error.message)}`)
+    if (error) {
+      console.error('[forgot-password] resetPasswordForEmail error:', error)
+      redirect(`/forgot-password?error=${encodeURIComponent(error.message)}`)
+    }
     redirect(`/forgot-password?success=${encodeURIComponent(email)}`)
   }
 
