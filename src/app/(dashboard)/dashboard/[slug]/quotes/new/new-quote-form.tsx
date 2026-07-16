@@ -9,6 +9,7 @@ import {
   type ContactOption,
 } from '@/app/(dashboard)/dashboard/[slug]/assign-actions'
 import CreateCustomerForm from '@/app/(dashboard)/dashboard/[slug]/customers/create-customer-form'
+import { createPortal } from 'react-dom'
 
 type CustomerResult = {
   id: string
@@ -315,8 +316,8 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
         {custCreatedMsg && (
           <div className="mt-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">{custCreatedMsg}</div>
         )}
-        {/* Full Add Customer modal */}
-        {showCustModal && (
+        {/* Full Add Customer modal — rendered via portal to avoid nested form issue */}
+        {showCustModal && typeof document !== 'undefined' && createPortal(
           <CreateCustomerForm
             orgId={orgId}
             orgSlug={orgSlug}
@@ -327,7 +328,8 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
               setCustCreatedMsg('Customer created! Search by name above to select them.')
               setTimeout(() => setCustCreatedMsg(''), 8000)
             }}
-          />
+          />,
+          document.body
         )}
       </div>
 
