@@ -307,7 +307,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
 
         {/* Search dropdown */}
         {custOpen && !customerId && !showNewCust && (
-          <div className="absolute z-20 left-0 top-full mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
+          <div className="absolute z-20 left-0 top-full mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
             <div className="max-h-52 overflow-y-auto">
               {custResults.length > 0 ? (
                 custResults.map(r => (
