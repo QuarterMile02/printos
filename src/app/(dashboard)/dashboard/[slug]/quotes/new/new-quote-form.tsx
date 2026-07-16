@@ -402,7 +402,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
 
         {/* Contact dropdown */}
         {customerId && contactOpen && !showNewContact && (
-          <div className="absolute z-20 left-0 top-full mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
+          <div className="absolute z-20 left-0 top-full mt-1 w-full rounded-md border border-gray-200 bg-white shadow-lg">
             {isLoadingContacts ? (
               <p className="px-3 py-3 text-sm text-gray-400">Loading contacts…</p>
             ) : (
