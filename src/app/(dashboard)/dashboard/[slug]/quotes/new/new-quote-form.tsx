@@ -323,10 +323,22 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
             orgSlug={orgSlug}
             salesReps={teamMembers.map(m => ({ id: m.id, full_name: m.name }))}
             initialOpen={true}
-            onSuccess={() => {
+            onSuccess={async () => {
               setShowCustModal(false)
-              setCustCreatedMsg('Customer created! Search by name above to select them.')
-              setTimeout(() => setCustCreatedMsg(''), 8000)
+              // Auto-search for most recently created customer and select them
+              try {
+                const results = await searchCustomers(orgId, '', {})
+                if (results && results.length > 0) {
+                  const c = results[0]
+                  selectCustomer(c.id, `${c.first_name} ${c.last_name}`.trim(), c.company_name)
+                } else {
+                  setCustCreatedMsg('Customer created! Search by name above to select them.')
+                  setTimeout(() => setCustCreatedMsg(''), 8000)
+                }
+              } catch {
+                setCustCreatedMsg('Customer created! Search by name above to select them.')
+                setTimeout(() => setCustCreatedMsg(''), 8000)
+              }
             }}
           />,
           document.body
