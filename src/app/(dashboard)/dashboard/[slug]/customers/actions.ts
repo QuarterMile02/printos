@@ -20,6 +20,7 @@ export async function createCustomer(
 ): Promise<{ error?: string }> {
   const firstName = t(formData.get('first_name') as string | null)
   const lastName = t(formData.get('last_name') as string | null)
+  console.log('[createCustomer] firstName:', firstName, 'lastName:', lastName, 'orgId:', orgId)
   if (!firstName) return { error: 'First name is required.' }
   if (!lastName) return { error: 'Last name is required.' }
 
