@@ -13,7 +13,7 @@ type Props = {
   orgSlug: string
   salesReps: SalesRep[]
   initialOpen?: boolean
-  onSuccess?: () => void
+  onSuccess?: (customerId?: string) => void
 }
 
 const INDUSTRY_OPTIONS = [
@@ -136,7 +136,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
       } else {
         resetAll()
         setOpen(false)
-        onSuccess?.()
+        onSuccess?.(result.id)
       }
     })
   }

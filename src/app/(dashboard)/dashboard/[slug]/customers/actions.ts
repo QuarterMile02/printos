@@ -17,7 +17,7 @@ export async function createCustomer(
   orgId: string,
   orgSlug: string,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; id?: string }> {
   const firstName = t(formData.get('first_name') as string | null)
   const lastName = t(formData.get('last_name') as string | null)
   console.log('[createCustomer] firstName:', firstName, 'lastName:', lastName, 'orgId:', orgId)
@@ -113,7 +113,7 @@ export async function createCustomer(
   }
 
   revalidatePath(`/dashboard/${orgSlug}/customers`)
-  return {}
+  return { id: inserted?.id }
 }
 
 // ── LOAD MORE (for paginated list) ───────────────────────────────────────────
