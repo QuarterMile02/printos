@@ -433,10 +433,12 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
             orgId={orgId}
             orgSlug={orgSlug}
             onClose={() => setShowContactModal(false)}
-            onSuccess={(contactId, contactName) => {
+            onSuccess={(newContactId, contactName) => {
               setShowContactModal(false)
-              if (contactId && contactName) {
-                setContactId(contactId)
+              if (newContactId && contactName) {
+                const newOpt = { id: newContactId, full_name: contactName }
+                setContactOptions(prev => [newOpt, ...prev])
+                setContactId(newContactId)
                 setContactInputValue(contactName)
                 setContactOpen(false)
               }
