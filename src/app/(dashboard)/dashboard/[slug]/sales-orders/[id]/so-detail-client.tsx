@@ -121,6 +121,8 @@ type Props = {
   canSeePricing: boolean
   initialContactId: string | null
   initialContactName: string | null
+  initialContactEmail?: string | null
+  initialContactPhone?: string | null
   canReassignCustomer: boolean
   shipments: Shipment[]
   shipmentSaved?: boolean
@@ -146,7 +148,7 @@ type AddrMode = 'billing' | 'saved' | 'new'
 
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, canSeePricing,
-  initialContactId, initialContactName, canReassignCustomer,
+  initialContactId, initialContactName, initialContactEmail, initialContactPhone, canReassignCustomer,
   shipments, shipmentSaved, shippingMethods, shippingProfiles, customerShippingAddresses,
 }: Props) {
   const router = useRouter()
@@ -401,16 +403,16 @@ export default function SoDetailClient({
               </Link>
             </div>
           )}
-          {salesOrder.customer?.email && (
+          {(initialContactEmail || salesOrder.customer?.email) && (
             <div>
               <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Email</span>
-              <a href={`mailto:${salesOrder.customer.email}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{salesOrder.customer.email}</a>
+              <a href={`mailto:${initialContactEmail || salesOrder.customer?.email}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{initialContactEmail || salesOrder.customer?.email}</a>
             </div>
           )}
-          {salesOrder.customer?.phone && (
+          {(initialContactPhone || salesOrder.customer?.phone) && (
             <div>
               <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Phone</span>
-              <a href={`tel:${salesOrder.customer.phone}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{salesOrder.customer.phone}</a>
+              <a href={`tel:${initialContactPhone || salesOrder.customer?.phone}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{initialContactPhone || salesOrder.customer?.phone}</a>
             </div>
           )}
         </div>

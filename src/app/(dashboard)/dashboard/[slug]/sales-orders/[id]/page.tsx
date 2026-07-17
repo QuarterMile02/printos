@@ -74,6 +74,8 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
   // contact_id (migration 058)
   let soContactId: string | null = null
   let soContactName: string | null = null
+  let soContactEmail: string | null = null
+  let soContactPhone: string | null = null
   try {
     const { data: cRow } = await supabase
       .from('sales_orders').select('contact_id')
@@ -81,9 +83,11 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
     soContactId = cRow?.contact_id ?? null
     if (soContactId) {
       const { data: ccRow } = await supabase
-        .from('customer_contacts').select('full_name')
-        .eq('id', soContactId).maybeSingle() as { data: { full_name: string } | null; error: unknown }
+        .from('customer_contacts').select('full_name, email, phone')
+        .eq('id', soContactId).maybeSingle() as { data: { full_name?: string; email?: string | null; phone?: string | null } | null; error: unknown }
       soContactName = ccRow?.full_name ?? null
+      soContactEmail = ccRow?.email ?? null
+      soContactPhone = ccRow?.phone ?? null
     }
   } catch { /* migration 058 not yet applied */ }
 
@@ -207,6 +211,8 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
         canSeePricing={canSeePricing}
         initialContactId={soContactId}
         initialContactName={soContactName}
+        initialContactEmail={soContactEmail}
+        initialContactPhone={soContactPhone}
         canReassignCustomer={canReassignSoCustomer}
         shipments={shipments}
         shipmentSaved={shipmentSaved}
