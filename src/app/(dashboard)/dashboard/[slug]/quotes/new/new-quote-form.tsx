@@ -357,25 +357,36 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
         <label className="block text-sm font-medium text-gray-700">
           Contact <span className="text-red-500">*</span>
         </label>
-        <input
-          type="text"
-          value={contactInputValue}
-          onChange={e => {
-            setContactInputValue(e.target.value)
-            setContactId('')
-            if (customerId) setContactOpen(true)
-            if (errors.contact) setErrors(er => ({ ...er, contact: '' }))
-          }}
-          onFocus={() => {
-            if (customerId) {
-              setContactOpen(true)
-              if (contactOptions.length === 0 && !isLoadingContacts) loadContacts(customerId)
-            }
-          }}
-          placeholder={customerId ? 'Search contacts or type a name…' : 'Contact name'}
-          className={`${inp}${errors.contact ? ' ' + errBorder : ''}`}
-          autoComplete="off"
-        />
+        {contactId ? (
+          <div className="mt-1 flex items-center gap-2 rounded-md border border-gray-300 bg-gray-50 px-3 py-2">
+            <span className="flex-1 text-sm font-medium text-gray-900">{contactInputValue}</span>
+            <button type="button" onClick={() => { setContactId(''); setContactInputValue(''); setContactOpen(false) }} className="shrink-0 rounded p-0.5 text-gray-400 hover:text-gray-600">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={contactInputValue}
+            onChange={e => {
+              setContactInputValue(e.target.value)
+              setContactId('')
+              if (customerId) setContactOpen(true)
+              if (errors.contact) setErrors(er => ({ ...er, contact: '' }))
+            }}
+            onFocus={() => {
+              if (customerId) {
+                setContactOpen(true)
+                if (contactOptions.length === 0 && !isLoadingContacts) loadContacts(customerId)
+              }
+            }}
+            placeholder={customerId ? 'Search contacts or type a name…' : 'Contact name'}
+            className={`${inp}${errors.contact ? ' ' + errBorder : ''}`}
+            autoComplete="off"
+          />
+        )}
         {errors.contact && <p className="mt-1 text-xs text-red-500">{errors.contact}</p>}
 
         {/* Contact dropdown */}
