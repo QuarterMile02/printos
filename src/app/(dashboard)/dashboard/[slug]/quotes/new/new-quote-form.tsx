@@ -441,6 +441,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
                 setContactId(newContactId)
                 setContactInputValue(contactName)
                 setContactOpen(false)
+                setErrors(e => ({ ...e, contactId: '' }))
               }
             }}
           />
