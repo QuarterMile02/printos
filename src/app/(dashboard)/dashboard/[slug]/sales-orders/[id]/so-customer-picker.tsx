@@ -185,8 +185,8 @@ export default function SoCustomerPicker({
       if (pendingContactId !== undefined && pendingContactId !== contactId) {
         const res = await assignContactToSalesOrder(soId, orgId, orgSlug, pendingContactId)
         if (res.error) { flash(res.error, false); return }
-        setContactId(pendingContactId)
-        setContactName(pendingContactName)
+        setContactId(pendingContactId ?? null)
+        setContactName(pendingContactName ?? null)
       }
 
       handleCancel()
