@@ -9,6 +9,9 @@ import {
   fetchContactsForCustomer,
   type ContactOption,
 } from '@/app/(dashboard)/dashboard/[slug]/assign-actions'
+import CreateCustomerForm from '@/app/(dashboard)/dashboard/[slug]/customers/create-customer-form'
+import CreateContactModal from '@/app/(dashboard)/dashboard/[slug]/customers/create-contact-modal'
+import { getCustomerById } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
 
 type CustomerResult = { id: string; name: string; company: string | null; status: string | null; isActive: boolean | null }
 
@@ -78,6 +81,8 @@ export default function SoCustomerPicker({
   const toastTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const hasPending = pendingCustId !== null
+  const [showCustModal, setShowCustModal] = useState(false)
+  const [showContactModal, setShowContactModal] = useState(false)
 
   function flash(msg: string, ok: boolean) {
     setToast({ msg, ok })
@@ -283,13 +288,23 @@ export default function SoCustomerPicker({
               ) : null}
             </div>
 
-            <div className="px-3 py-2 border-t border-gray-100">
+            <div className="px-3 py-2 border-t border-gray-100 flex items-center justify-between">
               <button
                 type="button"
                 onClick={closeDropdown}
                 className="text-xs text-gray-500 hover:text-gray-700"
               >
                 Cancel
+              </button>
+              <button
+                type="button"
+                onMouseDown={e => { e.preventDefault(); setShowCustModal(true); closeDropdown() }}
+                className="flex items-center gap-1 text-xs font-semibold text-qm-lime hover:underline"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add New Customer
               </button>
             </div>
           </div>
@@ -347,6 +362,18 @@ export default function SoCustomerPicker({
                       </button>
                     ))}
                   </div>
+                  <div className="border-t border-gray-100 px-3 py-2">
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); setShowContactModal(true); setContactDropOpen(false) }}
+                      className="flex items-center gap-1 text-xs font-semibold text-qm-lime hover:underline"
+                    >
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      Add New Contact
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -373,6 +400,38 @@ export default function SoCustomerPicker({
             Cancel
           </button>
         </div>
+      )}
+      {showCustModal && (
+        <CreateCustomerForm
+          orgId={orgId}
+          orgSlug={orgSlug}
+          salesReps={[]}
+          initialOpen={true}
+          onSuccess={async (newCustomerId?: string) => {
+            setShowCustModal(false)
+            if (newCustomerId) {
+              const c = await getCustomerById(orgId, newCustomerId)
+              if (c) {
+                selectCustomer(c.id, `${c.first_name} ${c.last_name}`.trim(), c.company_name)
+              }
+            }
+          }}
+        />
+      )}
+      {showContactModal && (pendingCustId ?? customerId) && (
+        <CreateContactModal
+          customerId={pendingCustId ?? customerId ?? ''}
+          orgId={orgId}
+          orgSlug={orgSlug}
+          onClose={() => setShowContactModal(false)}
+          onSuccess={(newContactId, contactName) => {
+            setShowContactModal(false)
+            if (newContactId && contactName) {
+              setContactOpts(prev => [{ id: newContactId, full_name: contactName, title: null, phone: null, is_primary: false }, ...prev])
+              selectContact(newContactId, contactName)
+            }
+          }}
+        />
       )}
     </div>
   )
