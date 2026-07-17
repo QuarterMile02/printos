@@ -436,7 +436,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
             onSuccess={(newContactId, contactName) => {
               setShowContactModal(false)
               if (newContactId && contactName) {
-                const newOpt = { id: newContactId, full_name: contactName }
+                const newOpt = { id: newContactId, full_name: contactName, title: null, phone: null, is_primary: false }
                 setContactOptions(prev => [newOpt, ...prev])
                 setContactId(newContactId)
                 setContactInputValue(contactName)
