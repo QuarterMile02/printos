@@ -627,7 +627,7 @@ export async function createSalesLeadForCustomer(
   return {}
 }
 
-export async function getCustomerById(orgId: string, customerId: string) {
+export async function getCustomerById(orgId: string, customerId: string): Promise<{ id: string; first_name: string; last_name: string; company_name: string | null } | null> {
   const supabase = await createClient()
   const { data } = await supabase
     .from('customers')
@@ -635,5 +635,5 @@ export async function getCustomerById(orgId: string, customerId: string) {
     .eq('organization_id', orgId)
     .eq('id', customerId)
     .maybeSingle()
-  return data
+  return data as { id: string; first_name: string; last_name: string; company_name: string | null } | null
 }
