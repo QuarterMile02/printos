@@ -59,8 +59,8 @@ export default function SoCustomerPicker({
   const [pendingCustId, setPendingCustId]           = useState<string | null>(null)
   const [pendingCustName, setPendingCustName]       = useState<string | null>(null)
   const [pendingCustCo, setPendingCustCo]           = useState<string | null>(null)
-  const [pendingContactId, setPendingContactId]     = useState<string | null>(null)
-  const [pendingContactName, setPendingContactName] = useState<string | null>(null)
+  const [pendingContactId, setPendingContactId]     = useState<string | null | undefined>(undefined)
+  const [pendingContactName, setPendingContactName] = useState<string | null | undefined>(undefined)
 
   const [open, setOpen]               = useState(false)
   const [search, setSearch]           = useState('')
@@ -80,7 +80,7 @@ export default function SoCustomerPicker({
   const seqRef       = useRef(0)
   const toastTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const hasPending = pendingCustId !== null
+  const hasPending = pendingCustId !== null || pendingContactId !== undefined
   const [showCustModal, setShowCustModal] = useState(false)
   const [showContactModal, setShowContactModal] = useState(false)
 
@@ -166,7 +166,7 @@ export default function SoCustomerPicker({
 
   function handleCancel() {
     setPendingCustId(null); setPendingCustName(null); setPendingCustCo(null)
-    setPendingContactId(null); setPendingContactName(null)
+    setPendingContactId(undefined); setPendingContactName(undefined)
     setContactOpts([])
     setContactDropOpen(false)
   }
@@ -182,7 +182,7 @@ export default function SoCustomerPicker({
         setContactId(null); setContactName(null)
       }
 
-      if (pendingContactId !== contactId) {
+      if (pendingContactId !== undefined && pendingContactId !== contactId) {
         const res = await assignContactToSalesOrder(soId, orgId, orgSlug, pendingContactId)
         if (res.error) { flash(res.error, false); return }
         setContactId(pendingContactId)
@@ -197,7 +197,7 @@ export default function SoCustomerPicker({
 
   const displayName    = hasPending ? pendingCustName    : customerName
   const displayCompany = hasPending ? pendingCustCo      : companyName
-  const displayContact = hasPending ? pendingContactName : contactName
+  const displayContact = pendingContactId !== undefined ? pendingContactName : contactName
 
   return (
     <div className="mt-1">
@@ -311,7 +311,7 @@ export default function SoCustomerPicker({
         )}
       </div>
 
-      {hasPending && (
+      {canReassign && (
         <div ref={contactRef} className="relative mt-1">
           <div className="group flex items-center gap-1.5">
             <span className="text-xs text-gray-500">
