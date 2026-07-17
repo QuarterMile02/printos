@@ -9,6 +9,7 @@ import {
   type ContactOption,
 } from '@/app/(dashboard)/dashboard/[slug]/assign-actions'
 import CreateCustomerForm from '@/app/(dashboard)/dashboard/[slug]/customers/create-customer-form'
+import CreateContactModal from '@/app/(dashboard)/dashboard/[slug]/customers/create-contact-modal'
 import { createPortal } from 'react-dom'
 
 type CustomerResult = {
@@ -48,6 +49,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
   const custDropRef  = useRef<HTMLDivElement>(null)
   const [showCustModal, setShowCustModal] = useState(false)
   const [custCreatedMsg, setCustCreatedMsg] = useState('')
+  const [showContactModal, setShowContactModal] = useState(false)
 
   // ── New customer modal ──────────────────────────────────────────────────
 
@@ -411,7 +413,7 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
                 <div className="border-t border-gray-100">
                   <button
                     type="button"
-                    onMouseDown={e => { e.preventDefault(); setShowNewContact(true); setContactOpen(false) }}
+                    onMouseDown={e => { e.preventDefault(); setShowContactModal(true); setContactOpen(false) }}
                     className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-qm-lime hover:bg-qm-lime-light transition-colors"
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -425,8 +427,22 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
           </div>
         )}
 
-        {/* Inline new contact form */}
-        {showNewContact && customerId && (
+        {showContactModal && customerId && (
+          <CreateContactModal
+            customerId={customerId}
+            orgId={orgId}
+            orgSlug={orgSlug}
+            onClose={() => setShowContactModal(false)}
+            onSuccess={(contactId, contactName) => {
+              setShowContactModal(false)
+              if (contactName) {
+                setContactId(contactId ?? '')
+                setContactInputValue(contactName)
+              }
+            }}
+          />
+        )}
+        {false && customerId && (
           <div className="mt-2 rounded-md border border-qm-lime/40 bg-green-50 p-3 space-y-2">
             <p className="text-xs font-semibold text-gray-700">New Contact</p>
             <input type="text" placeholder="Full name *" value={newContactName}
