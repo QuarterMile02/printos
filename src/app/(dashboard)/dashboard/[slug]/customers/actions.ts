@@ -626,3 +626,14 @@ export async function createSalesLeadForCustomer(
   revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
   return {}
 }
+
+export async function getCustomerById(orgId: string, customerId: string) {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('customers')
+    .select('id, first_name, last_name, company_name')
+    .eq('organization_id', orgId)
+    .eq('id', customerId)
+    .maybeSingle()
+  return data
+}

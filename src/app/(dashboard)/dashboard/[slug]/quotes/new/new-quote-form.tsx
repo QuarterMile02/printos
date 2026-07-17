@@ -3,7 +3,7 @@
 import { useState, useTransition, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createQuote } from '../actions'
-import { searchCustomers, saveContact } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
+import { searchCustomers, saveContact, getCustomerById } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
 import {
   fetchContactsForCustomer,
   type ContactOption,
@@ -323,14 +323,15 @@ export default function NewQuoteForm({ orgId, orgSlug, teamMembers, currentUserI
             orgSlug={orgSlug}
             salesReps={teamMembers.map(m => ({ id: m.id, full_name: m.name }))}
             initialOpen={true}
-            onSuccess={async (customerId?: string) => {
+            onSuccess={async (newCustomerId?: string) => {
               setShowCustModal(false)
-              if (customerId) {
+              if (newCustomerId) {
                 try {
-                  const results = await searchCustomers(orgId, customerId, {})
-                  const c = results?.find(r => r.id === customerId)
+                  const c = await getCustomerById(orgId, newCustomerId)
                   if (c) {
-                    selectCustomer(c.id, `${c.first_name} ${c.last_name}`.trim(), c.company_name)
+                    const displayName = `${c.first_name} ${c.last_name}`.trim()
+                    selectCustomer(c.id, displayName, c.company_name)
+                    setCustSearch(c.company_name || displayName)
                   } else {
                     setCustCreatedMsg('Customer created! Search by name above to select them.')
                     setTimeout(() => setCustCreatedMsg(''), 8000)
