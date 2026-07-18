@@ -326,6 +326,7 @@ export default function SoCustomerPicker({
 
       <div ref={contactRef} className="relative mt-1">
           <div className="group flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">{displayContact ?? <span className="italic text-gray-400">No contact</span>}</span>
             {canReassign && (
             <button
               type="button"
