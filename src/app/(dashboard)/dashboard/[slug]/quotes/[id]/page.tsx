@@ -362,7 +362,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         orgId={org.id}
         orgSlug={slug}
         initialCustomerId={quote.customer_id}
-        initialCustomerName={quote.customers ? `${quote.customers.first_name} ${quote.customers.last_name}` : null}
+        initialCustomerName={quote.customers && !quote.customers.company_name ? `${quote.customers.first_name} ${quote.customers.last_name}` : null}
         initialCompanyName={quote.customers?.company_name ?? null}
         initialContactId={quoteContactId}
         initialContactName={quoteContactName}
