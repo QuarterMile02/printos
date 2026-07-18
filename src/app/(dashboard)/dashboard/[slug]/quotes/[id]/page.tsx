@@ -82,6 +82,17 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   if (q1) {
     quote = q1
+    // If customer JOIN returned null but customer_id is set, fetch separately
+    if (q1.customer_id && !q1.customers) {
+      const { data: custRow } = await createServiceClient()
+        .from('customers')
+        .select('first_name, last_name, company_name, email, phone, street, city, state, zip, status, terms, credit_limit, special_notes, background_info')
+        .eq('id', q1.customer_id)
+        .maybeSingle()
+      if (custRow) {
+        quote = { ...q1, customers: custRow }
+      }
+    }
   } else if (e1?.message?.includes('does not exist')) {
     // Fallback: fetch only columns from the original 002_quotes migration
     const { data: q2 } = await supabase
