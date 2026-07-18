@@ -213,7 +213,7 @@ export default function SoCustomerPicker({
             {displayCompany ? (
               <>
                 <p className="text-sm font-semibold text-gray-900">{displayCompany}</p>
-                {displayName && <p className="text-xs text-gray-500">{displayName}</p>}
+                {displayContact && <p className="text-xs text-gray-500">{displayContact}</p>}
               </>
             ) : (
               <p className="text-sm text-gray-600">
@@ -311,23 +311,18 @@ export default function SoCustomerPicker({
         )}
       </div>
 
-      {canReassign && (
-        <div ref={contactRef} className="relative mt-1">
+      <div ref={contactRef} className="relative mt-1">
           <div className="group flex items-center gap-1.5">
-            <span className="text-xs text-gray-500">
-              Contact:{' '}
-              <span className={displayContact ? 'text-gray-700 font-medium' : 'text-gray-400 italic'}>
-                {displayContact ?? 'none'}
-              </span>
-            </span>
+            {canReassign && (
             <button
               type="button"
               onClick={() => { if (contactDropOpen) setContactDropOpen(false); else openContactDrop() }}
               className="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-              title="Set contact"
+              title="Change contact"
             >
               <PencilIcon />
             </button>
+            )}
           </div>
 
           {contactDropOpen && (
@@ -379,7 +374,6 @@ export default function SoCustomerPicker({
             </div>
           )}
         </div>
-      )}
 
       {hasPending && (
         <div className="flex items-center gap-2 mt-2">
