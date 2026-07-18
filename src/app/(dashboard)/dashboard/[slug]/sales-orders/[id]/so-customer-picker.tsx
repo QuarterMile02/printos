@@ -208,8 +208,8 @@ export default function SoCustomerPicker({
     })
   }
 
-  const displayName    = hasPending ? pendingCustName    : customerName
-  const displayCompany = hasPending ? pendingCustCo      : companyName
+  const displayName    = pendingCustId !== null ? pendingCustName    : customerName
+  const displayCompany = pendingCustId !== null ? pendingCustCo      : companyName
   const displayContact = pendingContactId !== undefined ? pendingContactName : contactName
 
   return (
