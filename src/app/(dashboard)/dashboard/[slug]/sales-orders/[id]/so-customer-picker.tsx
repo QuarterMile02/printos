@@ -224,10 +224,7 @@ export default function SoCustomerPicker({
         <div className="group flex items-start gap-1.5">
           <div>
             {displayCompany ? (
-              <>
-                <p className="text-sm font-semibold text-gray-900">{displayCompany}</p>
-                {displayContact && <p className="text-xs text-gray-500">{displayContact}</p>}
-              </>
+              <p className="text-sm font-semibold text-gray-900">{displayCompany}</p>
             ) : (
               <p className="text-sm text-gray-600">
                 {displayName ?? <span className="text-gray-400 italic">No customer assigned</span>}
