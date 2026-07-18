@@ -101,6 +101,13 @@ export async function assignCustomerToSalesOrder(
     .update({ customer_id: customerId, contact_id: null })
     .eq('id', soId).eq('organization_id', orgId)
   if (error) return { error: error.message }
+  // Also sync the customer to the linked quote if one exists
+  try {
+    const { data: soRow } = await service.from('sales_orders').select('quote_id').eq('id', soId).maybeSingle() as { data: { quote_id?: string | null } | null; error: unknown }
+    if (soRow?.quote_id) {
+      await service.from('quotes').update({ customer_id: customerId }).eq('id', soRow.quote_id)
+    }
+  } catch { /* quote sync optional */ }
   revalidatePath(`/dashboard/${orgSlug}/sales-orders/${soId}`)
   return {}
 }

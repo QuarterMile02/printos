@@ -136,14 +136,27 @@ export default function SoCustomerPicker({
     }, 300)
   }
 
-  function selectCustomer(id: string, name: string, company: string | null) {
+  async function selectCustomer(id: string, name: string, company: string | null) {
     setPendingCustId(id)
     setPendingCustName(name)
     setPendingCustCo(company)
-    setPendingContactId(null)
-    setPendingContactName(null)
+    setPendingContactId(undefined)
+    setPendingContactName(undefined)
     setContactOpts([])
     closeDropdown()
+    // Auto-load contacts and select primary
+    setLoadingContacts(true)
+    const opts = await fetchContactsForCustomer(id, orgId)
+    setContactOpts(opts)
+    setLoadingContacts(false)
+    const primary = opts.find(c => c.is_primary) ?? opts[0] ?? null
+    if (primary) {
+      setPendingContactId(primary.id)
+      setPendingContactName(primary.full_name)
+    } else {
+      setPendingContactId(null)
+      setPendingContactName(null)
+    }
   }
 
   async function openContactDrop() {
