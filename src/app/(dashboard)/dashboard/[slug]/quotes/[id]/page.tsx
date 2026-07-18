@@ -293,6 +293,8 @@ export default async function QuoteDetailPage({ params }: PageProps) {
   // Fetch contact_id (column added in migration 058 — may not exist yet)
   let quoteContactId: string | null = null
   let quoteContactName: string | null = null
+  let quoteContactEmail: string | null = null
+  let quoteContactPhone: string | null = null
   try {
     const { data: cRow } = await supabase
       .from('quotes').select('contact_id')
@@ -300,9 +302,11 @@ export default async function QuoteDetailPage({ params }: PageProps) {
     quoteContactId = cRow?.contact_id ?? null
     if (quoteContactId) {
       const { data: ccRow } = await supabase
-        .from('customer_contacts').select('full_name')
-        .eq('id', quoteContactId).maybeSingle() as { data: { full_name: string } | null; error: unknown }
+        .from('customer_contacts').select('full_name, email, phone')
+        .eq('id', quoteContactId).maybeSingle() as { data: { full_name: string; email?: string | null; phone?: string | null } | null; error: unknown }
       quoteContactName = ccRow?.full_name ?? null
+      quoteContactEmail = ccRow?.email ?? null
+      quoteContactPhone = ccRow?.phone ?? null
     }
   } catch { /* migration 058 not yet applied — skip */ }
 
@@ -432,6 +436,10 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         modifierDefs={modifierDefs}
         shippingAddresses={quoteShippingAddresses}
         shippingProfiles={quoteShippingProfiles}
+        initialContactId={quoteContactId}
+        initialContactName={quoteContactName}
+        initialContactEmail={quoteContactEmail}
+        initialContactPhone={quoteContactPhone}
       />
       </div>
     </div>

@@ -120,6 +120,10 @@ type Props = {
   modifierDefs: ModifierDefSummary[]
   shippingAddresses: ShippingAddress[]
   shippingProfiles: ShippingProfile[]
+  initialContactId?: string | null
+  initialContactName?: string | null
+  initialContactEmail?: string | null
+  initialContactPhone?: string | null
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -151,6 +155,7 @@ function smCarrierBadgeStyle(carrier: string): string {
 
 export default function QuoteDetailClient({
   orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing, canExportPdf, modifierDefs, shippingAddresses, shippingProfiles,
+  initialContactId, initialContactName, initialContactEmail, initialContactPhone,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -787,11 +792,11 @@ export default function QuoteDetailClient({
               )}
               <p className="text-gray-700">{customerName}</p>
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                {quote.customer.phone && (
-                  <a href={`tel:${quote.customer.phone}`} className="text-qm-lime hover:underline">{quote.customer.phone}</a>
+                {(initialContactPhone || quote.customer.phone) && (
+                  <a href={`tel:${initialContactPhone || quote.customer.phone}`} className="text-qm-lime hover:underline">{initialContactPhone || quote.customer.phone}</a>
                 )}
-                {quote.customer.email && (
-                  <a href={`mailto:${quote.customer.email}`} className="text-qm-lime hover:underline">{quote.customer.email}</a>
+                {(initialContactEmail || quote.customer.email) && (
+                  <a href={`mailto:${initialContactEmail || quote.customer.email}`} className="text-qm-lime hover:underline">{initialContactEmail || quote.customer.email}</a>
                 )}
               </div>
             </div>
