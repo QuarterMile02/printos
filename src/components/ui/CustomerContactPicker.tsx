@@ -2,7 +2,7 @@
 
 import { useState, useRef, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { searchCustomers, getCustomerById } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
+import { searchCustomers } from '@/app/(dashboard)/dashboard/[slug]/customers/actions'
 import {
   assignCustomerToQuote, assignContactToQuote,
   assignCustomerToSalesOrder, assignContactToSalesOrder,
@@ -90,19 +90,6 @@ export default function CustomerContactPicker({
   const [isSearching, setIsSearching] = useState(false)
   const custDropRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (pending.customerId && !pending.companyName && !pending.customerName) {
-      getCustomerById(orgId, pending.customerId).then(c => {
-        if (c) {
-          setPending(p => ({
-            ...p,
-            customerName: `${c.first_name} ${c.last_name}`.trim(),
-            companyName: c.company_name,
-          }))
-        }
-      }).catch(() => {})
-    }
-  }, [pending.customerId, orgId])
 
 
   // Quick-add mini-form

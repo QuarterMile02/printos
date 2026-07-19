@@ -90,7 +90,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         .eq('id', q1.customer_id)
         .maybeSingle()
       if (custRow) {
-        quote = { ...q1, customers: custRow }
+        quote = { ...q1, customers: custRow as typeof q1.customers }
       }
     }
   } else if (e1?.message?.includes('does not exist')) {
@@ -373,7 +373,7 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         orgId={org.id}
         orgSlug={slug}
         initialCustomerId={quote.customer_id}
-        initialCustomerName={quote.customers && !quote.customers.company_name ? `${quote.customers.first_name} ${quote.customers.last_name}` : null}
+        initialCustomerName={quote.customers?.company_name ? null : (quote.customers ? `${quote.customers.first_name} ${quote.customers.last_name}` : null)}
         initialCompanyName={quote.customers?.company_name ?? null}
         initialContactId={quoteContactId}
         initialContactName={quoteContactName}
