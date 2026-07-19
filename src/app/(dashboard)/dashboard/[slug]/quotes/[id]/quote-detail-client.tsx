@@ -704,7 +704,7 @@ export default function QuoteDetailClient({
             {(companyName || customerName) ? (
               <p className="mt-1 text-sm text-gray-600">
                 {companyName ?? customerName}
-                {companyName && customerName && <span className="text-gray-400"> &mdash; {customerName}</span>}
+                {companyName && initialContactName && <span className="text-gray-400"> &mdash; {initialContactName}</span>}
               </p>
             ) : (
               <p className="mt-1 text-sm text-gray-400">No customer linked</p>
@@ -790,7 +790,7 @@ export default function QuoteDetailClient({
               {quote.customer.company_name && (
                 <p className="font-bold text-gray-900 text-base">{quote.customer.company_name}</p>
               )}
-              <p className="text-gray-700">{customerName}</p>
+              <p className="text-gray-700">{initialContactName || customerName}</p>
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
                 {(initialContactPhone || quote.customer.phone) && (
                   <a href={`tel:${initialContactPhone || quote.customer.phone}`} className="text-qm-lime hover:underline">{initialContactPhone || quote.customer.phone}</a>
