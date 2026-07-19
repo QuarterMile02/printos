@@ -335,6 +335,8 @@ export default function CustomerContactPicker({
                   )}
                 </>
               )
+            ) : pending.customerId ? (
+              <span className="text-sm text-gray-400 italic">Loading...</span>
             ) : (
               <span className="text-sm text-gray-400 italic">No customer assigned</span>
             )}
