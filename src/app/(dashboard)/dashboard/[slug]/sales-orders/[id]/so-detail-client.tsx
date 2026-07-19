@@ -377,6 +377,20 @@ export default function SoDetailClient({
               initialContactName={initialContactName}
               canReassign={canReassignCustomer}
             />
+            {(initialContactPhone || initialContactEmail || salesOrder.customer?.phone || salesOrder.customer?.email) && (
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                {(initialContactPhone || salesOrder.customer?.phone) && (
+                  <a href={`tel:${initialContactPhone || salesOrder.customer?.phone}`} className="hover:text-qm-lime hover:underline">
+                    📞 {initialContactPhone || salesOrder.customer?.phone}
+                  </a>
+                )}
+                {(initialContactEmail || salesOrder.customer?.email) && (
+                  <a href={`mailto:${initialContactEmail || salesOrder.customer?.email}`} className="hover:text-qm-lime hover:underline">
+                    ✉ {initialContactEmail || salesOrder.customer?.email}
+                  </a>
+                )}
+              </div>
+            )}
           </div>
           <div className="text-right">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${SO_STATUS_STYLES[status]}`}>
@@ -401,18 +415,6 @@ export default function SoDetailClient({
               <Link href={`/dashboard/${orgSlug}/quotes/${parentQuote.id}`} className="mt-1 block text-sm font-semibold text-qm-fuchsia hover:underline">
                 {formatQuoteNumber(parentQuote.quote_number, parentQuote.created_at)} &mdash; {parentQuote.title}
               </Link>
-            </div>
-          )}
-          {(initialContactEmail || salesOrder.customer?.email) && (
-            <div>
-              <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Email</span>
-              <a href={`mailto:${initialContactEmail || salesOrder.customer?.email}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{initialContactEmail || salesOrder.customer?.email}</a>
-            </div>
-          )}
-          {(initialContactPhone || salesOrder.customer?.phone) && (
-            <div>
-              <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Phone</span>
-              <a href={`tel:${initialContactPhone || salesOrder.customer?.phone}`} className="mt-1 block text-sm text-gray-700 hover:text-green-600 hover:underline">{initialContactPhone || salesOrder.customer?.phone}</a>
             </div>
           )}
         </div>

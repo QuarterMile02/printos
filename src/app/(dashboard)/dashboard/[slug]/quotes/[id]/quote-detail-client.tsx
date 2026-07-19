@@ -701,10 +701,10 @@ export default function QuoteDetailClient({
               {formatQuoteNumber(quote.quote_number, quote.created_at)}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold text-gray-900">{title}</h1>
-            {customerName ? (
+            {(companyName || customerName) ? (
               <p className="mt-1 text-sm text-gray-600">
-                {customerName}
-                {companyName && <span className="text-gray-400"> &mdash; {companyName}</span>}
+                {companyName ?? customerName}
+                {companyName && customerName && <span className="text-gray-400"> &mdash; {customerName}</span>}
               </p>
             ) : (
               <p className="mt-1 text-sm text-gray-400">No customer linked</p>

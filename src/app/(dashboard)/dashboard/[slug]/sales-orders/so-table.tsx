@@ -122,9 +122,6 @@ export default function SalesOrderTable({
                         <p className="font-medium text-gray-900 truncate">
                           {so.customer.company_name || `${so.customer.first_name} ${so.customer.last_name}`}
                         </p>
-                        {so.customer.company_name && (
-                          <p className="text-xs text-gray-500 truncate">{so.customer.first_name} {so.customer.last_name}</p>
-                        )}
                       </div>
                     ) : <span className="text-gray-300">&mdash;</span>}
                   </td>
