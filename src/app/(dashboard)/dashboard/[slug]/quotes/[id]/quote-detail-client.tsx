@@ -701,14 +701,6 @@ export default function QuoteDetailClient({
               {formatQuoteNumber(quote.quote_number, quote.created_at)}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold text-gray-900">{title}</h1>
-            {(companyName || customerName) ? (
-              <p className="mt-1 text-sm text-gray-600">
-                {companyName ?? customerName}
-                {companyName && initialContactName && <span className="text-gray-400"> &mdash; {initialContactName}</span>}
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-gray-400">No customer linked</p>
-            )}
           </div>
           <div className="text-right">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[status]}`}>
@@ -786,20 +778,6 @@ export default function QuoteDetailClient({
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-3 text-sm">
-            <div>
-              {quote.customer.company_name && (
-                <p className="font-bold text-gray-900 text-base">{quote.customer.company_name}</p>
-              )}
-              <p className="text-gray-700">{initialContactName || customerName}</p>
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                {(initialContactPhone || quote.customer.phone) && (
-                  <a href={`tel:${initialContactPhone || quote.customer.phone}`} className="text-qm-lime hover:underline">{initialContactPhone || quote.customer.phone}</a>
-                )}
-                {(initialContactEmail || quote.customer.email) && (
-                  <a href={`mailto:${initialContactEmail || quote.customer.email}`} className="text-qm-lime hover:underline">{initialContactEmail || quote.customer.email}</a>
-                )}
-              </div>
-            </div>
             {(quote.customer.street || quote.customer.city) && (
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Bill To</p>
