@@ -82,8 +82,8 @@ export default async function QuoteDetailPage({ params }: PageProps) {
 
   if (q1) {
     quote = q1
-    // If customer JOIN returned null but customer_id is set, fetch separately
-    if (q1.customer_id && !q1.customers) {
+    // Always fetch customer via service client to ensure fresh data (bypasses RLS join cache)
+    if (q1.customer_id) {
       const { data: custRow } = await createServiceClient()
         .from('customers')
         .select('first_name, last_name, company_name, email, phone, street, city, state, zip, status, terms, credit_limit, special_notes, background_info')
