@@ -166,6 +166,7 @@ export default function QuoteDetailClient({
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [isEditing] = useState(true)
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [isSavingItem, setIsSavingItem] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
@@ -706,34 +707,79 @@ export default function QuoteDetailClient({
               {formatQuoteNumber(quote.quote_number, quote.created_at)}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold text-gray-900">{title}</h1>
-            <CustomerContactPicker
-              embedded
-              recordId={quote.id}
-              recordType="quote"
-              orgId={orgId}
-              orgSlug={orgSlug}
-              initialCustomerId={initialCustomerId ?? null}
-              initialCustomerName={quote.customer ? `${quote.customer.first_name} ${quote.customer.last_name}` : null}
-              initialCompanyName={quote.customer?.company_name ?? null}
-              initialContactId={initialContactId ?? null}
-              initialContactName={initialContactName ?? null}
-              isOwnerOrAdmin={isOwnerOrAdmin}
-              allowCustomerChange={true}
-            />
-            {(initialContactPhone || initialContactEmail || quote.customer?.phone || quote.customer?.email) && (
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                {(initialContactPhone || quote.customer?.phone) && (
-                  <a href={`tel:${initialContactPhone || quote.customer?.phone}`} className="hover:text-qm-lime hover:underline">
-                    📞 {initialContactPhone || quote.customer?.phone}
-                  </a>
-                )}
-                {(initialContactEmail || quote.customer?.email) && (
-                  <a href={`mailto:${initialContactEmail || quote.customer?.email}`} className="hover:text-qm-lime hover:underline">
-                    ✉ {initialContactEmail || quote.customer?.email}
-                  </a>
+            {/* Customer/contact display with inline edit */}
+            <div className="mt-2 group relative">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  {(companyName || customerName) && (
+                    <>
+                      <p className="font-semibold text-gray-900 leading-tight">
+                        {companyName || customerName}
+                      </p>
+                      {companyName && customerName && !initialContactName && (
+                        <p className="text-sm text-gray-500 leading-tight">{customerName}</p>
+                      )}
+                      {initialContactName && (
+                        <p className="text-sm text-gray-500 leading-tight">{initialContactName}</p>
+                      )}
+                    </>
+                  )}
+                  {(initialContactPhone || initialContactEmail || quote.customer?.phone || quote.customer?.email) && (
+                    <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                      {(initialContactPhone || quote.customer?.phone) && (
+                        <a href={`tel:${initialContactPhone || quote.customer?.phone}`} className="hover:text-qm-lime hover:underline">
+                          📞 {initialContactPhone || quote.customer?.phone}
+                        </a>
+                      )}
+                      {(initialContactEmail || quote.customer?.email) && (
+                        <a href={`mailto:${initialContactEmail || quote.customer?.email}`} className="hover:text-qm-lime hover:underline">
+                          ✉ {initialContactEmail || quote.customer?.email}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {isOwnerOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerPicker(true)}
+                    title="Change customer / contact"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 rounded p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 mt-0.5"
+                  >
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" />
+                    </svg>
+                  </button>
                 )}
               </div>
-            )}
+
+              {/* Picker dropdown — only shown when pencil clicked */}
+              {showCustomerPicker && (
+                <div className="mt-2">
+                  <CustomerContactPicker
+                    embedded
+                    recordId={quote.id}
+                    recordType="quote"
+                    orgId={orgId}
+                    orgSlug={orgSlug}
+                    initialCustomerId={initialCustomerId ?? null}
+                    initialCustomerName={quote.customer ? `${quote.customer.first_name} ${quote.customer.last_name}` : null}
+                    initialCompanyName={quote.customer?.company_name ?? null}
+                    initialContactId={initialContactId ?? null}
+                    initialContactName={initialContactName ?? null}
+                    isOwnerOrAdmin={isOwnerOrAdmin}
+                    allowCustomerChange={true}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerPicker(false)}
+                    className="mt-1 text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="text-right">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[status]}`}>
