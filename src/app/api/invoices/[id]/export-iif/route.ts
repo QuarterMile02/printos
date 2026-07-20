@@ -153,6 +153,22 @@ export async function GET(
     const TRNSTYPE = 'INVOICE'
     const lines: string[] = []
 
+    // Collect unique SERVICE item names for the INVITEM auto-create block.
+    // Same name derivation used in the SPL rows below.
+    const serviceItemNames = new Set<string>(['Custom Item'])
+    for (const li of lineItems) {
+      const name = li.product_name ?? li.description ?? 'Product'
+      if (name) serviceItemNames.add(iif(name))
+    }
+
+    // INVITEM block — must come before !TRNS so QB Desktop creates any
+    // missing items on import rather than rejecting the transaction.
+    lines.push('!INVITEM\tNAME\tINVITEMTYPE\tACCNT\tPRICE\tCOST\tDESC')
+    for (const name of serviceItemNames) {
+      lines.push(`INVITEM\t${name}\tSERVICE\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
+    }
+    lines.push(`INVITEM\tSales Tax\tSALESTAXITEM\t${TAX_PAYABLE_ACCOUNT}\t0\t0\tSales Tax`)
+
     // Headers
     lines.push('!TRNS\tTRNSID\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO')
     lines.push('!SPL\tSPLID\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tMEMO\tQNTY\tPRICE\tINVITEM')
@@ -216,7 +232,7 @@ export async function GET(
           'Sales Tax',
           '',                         // no qty
           '',                         // no price
-          '',                         // no item
+          'Sales Tax',                // INVITEM
         ].join('\t'),
       )
     }
