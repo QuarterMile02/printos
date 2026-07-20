@@ -13,6 +13,7 @@ import {
 import type { EmailTemplate } from '../actions'
 import SendEmailModal from './send-email-modal'
 import type { EasypostRate } from '@/lib/easypost'
+import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 
 type ModifierDef = {
   id: string
@@ -705,29 +706,31 @@ export default function QuoteDetailClient({
               {formatQuoteNumber(quote.quote_number, quote.created_at)}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold text-gray-900">{title}</h1>
-            {(companyName || customerName) && (
-              <div className="mt-2">
-                {companyName && (
-                  <p className="font-semibold text-gray-900 leading-tight">{companyName}</p>
+            <CustomerContactPicker
+              embedded
+              recordId={quote.id}
+              recordType="quote"
+              orgId={orgId}
+              orgSlug={orgSlug}
+              initialCustomerId={initialCustomerId ?? null}
+              initialCustomerName={quote.customer ? `${quote.customer.first_name} ${quote.customer.last_name}` : null}
+              initialCompanyName={quote.customer?.company_name ?? null}
+              initialContactId={initialContactId ?? null}
+              initialContactName={initialContactName ?? null}
+              isOwnerOrAdmin={isOwnerOrAdmin}
+              allowCustomerChange={true}
+            />
+            {(initialContactPhone || initialContactEmail || quote.customer?.phone || quote.customer?.email) && (
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                {(initialContactPhone || quote.customer?.phone) && (
+                  <a href={`tel:${initialContactPhone || quote.customer?.phone}`} className="hover:text-qm-lime hover:underline">
+                    📞 {initialContactPhone || quote.customer?.phone}
+                  </a>
                 )}
-                {initialContactName ? (
-                  <p className="text-sm text-gray-500 leading-tight">{initialContactName}</p>
-                ) : customerName ? (
-                  <p className="text-sm text-gray-500 leading-tight">{customerName}</p>
-                ) : null}
-                {(initialContactPhone || quote.customer?.phone || initialContactEmail || quote.customer?.email) && (
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                    {(initialContactPhone || quote.customer?.phone) && (
-                      <a href={`tel:${initialContactPhone || quote.customer?.phone}`} className="hover:text-qm-lime hover:underline">
-                        📞 {initialContactPhone || quote.customer?.phone}
-                      </a>
-                    )}
-                    {(initialContactEmail || quote.customer?.email) && (
-                      <a href={`mailto:${initialContactEmail || quote.customer?.email}`} className="hover:text-qm-lime hover:underline">
-                        ✉ {initialContactEmail || quote.customer?.email}
-                      </a>
-                    )}
-                  </div>
+                {(initialContactEmail || quote.customer?.email) && (
+                  <a href={`mailto:${initialContactEmail || quote.customer?.email}`} className="hover:text-qm-lime hover:underline">
+                    ✉ {initialContactEmail || quote.customer?.email}
+                  </a>
                 )}
               </div>
             )}
