@@ -13,6 +13,7 @@ import {
 import type { EmailTemplate } from '../actions'
 import SendEmailModal from './send-email-modal'
 import type { EasypostRate } from '@/lib/easypost'
+
 type ModifierDef = {
   id: string
   system_lookup_name: string
@@ -120,10 +121,12 @@ type Props = {
   modifierDefs: ModifierDefSummary[]
   shippingAddresses: ShippingAddress[]
   shippingProfiles: ShippingProfile[]
+  initialCustomerId?: string | null
   initialContactId?: string | null
   initialContactName?: string | null
   initialContactEmail?: string | null
   initialContactPhone?: string | null
+  isOwnerOrAdmin?: boolean
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -155,7 +158,8 @@ function smCarrierBadgeStyle(carrier: string): string {
 
 export default function QuoteDetailClient({
   orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing, canExportPdf, modifierDefs, shippingAddresses, shippingProfiles,
-  initialContactId, initialContactName, initialContactEmail, initialContactPhone,
+  initialCustomerId, initialContactId, initialContactName, initialContactEmail, initialContactPhone,
+  isOwnerOrAdmin = false,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -701,6 +705,33 @@ export default function QuoteDetailClient({
               {formatQuoteNumber(quote.quote_number, quote.created_at)}
             </p>
             <h1 className="mt-1 text-2xl font-extrabold text-gray-900">{title}</h1>
+            {(companyName || customerName) && (
+              <div className="mt-2">
+                {companyName && (
+                  <p className="font-semibold text-gray-900 leading-tight">{companyName}</p>
+                )}
+                {customerName && (
+                  <p className="text-sm text-gray-500 leading-tight">{customerName}</p>
+                )}
+                {initialContactName && (
+                  <p className="text-sm text-gray-600 leading-tight">{initialContactName}</p>
+                )}
+                {(initialContactPhone || quote.customer?.phone || initialContactEmail || quote.customer?.email) && (
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
+                    {(initialContactPhone || quote.customer?.phone) && (
+                      <a href={`tel:${initialContactPhone || quote.customer?.phone}`} className="hover:text-qm-lime hover:underline">
+                        📞 {initialContactPhone || quote.customer?.phone}
+                      </a>
+                    )}
+                    {(initialContactEmail || quote.customer?.email) && (
+                      <a href={`mailto:${initialContactEmail || quote.customer?.email}`} className="hover:text-qm-lime hover:underline">
+                        ✉ {initialContactEmail || quote.customer?.email}
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="text-right">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${QUOTE_STATUS_STYLES[status]}`}>
@@ -767,49 +798,6 @@ export default function QuoteDetailClient({
           </div>
         )}
       </div>
-
-      {/* ── Customer info panel ─────────────────────────────────────── */}
-      {quote.customer && (
-        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          {(quote.customer.background_info || quote.customer.special_notes) && (
-            <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-2.5 text-sm text-yellow-800">
-              {quote.customer.background_info && <p><span className="font-semibold">Background: </span>{quote.customer.background_info}</p>}
-              {quote.customer.special_notes && <p className="mt-0.5"><span className="font-semibold">Notes: </span>{quote.customer.special_notes}</p>}
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-3 text-sm">
-            {(quote.customer.street || quote.customer.city) && (
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Bill To</p>
-                {quote.customer.street && <p className="text-gray-700">{quote.customer.street}</p>}
-                {(quote.customer.city || quote.customer.state || quote.customer.zip) && (
-                  <p className="text-gray-700">{[quote.customer.city, quote.customer.state, quote.customer.zip].filter(Boolean).join(', ')}</p>
-                )}
-              </div>
-            )}
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
-              {quote.customer.status && (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Status</p>
-                  <span className="mt-0.5 inline-block capitalize text-gray-700">{quote.customer.status}</span>
-                </div>
-              )}
-              {quote.customer.terms && (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Terms</p>
-                  <p className="mt-0.5 text-gray-700">{quote.customer.terms}</p>
-                </div>
-              )}
-              {quote.customer.credit_limit != null && quote.customer.credit_limit > 0 && (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">Credit</p>
-                  <p className="mt-0.5 text-gray-700">${Number(quote.customer.credit_limit).toLocaleString()}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Edit-mode metadata fields ──────────────────────────────── */}
       {isEditing && (

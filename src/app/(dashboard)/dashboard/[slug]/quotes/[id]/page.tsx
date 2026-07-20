@@ -6,7 +6,6 @@ import QuoteDetailClient from './quote-detail-client'
 import { convertToSalesOrder } from './convert-action'
 import type { EmailTemplate } from '../actions'
 import { checkPermission } from '@/lib/check-permission'
-import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 
 export const dynamic = 'force-dynamic'
 
@@ -367,21 +366,6 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         </form>
       )}
 
-      <CustomerContactPicker
-        recordId={quote.id}
-        recordType="quote"
-        orgId={org.id}
-        orgSlug={slug}
-        initialCustomerId={quote.customer_id}
-        initialCustomerName={quote.customers?.company_name ? null : (quote.customers ? `${quote.customers.first_name} ${quote.customers.last_name}` : null)}
-        initialCompanyName={quote.customers?.company_name ?? null}
-        initialContactId={quoteContactId}
-        initialContactName={quoteContactName}
-        isOwnerOrAdmin={isOwnerOrAdmin}
-        allowCustomerChange={true}
-      />
-
-      <div className="mt-4">
       <QuoteDetailClient
         orgId={org.id}
         orgSlug={slug}
@@ -447,12 +431,13 @@ export default async function QuoteDetailPage({ params }: PageProps) {
         modifierDefs={modifierDefs}
         shippingAddresses={quoteShippingAddresses}
         shippingProfiles={quoteShippingProfiles}
+        initialCustomerId={quote.customer_id}
         initialContactId={quoteContactId}
         initialContactName={quoteContactName}
         initialContactEmail={quoteContactEmail}
         initialContactPhone={quoteContactPhone}
+        isOwnerOrAdmin={isOwnerOrAdmin}
       />
-      </div>
     </div>
   )
 }
