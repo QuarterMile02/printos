@@ -710,12 +710,11 @@ export default function QuoteDetailClient({
                 {companyName && (
                   <p className="font-semibold text-gray-900 leading-tight">{companyName}</p>
                 )}
-                {customerName && (
+                {initialContactName ? (
+                  <p className="text-sm text-gray-500 leading-tight">{initialContactName}</p>
+                ) : customerName ? (
                   <p className="text-sm text-gray-500 leading-tight">{customerName}</p>
-                )}
-                {initialContactName && (
-                  <p className="text-sm text-gray-600 leading-tight">{initialContactName}</p>
-                )}
+                ) : null}
                 {(initialContactPhone || quote.customer?.phone || initialContactEmail || quote.customer?.email) && (
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
                     {(initialContactPhone || quote.customer?.phone) && (
