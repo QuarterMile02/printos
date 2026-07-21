@@ -150,7 +150,7 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
     org.zip,
   ].filter(Boolean).join(', ')
 
-  const TAX_RATE = org.tax_rate ?? 0.0825
+  const TAX_RATE = 0.0825
 
   // Totals
   const subtotalCents = lineItems.reduce((sum, li) => sum + li.total_price, 0)
@@ -168,7 +168,7 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
   const termsText = terms ??
     '60% deposit due upon approval.\n40% balance due on completion.'
 
-  const taxLabel = `Tax (${((org.tax_rate ?? 0.0825) * 100).toFixed(2).replace(/\.?0+$/, '')}%)`
+  const taxLabel = `Tax (${(TAX_RATE * 100).toFixed(2).replace(/\.?0+$/, '')}%)`
 
   return (
     <Document title={`Quote ${quoteNumber}`} author={orgName}>

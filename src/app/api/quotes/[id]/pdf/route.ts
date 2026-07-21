@@ -140,7 +140,7 @@ export async function GET(
     // 8. Org profile for header/footer
     const { data: orgProfileRow } = await service
       .from('org_profile')
-      .select('legal_name, dba_name, phone, email, street, city, state, zip, logo_url, tagline, footer_note, tax_rate')
+      .select('legal_name, dba_name, phone, email, street, city, state, zip, logo_url, tagline, footer_note')
       .eq('organization_id', quoteOrg.organization_id)
       .maybeSingle()
     const orgProfile: OrgProfile = orgProfileRow ?? {
