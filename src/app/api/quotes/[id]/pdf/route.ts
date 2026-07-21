@@ -14,6 +14,7 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params
+    console.log('[PDF] id:', id)
     const service = createServiceClient()
 
     // 1. Fetch the quote to get organization_id (service client, no RLS)
@@ -22,6 +23,7 @@ export async function GET(
       .select('organization_id')
       .eq('id', id)
       .maybeSingle()
+    console.log('[PDF] quoteOrg:', JSON.stringify(quoteOrg))
     if (!quoteOrg) {
       return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
     }
@@ -59,6 +61,7 @@ export async function GET(
       `)
       .eq('id', id)
       .maybeSingle() as { data: QuoteRow | null; error: unknown }
+    console.log('[PDF] quoteRow:', quoteRow ? 'found' : 'null')
     if (!quoteRow) {
       return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
     }
