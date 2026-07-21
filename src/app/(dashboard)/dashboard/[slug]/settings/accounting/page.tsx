@@ -21,15 +21,6 @@ export default async function Page(props: PageProps) {
   }
 }
 
-async function safe<T>(fn: () => Promise<{ data: T | null; error: unknown }>): Promise<T | null> {
-  try {
-    const { data } = await fn()
-    return data ?? null
-  } catch {
-    return null
-  }
-}
-
 async function PageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
@@ -58,23 +49,13 @@ async function PageInner({ params }: PageProps) {
     )
   }
 
-  const [
-    acctSettingsRow,
-    salesTaxes,
-    termCodes,
-    paymentMethods,
-    chartOfAccounts,
-    accountMappingRow,
-    txNumsRow,
-  ] = await Promise.all([
-    safe(() => supabase.from('accounting_settings').select('*').eq('organization_id', org.id).maybeSingle()),
-    safe(() => supabase.from('sales_taxes').select('*').eq('organization_id', org.id).order('sort_order')),
-    safe(() => supabase.from('term_codes').select('*').eq('organization_id', org.id).order('sort_order')),
-    safe(() => supabase.from('payment_methods').select('*').eq('organization_id', org.id).order('sort_order')),
-    safe(() => supabase.from('chart_of_accounts').select('*').eq('organization_id', org.id).order('sort_order')),
-    safe(() => supabase.from('account_mapping').select('*').eq('organization_id', org.id).maybeSingle()),
-    safe(() => supabase.from('transaction_numbers').select('*').eq('organization_id', org.id).maybeSingle()),
-  ])
+  const { data: acctSettingsRow } = await supabase.from('accounting_settings').select('*').eq('organization_id', org.id).maybeSingle().catch(() => ({ data: null }))
+  const { data: salesTaxes } = await supabase.from('sales_taxes').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
+  const { data: termCodes } = await supabase.from('term_codes').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
+  const { data: paymentMethods } = await supabase.from('payment_methods').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
+  const { data: chartOfAccounts } = await supabase.from('chart_of_accounts').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
+  const { data: accountMappingRow } = await supabase.from('account_mapping').select('*').eq('organization_id', org.id).maybeSingle().catch(() => ({ data: null }))
+  const { data: txNumsRow } = await supabase.from('transaction_numbers').select('*').eq('organization_id', org.id).maybeSingle().catch(() => ({ data: null }))
 
   return (
     <div className="p-8 max-w-5xl">
