@@ -497,7 +497,7 @@ export default function AccountingClient({
                 <TH className="text-center">Split</TH>
                 <TH>Tax Code</TH>
                 <TH className="text-center">Default</TH>
-                <TH className="w-24"></TH>
+                <TH className="w-24">&nbsp;</TH>
               </tr>
             </thead>
             <tbody>
@@ -578,7 +578,7 @@ export default function AccountingClient({
                 <TH className="text-right">Days</TH>
                 <TH className="text-right">Down Pmt %</TH>
                 <TH className="text-center">Default</TH>
-                <TH className="w-24"></TH>
+                <TH className="w-24">&nbsp;</TH>
               </tr>
             </thead>
             <tbody>
@@ -658,7 +658,7 @@ export default function AccountingClient({
               <tr>
                 <TH>Name</TH>
                 <TH>Type</TH>
-                <TH className="w-24"></TH>
+                <TH className="w-24">&nbsp;</TH>
               </tr>
             </thead>
             <tbody>
@@ -728,7 +728,7 @@ export default function AccountingClient({
                 <TH>Name</TH>
                 <TH>Number</TH>
                 <TH>Type</TH>
-                <TH className="w-24"></TH>
+                <TH className="w-24">&nbsp;</TH>
               </tr>
             </thead>
             <tbody>
