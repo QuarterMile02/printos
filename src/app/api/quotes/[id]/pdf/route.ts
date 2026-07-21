@@ -18,14 +18,15 @@ export async function GET(
     const service = createServiceClient()
 
     // 1. Fetch the quote to get organization_id (service client, no RLS)
-    const { data: quoteOrg } = await service
+    const { data: quoteOrg, error: quoteOrgError } = await service
       .from('quotes')
       .select('organization_id')
       .eq('id', id)
       .maybeSingle()
-    console.log('[PDF] quoteOrg:', JSON.stringify(quoteOrg))
+    console.log('[PDF] quoteOrg result:', JSON.stringify(quoteOrg), 'error:', JSON.stringify(quoteOrgError))
     if (!quoteOrg) {
-      return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
+      console.log('[PDF] Quote not found for id:', id)
+      return NextResponse.json({ error: 'Quote not found', id, quoteOrgError }, { status: 404 })
     }
 
     // 2. Permission gate
