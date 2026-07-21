@@ -15,7 +15,6 @@ export async function GET(
   try {
     const { id } = await context.params
     console.log('[PDF] id:', id)
-    return NextResponse.json({ debug: true, id, env_url: process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0,30), env_key_prefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0,15) })
     const service = createServiceClient()
 
     // 1. Fetch the quote to get organization_id (service client, no RLS)
