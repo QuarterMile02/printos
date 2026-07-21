@@ -49,13 +49,21 @@ async function PageInner({ params }: PageProps) {
     )
   }
 
-  const { data: acctSettingsRow } = await supabase.from('accounting_settings').select('*').eq('organization_id', org.id).maybeSingle().catch(() => ({ data: null }))
-  const { data: salesTaxes } = await supabase.from('sales_taxes').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
-  const { data: termCodes } = await supabase.from('term_codes').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
-  const { data: paymentMethods } = await supabase.from('payment_methods').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
-  const { data: chartOfAccounts } = await supabase.from('chart_of_accounts').select('*').eq('organization_id', org.id).order('sort_order').catch(() => ({ data: null }))
-  const { data: accountMappingRow } = await supabase.from('account_mapping').select('*').eq('organization_id', org.id).maybeSingle().catch(() => ({ data: null }))
-  const { data: txNumsRow } = await supabase.from('transaction_numbers').select('*').eq('organization_id', org.id).maybeSingle().catch(() => ({ data: null }))
+  let acctSettingsRow = null
+  let salesTaxes: unknown[] = []
+  let termCodes: unknown[] = []
+  let paymentMethods: unknown[] = []
+  let chartOfAccounts: unknown[] = []
+  let accountMappingRow = null
+  let txNumsRow = null
+
+  try { const { data } = await supabase.from('accounting_settings').select('*').eq('organization_id', org.id).maybeSingle(); acctSettingsRow = data } catch {}
+  try { const { data } = await supabase.from('sales_taxes').select('*').eq('organization_id', org.id).order('sort_order'); salesTaxes = data ?? [] } catch {}
+  try { const { data } = await supabase.from('term_codes').select('*').eq('organization_id', org.id).order('sort_order'); termCodes = data ?? [] } catch {}
+  try { const { data } = await supabase.from('payment_methods').select('*').eq('organization_id', org.id).order('sort_order'); paymentMethods = data ?? [] } catch {}
+  try { const { data } = await supabase.from('chart_of_accounts').select('*').eq('organization_id', org.id).order('sort_order'); chartOfAccounts = data ?? [] } catch {}
+  try { const { data } = await supabase.from('account_mapping').select('*').eq('organization_id', org.id).maybeSingle(); accountMappingRow = data } catch {}
+  try { const { data } = await supabase.from('transaction_numbers').select('*').eq('organization_id', org.id).maybeSingle(); txNumsRow = data } catch {}
 
   return (
     <div className="p-8 max-w-5xl">
