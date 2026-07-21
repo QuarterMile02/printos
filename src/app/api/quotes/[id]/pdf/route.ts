@@ -146,7 +146,7 @@ export async function GET(
     const orgProfile: OrgProfile = orgProfileRow ?? {
       legal_name: 'Quarter Mile Inc.',
       dba_name: null,
-      phone: '(956) 236-4367',
+      phone: '(956) 722-7690',
       email: 'sales@quartermileinc.com',
       street: '6420 Polaris Dr. Ste 4',
       city: 'Laredo',
