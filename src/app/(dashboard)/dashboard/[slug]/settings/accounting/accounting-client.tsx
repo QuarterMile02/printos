@@ -555,7 +555,7 @@ export default function AccountingClient({
                   <TD><TInput type="number" value={newTax.rate ?? 0} onChange={(v) => setNewTax((d) => ({ ...d, rate: parseFloat(v) || 0 }))} className="w-20 text-right" /></TD>
                   <TD className="text-center"><input type="checkbox" checked={newTax.is_split ?? false} onChange={(e) => setNewTax((d) => ({ ...d, is_split: e.target.checked }))} className="h-4 w-4 accent-qm-lime" /></TD>
                   <TD><TInput value={newTax.tax_code ?? ''} onChange={(v) => setNewTax((d) => ({ ...d, tax_code: v }))} placeholder="Code" /></TD>
-                  <TD />
+                  <TD>&nbsp;</TD>
                   <TD><SaveCancelBtns onSave={addTax} onCancel={() => setAddingTax(false)} /></TD>
                 </tr>
               )}
@@ -638,7 +638,7 @@ export default function AccountingClient({
                   </TD>
                   <TD><TInput type="number" value={newTerm.days ?? 0} onChange={(v) => setNewTerm((d) => ({ ...d, days: parseInt(v) || 0 }))} className="w-16 text-right" /></TD>
                   <TD><TInput type="number" value={newTerm.down_payment_percent ?? 0} onChange={(v) => setNewTerm((d) => ({ ...d, down_payment_percent: parseFloat(v) || 0 }))} className="w-16 text-right" /></TD>
-                  <TD />
+                  <TD>&nbsp;</TD>
                   <TD><SaveCancelBtns onSave={addTerm} onCancel={() => setAddingTerm(false)} /></TD>
                 </tr>
               )}
