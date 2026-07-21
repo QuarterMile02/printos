@@ -165,9 +165,9 @@ export async function GET(
     // missing items on import rather than rejecting the transaction.
     lines.push('!INVITEM\tNAME\tINVITEMTYPE\tACCNT\tPRICE\tCOST\tDESC')
     for (const name of serviceItemNames) {
-      lines.push(`INVITEM\t${name}\tSERVICE\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
+      lines.push(`INVITEM\t${name}\tSERV\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
     }
-    lines.push(`INVITEM\tSales Tax\tSALESTAXITEM\t${TAX_PAYABLE_ACCOUNT}\t0\t0\tSales Tax`)
+    lines.push(`INVITEM\tSales Tax\tSALESTAX\t${TAX_PAYABLE_ACCOUNT}\t0\t0\tSales Tax`)
 
     // Headers
     lines.push('!TRNS\tTRNSID\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO')
