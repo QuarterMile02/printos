@@ -50,7 +50,7 @@ export async function GET(
       discount_percent: number | null; customer_id: string | null
       customers: QuoteCustomer | null
     }
-    const { data: quoteRow } = await service
+    const { data: quoteRow, error: quoteRowError } = await service
       .from('quotes')
       .select(`
         id, quote_number, title, description, status, created_at, expires_at,
@@ -65,7 +65,7 @@ export async function GET(
       .maybeSingle() as { data: QuoteRow | null; error: unknown }
     console.log('[PDF] quoteRow:', quoteRow ? 'found' : 'null')
     if (!quoteRow) {
-      return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Quote not found', id, quoteRowError }, { status: 404 })
     }
     const q = quoteRow
 
