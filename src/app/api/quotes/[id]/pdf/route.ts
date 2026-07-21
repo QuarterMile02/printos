@@ -15,19 +15,16 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params
-    console.log('[PDF] id:', id)
     const service = createServiceClient()
 
     // 1. Fetch the quote to get organization_id (service client, no RLS)
-    const { data: quoteOrg, error: quoteOrgError } = await service
+    const { data: quoteOrg } = await service
       .from('quotes')
       .select('organization_id')
       .eq('id', id)
       .maybeSingle()
-    console.log('[PDF] quoteOrg result:', JSON.stringify(quoteOrg), 'error:', JSON.stringify(quoteOrgError))
     if (!quoteOrg) {
-      console.log('[PDF] Quote not found for id:', id)
-      return NextResponse.json({ error: 'Quote not found', id, quoteOrgError }, { status: 404 })
+      return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
     }
 
     // 2. Permission gate
@@ -47,14 +44,14 @@ export async function GET(
       status: string; created_at: string; expires_at: string | null
       terms: string | null; notes: string | null
       subtotal: number | null; tax_total: number | null; total: number | null
-      discount_percent: number | null; customer_id: string | null
+      customer_id: string | null
       customers: QuoteCustomer | null
     }
-    const { data: quoteRow, error: quoteRowError } = await service
+    const { data: quoteRow } = await service
       .from('quotes')
       .select(`
         id, quote_number, title, description, status, created_at, expires_at,
-        terms, notes, subtotal, tax_total, total, discount_percent,
+        terms, notes, subtotal, tax_total, total,
         customer_id,
         customers (
           id, company_name, first_name, last_name, email, phone,
@@ -63,9 +60,8 @@ export async function GET(
       `)
       .eq('id', id)
       .maybeSingle() as { data: QuoteRow | null; error: unknown }
-    console.log('[PDF] quoteRow:', quoteRow ? 'found' : 'null')
     if (!quoteRow) {
-      return NextResponse.json({ error: 'Quote not found', id, quoteRowError }, { status: 404 })
+      return NextResponse.json({ error: 'Quote not found' }, { status: 404 })
     }
     const q = quoteRow
 
@@ -183,7 +179,7 @@ export async function GET(
         phone: primaryContact?.phone ?? cust?.phone ?? null,
       },
       lineItems,
-      discountPercent: Number(q.discount_percent ?? 0),
+      discountPercent: 0,
       modifierLabels,
       org: orgProfile,
     }
