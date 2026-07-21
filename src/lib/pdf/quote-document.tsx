@@ -3,11 +3,27 @@ import {
   Page,
   View,
   Text,
+  Image,
   StyleSheet,
   Font,
 } from '@react-pdf/renderer'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface OrgProfile {
+  legal_name: string
+  dba_name: string | null
+  phone: string | null
+  email: string | null
+  street: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
+  logo_url: string | null
+  tagline: string | null
+  footer_note: string | null
+  tax_rate?: number | null
+}
 
 export type QuotePdfLineItem = {
   sort_order: number
@@ -40,6 +56,7 @@ export type QuotePdfData = {
   lineItems: QuotePdfLineItem[]
   discountPercent: number       // quote-level discount %
   modifierLabels: Record<string, string>  // modifier_id / lookup_name → display label
+  org: OrgProfile
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -49,10 +66,6 @@ const BLACK  = '#1a1a1a'
 const GRAY   = '#6b7280'
 const LGRAY  = '#e5e7eb'
 const WHITE  = '#ffffff'
-const TAX_RATE = 0.0825
-
-const QMI_ADDRESS = '4702 San Dario Ave, Laredo TX 78041'
-const QMI_PHONE   = '(956) 717-0700'
 
 // Embed system fonts (Helvetica is built into PDFKit / @react-pdf)
 Font.registerHyphenationCallback((word) => [word])
@@ -127,7 +140,17 @@ function fmtDate(iso: string | null) {
 // ── Document ──────────────────────────────────────────────────────────────────
 
 export default function QuoteDocument({ data }: { data: QuotePdfData }) {
-  const { quoteNumber, date, expiresAt, customer, lineItems, discountPercent, terms, notes, modifierLabels } = data
+  const { quoteNumber, date, expiresAt, customer, lineItems, discountPercent, terms, notes, modifierLabels, org } = data
+
+  const orgName    = org.dba_name ?? org.legal_name
+  const orgPhone   = org.phone ?? ''
+  const orgAddress = [
+    org.street,
+    org.city && org.state ? `${org.city}, ${org.state}` : org.city ?? org.state,
+    org.zip,
+  ].filter(Boolean).join(', ')
+
+  const TAX_RATE = org.tax_rate ?? 0.0825
 
   // Totals
   const subtotalCents = lineItems.reduce((sum, li) => sum + li.total_price, 0)
@@ -145,16 +168,21 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
   const termsText = terms ??
     '60% deposit due upon approval.\n40% balance due on completion.'
 
+  const taxLabel = `Tax (${((org.tax_rate ?? 0.0825) * 100).toFixed(2).replace(/\.?0+$/, '')}%)`
+
   return (
-    <Document title={`Quote ${quoteNumber}`} author="Quarter Mile Inc.">
+    <Document title={`Quote ${quoteNumber}`} author={orgName}>
       <Page size="LETTER" style={s.page}>
 
         {/* ── HEADER ── */}
         <View style={s.header}>
           <View>
-            <Text style={s.logo}>Quarter Mile Inc.</Text>
-            <Text style={s.orgSub}>{QMI_ADDRESS}</Text>
-            <Text style={s.orgSub}>{QMI_PHONE}</Text>
+            {org.logo_url
+              ? <Image src={org.logo_url} style={{ height: 40, marginBottom: 4, objectFit: 'contain' }} />
+              : <Text style={s.logo}>{orgName}</Text>
+            }
+            {orgAddress ? <Text style={s.orgSub}>{orgAddress}</Text> : null}
+            {orgPhone   ? <Text style={s.orgSub}>{orgPhone}</Text>   : null}
           </View>
           <View style={s.qNumBlock}>
             <Text style={s.qNum}>{quoteNumber}</Text>
@@ -232,7 +260,7 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
             </View>
           )}
           <View style={s.totalRow}>
-            <Text style={s.totalLabel}>Tax (8.25%)</Text>
+            <Text style={s.totalLabel}>{taxLabel}</Text>
             <Text style={s.totalValue}>{cents(taxCents)}</Text>
           </View>
           <View style={[s.totalRow, { marginTop: 4 }]}>
@@ -261,7 +289,7 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
 
         {/* ── FOOTER ── */}
         <Text style={s.footer}>
-          Thank you for your business!  |  Quarter Mile Inc.  |  {QMI_PHONE}
+          {org.footer_note ?? 'Thank you for your business!'}  |  {orgName}  |  {orgPhone}
         </Text>
 
       </Page>

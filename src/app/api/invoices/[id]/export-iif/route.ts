@@ -87,7 +87,22 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    // 2. Line items — invoices → sales_orders.quote_id → quote_line_items
+    // 2. Org profile (for filename) + account mappings
+    const { data: orgProfile } = await service
+      .from('org_profile')
+      .select('legal_name, dba_name')
+      .eq('organization_id', inv.organization_id)
+      .maybeSingle()
+
+    const { data: accountMappings } = await service
+      .from('account_mapping')
+      .select('mapping_key, account_name, account_number')
+      .eq('organization_id', inv.organization_id)
+
+    const acct = (key: string, fallback: string) =>
+      accountMappings?.find((m) => m.mapping_key === key)?.account_name ?? fallback
+
+    // 3. Line items — invoices → sales_orders.quote_id → quote_line_items
     let lineItems: LineItem[] = []
     if (inv.sales_order_id) {
       const { data: soRow } = await service
@@ -140,9 +155,9 @@ export async function GET(
       qbSettings = data
     } catch { /* qb_settings table not applied — use defaults */ }
 
-    const AR_ACCOUNT = qbSettings?.ar_account?.trim() || 'Accounts Receivable'
-    const DEFAULT_INCOME_ACCOUNT = qbSettings?.default_income_account?.trim() || 'Sales'
-    const TAX_PAYABLE_ACCOUNT = qbSettings?.tax_payable_account?.trim() || 'Sales tax'
+    const AR_ACCOUNT = qbSettings?.ar_account?.trim() || acct('accounts_receivable', 'Accounts Receivable')
+    const DEFAULT_INCOME_ACCOUNT = qbSettings?.default_income_account?.trim() || acct('sales_income', 'Sales')
+    const TAX_PAYABLE_ACCOUNT = qbSettings?.tax_payable_account?.trim() || acct('sales_tax_payable', 'Sales Tax')
 
     // 4. Build IIF content
     const cust = customerName(inv.customers)
@@ -242,7 +257,8 @@ export async function GET(
     // QB Desktop expects CRLF line endings.
     const iifBody = lines.join('\r\n') + '\r\n'
 
-    const filename = `QMI-INV-${String(inv.invoice_number).padStart(4, '0')}-${formatDateForFilename(inv.created_at)}.iif`
+    const orgSlug = (orgProfile?.dba_name ?? orgProfile?.legal_name ?? 'QMI').replace(/\s+/g, '-')
+    const filename = `${orgSlug}-INV-${String(inv.invoice_number).padStart(4, '0')}-${formatDateForFilename(inv.created_at)}.iif`
 
     return new NextResponse(iifBody, {
       status: 200,

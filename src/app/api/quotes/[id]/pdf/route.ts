@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
 import { renderToBuffer } from '@react-pdf/renderer'
-import QuoteDocument, { type QuotePdfData, type QuotePdfLineItem } from '@/lib/pdf/quote-document'
+import QuoteDocument, { type QuotePdfData, type QuotePdfLineItem, type OrgProfile } from '@/lib/pdf/quote-document'
 import { formatQuoteNumber } from '@/app/(dashboard)/dashboard/[slug]/quotes/format'
 import React from 'react'
 
@@ -137,7 +137,28 @@ export async function GET(
       }
     }
 
-    // 8. Build PDF data
+    // 8. Org profile for header/footer
+    const { data: orgProfileRow } = await service
+      .from('org_profile')
+      .select('legal_name, dba_name, phone, email, street, city, state, zip, logo_url, tagline, footer_note, tax_rate')
+      .eq('organization_id', quoteOrg.organization_id)
+      .maybeSingle()
+    const orgProfile: OrgProfile = orgProfileRow ?? {
+      legal_name: 'Quarter Mile Inc.',
+      dba_name: null,
+      phone: '(956) 236-4367',
+      email: 'sales@quartermileinc.com',
+      street: '6420 Polaris Dr. Ste 4',
+      city: 'Laredo',
+      state: 'TX',
+      zip: '78041',
+      logo_url: null,
+      tagline: 'Get it Done Right the First Time!',
+      footer_note: null,
+      tax_rate: 0.0825,
+    }
+
+    // 9. Build PDF data
     const cust = q.customers
     const pdfData: QuotePdfData = {
       quoteNumber: formatQuoteNumber(q.quote_number, q.created_at),
@@ -159,9 +180,10 @@ export async function GET(
       lineItems,
       discountPercent: Number(q.discount_percent ?? 0),
       modifierLabels,
+      org: orgProfile,
     }
 
-    // 9. Render PDF
+    // 10. Render PDF
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const element = React.createElement(QuoteDocument as any, { data: pdfData })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
