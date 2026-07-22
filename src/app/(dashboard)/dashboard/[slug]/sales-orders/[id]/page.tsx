@@ -62,6 +62,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
   if (!so) notFound()
 
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
+  const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
   // Owner/admin role
   const { data: soMemberRow } = await supabase
@@ -209,6 +210,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
           due_date: j.due_date,
         }))}
         canSeePricing={canSeePricing}
+        canExportPdf={canExportPdf}
         initialContactId={soContactId}
         initialContactName={soContactName}
         initialContactEmail={soContactEmail}
