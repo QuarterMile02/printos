@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { formatInvNumber, formatCents, INV_STATUS_STYLES, INV_STATUS_LABELS } from '../format'
 import { recordPayment } from '../actions'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,6 +28,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     customers: { first_name: string; last_name: string; company_name: string | null; email: string | null } | null
   } | null
   if (!inv) return <div className="p-8 text-red-600">Invoice not found</div>
+
+  const { allowed: canExportPdf } = await checkPermission(org.id, 'quotes.export_pdf')
 
   // SO reference
   let soNum: number | null = null
@@ -76,6 +79,18 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${INV_STATUS_STYLES[inv.status] ?? 'bg-gray-100 text-gray-700'}`}>
               {INV_STATUS_LABELS[inv.status] ?? inv.status}
             </span>
+            {canExportPdf && (
+              <a
+                href={`/api/invoices/${inv.id}/pdf`}
+                download
+                className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Download PDF
+              </a>
+            )}
             <a
               href={`/api/invoices/${inv.id}/export-iif`}
               className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
