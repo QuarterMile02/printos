@@ -139,8 +139,17 @@ function fmtDate(iso: string | null) {
 
 // ── Document ──────────────────────────────────────────────────────────────────
 
-export default function QuoteDocument({ data }: { data: QuotePdfData }) {
+export default function QuoteDocument({
+  data,
+  documentType = 'QUOTE',
+  documentNumber,
+}: {
+  data: QuotePdfData
+  documentType?: string
+  documentNumber?: string
+}) {
   const { quoteNumber, date, expiresAt, customer, lineItems, discountPercent, terms, notes, modifierLabels, org } = data
+  const displayNumber = documentNumber ?? quoteNumber
 
   const orgName    = org.dba_name ?? org.legal_name
   const orgPhone   = org.phone ?? ''
@@ -171,7 +180,7 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
   const taxLabel = `Tax (${(TAX_RATE * 100).toFixed(2).replace(/\.?0+$/, '')}%)`
 
   return (
-    <Document title={`Quote ${quoteNumber}`} author={orgName}>
+    <Document title={`${documentType} ${displayNumber}`} author={orgName}>
       <Page size="LETTER" style={s.page}>
 
         {/* ── HEADER ── */}
@@ -185,7 +194,8 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
             {orgPhone   ? <Text style={s.orgSub}>{orgPhone}</Text>   : null}
           </View>
           <View style={s.qNumBlock}>
-            <Text style={s.qNum}>{quoteNumber}</Text>
+            <Text style={[s.qMeta, { fontFamily: 'Helvetica-Bold', textTransform: 'uppercase', letterSpacing: 1 }]}>{documentType}</Text>
+            <Text style={s.qNum}>{displayNumber}</Text>
             <Text style={s.qMeta}>Date: {fmtDate(date)}</Text>
             {expiresAt && <Text style={s.qMeta}>Expires: {fmtDate(expiresAt)}</Text>}
           </View>
@@ -209,8 +219,8 @@ export default function QuoteDocument({ data }: { data: QuotePdfData }) {
             {customer.phone && <Text style={s.value}>{customer.phone}</Text>}
           </View>
           <View style={s.col}>
-            <Text style={s.label}>Quote Details</Text>
-            <Text style={s.value}>Quote #: <Text style={{ fontFamily: 'Helvetica-Bold' }}>{quoteNumber}</Text></Text>
+            <Text style={s.label}>{documentType} Details</Text>
+            <Text style={s.value}>{documentType} #: <Text style={{ fontFamily: 'Helvetica-Bold' }}>{displayNumber}</Text></Text>
             <Text style={s.value}>Date: {fmtDate(date)}</Text>
             {expiresAt && <Text style={s.value}>Valid Until: {fmtDate(expiresAt)}</Text>}
           </View>
