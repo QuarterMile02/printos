@@ -199,6 +199,8 @@ export async function GET(
       discountPercent: 0,
       modifierLabels,
       org: orgProfile,
+      ...(inv.amount_paid != null ? { amountPaid: inv.amount_paid } : {}),
+      ...(inv.balance_due != null ? { balanceDue: inv.balance_due } : {}),
     }
 
     // 9. Render PDF

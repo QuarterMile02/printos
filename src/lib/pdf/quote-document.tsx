@@ -57,6 +57,10 @@ export type QuotePdfData = {
   discountPercent: number       // quote-level discount %
   modifierLabels: Record<string, string>  // modifier_id / lookup_name → display label
   org: OrgProfile
+  depositPercent?: number       // e.g. 60 for 60/40 terms
+  depositAmount?: number        // cents: grandTotal * depositPercent / 100
+  amountPaid?: number           // cents, for invoices
+  balanceDue?: number           // cents, for invoices
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -117,6 +121,13 @@ const s = StyleSheet.create({
   grandLabel:  { width: 120, fontFamily: 'Helvetica-Bold', fontSize: 10, textAlign: 'right', paddingRight: 10, color: BLACK },
   grandValue:  { width: 70, fontFamily: 'Helvetica-Bold', fontSize: 10, textAlign: 'right', color: BLACK },
 
+  // Deposit / payment rows
+  depositRow:   { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8, backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#86efac', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 5 },
+  depositLabel: { width: 120, fontFamily: 'Helvetica-Bold', fontSize: 9, color: '#15803d', textAlign: 'right', paddingRight: 10 },
+  depositValue: { width: 70, fontFamily: 'Helvetica-Bold', fontSize: 9, color: '#15803d', textAlign: 'right' },
+  paidLabel:    { width: 120, fontSize: 8.5, color: '#16a34a', textAlign: 'right', paddingRight: 10 },
+  paidValue:    { width: 70, fontSize: 8.5, color: '#16a34a', textAlign: 'right' },
+
   // Terms + footer
   termsBlock:  { marginTop: 16, borderTopWidth: 1, borderTopColor: LGRAY, paddingTop: 10 },
   termsLabel:  { fontSize: 7, fontFamily: 'Helvetica-Bold', color: GRAY, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
@@ -148,7 +159,7 @@ export default function QuoteDocument({
   documentType?: string
   documentNumber?: string
 }) {
-  const { quoteNumber, date, expiresAt, customer, lineItems, discountPercent, terms, notes, modifierLabels, org } = data
+  const { quoteNumber, date, expiresAt, customer, lineItems, discountPercent, terms, notes, modifierLabels, org, depositPercent, depositAmount, amountPaid, balanceDue } = data
   const displayNumber = documentNumber ?? quoteNumber
 
   const orgName    = org.dba_name ?? org.legal_name
@@ -277,6 +288,30 @@ export default function QuoteDocument({
             <Text style={s.grandLabel}>Grand Total</Text>
             <Text style={s.grandValue}>{cents(grandTotal)}</Text>
           </View>
+
+          {/* Deposit required row (quotes with down-payment terms) */}
+          {(depositPercent ?? 0) > 0 && depositAmount !== undefined && (
+            <View style={s.depositRow}>
+              <Text style={s.depositLabel}>Deposit Required ({depositPercent}%)</Text>
+              <Text style={s.depositValue}>{cents(depositAmount)}</Text>
+            </View>
+          )}
+
+          {/* Amount paid / balance due (invoices) */}
+          {amountPaid !== undefined && (
+            <>
+              <View style={[s.totalRow, { marginTop: 4 }]}>
+                <Text style={s.paidLabel}>Amount Paid</Text>
+                <Text style={s.paidValue}>({cents(amountPaid)})</Text>
+              </View>
+              <View style={[s.totalRow, { marginTop: 2 }]}>
+                <Text style={s.grandLabel}>Balance Due</Text>
+                <Text style={[s.grandValue, { color: (balanceDue ?? 0) === 0 ? '#16a34a' : BLACK }]}>
+                  {cents(balanceDue ?? 0)}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* ── NOTES ── */}

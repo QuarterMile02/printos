@@ -38,6 +38,7 @@ export async function GET(
       id: string; company_name: string | null; first_name: string; last_name: string
       email: string | null; phone: string | null
       street: string | null; city: string | null; state: string | null; zip: string | null
+      terms: string | null
     }
     type QuoteRow = {
       id: string; quote_number: number; title: string; description: string | null
@@ -55,7 +56,7 @@ export async function GET(
         customer_id,
         customers (
           id, company_name, first_name, last_name, email, phone,
-          street, city, state, zip
+          street, city, state, zip, terms
         )
       `)
       .eq('id', id)
@@ -94,7 +95,25 @@ export async function GET(
       primaryContact = contactRow ?? null
     }
 
-    // 6. Default terms from term_codes
+    // 6. Deposit percent from the customer's assigned term code
+    let depositPercent = 0
+    let depositAmount = 0
+    const customerTermsName = q.customers?.terms ?? null
+    if (customerTermsName) {
+      const { data: tcDeposit } = await service
+        .from('term_codes')
+        .select('down_payment_percent')
+        .eq('organization_id', quoteOrg.organization_id)
+        .eq('name', customerTermsName)
+        .maybeSingle()
+      const pct = Number(tcDeposit?.down_payment_percent ?? 0)
+      if (pct > 0) {
+        depositPercent = pct
+        depositAmount = Math.round((q.total ?? 0) * pct / 100)
+      }
+    }
+
+    // 7. Default terms from term_codes
     let termsText = q.terms ?? null
     if (!termsText) {
       const { data: tc } = await service
@@ -106,7 +125,7 @@ export async function GET(
       termsText = tc?.name ?? null
     }
 
-    // 7. Modifier display labels (for modifier_values keys in line items)
+    // 8. Modifier display labels (for modifier_values keys in line items)
     const allModifierKeys = new Set<string>()
     for (const li of lineItems) {
       if (li.modifier_values) {
@@ -182,6 +201,7 @@ export async function GET(
       discountPercent: 0,
       modifierLabels,
       org: orgProfile,
+      ...(depositPercent > 0 ? { depositPercent, depositAmount } : {}),
     }
 
     // 10. Render PDF
