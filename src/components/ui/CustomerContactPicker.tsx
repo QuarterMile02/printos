@@ -11,6 +11,7 @@ import {
   quickCreateCustomer,
   type ContactOption,
 } from '@/app/(dashboard)/dashboard/[slug]/assign-actions'
+import CreateContactModal from '@/app/(dashboard)/dashboard/[slug]/customers/create-contact-modal'
 
 type RecordType = 'quote' | 'sales_order' | 'job'
 
@@ -107,6 +108,7 @@ export default function CustomerContactPicker({
   const [contactOptions, setContactOptions] = useState<ContactOption[]>([])
   const [isLoadingContacts, setIsLoadingContacts] = useState(false)
   const contactDropRef = useRef<HTMLDivElement>(null)
+  const [showContactModal, setShowContactModal] = useState(false)
 
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
   const [saving, startSave] = useTransition()
@@ -486,38 +488,54 @@ export default function CustomerContactPicker({
             <div className="absolute left-0 top-full mt-1 z-[100] w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
               {isLoadingContacts ? (
                 <p className="px-3 py-3 text-sm text-gray-400">Loading contacts…</p>
-              ) : contactOptions.length === 0 ? (
-                <p className="px-3 py-3 text-sm text-gray-400 italic">No contacts on file.</p>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => selectContact(null, null)}
-                    className="w-full px-3 py-2.5 text-left text-sm text-gray-400 italic hover:bg-gray-50 border-b border-gray-100 transition-colors"
-                  >
-                    Clear / No contact
-                  </button>
-                  <div className="max-h-48 overflow-y-auto">
-                    {contactOptions.map((c) => (
+                  {contactOptions.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-gray-400 italic">No contacts on file.</p>
+                  ) : (
+                    <>
                       <button
-                        key={c.id}
                         type="button"
-                        onClick={() => selectContact(c.id, c.full_name)}
-                        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-qm-lime-light transition-colors ${
-                          c.id === pending.contactId ? 'bg-qm-lime-light font-medium' : ''
-                        }`}
+                        onClick={() => selectContact(null, null)}
+                        className="w-full px-3 py-2.5 text-left text-sm text-gray-400 italic hover:bg-gray-50 border-b border-gray-100 transition-colors"
                       >
-                        <span className="text-gray-900 truncate">{c.full_name}</span>
-                        <span className="shrink-0 flex items-center gap-1.5">
-                          {c.title && <span className="text-xs text-gray-500">{c.title}</span>}
-                          {c.is_primary && (
-                            <span className="text-xs font-semibold text-qm-lime-dark bg-qm-lime-light rounded-full px-1.5 py-0.5">
-                              Primary
-                            </span>
-                          )}
-                        </span>
+                        Clear / No contact
                       </button>
-                    ))}
+                      <div className="max-h-48 overflow-y-auto">
+                        {contactOptions.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => selectContact(c.id, c.full_name)}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-qm-lime-light transition-colors ${
+                              c.id === pending.contactId ? 'bg-qm-lime-light font-medium' : ''
+                            }`}
+                          >
+                            <span className="text-gray-900 truncate">{c.full_name}</span>
+                            <span className="shrink-0 flex items-center gap-1.5">
+                              {c.title && <span className="text-xs text-gray-500">{c.title}</span>}
+                              {c.is_primary && (
+                                <span className="text-xs font-semibold text-qm-lime-dark bg-qm-lime-light rounded-full px-1.5 py-0.5">
+                                  Primary
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <div className="border-t border-gray-100 px-3 py-2">
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); setShowContactModal(true); setContactOpen(false) }}
+                      className="flex items-center gap-1 text-xs font-semibold text-qm-lime hover:underline"
+                    >
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      Add New Contact
+                    </button>
                   </div>
                 </>
               )}
@@ -526,6 +544,21 @@ export default function CustomerContactPicker({
         </div>
       )}
       {saveCancel}
+      {showContactModal && pending.customerId && (
+        <CreateContactModal
+          customerId={pending.customerId}
+          orgId={orgId}
+          orgSlug={orgSlug}
+          onClose={() => setShowContactModal(false)}
+          onSuccess={(newContactId, contactName) => {
+            setShowContactModal(false)
+            if (newContactId && contactName) {
+              setContactOptions(prev => [{ id: newContactId, full_name: contactName, title: null, phone: null, is_primary: false }, ...prev])
+              selectContact(newContactId, contactName)
+            }
+          }}
+        />
+      )}
     </div>
   )
   }
@@ -694,31 +727,62 @@ export default function CustomerContactPicker({
             <div className="absolute left-0 top-full mt-1 z-[100] w-full rounded-md border border-gray-200 bg-white shadow-lg overflow-hidden">
               {isLoadingContacts ? (
                 <p className="px-3 py-3 text-sm text-gray-400">Loading contacts…</p>
-              ) : contactOptions.length === 0 ? (
-                <p className="px-3 py-3 text-sm text-gray-400 italic">No contacts on file.</p>
               ) : (
                 <>
-                  <button type="button" onClick={() => selectContact(null, null)}
-                    className="w-full px-3 py-2.5 text-left text-sm text-gray-400 italic hover:bg-gray-50 border-b border-gray-100 transition-colors">
-                    Clear / No contact
-                  </button>
-                  <div className="max-h-48 overflow-y-auto">
-                    {contactOptions.map((c) => (
-                      <button key={c.id} type="button" onClick={() => selectContact(c.id, c.full_name)}
-                        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-qm-lime-light transition-colors ${c.id === pending.contactId ? 'bg-qm-lime-light font-medium' : ''}`}>
-                        <span className="text-gray-900 truncate">{c.full_name}</span>
-                        <span className="shrink-0 flex items-center gap-1.5">
-                          {c.title && <span className="text-xs text-gray-500">{c.title}</span>}
-                          {c.is_primary && <span className="text-xs font-semibold text-qm-lime-dark bg-qm-lime-light rounded-full px-1.5 py-0.5">Primary</span>}
-                        </span>
+                  {contactOptions.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-gray-400 italic">No contacts on file.</p>
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => selectContact(null, null)}
+                        className="w-full px-3 py-2.5 text-left text-sm text-gray-400 italic hover:bg-gray-50 border-b border-gray-100 transition-colors">
+                        Clear / No contact
                       </button>
-                    ))}
+                      <div className="max-h-48 overflow-y-auto">
+                        {contactOptions.map((c) => (
+                          <button key={c.id} type="button" onClick={() => selectContact(c.id, c.full_name)}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-qm-lime-light transition-colors ${c.id === pending.contactId ? 'bg-qm-lime-light font-medium' : ''}`}>
+                            <span className="text-gray-900 truncate">{c.full_name}</span>
+                            <span className="shrink-0 flex items-center gap-1.5">
+                              {c.title && <span className="text-xs text-gray-500">{c.title}</span>}
+                              {c.is_primary && <span className="text-xs font-semibold text-qm-lime-dark bg-qm-lime-light rounded-full px-1.5 py-0.5">Primary</span>}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  <div className="border-t border-gray-100 px-3 py-2">
+                    <button
+                      type="button"
+                      onMouseDown={e => { e.preventDefault(); setShowContactModal(true); setContactOpen(false) }}
+                      className="flex items-center gap-1 text-xs font-semibold text-qm-lime hover:underline"
+                    >
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      Add New Contact
+                    </button>
                   </div>
                 </>
               )}
             </div>
           )}
         </div>
+      )}
+      {showContactModal && pending.customerId && (
+        <CreateContactModal
+          customerId={pending.customerId}
+          orgId={orgId}
+          orgSlug={orgSlug}
+          onClose={() => setShowContactModal(false)}
+          onSuccess={(newContactId, contactName) => {
+            setShowContactModal(false)
+            if (newContactId && contactName) {
+              setContactOptions(prev => [{ id: newContactId, full_name: contactName, title: null, phone: null, is_primary: false }, ...prev])
+              selectContact(newContactId, contactName)
+            }
+          }}
+        />
       )}
     </div>
   )
