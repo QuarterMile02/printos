@@ -67,12 +67,27 @@ export async function GET(
     const q = quoteRow
 
     // 4. Line items (show sell price only — never cost or markup)
-    const { data: lineItemRows } = await service
-      .from('quote_line_items')
-      .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order, modifier_values')
-      .eq('quote_id', id)
-      .order('sort_order')
-    const lineItems: QuotePdfLineItem[] = (lineItemRows ?? []).map((li) => ({
+    // Two-step fetch: retry without modifier_values if the column doesn't exist yet.
+    type RawLineItem = { id: string; description: string | null; quantity: number | null; unit_price: number | null; total_price: number | null; discount_percent: number | null; taxable: boolean | null; sort_order: number | null; modifier_values?: Record<string, boolean | number> | null }
+    let rawLineItems: RawLineItem[] = []
+    {
+      const { data, error } = await service
+        .from('quote_line_items')
+        .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order, modifier_values')
+        .eq('quote_id', id)
+        .order('sort_order') as { data: RawLineItem[] | null; error: { message?: string } | null }
+      if (data) {
+        rawLineItems = data
+      } else if (error?.message?.includes('modifier_values')) {
+        const { data: legacy } = await service
+          .from('quote_line_items')
+          .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order')
+          .eq('quote_id', id)
+          .order('sort_order') as { data: Omit<RawLineItem, 'modifier_values'>[] | null; error: unknown }
+        rawLineItems = (legacy ?? []).map((li) => ({ ...li, modifier_values: null }))
+      }
+    }
+    const lineItems: QuotePdfLineItem[] = rawLineItems.map((li) => ({
       sort_order: li.sort_order ?? 0,
       description: li.description ?? '',
       quantity: li.quantity ?? 1,
