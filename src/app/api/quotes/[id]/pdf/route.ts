@@ -172,7 +172,19 @@ export async function GET(
       }
     }
 
-    // 8. Org profile for header/footer
+    // 8. Document settings
+    type DocSettingsRow = {
+      show_signature_line: boolean; show_deposit_line: boolean; show_tax_line: boolean
+      footer_note: string | null; terms_and_conditions: string | null
+    }
+    const { data: docSettings } = await service
+      .from('document_settings')
+      .select('show_signature_line, show_deposit_line, show_tax_line, footer_note, terms_and_conditions')
+      .eq('organization_id', quoteOrg.organization_id)
+      .eq('document_type', 'quote')
+      .maybeSingle() as { data: DocSettingsRow | null; error: unknown }
+
+    // 9. Org profile for header/footer
     const { data: orgProfileRow } = await service
       .from('org_profile')
       .select('legal_name, dba_name, phone, email, street, city, state, zip, logo_url, tagline, footer_note')
@@ -193,7 +205,7 @@ export async function GET(
       tax_rate: 0.0825,
     }
 
-    // 9. Build PDF data
+    // 10. Build PDF data
     const cust = q.customers
     const pdfData: QuotePdfData = {
       quoteNumber: formatQuoteNumber(q.quote_number, q.created_at),
@@ -219,9 +231,18 @@ export async function GET(
       ...(depositPercent > 0 ? { depositPercent, depositAmount } : {}),
     }
 
-    // 10. Render PDF
+    // 11. Render PDF
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const element = React.createElement(QuoteDocument as any, { data: pdfData })
+    const element = React.createElement(QuoteDocument as any, {
+      data: pdfData,
+      options: {
+        showSignatureLine: docSettings?.show_signature_line !== false,
+        showDepositLine: docSettings?.show_deposit_line !== false,
+        showTaxLine: docSettings?.show_tax_line !== false,
+        footerNote: docSettings?.footer_note ?? null,
+        termsAndConditions: docSettings?.terms_and_conditions ?? null,
+      },
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buffer: Buffer = await (renderToBuffer as any)(element)
 

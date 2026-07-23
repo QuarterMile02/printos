@@ -150,17 +150,31 @@ function fmtDate(iso: string | null) {
 
 // ── Document ──────────────────────────────────────────────────────────────────
 
+export type QuoteDocumentOptions = {
+  showSignatureLine?: boolean
+  showDepositLine?: boolean
+  showTaxLine?: boolean
+  footerNote?: string | null
+  termsAndConditions?: string | null
+}
+
 export default function QuoteDocument({
   data,
   documentType = 'QUOTE',
   documentNumber,
+  options = {},
 }: {
   data: QuotePdfData
   documentType?: string
   documentNumber?: string
+  options?: QuoteDocumentOptions
 }) {
   const { quoteNumber, date, expiresAt, customer, lineItems, discountPercent, terms, notes, modifierLabels, org, depositPercent, depositAmount, amountPaid, balanceDue } = data
   const displayNumber = documentNumber ?? quoteNumber
+
+  const showSignatureLine = options.showSignatureLine !== false
+  const showDepositLine = options.showDepositLine !== false
+  const showTaxLine = options.showTaxLine !== false
 
   const orgName    = org.dba_name ?? org.legal_name
   const orgPhone   = org.phone ?? ''
@@ -185,7 +199,9 @@ export default function QuoteDocument({
   )
   const grandTotal = afterDiscount + taxCents
 
-  const termsText = terms ??
+  const termsText =
+    options.termsAndConditions ??
+    terms ??
     '60% deposit due upon approval.\n40% balance due on completion.'
 
   const taxLabel = `Tax (${(TAX_RATE * 100).toFixed(2).replace(/\.?0+$/, '')}%)`
@@ -280,17 +296,19 @@ export default function QuoteDocument({
               <Text style={s.totalValue}>−{cents(discountCents)}</Text>
             </View>
           )}
-          <View style={s.totalRow}>
-            <Text style={s.totalLabel}>{taxLabel}</Text>
-            <Text style={s.totalValue}>{cents(taxCents)}</Text>
-          </View>
+          {showTaxLine && (
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>{taxLabel}</Text>
+              <Text style={s.totalValue}>{cents(taxCents)}</Text>
+            </View>
+          )}
           <View style={[s.totalRow, { marginTop: 4 }]}>
             <Text style={s.grandLabel}>Grand Total</Text>
             <Text style={s.grandValue}>{cents(grandTotal)}</Text>
           </View>
 
           {/* Deposit required row (quotes with down-payment terms) */}
-          {(depositPercent ?? 0) > 0 && depositAmount !== undefined && (
+          {showDepositLine && (depositPercent ?? 0) > 0 && depositAmount !== undefined && (
             <View style={s.depositRow}>
               <Text style={s.depositLabel}>Deposit Required ({depositPercent}%)</Text>
               <Text style={s.depositValue}>{cents(depositAmount)}</Text>
@@ -326,15 +344,17 @@ export default function QuoteDocument({
         <View style={s.termsBlock}>
           <Text style={s.termsLabel}>Terms &amp; Conditions</Text>
           <Text style={s.termsText}>{termsText}</Text>
-          <View style={s.sigLine}>
-            <Text style={s.sigField}>Approved By: _________________________</Text>
-            <Text style={s.sigField}>Date: ________________</Text>
-          </View>
+          {showSignatureLine && (
+            <View style={s.sigLine}>
+              <Text style={s.sigField}>Approved By: _________________________</Text>
+              <Text style={s.sigField}>Date: ________________</Text>
+            </View>
+          )}
         </View>
 
         {/* ── FOOTER ── */}
         <Text style={s.footer}>
-          {org.footer_note ?? 'Thank you for your business!'}  |  {orgName}  |  {orgPhone}
+          {options.footerNote ?? org.footer_note ?? 'Thank you for your business!'}  |  {orgName}  |  {orgPhone}
         </Text>
 
       </Page>

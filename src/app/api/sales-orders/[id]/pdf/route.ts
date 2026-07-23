@@ -155,7 +155,19 @@ export async function GET(
       }
     }
 
-    // 6. Org profile
+    // 6. Document settings
+    type DocSettingsRow = {
+      show_signature_line: boolean; show_tax_line: boolean
+      footer_note: string | null; terms_and_conditions: string | null
+    }
+    const { data: docSettings } = await service
+      .from('document_settings')
+      .select('show_signature_line, show_tax_line, footer_note, terms_and_conditions')
+      .eq('organization_id', so.organization_id)
+      .eq('document_type', 'sales_order')
+      .maybeSingle() as { data: DocSettingsRow | null; error: unknown }
+
+    // 7. Org profile
     const { data: orgProfileRow } = await service
       .from('org_profile')
       .select('legal_name, dba_name, phone, email, street, city, state, zip, logo_url, tagline, footer_note')
@@ -176,7 +188,7 @@ export async function GET(
       tax_rate: 0.0825,
     }
 
-    // 7. Build PDF data
+    // 8. Build PDF data
     const soNumber = formatSoNumber(so.so_number, so.created_at)
     const pdfData: QuotePdfData = {
       quoteNumber: soNumber,
@@ -201,12 +213,18 @@ export async function GET(
       org: orgProfile,
     }
 
-    // 8. Render PDF
+    // 9. Render PDF
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const element = React.createElement(QuoteDocument as any, {
       data: pdfData,
       documentType: 'Sales Order',
       documentNumber: soNumber,
+      options: {
+        showSignatureLine: docSettings?.show_signature_line !== false,
+        showTaxLine: docSettings?.show_tax_line !== false,
+        footerNote: docSettings?.footer_note ?? null,
+        termsAndConditions: docSettings?.terms_and_conditions ?? null,
+      },
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buffer: Buffer = await (renderToBuffer as any)(element)

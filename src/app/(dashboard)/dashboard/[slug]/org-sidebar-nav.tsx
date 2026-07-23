@@ -521,6 +521,29 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
           <div className="pt-4 mt-4 border-t border-gray-200">
             <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-qm-gray">Settings</p>
 
+            {/* ── Documents ────────────────────────────────────────── */}
+            {(() => {
+              const href = `${basePath}/settings/documents`
+              const isActive = pathname.startsWith(href)
+              return (
+                <a
+                  href={href}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold ${
+                    isActive ? 'bg-qm-lime-light text-qm-lime' : 'text-qm-black hover:bg-qm-surface'
+                  }`}
+                >
+                  <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14 2v4a2 2 0 0 0 2 2h4" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 9H8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 13H8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 17H8" />
+                  </svg>
+                  Documents
+                </a>
+              )
+            })()}
+
             {/* ── PRICING collapsible group ─────────────────────────── */}
             <div className="mt-0.5">
               <button
