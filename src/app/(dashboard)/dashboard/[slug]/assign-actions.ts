@@ -197,6 +197,7 @@ export async function fetchContactsForCustomer(
     .eq('customer_id', customerId)
     .eq('organization_id', orgId)
     .eq('is_active', true)
+    .eq('is_customer_self', false)
     .order('is_primary', { ascending: false })
     .order('full_name')
   return (data ?? []) as ContactOption[]

@@ -720,7 +720,21 @@ export default function QuoteDetailClient({
                         <p className="text-sm text-gray-500 leading-tight">{customerName}</p>
                       )}
                       {initialContactName && initialContactName !== customerName && (
-                        <p className="text-sm text-gray-500 leading-tight">{initialContactName}</p>
+                        <div className="flex items-center gap-1">
+                          <p className="text-sm text-gray-500 leading-tight">{initialContactName}</p>
+                          {isOwnerOrAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setShowCustomerPicker(true)}
+                              title="Edit contact"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-100"
+                            >
+                              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
                       )}
                     </>
                   )}

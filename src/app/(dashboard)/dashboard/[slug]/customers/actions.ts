@@ -106,6 +106,7 @@ export async function createCustomer(
         phone,
         is_primary: true,
         is_ap_contact: false,
+        is_customer_self: true,
       })
     } catch {
       // best-effort — don't fail the whole create if contact insert fails
