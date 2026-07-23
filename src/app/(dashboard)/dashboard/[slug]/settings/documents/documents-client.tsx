@@ -4,7 +4,7 @@ import { useState } from 'react'
 import VoiceInput from '@/components/voice-input'
 import { upsertDocumentSettings, type DocumentSettingsInput } from './actions'
 
-type DocType = 'quote' | 'sales_order' | 'invoice'
+type DocType = 'quote' | 'sales_order' | 'invoice' | 'purchase_order'
 
 export type DocumentSettingsRow = {
   organization_id: string
@@ -77,6 +77,7 @@ const TABS: { key: DocType; label: string }[] = [
   { key: 'quote', label: 'Quote' },
   { key: 'sales_order', label: 'Sales Order' },
   { key: 'invoice', label: 'Invoice' },
+  { key: 'purchase_order', label: 'Purchase Order' },
 ]
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -137,10 +138,11 @@ export default function DocumentsClient({ orgId, orgSlug, initialSettings }: Pro
       quote: rowToSettings(undefined),
       sales_order: rowToSettings(undefined),
       invoice: rowToSettings(undefined),
+      purchase_order: rowToSettings(undefined),
     }
     for (const row of initialSettings) {
       const key = row.document_type as DocType
-      if (key === 'quote' || key === 'sales_order' || key === 'invoice') {
+      if (key === 'quote' || key === 'sales_order' || key === 'invoice' || key === 'purchase_order') {
         map[key] = rowToSettings(row)
       }
     }
@@ -178,7 +180,10 @@ export default function DocumentsClient({ orgId, orgSlug, initialSettings }: Pro
     const res = await upsertDocumentSettings(orgId, orgSlug, activeTab, input)
     setSaving(false)
     const label =
-      activeTab === 'quote' ? 'Quote' : activeTab === 'sales_order' ? 'Sales Order' : 'Invoice'
+      activeTab === 'quote' ? 'Quote'
+      : activeTab === 'sales_order' ? 'Sales Order'
+      : activeTab === 'invoice' ? 'Invoice'
+      : 'Purchase Order'
     showToast(res.error ? `Error: ${res.error}` : `${label} settings saved`)
   }
 

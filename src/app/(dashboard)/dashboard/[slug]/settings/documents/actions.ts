@@ -20,7 +20,7 @@ export type DocumentSettingsInput = {
 export async function upsertDocumentSettings(
   orgId: string,
   orgSlug: string,
-  documentType: 'quote' | 'sales_order' | 'invoice',
+  documentType: 'quote' | 'sales_order' | 'invoice' | 'purchase_order',
   settings: DocumentSettingsInput,
 ): Promise<{ error?: string }> {
   const svc = createServiceClient()
