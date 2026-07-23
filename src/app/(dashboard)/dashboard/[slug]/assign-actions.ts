@@ -64,6 +64,15 @@ export async function assignCustomerToQuote(
     .update({ customer_id: customerId, contact_id: null })
     .eq('id', quoteId).eq('organization_id', orgId)
   if (error) return { error: error.message }
+  try {
+    const { data: soRow } = await service
+      .from('sales_orders').select('id')
+      .eq('quote_id', quoteId).eq('organization_id', orgId)
+      .maybeSingle() as { data: { id?: string } | null; error: unknown }
+    if (soRow?.id) {
+      await service.from('sales_orders').update({ customer_id: customerId, contact_id: null }).eq('id', soRow.id)
+    }
+  } catch { /* SO sync optional */ }
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   return {}
 }
@@ -78,6 +87,15 @@ export async function assignContactToQuote(
     .update({ contact_id: contactId })
     .eq('id', quoteId).eq('organization_id', orgId)
   if (error) return { error: error.message }
+  try {
+    const { data: soRow } = await service
+      .from('sales_orders').select('id')
+      .eq('quote_id', quoteId).eq('organization_id', orgId)
+      .maybeSingle() as { data: { id?: string } | null; error: unknown }
+    if (soRow?.id) {
+      await service.from('sales_orders').update({ contact_id: contactId }).eq('id', soRow.id)
+    }
+  } catch { /* SO sync optional */ }
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
   return {}
 }
