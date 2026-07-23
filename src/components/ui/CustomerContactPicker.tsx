@@ -36,6 +36,7 @@ type Props = {
   isOwnerOrAdmin: boolean
   allowCustomerChange: boolean
   embedded?: boolean
+  autoOpenContact?: boolean
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -60,7 +61,7 @@ export default function CustomerContactPicker({
   initialCustomerId, initialCustomerName, initialCompanyName,
   initialContactId, initialContactName,
   isOwnerOrAdmin, allowCustomerChange,
-  embedded,
+  embedded, autoOpenContact,
 }: Props) {
   const router = useRouter()
 
@@ -204,6 +205,13 @@ export default function CustomerContactPicker({
   }
 
   useEffect(() => { setContactOptions([]) }, [pending.customerId])
+
+  useEffect(() => {
+    if (!autoOpenContact) return
+    const t = setTimeout(() => openContactDrop(), 50)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function selectContact(id: string | null, name: string | null) {
     setPending((p) => ({ ...p, contactId: id, contactName: name }))

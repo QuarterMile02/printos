@@ -167,6 +167,7 @@ export default function QuoteDetailClient({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [isEditing] = useState(true)
   const [showCustomerPicker, setShowCustomerPicker] = useState(false)
+  const [openContactDirectly, setOpenContactDirectly] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [isSavingItem, setIsSavingItem] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
@@ -725,7 +726,7 @@ export default function QuoteDetailClient({
                           {isOwnerOrAdmin && (
                             <button
                               type="button"
-                              onClick={() => setShowCustomerPicker(true)}
+                              onClick={() => { setOpenContactDirectly(true); setShowCustomerPicker(true) }}
                               title="Edit contact"
                               className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-100"
                             >
@@ -756,7 +757,7 @@ export default function QuoteDetailClient({
                 {isOwnerOrAdmin && (
                   <button
                     type="button"
-                    onClick={() => setShowCustomerPicker(true)}
+                    onClick={() => { setOpenContactDirectly(false); setShowCustomerPicker(true) }}
                     title="Change customer / contact"
                     className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 rounded p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 mt-0.5"
                   >
@@ -783,6 +784,7 @@ export default function QuoteDetailClient({
                     initialContactName={initialContactName ?? null}
                     isOwnerOrAdmin={isOwnerOrAdmin}
                     allowCustomerChange={true}
+                    autoOpenContact={openContactDirectly}
                   />
                   <button
                     type="button"
