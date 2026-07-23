@@ -4,6 +4,23 @@ import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import PhoneLookup from '@/components/ui/PhoneLookup'
 
+// ── Icons ─────────────────────────────────────────────────────────────────────
+function ChevronDown() {
+  return (
+    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+    </svg>
+  )
+}
+function ChevronUp() {
+  return (
+    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5" />
+    </svg>
+  )
+}
+
+// ── Main nav items ────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   {
     label: 'Overview',
@@ -51,10 +68,6 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
-  // Reports — gated to owner/sales/accounting via the showReports prop
-  // below. Uses an inline SVG (matches lucide-react's BarChart2 design)
-  // to stay consistent with the rest of the sidebar; the codebase
-  // doesn't ship lucide-react and adding a dep for one icon isn't worth it.
   {
     label: 'Reports',
     href: '/reports',
@@ -114,12 +127,84 @@ const NAV_ITEMS = [
   },
 ]
 
-const SETTINGS_ITEMS = [
+// ── Collapsible: PRICING group ────────────────────────────────────────────────
+const PRICING_ITEMS = [
+  {
+    label: 'Labor Rates',
+    href: '/settings/labor-rates',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Machine Rates',
+    href: '/settings/machine-rates',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 0 1 1.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 0 1-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.397.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 0 1-.12-1.45l.527-.737c.25-.35.273-.806.108-1.204-.165-.397-.505-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 0 1 .12-1.45l.773-.773a1.125 1.125 0 0 1 1.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Modifiers',
+    href: '/settings/modifiers',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 13.5V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m12-3V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m-6-9V3.75m0 3.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 9.75V10.5" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Discounts',
+    href: '/settings/discounts',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0c1.1.128 1.907 1.077 1.907 2.185ZM9.75 9h.008v.008H9.75V9Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm4.125 6h.008v.008h-.008V15Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Promo Codes',
+    href: '/settings/promo-codes',
+    comingSoon: true,
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 0 1-1.5 1.5H5.25a1.5 1.5 0 0 1-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 1 0 9.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1 1 14.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Pricing Formulas',
+    href: '/settings/pricing-formulas',
+    comingSoon: true,
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008Zm0 2.25h.008v.008H8.25V13.5Zm0 2.25h.008v.008H8.25v-.008Zm0 2.25h.008v.008H8.25V18Zm2.498-6.75h.007v.008h-.007v-.008Zm0 2.25h.007v.008h-.007V13.5Zm0 2.25h.007v.008h-.007v-.008Zm0 2.25h.007v.008h-.007V18Zm2.504-6.75h.008v.008h-.008v-.008Zm0 2.25h.008v.008h-.008V13.5Zm0 2.25h.008v.008h-.008v-.008Zm0 2.25h.008v.008h-.008V18Zm2.498-6.75h.008v.008h-.008v-.008Zm0 2.25h.008v.008h-.008V13.5ZM8.25 6h7.5v2.25h-7.5V6ZM12 2.25c-1.892 0-3.758.11-5.593.322C5.307 2.7 4.5 3.65 4.5 4.757V19.5a2.25 2.25 0 0 0 2.25 2.25h10.5a2.25 2.25 0 0 0 2.25-2.25V4.757c0-1.107-.806-2.057-1.907-2.185A48.507 48.507 0 0 0 12 2.25Z" />
+      </svg>
+    ),
+  },
+]
+
+// ── Collapsible: PRODUCTS group ───────────────────────────────────────────────
+const PRODUCTS_ITEMS = [
+  {
+    label: 'Product List',
+    href: '/products',
+    settingsExclude: true, // active check excludes /settings/* paths
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+      </svg>
+    ),
+  },
   {
     label: 'Product Types',
     href: '/settings/product-types',
     icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" />
       </svg>
@@ -129,30 +214,16 @@ const SETTINGS_ITEMS = [
     label: 'Product Categories',
     href: '/settings/product-categories',
     icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
       </svg>
     ),
   },
-  {
-    label: 'Labor Rates',
-    href: '/settings/labor-rates',
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Machine Rates',
-    href: '/settings/machine-rates',
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 0 1 1.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 0 1-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.397.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 0 1-.12-1.45l.527-.737c.25-.35.273-.806.108-1.204-.165-.397-.505-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 0 1 .12-1.45l.773-.773a1.125 1.125 0 0 1 1.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894Z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-      </svg>
-    ),
-  },
+]
+
+// ── Flat settings items (Product Types, Product Categories, Labor Rates,
+//    Machine Rates, Modifiers, Discounts removed — they live in groups above)
+const SETTINGS_ITEMS = [
   {
     label: 'Materials',
     href: '/settings/materials',
@@ -178,24 +249,6 @@ const SETTINGS_ITEMS = [
     icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Modifiers',
-    href: '/settings/modifiers',
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 13.5V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m12-3V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m-6-9V3.75m0 3.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 9.75V10.5" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Discounts',
-    href: '/settings/discounts',
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0c1.1.128 1.907 1.077 1.907 2.185ZM9.75 9h.008v.008H9.75V9Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm4.125 6h.008v.008h-.008V15Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
       </svg>
     ),
   },
@@ -318,21 +371,54 @@ type Props = {
 
 export function OrgSidebarNav({ slug, email, signOutAction, showReports = false }: Props) {
   const [open, setOpen] = useState(false)
+  const [pricingOpen, setPricingOpen] = useState(true)
+  const [productsOpen, setProductsOpen] = useState(true)
+  const [comingSoonMsg, setComingSoonMsg] = useState<string | null>(null)
+
   const pathname = usePathname()
   const basePath = `/dashboard/${slug}`
+
   const visibleNav = NAV_ITEMS.filter((item) => {
     if ('requires' in item && item.requires === 'reports') return showReports
     return true
   })
 
-  // Close on navigation
+  // Sync group open states from localStorage after mount
+  useEffect(() => {
+    const v = localStorage.getItem('sidebar_pricing_open')
+    if (v !== null) setPricingOpen(v === 'true')
+  }, [])
+
+  useEffect(() => {
+    const v = localStorage.getItem('sidebar_products_open')
+    if (v !== null) setProductsOpen(v === 'true')
+  }, [])
+
+  // Close mobile drawer on navigation
   useEffect(() => {
     setOpen(false)
   }, [pathname])
 
+  function togglePricing() {
+    const next = !pricingOpen
+    setPricingOpen(next)
+    localStorage.setItem('sidebar_pricing_open', String(next))
+  }
+
+  function toggleProducts() {
+    const next = !productsOpen
+    setProductsOpen(next)
+    localStorage.setItem('sidebar_products_open', String(next))
+  }
+
+  function showComingSoon(label: string) {
+    setComingSoonMsg(`${label} — coming soon!`)
+    setTimeout(() => setComingSoonMsg(null), 3000)
+  }
+
   return (
     <>
-      {/* Mobile header bar — full width, stacks above content */}
+      {/* Mobile header bar */}
       <div className="sticky top-0 z-30 flex w-full items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 md:hidden">
         <button
           onClick={() => setOpen(true)}
@@ -380,7 +466,7 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
           </button>
         </div>
 
-        {/* Phone lookup — receptionist quick-dial search */}
+        {/* Phone lookup */}
         <div className="px-4 py-2 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <PhoneLookup />
@@ -390,6 +476,13 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
 
         {/* Nav links */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+          {/* Coming-soon toast */}
+          {comingSoonMsg && (
+            <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              {comingSoonMsg}
+            </div>
+          )}
+
           {visibleNav.map((item) => {
             const href = basePath + item.href
             const isActive =
@@ -413,7 +506,7 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
             )
           })}
 
-          {/* Display Board — opens in new tab for TV display */}
+          {/* Display Board */}
           <a
             href={`${basePath}/display`}
             target="_blank"
@@ -427,6 +520,98 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
           {/* Settings section */}
           <div className="pt-4 mt-4 border-t border-gray-200">
             <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-qm-gray">Settings</p>
+
+            {/* ── PRICING collapsible group ─────────────────────────── */}
+            <div className="mt-0.5">
+              <button
+                type="button"
+                onClick={togglePricing}
+                className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-qm-black hover:bg-qm-surface"
+              >
+                {/* Dollar / pricing icon */}
+                <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <span className="flex-1 text-left">Pricing</span>
+                {pricingOpen ? <ChevronUp /> : <ChevronDown />}
+              </button>
+
+              {pricingOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {PRICING_ITEMS.map((item) => {
+                    if (item.comingSoon) {
+                      return (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => showComingSoon(item.label)}
+                          className="w-full flex items-center gap-2 rounded-md pl-8 pr-3 py-1.5 text-left text-sm font-medium text-qm-black hover:bg-qm-surface"
+                        >
+                          {item.icon}
+                          <span>{item.label}</span>
+                          <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-gray-400">Soon</span>
+                        </button>
+                      )
+                    }
+                    const href = basePath + item.href
+                    const isActive = pathname.startsWith(href)
+                    return (
+                      <a
+                        key={item.label}
+                        href={href}
+                        className={`flex items-center gap-2 rounded-md pl-8 pr-3 py-1.5 text-sm font-medium ${
+                          isActive ? 'bg-qm-lime-light text-qm-lime' : 'text-qm-black hover:bg-qm-surface'
+                        }`}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── PRODUCTS collapsible group ────────────────────────── */}
+            <div className="mt-0.5">
+              <button
+                type="button"
+                onClick={toggleProducts}
+                className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-qm-black hover:bg-qm-surface"
+              >
+                {/* Box / package icon */}
+                <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                </svg>
+                <span className="flex-1 text-left">Products</span>
+                {productsOpen ? <ChevronUp /> : <ChevronDown />}
+              </button>
+
+              {productsOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {PRODUCTS_ITEMS.map((item) => {
+                    const href = basePath + item.href
+                    const isActive = item.settingsExclude
+                      ? pathname.startsWith(href) && !pathname.startsWith(basePath + '/settings')
+                      : pathname.startsWith(href)
+                    return (
+                      <a
+                        key={item.label}
+                        href={href}
+                        className={`flex items-center gap-2 rounded-md pl-8 pr-3 py-1.5 text-sm font-medium ${
+                          isActive ? 'bg-qm-lime-light text-qm-lime' : 'text-qm-black hover:bg-qm-surface'
+                        }`}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── Flat settings items ───────────────────────────────── */}
             {SETTINGS_ITEMS.map((item) => {
               const href = basePath + item.href
               const isActive = pathname.startsWith(href)
