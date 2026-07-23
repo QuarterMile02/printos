@@ -371,8 +371,8 @@ type Props = {
 
 export function OrgSidebarNav({ slug, email, signOutAction, showReports = false }: Props) {
   const [open, setOpen] = useState(false)
-  const [pricingOpen, setPricingOpen] = useState(true)
-  const [productsOpen, setProductsOpen] = useState(true)
+  const [pricingOpen, setPricingOpen] = useState(false)
+  const [productsOpen, setProductsOpen] = useState(false)
   const [comingSoonMsg, setComingSoonMsg] = useState<string | null>(null)
 
   const pathname = usePathname()
