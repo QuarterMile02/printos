@@ -9,7 +9,6 @@ export type PricingFormulaFormData = {
   formula: string
   uom: string
   description: string
-  active: boolean
 }
 
 async function getMembership(orgId: string) {
@@ -48,7 +47,6 @@ export async function createPricingFormula(
       formula: data.formula.trim(),
       uom: data.uom.trim(),
       description: data.description.trim() || null,
-      active: data.active,
       is_system: false,
     })
 
@@ -80,7 +78,6 @@ export async function updatePricingFormula(
       formula: data.formula.trim(),
       uom: data.uom.trim(),
       description: data.description.trim() || null,
-      active: data.active,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)

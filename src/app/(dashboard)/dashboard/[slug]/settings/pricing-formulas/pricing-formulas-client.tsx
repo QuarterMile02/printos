@@ -17,8 +17,7 @@ export type PricingFormula = {
   uom: string
   is_system: boolean
   description: string | null
-  sort_order: number | null
-  active: boolean | null
+  created_at: string
 }
 
 type Props = {
@@ -54,7 +53,7 @@ function FormField({
 }
 
 function emptyForm(): PricingFormulaFormData {
-  return { name: '', formula: '', uom: '', description: '', active: true }
+  return { name: '', formula: '', uom: '', description: '' }
 }
 
 function toForm(f: PricingFormula): PricingFormulaFormData {
@@ -63,7 +62,6 @@ function toForm(f: PricingFormula): PricingFormulaFormData {
     formula: f.formula,
     uom: f.uom,
     description: f.description ?? '',
-    active: f.active ?? true,
   }
 }
 
@@ -243,9 +241,6 @@ export default function PricingFormulasClient({
                 <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                   Description
                 </th>
-                <th className="px-5 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Active
-                </th>
                 <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                   Actions
                 </th>
@@ -288,13 +283,6 @@ export default function PricingFormulasClient({
                   </td>
                   <td className="max-w-xs px-5 py-3 text-sm text-gray-500">
                     {f.description ?? <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-5 py-3 text-center">
-                    <span
-                      className={`inline-block h-2.5 w-2.5 rounded-full ${
-                        f.active ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                    />
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">
                     {f.is_system ? (
@@ -413,23 +401,6 @@ export default function PricingFormulasClient({
                   placeholder="What does this formula calculate?"
                 />
               </FormField>
-
-              <label className="flex cursor-pointer items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, active: !form.active })}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    form.active ? 'bg-qm-lime' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      form.active ? 'translate-x-4' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-                <span className="text-sm text-gray-700">Active</span>
-              </label>
             </div>
 
             {/* Modal footer */}

@@ -63,9 +63,8 @@ async function PageInner({ params }: PageProps) {
 
   const { data: formulas } = await service
     .from('pricing_formulas')
-    .select('*')
+    .select('id, organization_id, name, formula, uom, is_system, description, created_at')
     .or(`organization_id.eq.${org.id},is_system.eq.true`)
-    .order('sort_order', { ascending: true })
     .order('name', { ascending: true })
 
   return (
