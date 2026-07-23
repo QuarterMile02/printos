@@ -104,6 +104,22 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
     parentQuote = q
   }
 
+  // Fetch line items from the linked quote
+  type SoLineItem = {
+    id: string; description: string; quantity: number; unit_price: number
+    total_price: number; discount_percent: number | null; taxable: boolean | null
+    sort_order: number | null
+  }
+  let soLineItems: SoLineItem[] = []
+  if (so.quote_id) {
+    const { data: liData } = await supabase
+      .from('quote_line_items')
+      .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order')
+      .eq('quote_id', so.quote_id)
+      .order('sort_order') as { data: SoLineItem[] | null; error: unknown }
+    soLineItems = liData ?? []
+  }
+
   // Fetch child jobs
   type JobRow = {
     id: string
@@ -202,6 +218,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
           customer: so.customers ?? null,
         }}
         parentQuote={parentQuote}
+        lineItems={soLineItems}
         jobs={(jobs ?? []).map((j) => ({
           id: j.id,
           job_number: j.job_number,

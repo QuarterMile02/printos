@@ -719,7 +719,7 @@ export default function QuoteDetailClient({
                       {companyName && customerName && !initialContactName && (
                         <p className="text-sm text-gray-500 leading-tight">{customerName}</p>
                       )}
-                      {initialContactName && (
+                      {initialContactName && initialContactName !== customerName && (
                         <p className="text-sm text-gray-500 leading-tight">{initialContactName}</p>
                       )}
                     </>

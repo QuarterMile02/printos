@@ -112,12 +112,24 @@ function fmtAddrLine(street: string | null, city: string | null, state: string |
   return parts.join(' · ') || ''
 }
 
+type SoLineItem = {
+  id: string
+  description: string
+  quantity: number
+  unit_price: number
+  total_price: number
+  discount_percent: number | null
+  taxable: boolean | null
+  sort_order: number | null
+}
+
 type Props = {
   orgId: string
   orgSlug: string
   salesOrder: SalesOrder
   parentQuote: QuoteRef | null
   jobs: Job[]
+  lineItems: SoLineItem[]
   canSeePricing: boolean
   canExportPdf: boolean
   initialContactId: string | null
@@ -148,7 +160,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 type AddrMode = 'billing' | 'saved' | 'new'
 
 export default function SoDetailClient({
-  orgId, orgSlug, salesOrder, parentQuote, jobs, canSeePricing, canExportPdf,
+  orgId, orgSlug, salesOrder, parentQuote, jobs, lineItems, canSeePricing, canExportPdf,
   initialContactId, initialContactName, initialContactEmail, initialContactPhone, canReassignCustomer,
   shipments, shipmentSaved, shippingMethods, shippingProfiles, customerShippingAddresses,
 }: Props) {
@@ -461,6 +473,49 @@ export default function SoDetailClient({
           </div>
         )}
       </div>
+
+      {/* ── Line Items ────────────────────────────────────────────────────── */}
+      {lineItems.length > 0 && (
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-gray-200 px-6 py-4">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Line Items</h2>
+          </div>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 w-10">#</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Product / Description</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-16">Qty</th>
+                {canSeePricing && (
+                  <>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-28">Unit Price</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-20">Disc%</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-28">Total</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {lineItems.map((li, i) => (
+                <tr key={li.id} className={i % 2 === 1 ? 'bg-gray-50' : ''}>
+                  <td className="px-4 py-3 text-sm text-gray-500 tabular-nums">{i + 1}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900">{li.description}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">{li.quantity}</td>
+                  {canSeePricing && (
+                    <>
+                      <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(li.unit_price)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-500 text-right tabular-nums">
+                        {li.discount_percent ? `${li.discount_percent}%` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(li.total_price)}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ── Shipments ─────────────────────────────────────────────────────── */}
       {(() => {
