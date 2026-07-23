@@ -340,34 +340,38 @@ export default function SoCustomerPicker({
             <div className="absolute left-0 top-full mt-1 z-[200] w-60 rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden">
               {loadingContacts ? (
                 <p className="px-3 py-3 text-xs text-gray-400">Loading…</p>
-              ) : contactOpts.length === 0 ? (
-                <p className="px-3 py-3 text-xs text-gray-400 italic">No contacts on file.</p>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => selectContact(null, null)}
-                    className="w-full px-3 py-2 text-left text-xs text-gray-400 italic hover:bg-gray-50 border-b border-gray-100"
-                  >
-                    No contact
-                  </button>
-                  <div className="max-h-40 overflow-y-auto">
-                    {contactOpts.map((c) => (
+                  {contactOpts.length === 0 ? (
+                    <p className="px-3 py-3 text-xs text-gray-400 italic">No contacts on file.</p>
+                  ) : (
+                    <>
                       <button
-                        key={c.id}
                         type="button"
-                        onClick={() => selectContact(c.id, c.full_name)}
-                        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-qm-lime-light transition-colors"
+                        onClick={() => selectContact(null, null)}
+                        className="w-full px-3 py-2 text-left text-xs text-gray-400 italic hover:bg-gray-50 border-b border-gray-100"
                       >
-                        <span className="text-gray-900 truncate">{c.full_name}</span>
-                        {c.is_primary && (
-                          <span className="text-xs font-semibold text-qm-lime-dark bg-qm-lime-light rounded-full px-1.5 py-0.5 shrink-0">
-                            Primary
-                          </span>
-                        )}
+                        No contact
                       </button>
-                    ))}
-                  </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {contactOpts.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => selectContact(c.id, c.full_name)}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-qm-lime-light transition-colors"
+                          >
+                            <span className="text-gray-900 truncate">{c.full_name}</span>
+                            {c.is_primary && (
+                              <span className="text-xs font-semibold text-qm-lime-dark bg-qm-lime-light rounded-full px-1.5 py-0.5 shrink-0">
+                                Primary
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <div className="border-t border-gray-100 px-3 py-2">
                     <button
                       type="button"
