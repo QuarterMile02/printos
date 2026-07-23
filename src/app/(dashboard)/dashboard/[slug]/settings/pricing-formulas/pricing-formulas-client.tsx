@@ -257,20 +257,21 @@ export default function PricingFormulasClient({
                   <td className="whitespace-nowrap px-5 py-3 text-sm font-semibold text-qm-black">
                     <div className="flex items-center gap-1.5">
                       {f.is_system && (
-                        <svg
-                          className="h-3.5 w-3.5 shrink-0 text-gray-400"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth={2}
-                          stroke="currentColor"
-                          title="System formula — read only"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
-                          />
-                        </svg>
+                        <span title="System formula — read only">
+                          <svg
+                            className="h-3.5 w-3.5 shrink-0 text-gray-400"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2}
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                            />
+                          </svg>
+                        </span>
                       )}
                       {f.name}
                     </div>
