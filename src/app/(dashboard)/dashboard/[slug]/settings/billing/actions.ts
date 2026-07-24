@@ -3,6 +3,13 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+export type BusinessHoursEntry = {
+  day_of_week: number
+  is_open: boolean
+  open_time: string
+  close_time: string
+}
+
 export async function upsertOrgProfile(
   orgId: string,
   orgSlug: string,
@@ -21,6 +28,12 @@ export async function upsertOrgProfile(
     logo_url: string | null
     tagline: string | null
     footer_note: string | null
+    timezone: string | null
+    date_format: string | null
+    currency: string | null
+    units: string | null
+    billing_address: Record<string, string> | null
+    shipping_address: Record<string, string> | null
   }>,
 ): Promise<{ error?: string }> {
   const svc = createServiceClient()
@@ -29,6 +42,23 @@ export async function upsertOrgProfile(
     .upsert(
       { organization_id: orgId, ...patch, updated_at: new Date().toISOString() },
       { onConflict: 'organization_id' },
+    )
+  if (error) return { error: error.message }
+  revalidatePath(`/dashboard/${orgSlug}/settings/billing`)
+  return {}
+}
+
+export async function upsertBusinessHours(
+  orgId: string,
+  orgSlug: string,
+  hours: BusinessHoursEntry[],
+): Promise<{ error?: string }> {
+  const svc = createServiceClient()
+  const { error } = await svc
+    .from('business_hours')
+    .upsert(
+      hours.map((h) => ({ organization_id: orgId, ...h })),
+      { onConflict: 'organization_id,day_of_week' },
     )
   if (error) return { error: error.message }
   revalidatePath(`/dashboard/${orgSlug}/settings/billing`)

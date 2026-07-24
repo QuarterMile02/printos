@@ -288,7 +288,7 @@ const SETTINGS_ITEMS = [
     ),
   },
   {
-    label: 'Billing',
+    label: 'Account',
     href: '/settings/billing',
     icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">

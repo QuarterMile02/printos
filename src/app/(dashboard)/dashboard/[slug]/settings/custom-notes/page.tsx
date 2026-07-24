@@ -6,27 +6,42 @@ import { checkPermission } from '@/lib/check-permission'
 export const dynamic = 'force-dynamic'
 
 const TYPES = [
-  { value: 'void_reason',    label: 'Void Reason'    },
-  { value: 'lost_reason',    label: 'Lost Reason'    },
-  { value: 'customer_note',  label: 'Customer Note'  },
-  { value: 'job_note',       label: 'Job Note'       },
-  { value: 'quote_note',     label: 'Quote Note'     },
+  { value: 'customer_note',    label: 'Customer Note'    },
+  { value: 'quote_note',       label: 'Quote Note'       },
+  { value: 'sales_order_note', label: 'Sales Order Note' },
+  { value: 'invoice_note',     label: 'Invoice Note'     },
+  { value: 'job_note',         label: 'Job Note'         },
+  { value: 'void_reason',      label: 'Void Reason'      },
+  { value: 'lost_reason',      label: 'Lost Reason'      },
+]
+
+const TABS = [
+  { label: 'All',          value: '' },
+  { label: 'Customer',     value: 'customer_note' },
+  { label: 'Quote',        value: 'quote_note' },
+  { label: 'Sales Order',  value: 'sales_order_note' },
+  { label: 'Invoice',      value: 'invoice_note' },
+  { label: 'Job',          value: 'job_note' },
 ]
 
 const TYPE_BADGE: Record<string, string> = {
-  void_reason:   'bg-red-50    text-red-700',
-  lost_reason:   'bg-orange-50 text-orange-700',
-  customer_note: 'bg-blue-50   text-blue-700',
-  job_note:      'bg-amber-50  text-amber-700',
-  quote_note:    'bg-purple-50 text-purple-700',
+  void_reason:      'bg-red-50    text-red-700',
+  lost_reason:      'bg-orange-50 text-orange-700',
+  customer_note:    'bg-blue-50   text-blue-700',
+  job_note:         'bg-amber-50  text-amber-700',
+  quote_note:       'bg-purple-50 text-purple-700',
+  sales_order_note: 'bg-teal-50   text-teal-700',
+  invoice_note:     'bg-indigo-50 text-indigo-700',
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  void_reason:   'Void Reason',
-  lost_reason:   'Lost Reason',
-  customer_note: 'Customer Note',
-  job_note:      'Job Note',
-  quote_note:    'Quote Note',
+  void_reason:      'Void Reason',
+  lost_reason:      'Lost Reason',
+  customer_note:    'Customer Note',
+  job_note:         'Job Note',
+  quote_note:       'Quote Note',
+  sales_order_note: 'Sales Order Note',
+  invoice_note:     'Invoice Note',
 }
 
 type Note = {
@@ -63,7 +78,7 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
-  const sortDesc = sp.sort === 'desc'
+  const sortDesc  = sp.sort === 'desc'
   const typeFilter = sp.type ?? ''
   const supabase = await createClient()
 
@@ -83,40 +98,53 @@ async function PageInner({ params, searchParams }: PageProps) {
     )
   }
 
-  let query = supabase
+  // Fetch all notes — tab filtering is done in-memory below
+  const { data: allRes } = await supabase
     .from('custom_notes')
     .select('id, title, body, type, is_active, created_at')
     .eq('organization_id', org.id)
     .order('title', { ascending: !sortDesc })
 
-  if (typeFilter) query = query.eq('type', typeFilter)
+  const allNotes = (allRes ?? []) as Note[]
+  const notes = typeFilter ? allNotes.filter((n) => n.type === typeFilter) : allNotes
 
-  const { data: allRes } = await query
-  const notes = (allRes ?? []) as Note[]
-
-  const editId = sp.edit
+  const editId  = sp.edit
   const showAdd = sp.add === '1'
 
   let editNote: Note | null = null
   if (editId) {
-    editNote = notes.find(n => n.id === editId) ?? null
+    editNote = notes.find((n) => n.id === editId) ?? null
     if (!editNote) {
       const { data: found } = await supabase
         .from('custom_notes')
         .select('id, title, body, type, is_active, created_at')
-        .eq('id', editId)
-        .eq('organization_id', org.id)
-        .single()
+        .eq('id', editId).eq('organization_id', org.id).single()
       editNote = (found as Note | null)
     }
   }
 
   const isPanelOpen = Boolean(editNote || showAdd)
 
-  const sortLinkParams = new URLSearchParams()
-  if (typeFilter) sortLinkParams.set('type', typeFilter)
-  if (!sortDesc) sortLinkParams.set('sort', 'desc')
-  const sortLinkQs = sortLinkParams.toString()
+  // Helper: build URL preserving sort + type params
+  function buildUrl(overrides: { type?: string; add?: string; edit?: string; saved?: string } = {}) {
+    const params = new URLSearchParams()
+    if (sortDesc) params.set('sort', 'desc')
+    const type = 'type' in overrides ? overrides.type : typeFilter
+    if (type) params.set('type', type)
+    if (overrides.add)   params.set('add', overrides.add)
+    if (overrides.edit)  params.set('edit', overrides.edit)
+    if (overrides.saved) params.set('saved', overrides.saved)
+    const qs = params.toString()
+    return `/dashboard/${slug}/settings/custom-notes${qs ? `?${qs}` : ''}`
+  }
+
+  const sortToggleUrl = (() => {
+    const params = new URLSearchParams()
+    if (typeFilter) params.set('type', typeFilter)
+    if (!sortDesc) params.set('sort', 'desc')
+    const qs = params.toString()
+    return `/dashboard/${slug}/settings/custom-notes${qs ? `?${qs}` : ''}`
+  })()
 
   const inputCls = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
   const labelCls = 'block text-xs font-medium text-gray-500'
@@ -129,19 +157,24 @@ async function PageInner({ params, searchParams }: PageProps) {
         <span className="text-gray-700">Custom Notes</span>
       </div>
 
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">
           Custom Notes <span className="text-sm font-normal text-gray-400">({notes.length})</span>
         </h1>
         <div className="flex items-center gap-2">
           <Link
-            href={`/dashboard/${slug}/settings/custom-notes${sortLinkQs ? `?${sortLinkQs}` : ''}`}
-            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+            href={sortToggleUrl}
+            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+              !sortDesc
+                ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700'
+                : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'
+            }`}
           >
-            {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
+            {sortDesc ? 'Z–A ↓' : 'A–Z ↑'}
           </Link>
           <Link
-            href={`/dashboard/${slug}/settings/custom-notes?add=1`}
+            href={buildUrl({ add: '1' })}
             className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
           >
             + New Note
@@ -149,31 +182,31 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Type filter bar */}
-      <form className="mb-4 flex flex-wrap gap-2">
-        {sortDesc && <input type="hidden" name="sort" value="desc" />}
-        <select
-          name="type"
-          defaultValue={typeFilter}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-        >
-          <option value="">All Types</option>
-          {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
-          Filter
-        </button>
-        {typeFilter && (
-          <Link
-            href={`/dashboard/${slug}/settings/custom-notes${sortDesc ? '?sort=desc' : ''}`}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-          >
-            Clear
-          </Link>
-        )}
-      </form>
+      {/* Tab bar */}
+      <div className="mb-4 flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
+        {TABS.map((tab) => {
+          const isActive = typeFilter === tab.value
+          const tabParams = new URLSearchParams()
+          if (sortDesc) tabParams.set('sort', 'desc')
+          if (tab.value) tabParams.set('type', tab.value)
+          const qs = tabParams.toString()
+          return (
+            <Link
+              key={tab.value}
+              href={`/dashboard/${slug}/settings/custom-notes${qs ? `?${qs}` : ''}`}
+              className={`flex-1 rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </Link>
+          )
+        })}
+      </div>
 
-      {/* Inline panel */}
+      {/* Inline add / edit panel */}
       {isPanelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           {sp.saved === '1' && (
@@ -193,9 +226,7 @@ async function PageInner({ params, searchParams }: PageProps) {
               <div>
                 <label className={labelCls}>Title *</label>
                 <input
-                  type="text"
-                  name="title"
-                  required
+                  type="text" name="title" required
                   defaultValue={editNote?.title ?? ''}
                   placeholder="e.g. Net 30"
                   className={inputCls}
@@ -203,8 +234,12 @@ async function PageInner({ params, searchParams }: PageProps) {
               </div>
               <div>
                 <label className={labelCls}>Type *</label>
-                <select name="type" required defaultValue={editNote?.type ?? 'quote_note'} className={inputCls}>
-                  {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                <select
+                  name="type" required
+                  defaultValue={editNote?.type ?? (typeFilter || 'quote_note')}
+                  className={inputCls}
+                >
+                  {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </div>
             </div>
@@ -212,9 +247,7 @@ async function PageInner({ params, searchParams }: PageProps) {
             <div>
               <label className={labelCls}>Body *</label>
               <textarea
-                name="body"
-                required
-                rows={4}
+                name="body" required rows={4}
                 defaultValue={editNote?.body ?? ''}
                 placeholder="Enter the note text that will appear as a quick-fill option…"
                 className={inputCls + ' resize-y'}
@@ -223,8 +256,7 @@ async function PageInner({ params, searchParams }: PageProps) {
 
             <label className="flex items-center gap-2 cursor-pointer">
               <input
-                type="checkbox"
-                name="is_active"
+                type="checkbox" name="is_active"
                 defaultChecked={editNote?.is_active !== false}
                 className="h-4 w-4 accent-qm-lime"
               />
@@ -232,11 +264,12 @@ async function PageInner({ params, searchParams }: PageProps) {
             </label>
 
             <div className="flex gap-2 pt-2">
-              <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
+              <button type="submit"
+                className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
                 Save
               </button>
               <Link
-                href={`/dashboard/${slug}/settings/custom-notes`}
+                href={buildUrl()}
                 className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
@@ -246,7 +279,7 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      {/* List */}
+      {/* Note list table */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -262,14 +295,16 @@ async function PageInner({ params, searchParams }: PageProps) {
             {notes.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
-                  {typeFilter ? `No ${TYPE_LABEL[typeFilter] ?? typeFilter}s yet.` : 'No custom notes yet.'}
+                  {typeFilter
+                    ? `No ${TYPE_LABEL[typeFilter] ?? typeFilter}s yet.`
+                    : 'No custom notes yet.'}
                 </td>
               </tr>
-            ) : notes.map(n => (
+            ) : notes.map((n) => (
               <tr key={n.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 whitespace-nowrap">
                   <Link
-                    href={`/dashboard/${slug}/settings/custom-notes?edit=${n.id}`}
+                    href={buildUrl({ edit: n.id })}
                     className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia"
                   >
                     {n.title}
@@ -279,7 +314,9 @@ async function PageInner({ params, searchParams }: PageProps) {
                   <p className="text-sm text-gray-500 truncate">{n.body}</p>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_BADGE[n.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    TYPE_BADGE[n.type] ?? 'bg-gray-100 text-gray-600'
+                  }`}>
                     {TYPE_LABEL[n.type] ?? n.type}
                   </span>
                 </td>
@@ -287,10 +324,7 @@ async function PageInner({ params, searchParams }: PageProps) {
                   <span className={`inline-block h-2 w-2 rounded-full ${n.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
                 </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                  <Link
-                    href={`/dashboard/${slug}/settings/custom-notes?edit=${n.id}`}
-                    className="text-sm text-qm-lime hover:underline"
-                  >
+                  <Link href={buildUrl({ edit: n.id })} className="text-sm text-qm-lime hover:underline">
                     Edit
                   </Link>
                 </td>

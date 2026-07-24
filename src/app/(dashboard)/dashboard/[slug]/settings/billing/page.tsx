@@ -1,6 +1,6 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import BillingClient, { type Props as ClientProps } from './billing-client'
+import AccountClient, { type Props as ClientProps, type DayHours } from './billing-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,10 +11,10 @@ export default async function Page(props: PageProps) {
     return await PageInner(props)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[billing-settings] page crash:', err)
+    console.error('[account-settings] page crash:', err)
     return (
       <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (billing settings)</h1>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (account settings)</h1>
         <div>{message}</div>
       </div>
     )
@@ -24,6 +24,7 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
+  const service = createServiceClient()
 
   const { data: orgRow } = await supabase
     .from('organizations').select('id, name').eq('slug', slug).single()
@@ -41,37 +42,51 @@ async function PageInner({ params }: PageProps) {
   if (!isOwnerOrAdmin) {
     return (
       <div className="p-8 max-w-3xl">
-        <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Account</h1>
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
-          Only owners and admins can manage billing and company profile settings. Contact your organization owner.
+          Only owners and admins can manage account and company profile settings. Contact your organization owner.
         </div>
       </div>
     )
   }
 
   let profileRow = null
-  try { const { data } = await supabase.from('org_profile').select('*').eq('organization_id', org.id).maybeSingle(); profileRow = data } catch {}
+  try {
+    const { data } = await supabase.from('org_profile').select('*').eq('organization_id', org.id).maybeSingle()
+    profileRow = data
+  } catch { /* table may not exist yet */ }
+
+  let businessHours: DayHours[] = []
+  try {
+    const { data } = await service
+      .from('business_hours')
+      .select('day_of_week, is_open, open_time, close_time')
+      .eq('organization_id', org.id)
+      .order('day_of_week')
+    businessHours = (data ?? []) as DayHours[]
+  } catch { /* table not applied yet */ }
 
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
         <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
         <span>/</span>
-        <span className="text-gray-700">Billing</span>
+        <span className="text-gray-700">Account</span>
       </div>
 
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Billing</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Account</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Company profile, logo, and plan details. This information appears on all customer-facing documents.
+          Company profile, logo, regional preferences, and plan details.
         </p>
       </div>
 
-      <BillingClient
+      <AccountClient
         orgId={org.id}
         orgSlug={slug}
         orgName={org.name}
         initialProfile={(profileRow ?? {}) as ClientProps['initialProfile']}
+        initialHours={businessHours}
       />
     </div>
   )
