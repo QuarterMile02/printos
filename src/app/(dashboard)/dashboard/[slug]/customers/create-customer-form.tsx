@@ -60,6 +60,8 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
   const [showOtherPhone, setShowOtherPhone] = useState(false)
   const [otherPhone, setOtherPhone] = useState('')
   const [smsConsent, setSmsConsent] = useState(false)
+  const [mobileTouched, setMobileTouched] = useState(false)
+  const [submitAttempted, setSubmitAttempted] = useState(false)
 
   // Address fields (controlled for autocomplete + Places autofill)
   const [addrStreet, setAddrStreet] = useState('')
@@ -83,6 +85,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
     formRef.current?.reset()
     setMobilePhone(''); setWorkPhone(''); setOtherPhone(''); setShowOtherPhone(false)
     setSmsConsent(false)
+    setMobileTouched(false); setSubmitAttempted(false)
     setAddrStreet(''); setAddrCity(''); setAddrState(''); setAddrZip(''); setAddrCountry('US')
     setAddressAutoFilled(null)
   }
@@ -119,6 +122,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
 
   function handleSubmit(formData: FormData) {
     setError(null)
+    setSubmitAttempted(true)
     // Inject controlled phone values
     formData.set('phone', mobilPhone)
     formData.set('phone2', workPhone)
@@ -299,8 +303,15 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                         <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 8.25h3" />
                       </svg>
                     </div>
-                    <PhoneInput name="phone" value={mobilPhone} onChange={setMobilePhone} placeholder="Mobile number" />
+                    <div onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setMobileTouched(true) }}>
+                      <PhoneInput name="phone" value={mobilPhone} onChange={setMobilePhone} placeholder="Mobile number" />
+                    </div>
                     <p className="mt-1 text-xs text-gray-400">Used for SMS notifications</p>
+                    {mobilPhone.trim() !== '' && !smsConsent && (mobileTouched || submitAttempted) && (
+                      <p className="mt-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 leading-relaxed">
+                        ⚠ Mobile number entered but SMS consent not checked. Check the box below if the customer verbally agreed to receive text messages.
+                      </p>
+                    )}
                   </div>
 
                   {/* Work */}
