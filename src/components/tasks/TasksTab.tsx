@@ -2,6 +2,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 
+type ConceptStatus = 'pending' | 'in_progress' | 'waiting_on_customer' | 'approved' | 'declined' | 'completed';
+
+interface TaskType {
+  id: string;
+  name: string;
+  is_concept: boolean;
+  is_system: boolean;
+}
+
 interface Task {
   id: string;
   title: string;
@@ -13,6 +22,15 @@ interface Task {
   assigned_profile?: { id: string; full_name: string };
   created_at: string;
   completed_at?: string;
+  task_type_id?: string;
+  task_type?: { id: string; name: string; is_concept: boolean };
+  concept_status?: ConceptStatus;
+  product_id?: string;
+  product?: { id: string; name: string };
+  departments?: string[];
+  is_sample_work_order?: boolean;
+  sample_work_order_id?: string;
+  converted_to_quote_at?: string;
 }
 
 interface TeamMember {
@@ -31,6 +49,36 @@ const PRIORITY_COLORS = {
   medium: 'text-amber-700 bg-amber-100',
   high: 'text-red-700 bg-red-100',
 };
+
+const CONCEPT_STATUS_LABELS: Record<ConceptStatus, string> = {
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  waiting_on_customer: 'Waiting on Customer',
+  approved: 'Approved',
+  declined: 'Declined',
+  completed: 'Completed',
+};
+
+const CONCEPT_STATUS_COLORS: Record<ConceptStatus, string> = {
+  pending: 'bg-gray-100 text-gray-600',
+  in_progress: 'bg-blue-100 text-blue-700',
+  waiting_on_customer: 'bg-amber-100 text-amber-700',
+  approved: 'bg-green-100 text-green-700',
+  declined: 'bg-red-100 text-red-600',
+  completed: 'bg-gray-200 text-gray-700',
+};
+
+const CONCEPT_DEPARTMENTS = [
+  { value: 'large_format', label: 'Large Format' },
+  { value: 'commercial_print', label: 'Commercial Print' },
+  { value: 'vehicle_wrap', label: 'Vehicle Wrap' },
+  { value: 'channel_letters', label: 'Channel Letters' },
+  { value: 'fabrication', label: 'Fabrication' },
+  { value: 'installation', label: 'Installation' },
+  { value: 'service_repair', label: 'Service/Repair' },
+  { value: 'digital_marketing', label: 'Digital Marketing' },
+  { value: 'digital_screens', label: 'Digital Screens' },
+];
 
 function IconPlus() {
   return (
@@ -77,9 +125,11 @@ const STATUS_ICONS: Record<string, React.ReactElement> = {
 export default function TasksTab({ jobId, soId, invoiceId }: TasksTabProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
+
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -87,7 +137,29 @@ export default function TasksTab({ jobId, soId, invoiceId }: TasksTabProps) {
     status: 'open',
     due_date: '',
     assigned_to: '',
+    task_type_id: '',
+    concept_status: 'pending' as ConceptStatus,
+    departments: [] as string[],
+    product_id: '',
   });
+
+  // Product search
+  const [productSearch, setProductSearch] = useState('');
+  const [productResults, setProductResults] = useState<{ id: string; name: string }[]>([]);
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false);
+  const [productDisplayName, setProductDisplayName] = useState('');
+  const productRef = useRef<HTMLDivElement>(null);
+
+  // New custom type inline form
+  const [showNewType, setShowNewType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newTypeIsConcept, setNewTypeIsConcept] = useState(false);
+  const [savingNewType, setSavingNewType] = useState(false);
+
+  // SWO state
+  const [swoCreating, setSwoCreating] = useState(false);
+  const [swoCreated, setSwoCreated] = useState(false);
+
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   const fetchTasks = async () => {
@@ -106,11 +178,53 @@ export default function TasksTab({ jobId, soId, invoiceId }: TasksTabProps) {
     setTeamMembers(Array.isArray(data) ? data : []);
   };
 
-  useEffect(() => { fetchTasks(); fetchTeam(); }, [jobId, soId]);
+  const fetchTaskTypes = async () => {
+    const res = await fetch('/api/task-types');
+    const data = await res.json();
+    setTaskTypes(Array.isArray(data) ? data : []);
+  };
+
+  useEffect(() => {
+    fetchTasks();
+    fetchTeam();
+    fetchTaskTypes();
+  }, [jobId, soId]);
+
+  // Debounced product search
+  useEffect(() => {
+    if (!productSearch) { setProductResults([]); return; }
+    const t = setTimeout(async () => {
+      const res = await fetch(`/api/products?search=${encodeURIComponent(productSearch)}`);
+      const data = await res.json();
+      setProductResults(Array.isArray(data) ? data : []);
+      setProductDropdownOpen(true);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [productSearch]);
+
+  // Close product dropdown on outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (productRef.current && !productRef.current.contains(e.target as Node)) {
+        setProductDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const selectedTaskType = taskTypes.find(t => t.id === form.task_type_id);
+  const isConcept = selectedTaskType?.is_concept === true;
+  const isSampleBuild = selectedTaskType?.name === 'Sample Build';
 
   const openNew = () => {
     setEditTask(null);
-    setForm({ title: '', description: '', priority: 'medium', status: 'open', due_date: '', assigned_to: '' });
+    setForm({ title: '', description: '', priority: 'medium', status: 'open', due_date: '', assigned_to: '', task_type_id: '', concept_status: 'pending', departments: [], product_id: '' });
+    setProductSearch('');
+    setProductDisplayName('');
+    setProductResults([]);
+    setSwoCreated(false);
+    setShowNewType(false);
     setShowModal(true);
   };
 
@@ -123,16 +237,32 @@ export default function TasksTab({ jobId, soId, invoiceId }: TasksTabProps) {
       status: task.status,
       due_date: task.due_date || '',
       assigned_to: task.assigned_to || '',
+      task_type_id: task.task_type_id || '',
+      concept_status: (task.concept_status as ConceptStatus) || 'pending',
+      departments: task.departments || [],
+      product_id: task.product_id || '',
     });
+    setProductSearch('');
+    setProductDisplayName(task.product?.name || '');
+    setProductResults([]);
+    setSwoCreated(!!task.sample_work_order_id);
+    setShowNewType(false);
     setShowModal(true);
   };
 
   const save = async () => {
     if (!form.title.trim()) return;
     const body: Record<string, unknown> = {
-      ...form,
+      title: form.title,
+      description: form.description,
+      priority: form.priority,
+      status: form.status,
       due_date: form.due_date || null,
       assigned_to: form.assigned_to || null,
+      task_type_id: form.task_type_id || null,
+      concept_status: isConcept ? form.concept_status : null,
+      product_id: form.product_id || null,
+      departments: form.departments,
     };
     if (!editTask) {
       if (jobId) body.job_id = jobId;
@@ -160,6 +290,56 @@ export default function TasksTab({ jobId, soId, invoiceId }: TasksTabProps) {
     if (!confirm('Delete this task?')) return;
     await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
     fetchTasks();
+  };
+
+  const saveNewType = async () => {
+    if (!newTypeName.trim()) return;
+    setSavingNewType(true);
+    const res = await fetch('/api/task-types', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newTypeName.trim(), is_concept: newTypeIsConcept }),
+    });
+    setSavingNewType(false);
+    if (res.ok) {
+      const created = await res.json() as TaskType;
+      setTaskTypes(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm(f => ({ ...f, task_type_id: created.id }));
+      setShowNewType(false);
+      setNewTypeName('');
+      setNewTypeIsConcept(false);
+    }
+  };
+
+  const createSWO = async () => {
+    if (!editTask) return;
+    setSwoCreating(true);
+    const res = await fetch('/api/sample-work-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_id: editTask.id,
+        title: editTask.title,
+        product_id: form.product_id || null,
+        assigned_to: form.assigned_to || null,
+        departments: form.departments,
+        notes: form.description,
+      }),
+    });
+    setSwoCreating(false);
+    if (res.ok) {
+      setSwoCreated(true);
+      fetchTasks();
+    }
+  };
+
+  const toggleDept = (val: string) => {
+    setForm(f => ({
+      ...f,
+      departments: f.departments.includes(val)
+        ? f.departments.filter(d => d !== val)
+        : [...f.departments, val],
+    }));
   };
 
   const open = tasks.filter(t => t.status !== 'done');
@@ -195,53 +375,75 @@ export default function TasksTab({ jobId, soId, invoiceId }: TasksTabProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          {open.map(task => (
-            <div
-              key={task.id}
-              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:border-gray-300 transition-all ${
-                isOverdue(task) ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'
-              }`}
-              onClick={() => openEdit(task)}
-            >
-              <button
-                className="mt-0.5 flex-shrink-0"
-                onClick={e => { e.stopPropagation(); toggleStatus(task); }}
-                title="Cycle status"
+          {open.map(task => {
+            const isConcept = task.task_type?.is_concept === true;
+            const cs = task.concept_status;
+            return (
+              <div
+                key={task.id}
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:border-gray-300 transition-all ${
+                  isOverdue(task)
+                    ? 'border-red-200 bg-red-50'
+                    : isConcept
+                      ? 'border-l-4 border-l-amber-400 border-gray-200 bg-white'
+                      : 'border-gray-200 bg-white'
+                }`}
+                onClick={() => openEdit(task)}
               >
-                {STATUS_ICONS[task.status]}
-              </button>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-sm font-medium ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                    {task.title}
-                  </span>
-                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded capitalize ${PRIORITY_COLORS[task.priority]}`}>
-                    {task.priority}
-                  </span>
-                </div>
-                {task.description && (
-                  <p className="text-xs text-gray-500 mt-0.5 truncate">{task.description}</p>
-                )}
-                <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                  {task.due_date && (
-                    <span className={isOverdue(task) ? 'text-red-600 font-semibold' : ''}>
-                      Due {new Date(task.due_date + 'T00:00:00').toLocaleDateString()}
-                      {isOverdue(task) && ' — OVERDUE'}
+                <button
+                  className="mt-0.5 flex-shrink-0"
+                  onClick={e => { e.stopPropagation(); toggleStatus(task); }}
+                  title="Cycle status"
+                >
+                  {STATUS_ICONS[task.status]}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-sm font-medium ${task.status === 'done' ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                      {task.title}
                     </span>
+                    {task.task_type && (
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                        {task.task_type.name}
+                      </span>
+                    )}
+                    {isConcept && cs ? (
+                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${CONCEPT_STATUS_COLORS[cs]}`}>
+                        {CONCEPT_STATUS_LABELS[cs]}
+                      </span>
+                    ) : (
+                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded capitalize ${PRIORITY_COLORS[task.priority]}`}>
+                        {task.priority}
+                      </span>
+                    )}
+                    {task.sample_work_order_id && (
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                        SWO →
+                      </span>
+                    )}
+                  </div>
+                  {task.description && (
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">{task.description}</p>
                   )}
-                  {task.assigned_profile && (
-                    <span>→ {task.assigned_profile.full_name}</span>
-                  )}
+                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                    {task.due_date && (
+                      <span className={isOverdue(task) ? 'text-red-600 font-semibold' : ''}>
+                        Due {new Date(task.due_date + 'T00:00:00').toLocaleDateString()}
+                        {isOverdue(task) && ' — OVERDUE'}
+                      </span>
+                    )}
+                    {task.assigned_profile && <span>→ {task.assigned_profile.full_name}</span>}
+                  </div>
                 </div>
+                <button
+                  onClick={e => { e.stopPropagation(); deleteTask(task.id); }}
+                  className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors"
+                >
+                  <IconTrash />
+                </button>
               </div>
-              <button
-                onClick={e => { e.stopPropagation(); deleteTask(task.id); }}
-                className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors"
-              >
-                <IconTrash />
-              </button>
-            </div>
-          ))}
+            );
+          })}
 
           {done.length > 0 && (
             <details className="mt-2">
@@ -274,98 +476,268 @@ export default function TasksTab({ jobId, soId, invoiceId }: TasksTabProps) {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
-            <h3 className="text-base font-bold text-gray-900">{editTask ? 'Edit Task' : 'New Task'}</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-6 space-y-4">
+              <h3 className="text-base font-bold text-gray-900">{editTask ? 'Edit Task' : 'New Task'}</h3>
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Title *</label>
-              <input
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
-                placeholder="Task title"
-                value={form.title}
-                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                autoFocus
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Description</label>
-              <textarea
-                ref={descRef}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime resize-none"
-                placeholder="Details, notes, context..."
-                rows={3}
-                value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
+              {/* Task Type */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Priority</label>
-                <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
-                  value={form.priority}
-                  onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Task Type</label>
+                {!showNewType ? (
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                    value={form.task_type_id}
+                    onChange={e => {
+                      if (e.target.value === '_new') {
+                        setShowNewType(true);
+                      } else {
+                        setForm(f => ({ ...f, task_type_id: e.target.value }));
+                      }
+                    }}
+                  >
+                    <option value="">— No type —</option>
+                    {taskTypes.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}{t.is_concept ? ' ★' : ''}</option>
+                    ))}
+                    <option value="_new">+ New Custom Type…</option>
+                  </select>
+                ) : (
+                  <div className="space-y-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                    <input
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                      placeholder="Type name…"
+                      value={newTypeName}
+                      onChange={e => setNewTypeName(e.target.value)}
+                      autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') saveNewType(); if (e.key === 'Escape') setShowNewType(false); }}
+                    />
+                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTypeIsConcept}
+                        onChange={e => setNewTypeIsConcept(e.target.checked)}
+                        className="rounded"
+                      />
+                      Is a concept type (★)
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={saveNewType}
+                        disabled={savingNewType || !newTypeName.trim()}
+                        className="flex-1 bg-qm-lime hover:brightness-110 disabled:opacity-50 text-white text-xs font-semibold py-1.5 rounded-lg"
+                      >
+                        {savingNewType ? 'Saving…' : 'Save Type'}
+                      </button>
+                      <button
+                        onClick={() => setShowNewType(false)}
+                        className="px-3 text-xs text-gray-500 hover:bg-gray-100 rounded-lg"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
-                <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
-                  value={form.status}
-                  onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                >
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="done">Done</option>
-                </select>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3">
+              {/* Title */}
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Due Date</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Title *</label>
                 <input
-                  type="date"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
-                  value={form.due_date}
-                  onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                  placeholder="Task title"
+                  value={form.title}
+                  onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                  autoFocus={!showNewType}
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Assign To</label>
-                <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
-                  value={form.assigned_to}
-                  onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}
-                >
-                  <option value="">Unassigned</option>
-                  {teamMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.full_name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={save}
-                className="px-4 py-2 text-sm bg-qm-lime hover:brightness-110 text-white font-semibold rounded-lg transition-colors"
-              >
-                {editTask ? 'Save Changes' : 'Add Task'}
-              </button>
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Description</label>
+                <textarea
+                  ref={descRef}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime resize-none"
+                  placeholder="Details, notes, context..."
+                  rows={3}
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Priority</label>
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                    value={form.priority}
+                    onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Status</label>
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                    value={form.status}
+                    onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                  >
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="done">Done</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                    value={form.due_date}
+                    onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Assign To</label>
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                    value={form.assigned_to}
+                    onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}
+                  >
+                    <option value="">Unassigned</option>
+                    {teamMembers.map(m => (
+                      <option key={m.id} value={m.id}>{m.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* ── Concept Fields ── */}
+              {isConcept && (
+                <div className="border-t border-amber-200 pt-4 space-y-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-amber-600">Concept Fields</p>
+
+                  {/* Concept Status */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Concept Status</label>
+                    <select
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                      value={form.concept_status}
+                      onChange={e => setForm(f => ({ ...f, concept_status: e.target.value as ConceptStatus }))}
+                    >
+                      {(Object.entries(CONCEPT_STATUS_LABELS) as [ConceptStatus, string][]).map(([val, label]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Product search */}
+                  <div ref={productRef} className="relative">
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Product (optional)</label>
+                    {form.product_id && productDisplayName ? (
+                      <div className="flex items-center gap-2">
+                        <span className="flex-1 text-sm text-gray-800 border border-gray-300 rounded-lg px-3 py-2 bg-gray-50">
+                          {productDisplayName}
+                        </span>
+                        <button
+                          onClick={() => { setForm(f => ({ ...f, product_id: '' })); setProductDisplayName(''); setProductSearch(''); }}
+                          className="text-gray-400 hover:text-red-400 text-xs"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <input
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime"
+                        placeholder="Search products…"
+                        value={productSearch}
+                        onChange={e => setProductSearch(e.target.value)}
+                        onFocus={() => productSearch && setProductDropdownOpen(true)}
+                      />
+                    )}
+                    {productDropdownOpen && productResults.length > 0 && !form.product_id && (
+                      <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                        {productResults.map(p => (
+                          <button
+                            key={p.id}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
+                            onClick={() => {
+                              setForm(f => ({ ...f, product_id: p.id }));
+                              setProductDisplayName(p.name);
+                              setProductSearch('');
+                              setProductDropdownOpen(false);
+                            }}
+                          >
+                            {p.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Departments */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-2">Departments</label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {CONCEPT_DEPARTMENTS.map(d => {
+                        const checked = form.departments.includes(d.value);
+                        return (
+                          <label
+                            key={d.value}
+                            className={`flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+                              checked
+                                ? 'border-qm-lime bg-qm-lime-light text-qm-lime'
+                                : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="sr-only"
+                              checked={checked}
+                              onChange={() => toggleDept(d.value)}
+                            />
+                            {d.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Sample Work Order button */}
+                  {isSampleBuild && editTask && !swoCreated && (
+                    <button
+                      onClick={createSWO}
+                      disabled={swoCreating}
+                      className="w-full border border-indigo-300 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 text-xs font-semibold py-2 rounded-lg transition-colors"
+                    >
+                      {swoCreating ? 'Creating…' : '+ Create Sample Work Order'}
+                    </button>
+                  )}
+                  {swoCreated && (
+                    <p className="text-xs text-center text-green-600 font-semibold">✓ Sample Work Order created</p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={save}
+                  className="px-4 py-2 text-sm bg-qm-lime hover:brightness-110 text-white font-semibold rounded-lg transition-colors"
+                >
+                  {editTask ? 'Save Changes' : 'Add Task'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
