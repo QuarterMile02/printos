@@ -9,6 +9,7 @@ import WorkflowChecklist, { type WorkflowStep, type WorkflowProgress } from './w
 import { checkPermission } from '@/lib/check-permission'
 import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 import JobCustomerPicker from './job-customer-picker'
+import TasksTab from '@/components/tasks/TasksTab'
 
 export const dynamic = 'force-dynamic'
 
@@ -602,6 +603,11 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
             </div>
           </div>
         )}
+      </div>
+
+      {/* Tasks */}
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+        <TasksTab jobId={job.id} />
       </div>
 
       {/* QR Code + Time Log */}
