@@ -22,12 +22,13 @@ export async function GET(
       organization_id: string; sales_order_id: string | null; customer_id: string | null
       invoice_number: number; status: string
       subtotal: number | null; tax_total: number | null; total: number | null
+      discount_percent: number | null
       amount_paid: number | null; balance_due: number | null
       due_date: string | null; notes: string | null; created_at: string
     }
     const { data: inv } = await service
       .from('invoices')
-      .select('organization_id, sales_order_id, customer_id, invoice_number, status, subtotal, tax_total, total, amount_paid, balance_due, due_date, notes, created_at')
+      .select('organization_id, sales_order_id, customer_id, invoice_number, status, subtotal, tax_total, total, discount_percent, amount_paid, balance_due, due_date, notes, created_at')
       .eq('id', id)
       .maybeSingle() as { data: InvRow | null; error: unknown }
     if (!inv) {
@@ -223,7 +224,7 @@ export async function GET(
         phone: primaryContact?.phone ?? customer?.phone ?? null,
       },
       lineItems,
-      discountPercent: 0,
+      discountPercent: inv.discount_percent ?? 0,
       modifierLabels,
       org: orgProfile,
       ...(inv.amount_paid != null ? { amountPaid: inv.amount_paid } : {}),

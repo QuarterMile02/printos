@@ -45,6 +45,7 @@ export async function GET(
       status: string; created_at: string; expires_at: string | null
       terms: string | null; notes: string | null
       subtotal: number | null; tax_total: number | null; total: number | null
+      discount_percent: number | null
       customer_id: string | null
       customers: QuoteCustomer | null
     }
@@ -52,7 +53,7 @@ export async function GET(
       .from('quotes')
       .select(`
         id, quote_number, title, description, status, created_at, expires_at,
-        terms, notes, subtotal, tax_total, total,
+        terms, notes, subtotal, tax_total, total, discount_percent,
         customer_id,
         customers (
           id, company_name, first_name, last_name, email, phone,
@@ -225,7 +226,7 @@ export async function GET(
         phone: primaryContact?.phone ?? cust?.phone ?? null,
       },
       lineItems,
-      discountPercent: 0,
+      discountPercent: q.discount_percent ?? 0,
       modifierLabels,
       org: orgProfile,
       ...(depositPercent > 0 ? { depositPercent, depositAmount } : {}),

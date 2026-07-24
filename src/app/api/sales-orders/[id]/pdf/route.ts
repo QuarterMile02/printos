@@ -18,10 +18,10 @@ export async function GET(
     const service = createServiceClient()
 
     // 1. Fetch the sales order to get organization_id (service client, no RLS)
-    type SoOrgRow = { organization_id: string; so_number: number; title: string | null; status: string; quote_id: string | null; customer_id: string | null; created_at: string }
+    type SoOrgRow = { organization_id: string; so_number: number; title: string | null; status: string; quote_id: string | null; customer_id: string | null; created_at: string; discount_percent: number | null }
     const { data: so } = await service
       .from('sales_orders')
-      .select('organization_id, so_number, title, status, quote_id, customer_id, created_at')
+      .select('organization_id, so_number, title, status, quote_id, customer_id, created_at, discount_percent')
       .eq('id', id)
       .maybeSingle() as { data: SoOrgRow | null; error: unknown }
     if (!so) {
@@ -208,7 +208,7 @@ export async function GET(
         phone: primaryContact?.phone ?? customer?.phone ?? null,
       },
       lineItems,
-      discountPercent: 0,
+      discountPercent: so.discount_percent ?? 0,
       modifierLabels,
       org: orgProfile,
     }
