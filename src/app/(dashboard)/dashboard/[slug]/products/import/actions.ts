@@ -181,6 +181,7 @@ export async function importProductsBatch(
     production_details: row.production_details,
     published: row.published,
     active: row.active,
+    is_enabled: !!row.active,
     status: row.published ? 'published' : 'draft',
     created_by: user.id,
     updated_by: user.id,

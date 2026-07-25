@@ -70,7 +70,6 @@ const STATUS_OPTIONS: { value: ProductStatus; label: string; style: string }[] =
   { value: 'draft',     label: 'Draft',     style: 'bg-qm-gray-light text-qm-gray border-qm-gray' },
   { value: 'published', label: 'Published', style: 'bg-qm-lime-light text-qm-lime-dark border-qm-lime' },
   { value: 'disabled',  label: 'Disabled',  style: 'bg-red-50 text-red-700 border-red-300' },
-  { value: 'archived',  label: 'Archived',  style: 'bg-qm-black/5 text-qm-gray border-gray-300' },
 ]
 
 const COMPLEXITY_LABELS: Record<number, string> = {

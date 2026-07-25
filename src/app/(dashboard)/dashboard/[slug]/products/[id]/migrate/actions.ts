@@ -284,6 +284,7 @@ export async function publishMigration(
       range_discount_id: bundle.pricing.range_discount_id,
       status: 'published',
       active: true,
+      is_enabled: true,
       published: true,
       published_at: new Date().toISOString(),
       published_by: user.id,

@@ -27,7 +27,6 @@ const PRODUCT_STATUS_OPTIONS = [
   { value: 'draft',     label: 'Draft' },
   { value: 'published', label: 'Published' },
   { value: 'disabled',  label: 'Disabled' },
-  { value: 'archived',  label: 'Archived' },
 ]
 
 export default async function ProductsReport({ params, searchParams }: PageProps) {

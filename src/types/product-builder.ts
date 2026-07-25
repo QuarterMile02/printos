@@ -4,7 +4,7 @@
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
 
 export type PricingType = 'Formula' | 'Basic' | 'Grid' | 'Cost Plus'
-export type ProductStatus = 'draft' | 'published' | 'disabled' | 'archived'
+export type ProductStatus = 'draft' | 'published' | 'disabled'
 export type ModifierType = 'Boolean' | 'Numeric' | 'Range'
 export type DiscountType = 'Range' | 'Volume' | 'Price'
 export type DiscountAppliesTo = 'Product' | 'Material' | 'Both'

@@ -127,9 +127,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
     ? 'bg-green-50 text-green-700'
     : p.status === 'disabled'
       ? 'bg-red-50 text-red-700'
-      : p.status === 'archived'
-        ? 'bg-gray-100 text-gray-600'
-        : 'bg-gray-100 text-gray-700'
+      : 'bg-gray-100 text-gray-700'
 
   return (
     <div className="p-8 max-w-5xl">

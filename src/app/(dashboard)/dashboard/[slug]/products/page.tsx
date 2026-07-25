@@ -36,6 +36,7 @@ export default async function ProductsPage({ params }: PageProps) {
     price: number | null
     status: string | null
     active: boolean | null
+    is_enabled: boolean | null
     updated_at: string | null
     migration_status: string | null
     category?: { name: string } | null
@@ -45,7 +46,7 @@ export default async function ProductsPage({ params }: PageProps) {
   const [withCatRes, countRes] = await Promise.all([
     supabase
       .from('products')
-      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, updated_at, migration_status, category:product_categories(name)')
+      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, is_enabled, updated_at, migration_status, category:product_categories(name)')
       .eq('organization_id', org.id)
       .order('name', { ascending: true })
       .limit(1000),
@@ -61,7 +62,7 @@ export default async function ProductsPage({ params }: PageProps) {
     // category join failed — fetch without it
     const { data: noCat } = await supabase
       .from('products')
-      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, updated_at, migration_status')
+      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, is_enabled, updated_at, migration_status')
       .eq('organization_id', org.id)
       .order('name', { ascending: true })
       .limit(1000)
@@ -79,6 +80,7 @@ export default async function ProductsPage({ params }: PageProps) {
     price: p.price != null ? Number(p.price) : null,
     status: (p.status as ProductRow['status']) ?? null,
     active: p.active,
+    is_enabled: p.is_enabled ?? null,
     updated_at: p.updated_at,
     migration_status: (p.migration_status as ProductRow['migration_status']) ?? null,
   }))

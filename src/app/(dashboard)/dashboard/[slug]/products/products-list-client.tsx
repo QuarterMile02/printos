@@ -18,6 +18,7 @@ export type ProductRow = {
   price: number | null
   status: ProductStatus | null
   active: boolean | null
+  is_enabled: boolean | null
   updated_at: string | null
   migration_status: MigrationStatus | null
 }
@@ -32,14 +33,12 @@ const STATUS_STYLES: Record<ProductStatus, string> = {
   draft:     'bg-qm-gray-light text-qm-gray',
   published: 'bg-qm-lime text-white',
   disabled:  'bg-red-50 text-red-700',
-  archived:  'bg-qm-black/5 text-qm-gray',
 }
 
 const STATUS_LABELS: Record<ProductStatus, string> = {
   draft:     'Draft',
   published: 'Published',
   disabled:  'Disabled',
-  archived:  'Archived',
 }
 
 const PRICING_TYPE_STYLES: Record<string, string> = {
@@ -69,7 +68,7 @@ function formatRelative(iso: string | null): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-type StatusTab = 'all' | 'published' | 'draft' | 'disabled'
+type StatusTab = 'all' | 'published' | 'draft' | 'disabled' | 'enabled'
 
 export default function ProductsListClient({
   products,
@@ -108,6 +107,7 @@ export default function ProductsListClient({
       if (tab === 'published' && p.status !== 'published') return false
       if (tab === 'draft' && p.status !== 'draft') return false
       if (tab === 'disabled' && p.status !== 'disabled') return false
+      if (tab === 'enabled' && !p.is_enabled) return false
       if (category !== 'all' && p.category_name !== category) return false
       if (dept !== 'all' && p.product_type !== dept) return false
       if (term) {
@@ -119,10 +119,11 @@ export default function ProductsListClient({
   }, [products, search, tab, category, dept])
 
   const tabCounts = useMemo(() => ({
-    all: products.length,
+    all:       products.length,
     published: products.filter((p) => p.status === 'published').length,
-    draft: products.filter((p) => p.status === 'draft').length,
-    disabled: products.filter((p) => p.status === 'disabled').length,
+    draft:     products.filter((p) => p.status === 'draft').length,
+    disabled:  products.filter((p) => p.status === 'disabled').length,
+    enabled:   products.filter((p) => p.is_enabled).length,
   }), [products])
 
   function handleCopy(id: string) {
@@ -140,15 +141,15 @@ export default function ProductsListClient({
     <>
       {/* Status tabs */}
       <div className="mb-4 flex gap-1 border-b border-gray-200">
-        {(['all', 'published', 'draft', 'disabled'] as StatusTab[]).map((t) => (
+        {(['all', 'published', 'draft', 'disabled', 'enabled'] as StatusTab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-semibold capitalize border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
               tab === t ? 'border-qm-lime text-qm-lime' : 'border-transparent text-qm-gray hover:text-qm-black'
             }`}
           >
-            {t === 'all' ? 'All' : t === 'published' ? 'Active' : t === 'draft' ? 'Draft' : 'Disabled'}
+            {t === 'all' ? 'All' : t === 'published' ? 'Published' : t === 'draft' ? 'Draft' : t === 'disabled' ? 'Disabled' : 'Enabled'}
             <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
           </button>
         ))}
