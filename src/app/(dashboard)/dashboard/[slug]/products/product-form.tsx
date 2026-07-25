@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useTransition } from 'react'
+import { useState, useMemo, useTransition, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import type {
   Product, ProductCategory, WorkflowTemplate, ProductStatus,
@@ -46,13 +46,24 @@ type Props = {
   secondaryCategoryOptions: string[]
 }
 
-type TabKey = 'basic' | 'advanced' | 'pricing' | 'custom-fields'
+type TabKey = 'basic' | 'advanced' | 'pricing' | 'custom-fields' | 'used-in'
+
+type UsedInRow = {
+  type: 'QT' | 'SO' | 'IN'
+  id: string
+  record_number: number
+  title: string | null
+  customer_name: string | null
+  status: string
+  created_at: string
+}
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'basic', label: 'Basic' },
   { key: 'advanced', label: 'Advanced' },
   { key: 'pricing', label: 'Pricing & Recipe' },
   { key: 'custom-fields', label: 'Custom Fields' },
+  { key: 'used-in', label: 'Used In' },
 ]
 
 const STATUS_OPTIONS: { value: ProductStatus; label: string; style: string }[] = [
@@ -184,6 +195,28 @@ export default function ProductForm({
   const [formError, setFormError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<string | null>(null)
+  const [usedInRows, setUsedInRows] = useState<UsedInRow[] | null>(null)
+  const [usedInLoading, setUsedInLoading] = useState(false)
+
+  const fetchUsedIn = useCallback(async () => {
+    if (isNew || !product) return
+    setUsedInLoading(true)
+    try {
+      const res = await fetch(`/api/products/${product.id}/used-in`)
+      const data = await res.json()
+      setUsedInRows(Array.isArray(data) ? data : [])
+    } catch {
+      setUsedInRows([])
+    } finally {
+      setUsedInLoading(false)
+    }
+  }, [isNew, product])
+
+  useEffect(() => {
+    if (activeTab === 'used-in' && usedInRows === null) {
+      fetchUsedIn()
+    }
+  }, [activeTab, usedInRows, fetchUsedIn])
 
   // Lookup maps for display names
   const materialMap = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials])
@@ -587,11 +620,18 @@ export default function ProductForm({
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
-            className={`px-5 py-3 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 -mb-px ${
+            className={`inline-flex items-center gap-1.5 px-5 py-3 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 -mb-px ${
               activeTab === t.key ? 'border-qm-lime text-qm-lime' : 'border-transparent text-qm-gray hover:text-qm-black'
             }`}
           >
             {t.label}
+            {t.key === 'used-in' && !isNew && usedInRows !== null && (
+              <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${
+                activeTab === 'used-in' ? 'bg-qm-lime text-white' : 'bg-gray-200 text-gray-600'
+              }`}>
+                {usedInRows.length}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -1272,6 +1312,72 @@ export default function ProductForm({
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'used-in' && (
+          <div className="flex-1 min-h-0">
+            {isNew ? (
+              <p className="text-sm text-gray-400 py-8 text-center">Save this product first to see where it&apos;s used.</p>
+            ) : usedInLoading ? (
+              <div className="py-8 text-center text-sm text-gray-400">Loading…</div>
+            ) : usedInRows && usedInRows.length === 0 ? (
+              <div className="py-8 text-center text-sm text-gray-400">
+                This product has not been used in any quotes, sales orders, or invoices yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">#</th>
+                      <th className="px-4 py-3">Title / Customer</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(usedInRows ?? []).map((row) => {
+                      const href = row.type === 'QT'
+                        ? `/dashboard/${orgSlug}/quotes/${row.id}`
+                        : row.type === 'SO'
+                        ? `/dashboard/${orgSlug}/sales-orders/${row.id}`
+                        : `/dashboard/${orgSlug}/invoices/${row.id}`
+                      const typeStyle = row.type === 'QT'
+                        ? 'bg-blue-50 text-blue-700'
+                        : row.type === 'SO'
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-green-50 text-green-700'
+                      return (
+                        <tr key={`${row.type}-${row.id}`} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${typeStyle}`}>
+                              {row.type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                            <a href={href} className="hover:text-qm-lime hover:underline">
+                              {String(row.record_number).padStart(5, '0')}
+                            </a>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            <div>{row.title ?? <span className="text-gray-400">—</span>}</div>
+                            {row.customer_name && (
+                              <div className="text-xs text-gray-400">{row.customer_name}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 capitalize">{row.status}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+                            {new Date(row.created_at).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
