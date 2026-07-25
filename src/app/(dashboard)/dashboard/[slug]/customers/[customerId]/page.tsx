@@ -55,6 +55,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     website: string | null; allow_credit_card_payments: boolean | null
     background_info: string | null; special_notes: string | null
     sms_consent: boolean | null
+    portal_enabled: boolean | null
+    portal_tier_id: string | null
   }
 
   const { data: customer } = await supabase
@@ -65,10 +67,22 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       secondary_street, secondary_city, secondary_state, secondary_zip, secondary_country,
       terms, taxable, tax_exempt_code, tax_exempt_expires, credit_limit,
       pricing_level, discount_percent, website, allow_credit_card_payments,
-      background_info, special_notes, sms_consent`)
+      background_info, special_notes, sms_consent, portal_enabled, portal_tier_id`)
     .eq('id', customerId).eq('organization_id', org.id)
     .maybeSingle() as { data: CustomerRow | null; error: unknown }
   if (!customer) notFound()
+
+  type PortalTierOption = { id: string; name: string }
+  let portalTiers: PortalTierOption[] = []
+  try {
+    const { data: ptData } = await supabase
+      .from('portal_tiers')
+      .select('id, name')
+      .eq('organization_id', org.id)
+      .eq('is_active', true)
+      .order('name') as { data: PortalTierOption[] | null; error: unknown }
+    portalTiers = ptData ?? []
+  } catch { /* migration 097 not yet applied */ }
 
   const { data: membership } = await supabase
     .from('organization_members')
@@ -257,7 +271,10 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           background_info: customer.background_info,
           special_notes: customer.special_notes,
           sms_consent: customer.sms_consent,
+          portal_enabled: customer.portal_enabled,
+          portal_tier_id: customer.portal_tier_id,
         }}
+        portalTiers={portalTiers}
       />
 
       {/* Shipping Addresses */}

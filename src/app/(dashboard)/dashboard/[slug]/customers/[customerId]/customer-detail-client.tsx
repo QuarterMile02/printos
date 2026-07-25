@@ -32,7 +32,11 @@ type CustomerData = {
   allow_credit_card_payments: boolean | null
   background_info: string | null; special_notes: string | null
   sms_consent: boolean | null
+  portal_enabled: boolean | null
+  portal_tier_id: string | null
 }
+
+type PortalTierOption = { id: string; name: string }
 
 type Props = {
   customerId: string
@@ -41,6 +45,7 @@ type Props = {
   initialData: CustomerData
   initialPrimaryContact: PrimaryContact
   contactsSlot?: React.ReactNode
+  portalTiers?: PortalTierOption[]
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -116,8 +121,16 @@ function CardActions({
 
 export default function CustomerDetailClient({
   customerId, orgId, orgSlug, initialData, initialPrimaryContact, contactsSlot,
+  portalTiers = [],
 }: Props) {
   const [data, setData] = useState<CustomerData>(initialData)
+
+  // ── Portal card state
+  const [portalEditing, setPortalEditing] = useState(false)
+  const [portalDraft, setPortalDraft] = useState<CustomerData>(initialData)
+  const [portalSaved, setPortalSaved] = useState(false)
+  const [portalError, setPortalError] = useState<string | null>(null)
+  const [portalPending, startPortalTransition] = useTransition()
 
   // ── Address card state
   const [addrEditing, setAddrEditing] = useState(false)
@@ -242,6 +255,21 @@ export default function CustomerDetailClient({
       setData((d) => ({ ...d, ...acctDraft }))
       setAcctEditing(false)
       flash(setAcctSaved)
+    })
+  }
+
+  // ── Portal save
+  function savePortal() {
+    setPortalError(null)
+    startPortalTransition(async () => {
+      const res = await save({
+        portal_enabled: portalDraft.portal_enabled,
+        portal_tier_id: portalDraft.portal_tier_id,
+      })
+      if (res.error) { setPortalError(res.error); return }
+      setData((d) => ({ ...d, portal_enabled: portalDraft.portal_enabled, portal_tier_id: portalDraft.portal_tier_id }))
+      setPortalEditing(false)
+      flash(setPortalSaved)
     })
   }
 
@@ -642,6 +670,72 @@ export default function CustomerDetailClient({
                 <dd className="whitespace-pre-wrap">{data.special_notes}</dd>
               </div>
             )}
+          </dl>
+        )}
+      </div>
+
+      {/* ── 4. CUSTOMER PORTAL CARD ── */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-bold text-qm-black">Customer Portal</h2>
+          <CardActions
+            editing={portalEditing}
+            saved={portalSaved}
+            pending={portalPending}
+            onEdit={() => { setPortalDraft({ ...data }); setPortalEditing(true); setPortalError(null) }}
+            onCancel={() => { setPortalEditing(false); setPortalError(null) }}
+            onSave={savePortal}
+          />
+        </div>
+        {portalError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{portalError}</div>}
+
+        {portalEditing ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Portal Access</Label>
+                <p className="text-xs text-gray-400">Allow this customer to place orders via the portal</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPortalDraft((d) => ({ ...d, portal_enabled: !d.portal_enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${portalDraft.portal_enabled ? 'bg-qm-lime' : 'bg-gray-300'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${portalDraft.portal_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div>
+              <Label>Pricing Tier</Label>
+              <select
+                value={portalDraft.portal_tier_id ?? ''}
+                onChange={(e) => setPortalDraft((d) => ({ ...d, portal_tier_id: e.target.value || null }))}
+                className={sc}
+              >
+                <option value="">— No tier assigned —</option>
+                {portalTiers.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        ) : (
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <div>
+              <dt className="text-qm-gray text-xs uppercase tracking-wide">Portal Access</dt>
+              <dd className="mt-0.5">
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${data.portal_enabled ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
+                  {data.portal_enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-qm-gray text-xs uppercase tracking-wide">Pricing Tier</dt>
+              <dd className="mt-0.5 font-medium">
+                {data.portal_tier_id
+                  ? (portalTiers.find((t) => t.id === data.portal_tier_id)?.name ?? data.portal_tier_id)
+                  : <Dash />}
+              </dd>
+            </div>
           </dl>
         )}
       </div>

@@ -202,6 +202,9 @@ export interface Product {
   pricing_template_id: string | null
   complexity_value: number | null  // 1-5
   status: ProductStatus | null; active: boolean | null; rounding: number | null; tax: number | null
+  portal_enabled: boolean | null
+  portal_auto_approve: boolean | null
+  portal_approval_count: number | null
   created_at: string; created_by: string | null; updated_at: string; updated_by: string | null
 }
 

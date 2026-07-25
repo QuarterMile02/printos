@@ -134,6 +134,8 @@ function emptyForm(): ProductFormData {
     cost: 0, markup: 1, price: 0,
     min_line_price: null, min_unit_price: null,
     volume_discount_id: null, range_discount_id: null,
+    // Portal
+    portal_enabled: false, portal_auto_approve: false,
   }
 }
 
@@ -163,6 +165,8 @@ function toFormData(p: Product): ProductFormData {
     cost: Number(p.cost ?? 0), markup: Number(p.markup ?? 1), price: Number(p.price ?? 0),
     min_line_price: p.min_line_price, min_unit_price: p.min_unit_price,
     volume_discount_id: p.volume_discount_id, range_discount_id: p.range_discount_id,
+    portal_enabled: p.portal_enabled ?? false,
+    portal_auto_approve: p.portal_auto_approve ?? false,
   }
 }
 
@@ -659,6 +663,50 @@ export default function ProductForm({
                 ))}
               </div>
             </Field>
+
+            {/* ── Customer Portal ── */}
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-qm-gray">Customer Portal</h3>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Portal Enabled</p>
+                  <p className="text-xs text-gray-400">Customers can request this product from the portal</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, portal_enabled: !form.portal_enabled })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.portal_enabled ? 'bg-qm-lime' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.portal_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Auto-Approve</p>
+                  <p className="text-xs text-gray-400">
+                    {(product?.portal_approval_count ?? 0) < 3
+                      ? `Available after 3 portal approvals (${product?.portal_approval_count ?? 0}/3)`
+                      : 'Automatically approve portal orders for this product'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={(product?.portal_approval_count ?? 0) < 3}
+                  onClick={() => {
+                    if ((product?.portal_approval_count ?? 0) >= 3) setForm({ ...form, portal_auto_approve: !form.portal_auto_approve })
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-40 ${form.portal_auto_approve ? 'bg-qm-lime' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.portal_auto_approve ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              {product !== null && (
+                <div className="pt-1 border-t border-gray-100 flex items-center justify-between">
+                  <p className="text-xs text-gray-400">Portal approvals</p>
+                  <span className="text-sm font-semibold text-gray-700">{product.portal_approval_count ?? 0}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

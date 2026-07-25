@@ -51,6 +51,9 @@ export type ProductFormData = {
   min_unit_price: number | null
   volume_discount_id: string | null
   range_discount_id: string | null
+  // Portal
+  portal_enabled: boolean
+  portal_auto_approve: boolean
 }
 
 // Sub-tab data carried separately from the main product record
@@ -167,6 +170,8 @@ function buildRecord(data: ProductFormData) {
     min_unit_price: data.min_unit_price,
     volume_discount_id: data.volume_discount_id,
     range_discount_id: data.range_discount_id,
+    portal_enabled: data.portal_enabled,
+    portal_auto_approve: data.portal_auto_approve,
   }
 }
 

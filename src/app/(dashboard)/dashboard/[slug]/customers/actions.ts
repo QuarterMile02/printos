@@ -299,6 +299,9 @@ export type CustomerUpdatePayload = {
   background_info?: string | null
   special_notes?: string | null
   sms_consent?: boolean | null
+  // Portal
+  portal_enabled?: boolean | null
+  portal_tier_id?: string | null
 }
 
 export async function updateCustomer(
@@ -323,8 +326,9 @@ export async function updateCustomer(
     'terms', 'tax_exempt_code', 'tax_exempt_expires', 'pricing_level',
     'website', 'background_info', 'special_notes',
   ] as const
-  const boolFields = ['taxable', 'is_active', 'allow_credit_card_payments', 'sms_consent'] as const
+  const boolFields = ['taxable', 'is_active', 'allow_credit_card_payments', 'sms_consent', 'portal_enabled'] as const
   const numFields = ['credit_limit', 'discount_percent'] as const
+  if ('portal_tier_id' in data) payload['portal_tier_id'] = data.portal_tier_id ?? null
 
   for (const f of textFields) {
     if (f in data) payload[f] = t(data[f] as string | null)
