@@ -15,6 +15,7 @@ function verifySignature(rawBody: string, header: string | null, secret: string)
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
+  console.log('[ghl-webhook] incoming payload:', rawBody)
 
   // ── Signature verification ─────────────────────────────────────────────────
   const secret = process.env.GHL_WEBHOOK_SECRET
@@ -33,16 +34,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // ── Stage filter — only handle "Quoting" stage events ─────────────────────
+  // ── Stage detection ────────────────────────────────────────────────────────
   const stageName: string =
     payload?.pipeline_stage?.name ??
     payload?.stage?.name ??
     payload?.stageName ??
     payload?.pipelineStage ??
     ''
-  if (!stageName.toLowerCase().includes('quot')) {
-    return NextResponse.json({ success: false, skipped: true, reason: 'Not a quoting stage event' })
-  }
+  const isQuotingStage = stageName.toLowerCase().includes('quot')
 
   // ── Extract contact fields ─────────────────────────────────────────────────
   const contact = payload?.contact ?? payload
@@ -113,6 +112,11 @@ export async function POST(req: NextRequest) {
     customerId = (newCustomer as { id: string }).id
   }
 
+  // ── Non-quoting stage: customer synced, no quote needed ───────────────────
+  if (!isQuotingStage) {
+    return NextResponse.json({ success: true, action: 'customer_synced', customerId, stage: stageName })
+  }
+
   // ── Find first owner/admin to assign the quote to ─────────────────────────
   const { data: members } = await supabase
     .from('organization_members')
@@ -120,7 +124,18 @@ export async function POST(req: NextRequest) {
     .eq('organization_id', orgId)
     .in('role', ['owner', 'admin'])
     .limit(1)
-  const assignedTo: string | null = (members as any[])?.[0]?.user_id ?? null
+  let assignedTo: string | null = (members as any[])?.[0]?.user_id ?? null
+
+  if (!assignedTo) {
+    const { data: ownerProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('organization_id', orgId)
+      .eq('role', 'owner')
+      .limit(1)
+      .maybeSingle()
+    assignedTo = (ownerProfile as { id: string } | null)?.id ?? null
+  }
 
   // ── Create draft quote ─────────────────────────────────────────────────────
   const quoteInsert: Record<string, any> = {
