@@ -168,7 +168,7 @@ export default function PortalTiersClient({ productTypes }: Props) {
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* ── Left: tier list ── */}
-      <div className="flex-1 min-w-0 p-8">
+      <div className={`${selectedTier ? 'w-80 shrink-0' : 'flex-1 min-w-0'} p-8`}>
         <div className="mb-6 flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-extrabold text-gray-900">Portal Tiers</h1>
@@ -288,7 +288,7 @@ export default function PortalTiersClient({ productTypes }: Props) {
 
       {/* ── Right: discount grid slide-over ── */}
       {selectedTier && (
-        <div className="w-[700px] shrink-0 border-l border-gray-200 bg-white flex flex-col sticky top-0 h-screen overflow-hidden">
+        <div className="flex-1 min-w-0 border-l border-gray-200 bg-white flex flex-col sticky top-0 h-screen overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
             <div>
