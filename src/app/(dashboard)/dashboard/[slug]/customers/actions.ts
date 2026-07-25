@@ -302,6 +302,8 @@ export type CustomerUpdatePayload = {
   // Portal
   portal_enabled?: boolean | null
   portal_tier_id?: string | null
+  // Shipping
+  shipping_method?: string | null
 }
 
 export async function updateCustomer(
@@ -324,7 +326,7 @@ export async function updateCustomer(
     'status', 'street', 'street2', 'city', 'state', 'zip', 'country',
     'secondary_street', 'secondary_city', 'secondary_state', 'secondary_zip', 'secondary_country',
     'terms', 'tax_exempt_code', 'tax_exempt_expires', 'pricing_level',
-    'website', 'background_info', 'special_notes',
+    'website', 'background_info', 'special_notes', 'shipping_method',
   ] as const
   const boolFields = ['taxable', 'is_active', 'allow_credit_card_payments', 'sms_consent', 'portal_enabled'] as const
   const numFields = ['credit_limit', 'discount_percent'] as const

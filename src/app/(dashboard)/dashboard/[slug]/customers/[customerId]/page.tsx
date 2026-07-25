@@ -1,28 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import type { JobStatus, QuoteStatus } from '@/types/database'
 import CustomerDetailClient from './customer-detail-client'
 import CustomerContactsSection from './customer-contacts'
 import CustomerActionMenu from './customer-action-menu'
 import ShippingAddressesSection from './shipping-addresses-section'
-import { QUOTE_STATUS_STYLES } from '../../quotes/format'
-
-const JOB_STATUS_LABELS: Record<JobStatus, string> = {
-  new: 'New', in_progress: 'In Progress', proof_review: 'Proof Review',
-  ready_for_pickup: 'Ready for Pickup', completed: 'Completed',
-}
-const JOB_STATUS_COLORS: Record<JobStatus, string> = {
-  new: 'bg-qm-lime-light text-qm-lime', in_progress: 'bg-qm-fuchsia-light text-qm-fuchsia',
-  proof_review: 'bg-qm-gray-light text-qm-gray', ready_for_pickup: 'bg-qm-black/5 text-qm-black',
-  completed: 'bg-qm-lime-light text-qm-lime',
-}
-const QUOTE_STATUS_COLORS: Record<QuoteStatus, string> = QUOTE_STATUS_STYLES
+import CustomerTabsSection from './CustomerTabsSection'
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-function formatCents(cents: number): string {
-  return (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 type PageProps = { params: Promise<{ slug: string; customerId: string }> }
@@ -57,6 +42,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     sms_consent: boolean | null
     portal_enabled: boolean | null
     portal_tier_id: string | null
+    shipping_method: string | null
   }
 
   const { data: customer } = await supabase
@@ -67,7 +53,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       secondary_street, secondary_city, secondary_state, secondary_zip, secondary_country,
       terms, taxable, tax_exempt_code, tax_exempt_expires, credit_limit,
       pricing_level, discount_percent, website, allow_credit_card_payments,
-      background_info, special_notes, sms_consent, portal_enabled, portal_tier_id`)
+      background_info, special_notes, sms_consent, portal_enabled, portal_tier_id, shipping_method`)
     .eq('id', customerId).eq('organization_id', org.id)
     .maybeSingle() as { data: CustomerRow | null; error: unknown }
   if (!customer) notFound()
@@ -110,14 +96,14 @@ export default async function CustomerDetailPage({ params }: PageProps) {
   const primaryContact = (contactRows ?? []).find((c) => c.is_primary) ?? null
 
   // Open jobs only (exclude completed + cancelled)
-  type JobRow = { id: string; job_number: number; title: string; status: JobStatus; created_at: string }
+  type JobRow = { id: string; job_number: number; title: string; status: string; created_at: string }
   const { data: openJobRows } = await supabase
     .from('jobs').select('id, job_number, title, status, created_at')
     .eq('organization_id', org.id).eq('customer_id', customerId)
     .neq('status', 'completed').neq('status', 'cancelled')
     .order('created_at', { ascending: false }) as { data: JobRow[] | null; error: unknown }
 
-  type QuoteRow = { id: string; quote_number: number; title: string; status: QuoteStatus; created_at: string }
+  type QuoteRow = { id: string; quote_number: number; title: string; status: string; created_at: string }
   const { data: quoteRows } = await supabase
     .from('quotes').select('id, quote_number, title, status, created_at')
     .eq('organization_id', org.id).eq('customer_id', customerId)
@@ -139,6 +125,19 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     .from('invoices').select('id, invoice_number, status, total, due_date, created_at')
     .eq('organization_id', org.id).eq('customer_id', customerId)
     .order('created_at', { ascending: false }) as { data: InvoiceRow[] | null; error: unknown }
+
+  // Fetch shipping methods for dropdown
+  type ShipMethodRow = { id: string; name: string }
+  let shippingMethods: ShipMethodRow[] = []
+  try {
+    const { data: smData } = await supabase
+      .from('shipping_methods')
+      .select('id, name')
+      .eq('organization_id', org.id)
+      .eq('is_active', true)
+      .order('name') as { data: ShipMethodRow[] | null; error: unknown }
+    shippingMethods = smData ?? []
+  } catch { /* migration 098 not yet applied */ }
 
   // Fetch saved shipping addresses
   type ShipAddrRow = { id: string; label: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; country: string; is_default: boolean }
@@ -273,8 +272,10 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           sms_consent: customer.sms_consent,
           portal_enabled: customer.portal_enabled,
           portal_tier_id: customer.portal_tier_id,
+          shipping_method: customer.shipping_method,
         }}
         portalTiers={portalTiers}
+        shippingMethods={shippingMethods}
       />
 
       {/* Shipping Addresses */}
@@ -285,101 +286,14 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         initialAddresses={shippingAddresses}
       />
 
-      {/* Open Jobs */}
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-base font-bold text-qm-black">Open Jobs</h2>
-          <span className="text-xs font-medium text-qm-gray">{openJobs.length}</span>
-        </div>
-        {openJobs.length === 0 ? (
-          <p className="px-6 py-8 text-center text-sm text-qm-gray">No open jobs</p>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {openJobs.map((j) => (
-              <a key={j.id} href={`/dashboard/${slug}/jobs/${j.id}`} className="flex items-center justify-between px-6 py-3 hover:bg-qm-surface/50 transition-colors">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-semibold text-qm-gray">#{j.job_number}</span>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${JOB_STATUS_COLORS[j.status]}`}>{JOB_STATUS_LABELS[j.status]}</span>
-                  </div>
-                  <p className="text-sm font-medium text-qm-black truncate">{j.title}</p>
-                </div>
-                <span className="ml-4 shrink-0 text-xs text-qm-gray">{formatDate(j.created_at)}</span>
-              </a>
-            ))}
-          </div>
-        )}
-        <div className="border-t border-gray-100 px-6 py-3">
-          <a href={`/dashboard/${slug}/jobs`} className="text-sm text-qm-lime hover:underline font-medium">
-            View all jobs →
-          </a>
-        </div>
-      </div>
-
-      {/* Quotes */}
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-base font-bold text-qm-black">Quotes</h2>
-          <span className="text-xs font-medium text-qm-gray">{quotes.length}</span>
-        </div>
-        {quotes.length === 0 ? (
-          <p className="px-6 py-8 text-center text-sm text-qm-gray">No quotes for this customer</p>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {quotes.map((q) => (
-              <a key={q.id} href={`/dashboard/${slug}/quotes`} className="flex items-center justify-between px-6 py-3 hover:bg-qm-surface/50 transition-colors">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-semibold text-qm-gray">Q-{q.quote_number}</span>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${QUOTE_STATUS_COLORS[q.status]}`}>{q.status}</span>
-                  </div>
-                  <p className="text-sm font-medium text-qm-black truncate">{q.title}</p>
-                </div>
-                <div className="ml-4 shrink-0 text-right">
-                  <p className="text-sm font-semibold text-qm-black">${formatCents(q.total)}</p>
-                  <p className="text-xs text-qm-gray">{formatDate(q.created_at)}</p>
-                </div>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Invoices */}
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-          <h2 className="text-base font-bold text-qm-black">Invoices</h2>
-          <span className="text-xs font-medium text-qm-gray">{invoices.length}</span>
-        </div>
-        {invoices.length === 0 ? (
-          <p className="px-6 py-8 text-center text-sm text-qm-gray">No invoices for this customer</p>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {invoices.map((inv) => (
-              <a key={inv.id} href={`/dashboard/${slug}/invoices/${inv.id}`} className="flex items-center justify-between px-6 py-3 hover:bg-qm-surface/50 transition-colors">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-semibold text-qm-gray">INV-{inv.invoice_number}</span>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${
-                      { draft: 'bg-gray-100 text-gray-600', sent: 'bg-blue-50 text-blue-700', paid: 'bg-qm-lime-light text-qm-lime-dark', partial: 'bg-yellow-50 text-yellow-700', overdue: 'bg-red-50 text-red-700', void: 'bg-gray-100 text-gray-400' }[inv.status] ?? 'bg-gray-100 text-gray-600'
-                    }`}>{inv.status}</span>
-                  </div>
-                  {inv.due_date && <p className="text-xs text-qm-gray">Due {formatDate(inv.due_date)}</p>}
-                </div>
-                <div className="ml-4 shrink-0 text-right">
-                  <p className="text-sm font-semibold text-qm-black">${formatCents(inv.total ?? 0)}</p>
-                  <p className="text-xs text-qm-gray">{formatDate(inv.created_at)}</p>
-                </div>
-              </a>
-            ))}
-          </div>
-        )}
-        <div className="border-t border-gray-100 px-6 py-3">
-          <a href={`/dashboard/${slug}/invoices?customer_id=${customer.id}`} className="text-sm text-qm-lime hover:underline font-medium">
-            View all invoices →
-          </a>
-        </div>
-      </div>
+      {/* Customer 360 tabs: Open Jobs / Quotes / Invoices / Transactions / Payments / Tasks / Leads */}
+      <CustomerTabsSection
+        customerId={customer.id}
+        orgSlug={slug}
+        initialOpenJobs={openJobs}
+        initialQuotes={quotes}
+        initialInvoices={invoices}
+      />
     </div>
   )
 }

@@ -34,9 +34,11 @@ type CustomerData = {
   sms_consent: boolean | null
   portal_enabled: boolean | null
   portal_tier_id: string | null
+  shipping_method: string | null
 }
 
 type PortalTierOption = { id: string; name: string }
+type ShippingMethodOption = { id: string; name: string }
 
 type Props = {
   customerId: string
@@ -46,6 +48,7 @@ type Props = {
   initialPrimaryContact: PrimaryContact
   contactsSlot?: React.ReactNode
   portalTiers?: PortalTierOption[]
+  shippingMethods?: ShippingMethodOption[]
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -121,7 +124,7 @@ function CardActions({
 
 export default function CustomerDetailClient({
   customerId, orgId, orgSlug, initialData, initialPrimaryContact, contactsSlot,
-  portalTiers = [],
+  portalTiers = [], shippingMethods = [],
 }: Props) {
   const [data, setData] = useState<CustomerData>(initialData)
 
@@ -250,6 +253,7 @@ export default function CustomerDetailClient({
         background_info: acctDraft.background_info,
         special_notes: acctDraft.special_notes,
         sales_rep: acctDraft.sales_rep,
+        shipping_method: acctDraft.shipping_method,
       })
       if (res.error) { setAcctError(res.error); return }
       setData((d) => ({ ...d, ...acctDraft }))
@@ -611,6 +615,15 @@ export default function CustomerDetailClient({
                 <input type="text" value={acctDraft.sales_rep ?? ''} onChange={(e) => setAcctDraft({ ...acctDraft, sales_rep: e.target.value || null })} className={ic} />
               </div>
             </div>
+            {shippingMethods.length > 0 && (
+              <div>
+                <Label>Shipping Method</Label>
+                <select value={acctDraft.shipping_method ?? ''} onChange={(e) => setAcctDraft({ ...acctDraft, shipping_method: e.target.value || null })} className={sc}>
+                  <option value="">— None —</option>
+                  {shippingMethods.map((m) => <option key={m.id} value={m.name}>{m.name}</option>)}
+                </select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Pricing Level</Label>
                 <input type="text" value={acctDraft.pricing_level ?? ''} onChange={(e) => setAcctDraft({ ...acctDraft, pricing_level: e.target.value || null })} className={ic} />
@@ -657,6 +670,9 @@ export default function CustomerDetailClient({
             </div>
             {data.website && (
               <div className="col-span-2"><dt className="text-qm-gray text-xs uppercase tracking-wide">Website</dt><dd className="mt-0.5"><a href={data.website} target="_blank" rel="noopener noreferrer" className="text-qm-lime hover:underline break-all">{data.website}</a></dd></div>
+            )}
+            {data.shipping_method && (
+              <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Shipping Method</dt><dd className="mt-0.5">{data.shipping_method}</dd></div>
             )}
             {data.background_info && (
               <div className="col-span-2 border-t border-gray-100 pt-3 mt-1">
