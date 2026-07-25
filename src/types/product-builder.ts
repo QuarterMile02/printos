@@ -201,7 +201,7 @@ export interface Product {
   published: boolean | null; published_at: string | null; published_by: string | null
   pricing_template_id: string | null
   complexity_value: number | null  // 1-5
-  status: ProductStatus | null; active: boolean | null; rounding: number | null; tax: number | null
+  status: ProductStatus | null; active: boolean | null; is_enabled: boolean | null; is_golden_product: boolean | null; rounding: number | null; tax: number | null
   portal_enabled: boolean | null
   portal_auto_approve: boolean | null
   portal_approval_count: number | null
