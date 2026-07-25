@@ -267,13 +267,23 @@ export default function ProductsListClient({
                     )}
                     <td className="whitespace-nowrap">
                       <Link href={editHref} className="block px-6 py-4">
-                        {p.status ? (
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>
-                            {STATUS_LABELS[p.status]}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300 text-xs">—</span>
-                        )}
+                        <div className="flex flex-col gap-1">
+                          {p.status ? (
+                            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>
+                              {STATUS_LABELS[p.status]}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                          {p.is_enabled === false && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+                              <svg className="h-2.5 w-2.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+                              </svg>
+                              ShopVOX off
+                            </span>
+                          )}
+                        </div>
                       </Link>
                     </td>
                     <td className="whitespace-nowrap">

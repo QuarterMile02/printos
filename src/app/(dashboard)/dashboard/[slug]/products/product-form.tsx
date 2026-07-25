@@ -701,6 +701,14 @@ export default function ProductForm({
                   </label>
                 ))}
               </div>
+              {!isNew && (product as Record<string, unknown>)?.is_enabled === false && (
+                <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-500">
+                  <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                  Disabled in ShopVOX (is_enabled = false)
+                </div>
+              )}
             </Field>
 
             {/* ── Customer Portal ── */}
