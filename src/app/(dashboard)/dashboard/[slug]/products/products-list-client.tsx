@@ -203,8 +203,19 @@ export default function ProductsListClient({
           <p className="text-sm text-qm-gray">No products match your filters.</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full divide-y divide-gray-200 table-fixed">
+            <colgroup>
+              <col className="w-[220px]" />
+              <col className="w-[140px]" />
+              <col className="w-[160px]" />
+              <col className="w-[130px]" />
+              {canSeePricing && <col className="w-[88px]" />}
+              <col className="w-[128px]" />
+              <col className="w-[116px]" />
+              <col className="w-[96px]" />
+              <col className="w-[180px]" />
+            </colgroup>
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
@@ -217,7 +228,7 @@ export default function ProductsListClient({
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Migration</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Updated</th>
-                <th className="px-4 py-3 w-40 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -228,21 +239,21 @@ export default function ProductsListClient({
                 const migrateHref = `/dashboard/${orgSlug}/products/${p.id}/migrate`
                 return (
                   <tr key={p.id} className="hover:bg-gray-50 cursor-pointer">
-                    <td className="whitespace-nowrap">
-                      <Link href={editHref} className="block px-6 py-4">
-                        <div className="text-sm font-semibold text-qm-black">{p.name}</div>
+                    <td className="overflow-hidden">
+                      <Link href={editHref} className="block px-6 py-4 min-w-0">
+                        <div className="truncate text-sm font-semibold text-qm-black" title={p.name}>{p.name}</div>
                         {p.part_number && (
-                          <div className="text-xs text-qm-gray">{p.part_number}</div>
+                          <div className="truncate text-xs text-qm-gray">{p.part_number}</div>
                         )}
                       </Link>
                     </td>
-                    <td className="whitespace-nowrap">
-                      <Link href={editHref} className="block px-6 py-4 text-sm text-gray-500">
+                    <td className="overflow-hidden">
+                      <Link href={editHref} className="block truncate px-6 py-4 text-sm text-gray-500" title={p.category_name ?? undefined}>
                         {p.category_name ?? <span className="text-gray-300">—</span>}
                       </Link>
                     </td>
-                    <td className="whitespace-nowrap">
-                      <Link href={editHref} className="block px-6 py-4 text-sm text-gray-500">
+                    <td className="overflow-hidden">
+                      <Link href={editHref} className="block truncate px-6 py-4 text-sm text-gray-500" title={p.product_type ?? undefined}>
                         {p.product_type ?? <span className="text-gray-300">—</span>}
                       </Link>
                     </td>
