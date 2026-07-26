@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { SavedView } from './types'
 import type { CreateViewParams } from './use-saved-view'
+import { usePortalPanel } from './use-portal-panel'
 
 const ORG_ROLES = ['owner', 'sales', 'designer', 'production', 'installer', 'digital', 'accounting']
 
@@ -35,28 +37,19 @@ export function ViewsDropdown({
   activeView, myViews, sharedViews, isDirty, isViewReadOnly,
   loading, onLoad, onSave, onCreate, onDelete,
 }: Props) {
-  const [open, setOpen] = useState(false)
+  const { open, setOpen, mounted, triggerRef, panelRef, pos } = usePortalPanel()
+
   const [showCreate, setShowCreate] = useState(false)
   const [saving, setSaving] = useState(false)
-
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState<'personal' | 'collaborative' | 'locked'>('personal')
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
-  const rootRef = useRef<HTMLDivElement>(null)
-
+  // Reset create form when panel closes
   useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setShowCreate(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    if (!open) setShowCreate(false)
   }, [open])
 
   const handleSave = async () => {
@@ -92,9 +85,10 @@ export function ViewsDropdown({
   const buttonLabel = activeView?.name ?? 'Views'
 
   return (
-    <div className="relative" ref={rootRef}>
+    <div>
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
@@ -117,8 +111,13 @@ export function ViewsDropdown({
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+      {/* ── Panel — portaled to document.body so no ancestor overflow clips it ── */}
+      {mounted && open && pos && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
+          className="w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+        >
           {loading ? (
             <div className="px-4 py-6 text-center text-xs text-gray-400">Loading views…</div>
           ) : showCreate ? (
@@ -343,7 +342,8 @@ export function ViewsDropdown({
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
