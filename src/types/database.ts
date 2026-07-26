@@ -367,6 +367,54 @@ export interface Database {
           updated_at?: string
         }
       }
+      saved_views: {
+        Row: {
+          id: string
+          organization_id: string
+          table_key: string
+          name: string
+          created_by: string
+          view_type: string
+          shared_with_roles: string[]
+          shared_with_user_ids: string[]
+          column_widths: Json
+          column_order: string[]
+          sort_rules: Json
+          filter_rules: Json
+          is_default: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          organization_id: string
+          table_key: string
+          name: string
+          created_by: string
+          view_type?: string
+          shared_with_roles?: string[]
+          shared_with_user_ids?: string[]
+          column_widths?: Json
+          column_order?: string[]
+          sort_rules?: Json
+          filter_rules?: Json
+          is_default?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          name?: string
+          view_type?: string
+          shared_with_roles?: string[]
+          shared_with_user_ids?: string[]
+          column_widths?: Json
+          column_order?: string[]
+          sort_rules?: Json
+          filter_rules?: Json
+          is_default?: boolean
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

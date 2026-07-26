@@ -23,7 +23,11 @@ export default async function ProductsPage({ params }: PageProps) {
 
   if (!org) notFound()
 
-  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  const { allowed: canSeePricing, profile } = await checkPermission(org.id, 'quotes.see_pricing')
+  const userRole = (profile as { role?: string } | undefined)?.role ?? 'member'
 
   // Fetch products — try with category join, fall back without
   type ProductDbRow = {
@@ -134,7 +138,14 @@ export default async function ProductsPage({ params }: PageProps) {
       )}
 
       {/* Client-side search/filter + table */}
-      <ProductsListClient products={products} orgSlug={slug} orgId={org.id} canSeePricing={canSeePricing} />
+      <ProductsListClient
+        products={products}
+        orgSlug={slug}
+        orgId={org.id}
+        userId={userId}
+        userRole={userRole}
+        canSeePricing={canSeePricing}
+      />
     </div>
   )
 }
