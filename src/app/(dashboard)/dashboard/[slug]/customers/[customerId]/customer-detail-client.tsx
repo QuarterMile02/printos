@@ -8,13 +8,6 @@ import PhoneInput from '@/components/ui/PhoneInput'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type PrimaryContact = {
-  full_name: string
-  email: string | null
-  phone: string | null
-  title: string | null
-} | null
-
 type CustomerData = {
   first_name: string; last_name: string; company_name: string | null
   email: string | null; phone: string | null; phone2: string | null; phone_ext: string | null
@@ -45,8 +38,6 @@ type Props = {
   orgId: string
   orgSlug: string
   initialData: CustomerData
-  initialPrimaryContact: PrimaryContact
-  contactsSlot?: React.ReactNode
   portalTiers?: PortalTierOption[]
   shippingMethods?: ShippingMethodOption[]
 }
@@ -91,31 +82,31 @@ function Label({ children, required }: { children: React.ReactNode; required?: b
 }
 function Dash() { return <span className="text-gray-300">—</span> }
 
-function CardActions({
-  editing, saved, pending, onEdit, onCancel, onSave,
+function EditFormHeader({
+  title, saved, pending, onCancel, onSave,
 }: {
-  editing: boolean; saved: boolean; pending: boolean
-  onEdit: () => void; onCancel: () => void; onSave: () => void
+  title: string; saved: boolean; pending: boolean
+  onCancel: () => void; onSave: () => void
 }) {
-  return !editing ? (
-    <div className="flex items-center gap-2">
-      {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
-      <button
-        onClick={onEdit}
-        className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-qm-black hover:bg-qm-surface transition-colors"
-      >
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
-        </svg>
-        Edit
-      </button>
+  return (
+    <div className="flex items-center justify-between mb-5">
+      <h2 className="text-base font-bold text-qm-black">{title}</h2>
+      <div className="flex items-center gap-2">
+        {saved && <span className="text-sm text-green-600 font-medium">Saved</span>}
+        <button onClick={onCancel} disabled={pending} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">Cancel</button>
+        <button onClick={onSave} disabled={pending} className="rounded-md bg-qm-lime px-4 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
     </div>
-  ) : (
-    <div className="flex items-center gap-2">
-      <button onClick={onCancel} disabled={pending} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">Cancel</button>
-      <button onClick={onSave} disabled={pending} className="rounded-md bg-qm-lime px-4 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
-        {pending ? 'Saving…' : 'Save'}
-      </button>
+  )
+}
+
+function ColHeader({ label, onEdit }: { label: string; onEdit: () => void }) {
+  return (
+    <div className="flex items-center justify-between mb-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-qm-gray">{label}</h3>
+      <button onClick={onEdit} className="text-xs font-medium text-qm-lime hover:underline">Edit</button>
     </div>
   )
 }
@@ -123,7 +114,7 @@ function CardActions({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function CustomerDetailClient({
-  customerId, orgId, orgSlug, initialData, initialPrimaryContact, contactsSlot,
+  customerId, orgId, orgSlug, initialData,
   portalTiers = [], shippingMethods = [],
 }: Props) {
   const [data, setData] = useState<CustomerData>(initialData)
@@ -156,16 +147,11 @@ export default function CustomerDetailClient({
   const [acctError, setAcctError] = useState<string | null>(null)
   const [acctPending, startAcctTransition] = useTransition()
 
-  // Pencil button (in CustomerActionMenu) dispatches this event to open both cards
+  // Pencil button (CustomerActionMenu) opens the Details edit form
   useEffect(() => {
     function handler() {
-      setAddrDraft((d) => d) // keep current draft
-      setDetailDraft((d) => d)
-      setAddrDraft({ ...data })
       setDetailDraft({ ...data })
-      setAddrEditing(true)
       setDetailEditing(true)
-      setAddrError(null)
       setDetailError(null)
     }
     window.addEventListener('customer:open-edit', handler)
@@ -279,30 +265,23 @@ export default function CustomerDetailClient({
 
   const primaryAddr = [data.street, data.city, data.state, data.zip].some(Boolean)
   const secondaryAddr = [data.secondary_street, data.secondary_city].some(Boolean)
+  const isEditing = addrEditing || detailEditing || acctEditing || portalEditing
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-0">
 
-      {/* ── 1. ADDRESS CARD (first) — Edit triggered by top pencil only ── */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-qm-black">Address</h2>
-          {/* Save/Cancel only shown when in edit mode — no standalone Edit button */}
-          {addrEditing && (
-            <div className="flex items-center gap-2">
-              {addrSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
-              <button onClick={() => { setAddrEditing(false); setAddrError(null) }} disabled={addrPending} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">Cancel</button>
-              <button onClick={saveAddr} disabled={addrPending} className="rounded-md bg-qm-lime px-4 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
-                {addrPending ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          )}
-        </div>
-        {addrError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{addrError}</div>}
-
-        {addrEditing ? (
+      {/* ── ADDRESS EDIT FORM ─────────────────────────────────────────────── */}
+      {addrEditing && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <EditFormHeader
+            title="Edit Address"
+            saved={addrSaved} pending={addrPending}
+            onCancel={() => { setAddrEditing(false); setAddrError(null) }}
+            onSave={saveAddr}
+          />
+          {addrError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{addrError}</div>}
           <div className="space-y-5">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-2">Bill To / Primary</p>
@@ -358,56 +337,19 @@ export default function CustomerDetailClient({
               </div>
             </div>
           </div>
-        ) : !primaryAddr && !secondaryAddr ? (
-          <p className="text-sm text-qm-gray">No address on file</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-6 text-sm">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-1">Bill To</p>
-              {primaryAddr ? (
-                <address className="not-italic leading-relaxed text-qm-black">
-                  {data.street && <div>{data.street}</div>}
-                  {data.street2 && <div>{data.street2}</div>}
-                  {(data.city || data.state || data.zip) && (
-                    <div>{[data.city, data.state, data.zip].filter(Boolean).join(', ')}</div>
-                  )}
-                  {data.country && data.country !== 'US' && <div>{data.country}</div>}
-                </address>
-              ) : <span className="text-qm-gray">—</span>}
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-1">Ship To / Install</p>
-              {secondaryAddr ? (
-                <address className="not-italic leading-relaxed text-qm-black">
-                  {data.secondary_street && <div>{data.secondary_street}</div>}
-                  {(data.secondary_city || data.secondary_state || data.secondary_zip) && (
-                    <div>{[data.secondary_city, data.secondary_state, data.secondary_zip].filter(Boolean).join(', ')}</div>
-                  )}
-                  {data.secondary_country && data.secondary_country !== 'US' && <div>{data.secondary_country}</div>}
-                </address>
-              ) : <span className="text-qm-gray">—</span>}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── 2. CUSTOMER DETAILS CARD (second) — Edit triggered by top pencil only ── */}
-      <div id="section-customer-details" className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-qm-black">Customer Details</h2>
-          {detailEditing && (
-            <div className="flex items-center gap-2">
-              {detailSaved && <span className="text-sm text-green-600 font-medium">Saved</span>}
-              <button onClick={() => { setDetailEditing(false); setDetailError(null) }} disabled={detailPending} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50">Cancel</button>
-              <button onClick={saveDetail} disabled={detailPending} className="rounded-md bg-qm-lime px-4 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
-                {detailPending ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          )}
         </div>
-        {detailError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{detailError}</div>}
+      )}
 
-        {detailEditing ? (
+      {/* ── CUSTOMER DETAILS EDIT FORM ────────────────────────────────────── */}
+      {detailEditing && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <EditFormHeader
+            title="Edit Customer Details"
+            saved={detailSaved} pending={detailPending}
+            onCancel={() => { setDetailEditing(false); setDetailError(null) }}
+            onSave={saveDetail}
+          />
+          {detailError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{detailError}</div>}
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><Label required>First name</Label>
@@ -425,20 +367,13 @@ export default function CustomerDetailClient({
                 <input type="email" value={detailDraft.email ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, email: e.target.value || null })} className={ic} />
               </div>
             </div>
-
-            {/* Mobile phone */}
             <div>
-              <Label>
-                Mobile
-                <span className="ml-1.5 text-xs font-normal text-gray-400">— SMS notifications</span>
-              </Label>
+              <Label>Mobile <span className="ml-1 text-xs font-normal text-gray-400">— SMS notifications</span></Label>
               <PhoneInput
                 value={detailDraft.phone ?? ''}
                 onChange={(val) => setDetailDraft({ ...detailDraft, phone: val.replace(/\D/g, '').length > 3 ? val : null })}
               />
             </div>
-
-            {/* Work phone + ext */}
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
                 <Label>Work phone</Label>
@@ -451,7 +386,6 @@ export default function CustomerDetailClient({
                 <input type="text" value={detailDraft.phone_ext ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, phone_ext: e.target.value || null })} maxLength={10} placeholder="123" className={ic} />
               </div>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Industry</Label>
                 <select value={detailDraft.industry ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, industry: e.target.value || null })} className={sc}>
@@ -465,12 +399,9 @@ export default function CustomerDetailClient({
                 </select>
               </div>
             </div>
-
             <div><Label>Lead Source</Label>
               <input type="text" value={detailDraft.lead_source ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, lead_source: e.target.value || null })} className={ic} />
             </div>
-
-            {/* SMS Consent */}
             <div>
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
@@ -487,7 +418,6 @@ export default function CustomerDetailClient({
                 </span>
               </label>
             </div>
-
             <div>
               <div className="flex items-center justify-between mb-1">
                 <Label>Notes</Label>
@@ -496,96 +426,19 @@ export default function CustomerDetailClient({
               <textarea value={detailDraft.notes ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, notes: e.target.value || null })} rows={3} className={ic} />
             </div>
           </div>
-        ) : (
-          <div className="space-y-5">
-            {/* Primary Contact section */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-2">Primary Contact</p>
-              {initialPrimaryContact ? (
-                <div className="space-y-0.5 text-sm">
-                  <p className="font-semibold text-qm-black">{initialPrimaryContact.full_name}</p>
-                  {initialPrimaryContact.title && <p className="text-xs text-qm-gray">{initialPrimaryContact.title}</p>}
-                  {initialPrimaryContact.email && (
-                    <a href={`mailto:${initialPrimaryContact.email}`} className="block text-qm-lime hover:underline">{initialPrimaryContact.email}</a>
-                  )}
-                  {initialPrimaryContact.phone && (
-                    <a href={`tel:${initialPrimaryContact.phone}`} className="block hover:underline">{initialPrimaryContact.phone}</a>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400 italic">No primary contact assigned</p>
-              )}
-            </div>
+        </div>
+      )}
 
-            {/* Details fields */}
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm border-t border-gray-100 pt-4">
-              {data.industry && (
-                <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Industry</dt><dd className="mt-0.5">{data.industry}</dd></div>
-              )}
-              {data.status && (
-                <div>
-                  <dt className="text-qm-gray text-xs uppercase tracking-wide">Status</dt>
-                  <dd className="mt-0.5">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_BADGE[data.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {data.status}
-                    </span>
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-qm-gray text-xs uppercase tracking-wide">SMS Consent</dt>
-                <dd className="mt-0.5">
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${data.sms_consent ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
-                    {data.sms_consent ? 'Opted in' : 'Not opted in'}
-                  </span>
-                </dd>
-              </div>
-              {data.lead_source && (
-                <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Lead Source</dt><dd className="mt-0.5">{data.lead_source}</dd></div>
-              )}
-              {data.phone && (
-                <div>
-                  <dt className="text-qm-gray text-xs uppercase tracking-wide">Mobile</dt>
-                  <dd className="mt-0.5"><a href={`tel:${data.phone}`} className="hover:underline">{data.phone}</a></dd>
-                </div>
-              )}
-              {data.phone2 && (
-                <div>
-                  <dt className="text-qm-gray text-xs uppercase tracking-wide">Work</dt>
-                  <dd className="mt-0.5">
-                    <a href={`tel:${data.phone2}`} className="hover:underline">{data.phone2}</a>
-                    {data.phone_ext && <span className="ml-1 text-qm-gray text-xs">ext {data.phone_ext}</span>}
-                  </dd>
-                </div>
-              )}
-              {data.notes && (
-                <div className="col-span-2 border-t border-gray-100 pt-3 mt-1">
-                  <dt className="text-qm-gray text-xs uppercase tracking-wide mb-1">Notes</dt>
-                  <dd className="text-sm text-qm-black whitespace-pre-wrap">{data.notes}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
-        )}
-      </div>
-
-      {/* ── 3. CONTACTS SLOT (injected from page) ── */}
-      {contactsSlot}
-
-      {/* ── 4. ACCOUNT INFO CARD (fourth) ── */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-qm-black">Account Info</h2>
-          <CardActions
-            editing={acctEditing} saved={acctSaved} pending={acctPending}
-            onEdit={() => { setAcctDraft({ ...data }); setAcctEditing(true); setAcctError(null) }}
+      {/* ── ACCOUNT INFO EDIT FORM ────────────────────────────────────────── */}
+      {acctEditing && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <EditFormHeader
+            title="Edit Account Info"
+            saved={acctSaved} pending={acctPending}
             onCancel={() => { setAcctEditing(false); setAcctError(null) }}
             onSave={saveAcct}
           />
-        </div>
-        {acctError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{acctError}</div>}
-
-        {acctEditing ? (
+          {acctError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{acctError}</div>}
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
               <div><Label>Terms</Label>
@@ -647,65 +500,19 @@ export default function CustomerDetailClient({
               <textarea value={acctDraft.special_notes ?? ''} onChange={(e) => setAcctDraft({ ...acctDraft, special_notes: e.target.value || null })} rows={3} className={ic} />
             </div>
           </div>
-        ) : (
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-            <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Terms</dt><dd className="font-medium mt-0.5">{data.terms ?? <Dash />}</dd></div>
-            <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Credit Limit</dt><dd className="mt-0.5">{data.credit_limit != null ? `$${Number(data.credit_limit).toLocaleString()}` : <Dash />}</dd></div>
-            <div>
-              <dt className="text-qm-gray text-xs uppercase tracking-wide">Tax</dt>
-              <dd className="mt-0.5">
-                {data.taxable ? 'Taxable' : 'Tax Exempt'}
-                {data.tax_exempt_code && <span className="ml-1 text-qm-gray">({data.tax_exempt_code})</span>}
-              </dd>
-            </div>
-            <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Discount %</dt><dd className="mt-0.5">{data.discount_percent != null ? `${data.discount_percent}%` : <Dash />}</dd></div>
-            {data.sales_rep && <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Sales Rep</dt><dd className="mt-0.5">{data.sales_rep}</dd></div>}
-            <div>
-              <dt className="text-qm-gray text-xs uppercase tracking-wide">CC Payments</dt>
-              <dd className="mt-0.5">
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${data.allow_credit_card_payments !== false ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
-                  {data.allow_credit_card_payments !== false ? 'Yes' : 'No'}
-                </span>
-              </dd>
-            </div>
-            {data.website && (
-              <div className="col-span-2"><dt className="text-qm-gray text-xs uppercase tracking-wide">Website</dt><dd className="mt-0.5"><a href={data.website} target="_blank" rel="noopener noreferrer" className="text-qm-lime hover:underline break-all">{data.website}</a></dd></div>
-            )}
-            {data.shipping_method && (
-              <div><dt className="text-qm-gray text-xs uppercase tracking-wide">Shipping Method</dt><dd className="mt-0.5">{data.shipping_method}</dd></div>
-            )}
-            {data.background_info && (
-              <div className="col-span-2 border-t border-gray-100 pt-3 mt-1">
-                <dt className="text-qm-gray text-xs uppercase tracking-wide mb-1">Background Info</dt>
-                <dd className="whitespace-pre-wrap">{data.background_info}</dd>
-              </div>
-            )}
-            {data.special_notes && (
-              <div className="col-span-2 border-t border-gray-100 pt-3">
-                <dt className="text-qm-gray text-xs uppercase tracking-wide mb-1">Special Notes</dt>
-                <dd className="whitespace-pre-wrap">{data.special_notes}</dd>
-              </div>
-            )}
-          </dl>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* ── 4. CUSTOMER PORTAL CARD ── */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-qm-black">Customer Portal</h2>
-          <CardActions
-            editing={portalEditing}
-            saved={portalSaved}
-            pending={portalPending}
-            onEdit={() => { setPortalDraft({ ...data }); setPortalEditing(true); setPortalError(null) }}
+      {/* ── CUSTOMER PORTAL EDIT FORM ─────────────────────────────────────── */}
+      {portalEditing && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <EditFormHeader
+            title="Edit Customer Portal"
+            saved={portalSaved} pending={portalPending}
             onCancel={() => { setPortalEditing(false); setPortalError(null) }}
             onSave={savePortal}
           />
-        </div>
-        {portalError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{portalError}</div>}
-
-        {portalEditing ? (
+          {portalError && <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">{portalError}</div>}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -734,27 +541,196 @@ export default function CustomerDetailClient({
               </select>
             </div>
           </div>
-        ) : (
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+        </div>
+      )}
+
+      {/* ── COMPACT SUMMARY CARD — four columns side-by-side ─────────────── */}
+      {!isEditing && (
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 p-6">
+
+            {/* ── Column 1: Account ── */}
             <div>
-              <dt className="text-qm-gray text-xs uppercase tracking-wide">Portal Access</dt>
-              <dd className="mt-0.5">
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${data.portal_enabled ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
-                  {data.portal_enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </dd>
+              <ColHeader label="Account" onEdit={() => { setAcctDraft({ ...data }); setAcctEditing(true); setAcctError(null) }} />
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between gap-2">
+                  <dt className="text-qm-gray shrink-0">Terms</dt>
+                  <dd className="font-medium text-right">{data.terms || <Dash />}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-qm-gray shrink-0">Credit Limit</dt>
+                  <dd className="font-medium text-right">{data.credit_limit != null ? `$${Number(data.credit_limit).toLocaleString()}` : <Dash />}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt className="text-qm-gray shrink-0">Tax</dt>
+                  <dd className="text-right">
+                    {data.taxable ? 'Taxable' : 'Exempt'}
+                    {data.tax_exempt_code && <span className="text-qm-gray ml-1">({data.tax_exempt_code})</span>}
+                  </dd>
+                </div>
+                {data.discount_percent != null && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-qm-gray shrink-0">Discount</dt>
+                    <dd className="font-medium text-right">{data.discount_percent}%</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-2">
+                  <dt className="text-qm-gray shrink-0">CC Payments</dt>
+                  <dd>
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-semibold ${data.allow_credit_card_payments !== false ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
+                      {data.allow_credit_card_payments !== false ? 'Yes' : 'No'}
+                    </span>
+                  </dd>
+                </div>
+                {data.sales_rep && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-qm-gray shrink-0">Rep</dt>
+                    <dd className="font-medium text-right truncate max-w-[8rem]">{data.sales_rep}</dd>
+                  </div>
+                )}
+                {data.pricing_level && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-qm-gray shrink-0">Pricing</dt>
+                    <dd className="font-medium text-right">{data.pricing_level}</dd>
+                  </div>
+                )}
+                {data.shipping_method && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-qm-gray shrink-0">Shipping</dt>
+                    <dd className="text-right">{data.shipping_method}</dd>
+                  </div>
+                )}
+              </dl>
             </div>
+
+            {/* ── Column 2: Address ── */}
             <div>
-              <dt className="text-qm-gray text-xs uppercase tracking-wide">Pricing Tier</dt>
-              <dd className="mt-0.5 font-medium">
-                {data.portal_tier_id
-                  ? (portalTiers.find((t) => t.id === data.portal_tier_id)?.name ?? data.portal_tier_id)
-                  : <Dash />}
-              </dd>
+              <ColHeader label="Address" onEdit={() => { setAddrDraft({ ...data }); setAddrEditing(true); setAddrError(null) }} />
+              {!primaryAddr && !secondaryAddr ? (
+                <p className="text-sm text-qm-gray">No address on file</p>
+              ) : (
+                <div className="space-y-3 text-sm">
+                  {primaryAddr && (
+                    <div>
+                      <p className="text-xs font-semibold text-qm-gray mb-0.5">Bill To</p>
+                      <address className="not-italic leading-relaxed text-qm-black">
+                        {data.street && <div>{data.street}</div>}
+                        {data.street2 && <div>{data.street2}</div>}
+                        {(data.city || data.state || data.zip) && (
+                          <div>{[data.city, data.state, data.zip].filter(Boolean).join(', ')}</div>
+                        )}
+                        {data.country && data.country !== 'US' && <div>{data.country}</div>}
+                      </address>
+                    </div>
+                  )}
+                  {secondaryAddr && (
+                    <div>
+                      <p className="text-xs font-semibold text-qm-gray mb-0.5">Ship To</p>
+                      <address className="not-italic leading-relaxed text-qm-black">
+                        {data.secondary_street && <div>{data.secondary_street}</div>}
+                        {(data.secondary_city || data.secondary_state || data.secondary_zip) && (
+                          <div>{[data.secondary_city, data.secondary_state, data.secondary_zip].filter(Boolean).join(', ')}</div>
+                        )}
+                        {data.secondary_country && data.secondary_country !== 'US' && <div>{data.secondary_country}</div>}
+                      </address>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </dl>
-        )}
-      </div>
+
+            {/* ── Column 3: Portal ── */}
+            <div>
+              <ColHeader label="Portal" onEdit={() => { setPortalDraft({ ...data }); setPortalEditing(true); setPortalError(null) }} />
+              <dl className="space-y-3 text-sm">
+                <div>
+                  <dt className="text-xs text-qm-gray mb-0.5">Access</dt>
+                  <dd>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${data.portal_enabled ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
+                      {data.portal_enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-qm-gray mb-0.5">Tier</dt>
+                  <dd className="font-medium text-sm">
+                    {data.portal_tier_id
+                      ? (portalTiers.find((t) => t.id === data.portal_tier_id)?.name ?? <Dash />)
+                      : <Dash />}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {/* ── Column 4: Details ── */}
+            <div>
+              <ColHeader label="Details" onEdit={() => { setDetailDraft({ ...data }); setDetailEditing(true); setDetailError(null) }} />
+              <dl className="space-y-2 text-sm">
+                {data.industry && (
+                  <div>
+                    <dt className="text-xs text-qm-gray">Industry</dt>
+                    <dd className="font-medium">{data.industry}</dd>
+                  </div>
+                )}
+                {data.status && (
+                  <div>
+                    <dt className="text-xs text-qm-gray">Status</dt>
+                    <dd>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${STATUS_BADGE[data.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {data.status}
+                      </span>
+                    </dd>
+                  </div>
+                )}
+                {data.lead_source && (
+                  <div>
+                    <dt className="text-xs text-qm-gray">Lead Source</dt>
+                    <dd className="font-medium">{data.lead_source}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-xs text-qm-gray">SMS</dt>
+                  <dd>
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-semibold ${data.sms_consent ? 'bg-qm-lime-light text-qm-lime-dark' : 'bg-gray-100 text-gray-600'}`}>
+                      {data.sms_consent ? 'Opted in' : 'No'}
+                    </span>
+                  </dd>
+                </div>
+                {data.website && (
+                  <div>
+                    <dt className="text-xs text-qm-gray">Website</dt>
+                    <dd><a href={data.website} target="_blank" rel="noopener noreferrer" className="text-qm-lime hover:underline break-all text-xs">{data.website}</a></dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          </div>
+
+          {/* Notes / Background / Special Notes — full-width footer row if any are set */}
+          {(data.notes || data.background_info || data.special_notes) && (
+            <div className="border-t border-gray-100 px-6 py-4 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+              {data.notes && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-1">Notes</p>
+                  <p className="text-qm-black whitespace-pre-wrap">{data.notes}</p>
+                </div>
+              )}
+              {data.background_info && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-1">Background</p>
+                  <p className="text-qm-black whitespace-pre-wrap">{data.background_info}</p>
+                </div>
+              )}
+              {data.special_notes && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-1">Special Notes</p>
+                  <p className="text-qm-black whitespace-pre-wrap">{data.special_notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

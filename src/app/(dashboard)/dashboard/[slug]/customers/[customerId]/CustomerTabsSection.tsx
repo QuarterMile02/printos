@@ -12,7 +12,7 @@ type PayRow = { id: string; payment_number: number; invoice_id: string | null; a
 type TaskRow = { id: string; title: string; status: string; due_date: string | null; created_at: string }
 type LeadRow = { id: string; title: string; estimated_value: number | null; created_at: string }
 
-type Tab = 'jobs' | 'quotes' | 'invoices' | 'transactions' | 'payments' | 'tasks' | 'leads'
+type Tab = 'jobs' | 'quotes' | 'invoices' | 'transactions' | 'payments' | 'tasks' | 'leads' | 'contacts'
 
 type Props = {
   customerId: string
@@ -20,6 +20,8 @@ type Props = {
   initialOpenJobs: OpenJobRow[]
   initialQuotes: QuoteRow[]
   initialInvoices: InvoiceRow[]
+  contactsSlot: React.ReactNode
+  contactCount: number
 }
 
 // ── Style maps ─────────────────────────────────────────────────────────────────
@@ -86,6 +88,7 @@ const sc = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-
 
 export default function CustomerTabsSection({
   customerId, orgSlug, initialOpenJobs, initialQuotes, initialInvoices,
+  contactsSlot, contactCount,
 }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('transactions')
 
@@ -167,6 +170,7 @@ export default function CustomerTabsSection({
   const TABS: { key: Tab; label: string; count?: number }[] = [
     { key: 'transactions', label: 'Transactions' },
     { key: 'payments', label: 'Payments', count: payments?.length },
+    { key: 'contacts', label: 'Contacts', count: contactCount },
     { key: 'jobs', label: 'Open Jobs', count: initialOpenJobs.length },
     { key: 'quotes', label: 'Quotes', count: initialQuotes.length },
     { key: 'invoices', label: 'Invoices', count: initialInvoices.length },
@@ -430,11 +434,12 @@ export default function CustomerTabsSection({
   }
 
   const contentByTab: Record<Tab, () => React.ReactNode> = {
+    transactions: renderTransactions,
+    payments: renderPayments,
+    contacts: () => contactsSlot,
     jobs: renderJobs,
     quotes: renderQuotes,
     invoices: renderInvoices,
-    transactions: renderTransactions,
-    payments: renderPayments,
     tasks: renderTasks,
     leads: renderLeads,
   }

@@ -15,6 +15,7 @@ type Props = {
   orgId: string
   orgSlug: string
   initialContacts: ContactRow[]
+  inTab?: boolean
 }
 
 const ic = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
@@ -96,7 +97,7 @@ function ContactForm({
   )
 }
 
-export default function CustomerContactsSection({ customerId, orgId, orgSlug, initialContacts }: Props) {
+export default function CustomerContactsSection({ customerId, orgId, orgSlug, initialContacts, inTab = false }: Props) {
   const [contacts, setContacts] = useState<ContactRow[]>(initialContacts)
   const [showAdd, setShowAdd] = useState(false)
   const [addDraft, setAddDraft] = useState<ContactInput & { full_name: string }>(emptyDraft())
@@ -208,7 +209,7 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
   }
 
   return (
-    <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div className={inTab ? '' : 'mt-6 rounded-xl border border-gray-200 bg-white shadow-sm'}>
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
         <h2 className="text-base font-bold text-qm-black">
           Contacts {contacts.length > 0 && <span className="ml-1 text-xs font-normal text-qm-gray">({contacts.length})</span>}

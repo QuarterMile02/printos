@@ -256,20 +256,6 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           customerId={customer.id}
           orgId={org.id}
           orgSlug={slug}
-          contactsSlot={
-            <CustomerContactsSection
-              customerId={customer.id}
-              orgId={org.id}
-              orgSlug={slug}
-              initialContacts={contactRows ?? []}
-            />
-          }
-          initialPrimaryContact={primaryContact ? {
-            full_name: primaryContact.full_name,
-            email: primaryContact.email,
-            phone: primaryContact.phone,
-            title: primaryContact.title,
-          } : null}
           initialData={{
             first_name: customer.first_name,
             last_name: customer.last_name,
@@ -324,13 +310,23 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         />
       </CustomerDetailsCollapsible>
 
-      {/* Customer 360 tabs: Transactions / Payments / Open Jobs / Quotes / Invoices / Tasks / Leads */}
+      {/* Customer 360 tabs: Transactions / Payments / Contacts / Open Jobs / Quotes / Invoices / Tasks / Leads */}
       <CustomerTabsSection
         customerId={customer.id}
         orgSlug={slug}
         initialOpenJobs={openJobs}
         initialQuotes={quotes}
         initialInvoices={invoices}
+        contactsSlot={
+          <CustomerContactsSection
+            customerId={customer.id}
+            orgId={org.id}
+            orgSlug={slug}
+            initialContacts={contactRows ?? []}
+            inTab
+          />
+        }
+        contactCount={contactRows?.length ?? 0}
       />
     </div>
   )
