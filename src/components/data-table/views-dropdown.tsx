@@ -118,7 +118,7 @@ export function ViewsDropdown({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
           {loading ? (
             <div className="px-4 py-6 text-center text-xs text-gray-400">Loading views…</div>
           ) : showCreate ? (
