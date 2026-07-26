@@ -48,7 +48,7 @@ export function FilterBuilder({ columns, rules, onChange, disabled }: Props) {
         const col = filterable.find((c) => c.key === rule.column) ?? filterable[0]
         return (
           <div key={rule.id} className="flex items-center gap-2 flex-wrap">
-            {/* WHERE label */}
+            {/* WHERE / AND label */}
             <span className="text-xs font-medium text-gray-400 w-10 shrink-0 text-right">
               {rules.indexOf(rule) === 0 ? 'Where' : 'And'}
             </span>
@@ -58,7 +58,7 @@ export function FilterBuilder({ columns, rules, onChange, disabled }: Props) {
               value={rule.column}
               onChange={(e) => update(rule.id, { column: e.target.value })}
               disabled={disabled}
-              className="rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
+              className="min-w-[90px] rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
             >
               {filterable.map((c) => (
                 <option key={c.key} value={c.key}>{c.label}</option>
@@ -70,21 +70,21 @@ export function FilterBuilder({ columns, rules, onChange, disabled }: Props) {
               value={rule.operator}
               onChange={(e) => update(rule.id, { operator: e.target.value as FilterOperator })}
               disabled={disabled}
-              className="rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
+              className="min-w-[120px] rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
             >
               {OPERATORS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
 
-            {/* Value */}
+            {/* Value — flex-1 so it fills remaining space on wide panels, wraps on narrow */}
             {op.hasValue && (
               col?.filterType === 'select' && col.filterOptions ? (
                 <select
                   value={rule.value}
                   onChange={(e) => update(rule.id, { value: e.target.value })}
                   disabled={disabled}
-                  className="rounded border border-gray-300 px-2 py-1.5 text-xs w-36 focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
+                  className="flex-1 min-w-[100px] rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
                 >
                   <option value="">— any —</option>
                   {col.filterOptions.map((o) => (
@@ -98,7 +98,7 @@ export function FilterBuilder({ columns, rules, onChange, disabled }: Props) {
                   onChange={(e) => update(rule.id, { value: e.target.value })}
                   disabled={disabled}
                   placeholder="Value"
-                  className="rounded border border-gray-300 px-2 py-1.5 text-xs w-36 focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
+                  className="flex-1 min-w-[100px] rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
                 />
               )
             )}
@@ -108,7 +108,7 @@ export function FilterBuilder({ columns, rules, onChange, disabled }: Props) {
               type="button"
               onClick={() => remove(rule.id)}
               disabled={disabled}
-              className="rounded p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-30"
+              className="shrink-0 rounded p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-30"
               title="Remove filter"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor">

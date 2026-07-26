@@ -87,7 +87,7 @@ export function DataTableToolbar({
         {filtersOpen && (
           <div
             ref={panelRef}
-            className="absolute left-0 top-full z-50 mt-1 w-[520px] max-w-[95vw] rounded-lg border border-gray-200 bg-white p-4 shadow-lg"
+            className="absolute right-0 top-full z-50 mt-1 w-[520px] max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white p-4 shadow-lg"
           >
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-gray-800">
