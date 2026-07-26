@@ -116,7 +116,7 @@ export function ViewsDropdown({
         <div
           ref={panelRef}
           style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+          className="w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
         >
           {loading ? (
             <div className="px-4 py-6 text-center text-xs text-gray-400">Loading views…</div>
@@ -258,7 +258,7 @@ export function ViewsDropdown({
                       <button
                         type="button"
                         onClick={() => { onLoad(view); setOpen(false) }}
-                        className={`flex flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
+                        className={`flex flex-1 min-w-0 items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
                           activeView?.id === view.id ? 'font-medium text-qm-lime-dark' : 'text-gray-700'
                         }`}
                       >
@@ -300,7 +300,7 @@ export function ViewsDropdown({
                       key={view.id}
                       type="button"
                       onClick={() => { onLoad(view); setOpen(false) }}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
+                      className={`flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
                         activeView?.id === view.id ? 'font-medium text-qm-lime-dark' : 'text-gray-700'
                       }`}
                     >
