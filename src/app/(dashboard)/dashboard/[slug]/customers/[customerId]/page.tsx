@@ -5,9 +5,21 @@ import CustomerContactsSection from './customer-contacts'
 import CustomerActionMenu from './customer-action-menu'
 import ShippingAddressesSection from './shipping-addresses-section'
 import CustomerTabsSection from './CustomerTabsSection'
+import CustomerDetailsCollapsible from './customer-details-collapsible'
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function fmtMoney(cents: number) {
+  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const STATUS_BADGE_CLASSES: Record<string, string> = {
+  lead: 'bg-gray-100 text-gray-700',
+  prospect: 'bg-yellow-50 text-yellow-700',
+  closable: 'bg-blue-50 text-blue-700',
+  sold: 'bg-qm-lime-light text-qm-lime-dark',
 }
 
 type PageProps = { params: Promise<{ slug: string; customerId: string }> }
@@ -155,6 +167,19 @@ export default async function CustomerDetailPage({ params }: PageProps) {
   const quotes = (quoteRows ?? []).map((q) => ({ ...q, total: perQuoteTotals.get(q.id) ?? 0 }))
   const invoices = invoiceRows ?? []
 
+  // Compute outstanding balance and overdue amount from invoice statuses
+  const balance = invoices
+    .filter((inv) => ['sent', 'partial', 'overdue'].includes(inv.status))
+    .reduce((sum, inv) => sum + (inv.total ?? 0), 0)
+  const overdueAmount = invoices
+    .filter((inv) => inv.status === 'overdue')
+    .reduce((sum, inv) => sum + (inv.total ?? 0), 0)
+
+  // Header contact: prefer primary contact, fall back to customer-level email/phone
+  const headerContact = primaryContact
+    ? { name: primaryContact.full_name as string | null, email: primaryContact.email, phone: primaryContact.phone }
+    : { name: null as string | null, email: customer.email, phone: customer.phone }
+
   const headerName = customer.company_name || `${customer.first_name} ${customer.last_name}`
 
   return (
@@ -170,8 +195,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         <span className="text-gray-700">{headerName}</span>
       </div>
 
-      {/* Header */}
-      <div className="flex items-start justify-between mb-8 gap-4">
+      {/* Compact header strip — name + badges on line 1, financial + contact summary on line 2 */}
+      <div className="flex items-start justify-between mb-5 gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-qm-black">{headerName}</h1>
@@ -180,27 +205,40 @@ export default async function CustomerDetailPage({ params }: PageProps) {
                 Inactive
               </span>
             )}
-          </div>
-          <p className="mt-0.5 text-sm text-gray-400">Added {formatDate(customer.created_at)}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-gray-600">
-            {customer.email && (
-              <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 hover:text-qm-lime">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
-                </svg>
-                {customer.email}
-              </a>
-            )}
-            {customer.phone && (
-              <a href={`tel:${customer.phone}`} className="flex items-center gap-1.5 hover:text-qm-lime">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z" />
-                </svg>
-                {customer.phone}
-                {customer.phone_ext && <span className="text-gray-400 ml-1">ext {customer.phone_ext}</span>}
-              </a>
+            {customer.status != null && STATUS_BADGE_CLASSES[customer.status] != null && (
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${STATUS_BADGE_CLASSES[customer.status]}`}>
+                {customer.status}
+              </span>
             )}
           </div>
+          {/* Summary row: balance · overdue · primary contact info */}
+          {(balance > 0 || overdueAmount > 0 || headerContact.name || headerContact.email || headerContact.phone) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-gray-600">
+              {balance > 0 && (
+                <span className="font-medium">{fmtMoney(balance)} balance</span>
+              )}
+              {overdueAmount > 0 && balance > 0 && <span className="text-gray-300 select-none">·</span>}
+              {overdueAmount > 0 && (
+                <span className="font-semibold text-red-600">{fmtMoney(overdueAmount)} overdue</span>
+              )}
+              {headerContact.name && (balance > 0 || overdueAmount > 0) && <span className="text-gray-300 select-none">·</span>}
+              {headerContact.name && (
+                <span className="font-medium text-qm-black">{headerContact.name}</span>
+              )}
+              {headerContact.email && (headerContact.name || balance > 0 || overdueAmount > 0) && <span className="text-gray-300 select-none">·</span>}
+              {headerContact.email && (
+                <a href={`mailto:${headerContact.email}`} className="hover:text-qm-lime hover:underline">
+                  {headerContact.email}
+                </a>
+              )}
+              {headerContact.phone && (headerContact.email || headerContact.name || balance > 0 || overdueAmount > 0) && <span className="text-gray-300 select-none">·</span>}
+              {headerContact.phone && (
+                <a href={`tel:${headerContact.phone}`} className="hover:text-qm-lime hover:underline">
+                  {headerContact.phone}
+                </a>
+              )}
+            </div>
+          )}
         </div>
         <CustomerActionMenu
           customerId={customer.id}
@@ -212,81 +250,81 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         />
       </div>
 
-      {/* Editable cards — Address, Customer Details, [Contacts slot], Account Info */}
-      <CustomerDetailClient
-        customerId={customer.id}
-        orgId={org.id}
-        orgSlug={slug}
-        contactsSlot={
-          <CustomerContactsSection
-            customerId={customer.id}
-            orgId={org.id}
-            orgSlug={slug}
-            initialContacts={contactRows ?? []}
-          />
-        }
-        initialPrimaryContact={primaryContact ? {
-          full_name: primaryContact.full_name,
-          email: primaryContact.email,
-          phone: primaryContact.phone,
-          title: primaryContact.title,
-        } : null}
-        initialData={{
-          first_name: customer.first_name,
-          last_name: customer.last_name,
-          company_name: customer.company_name,
-          email: customer.email,
-          phone: customer.phone,
-          phone2: customer.phone2,
-          phone_ext: customer.phone_ext,
-          notes: customer.notes,
-          legal_name: customer.legal_name,
-          sales_rep: customer.sales_rep,
-          industry: customer.industry,
-          lead_source: customer.lead_source,
-          customer_group: customer.customer_group,
-          status: customer.status,
-          is_active: customer.is_active,
-          street: customer.street,
-          street2: customer.street2,
-          city: customer.city,
-          state: customer.state,
-          zip: customer.zip,
-          secondary_street: customer.secondary_street,
-          secondary_city: customer.secondary_city,
-          secondary_state: customer.secondary_state,
-          secondary_zip: customer.secondary_zip,
-          country: customer.country,
-          secondary_country: customer.secondary_country,
-          terms: customer.terms,
-          taxable: customer.taxable,
-          tax_exempt_code: customer.tax_exempt_code,
-          tax_exempt_expires: customer.tax_exempt_expires,
-          credit_limit: customer.credit_limit,
-          pricing_level: customer.pricing_level,
-          discount_percent: customer.discount_percent,
-          website: customer.website,
-          allow_credit_card_payments: customer.allow_credit_card_payments,
-          background_info: customer.background_info,
-          special_notes: customer.special_notes,
-          sms_consent: customer.sms_consent,
-          portal_enabled: customer.portal_enabled,
-          portal_tier_id: customer.portal_tier_id,
-          shipping_method: customer.shipping_method,
-        }}
-        portalTiers={portalTiers}
-        shippingMethods={shippingMethods}
-      />
+      {/* Collapsible details section — collapsed by default so tabs are immediately visible */}
+      <CustomerDetailsCollapsible>
+        <CustomerDetailClient
+          customerId={customer.id}
+          orgId={org.id}
+          orgSlug={slug}
+          contactsSlot={
+            <CustomerContactsSection
+              customerId={customer.id}
+              orgId={org.id}
+              orgSlug={slug}
+              initialContacts={contactRows ?? []}
+            />
+          }
+          initialPrimaryContact={primaryContact ? {
+            full_name: primaryContact.full_name,
+            email: primaryContact.email,
+            phone: primaryContact.phone,
+            title: primaryContact.title,
+          } : null}
+          initialData={{
+            first_name: customer.first_name,
+            last_name: customer.last_name,
+            company_name: customer.company_name,
+            email: customer.email,
+            phone: customer.phone,
+            phone2: customer.phone2,
+            phone_ext: customer.phone_ext,
+            notes: customer.notes,
+            legal_name: customer.legal_name,
+            sales_rep: customer.sales_rep,
+            industry: customer.industry,
+            lead_source: customer.lead_source,
+            customer_group: customer.customer_group,
+            status: customer.status,
+            is_active: customer.is_active,
+            street: customer.street,
+            street2: customer.street2,
+            city: customer.city,
+            state: customer.state,
+            zip: customer.zip,
+            secondary_street: customer.secondary_street,
+            secondary_city: customer.secondary_city,
+            secondary_state: customer.secondary_state,
+            secondary_zip: customer.secondary_zip,
+            country: customer.country,
+            secondary_country: customer.secondary_country,
+            terms: customer.terms,
+            taxable: customer.taxable,
+            tax_exempt_code: customer.tax_exempt_code,
+            tax_exempt_expires: customer.tax_exempt_expires,
+            credit_limit: customer.credit_limit,
+            pricing_level: customer.pricing_level,
+            discount_percent: customer.discount_percent,
+            website: customer.website,
+            allow_credit_card_payments: customer.allow_credit_card_payments,
+            background_info: customer.background_info,
+            special_notes: customer.special_notes,
+            sms_consent: customer.sms_consent,
+            portal_enabled: customer.portal_enabled,
+            portal_tier_id: customer.portal_tier_id,
+            shipping_method: customer.shipping_method,
+          }}
+          portalTiers={portalTiers}
+          shippingMethods={shippingMethods}
+        />
+        <ShippingAddressesSection
+          customerId={customer.id}
+          orgId={org.id}
+          orgSlug={slug}
+          initialAddresses={shippingAddresses}
+        />
+      </CustomerDetailsCollapsible>
 
-      {/* Shipping Addresses */}
-      <ShippingAddressesSection
-        customerId={customer.id}
-        orgId={org.id}
-        orgSlug={slug}
-        initialAddresses={shippingAddresses}
-      />
-
-      {/* Customer 360 tabs: Open Jobs / Quotes / Invoices / Transactions / Payments / Tasks / Leads */}
+      {/* Customer 360 tabs: Transactions / Payments / Open Jobs / Quotes / Invoices / Tasks / Leads */}
       <CustomerTabsSection
         customerId={customer.id}
         orgSlug={slug}

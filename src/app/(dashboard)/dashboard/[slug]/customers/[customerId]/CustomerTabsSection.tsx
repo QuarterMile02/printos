@@ -87,7 +87,7 @@ const sc = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-
 export default function CustomerTabsSection({
   customerId, orgSlug, initialOpenJobs, initialQuotes, initialInvoices,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('jobs')
+  const [activeTab, setActiveTab] = useState<Tab>('transactions')
 
   // Lazy-loaded data (null = not yet fetched)
   const [transactions, setTransactions] = useState<TxRow[] | null>(null)
@@ -165,11 +165,11 @@ export default function CustomerTabsSection({
   // ── Tab definitions ────────────────────────────────────────────────────────
 
   const TABS: { key: Tab; label: string; count?: number }[] = [
+    { key: 'transactions', label: 'Transactions' },
+    { key: 'payments', label: 'Payments', count: payments?.length },
     { key: 'jobs', label: 'Open Jobs', count: initialOpenJobs.length },
     { key: 'quotes', label: 'Quotes', count: initialQuotes.length },
     { key: 'invoices', label: 'Invoices', count: initialInvoices.length },
-    { key: 'transactions', label: 'Transactions' },
-    { key: 'payments', label: 'Payments', count: payments?.length },
     { key: 'tasks', label: 'Tasks', count: tasks?.length },
     { key: 'leads', label: 'Sales Leads', count: leads?.length },
   ]
