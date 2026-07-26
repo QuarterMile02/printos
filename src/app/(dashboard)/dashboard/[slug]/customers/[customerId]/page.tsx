@@ -185,7 +185,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
   return (
     <div>
-      <div className="px-8 pt-8 max-w-4xl">
+      <div className="px-8 pt-8 max-w-6xl">
       {/* Breadcrumbs */}
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <a href="/dashboard" className="hover:text-gray-700">Dashboard</a>
@@ -308,7 +308,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
         />
       </CustomerDetailsCollapsible>
       </div>
-      <div className="px-8 pb-8">
+      <div className="px-8 pb-8 max-w-6xl">
         <CustomerTabsSection
           customerId={customer.id}
           orgSlug={slug}
