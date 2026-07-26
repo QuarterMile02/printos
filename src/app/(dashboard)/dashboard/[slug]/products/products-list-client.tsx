@@ -74,6 +74,43 @@ function formatRelative(iso: string | null): string {
 
 type StatusTab = 'all' | 'published' | 'draft' | 'disabled' | 'enabled'
 
+function ProductCard({
+  p,
+  orgSlug,
+  canSeePricing,
+}: {
+  p: ProductRow
+  orgSlug: string
+  canSeePricing: boolean
+}) {
+  const editHref = `/dashboard/${orgSlug}/products/${p.id}/edit`
+  return (
+    <Link
+      href={editHref}
+      className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-qm-lime hover:shadow-md transition-all"
+    >
+      <div className="font-semibold text-sm text-qm-black truncate" title={p.name}>
+        {p.name}
+      </div>
+      {p.category_name && (
+        <div className="text-xs text-qm-gray truncate">{p.category_name}</div>
+      )}
+      <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+        {p.status && (
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[p.status]}`}>
+            {STATUS_LABELS[p.status]}
+          </span>
+        )}
+        {canSeePricing && p.price != null && (
+          <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-700">
+            {formatPrice(p.price)}
+          </span>
+        )}
+      </div>
+    </Link>
+  )
+}
+
 export default function ProductsListClient({
   products,
   orgSlug,
@@ -101,6 +138,7 @@ export default function ProductsListClient({
     sortRules,
     filterRules,
     columnWidths: savedWidths,
+    viewMode,
     activeView,
     isDirty,
     isViewReadOnly,
@@ -110,6 +148,7 @@ export default function ProductsListClient({
     setSort,
     setFilterRules,
     setColumnWidth,
+    setViewMode,
     loadView,
     saveCurrentView,
     createView,
@@ -349,11 +388,13 @@ export default function ProductsListClient({
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table / Card grid */}
       {products.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-qm-lime-light text-qm-lime-dark">
@@ -368,6 +409,17 @@ export default function ProductsListClient({
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-qm-gray">No products match your filters.</p>
         </div>
+      ) : viewMode === 'card' ? (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {filtered.map((p) => (
+              <ProductCard key={p.id} p={p} orgSlug={orgSlug} canSeePricing={canSeePricing} />
+            ))}
+          </div>
+          <div className="mt-2 text-xs text-qm-gray">
+            Showing {filtered.length} of {products.length} products
+          </div>
+        </>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table

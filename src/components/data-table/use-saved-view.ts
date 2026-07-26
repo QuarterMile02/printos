@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient as _createClient } from '@/lib/supabase/client'
-import type { ColumnDef, FilterRule, FilterOperator, SavedView, SortRule } from './types'
+import type { ColumnDef, FilterRule, FilterOperator, SavedView, SortRule, ViewMode } from './types'
 
 // saved_views is added via manual migration after DB type generation,
 // so we bypass Supabase's generated types here to avoid 'never' errors.
@@ -30,12 +30,14 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
   const [sortRules, setSortRules] = useState<SortRule[]>([])
   const [filterRules, setFilterRulesState] = useState<FilterRule[]>([])
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
+  const [viewMode, setViewModeState] = useState<ViewMode>('list')
 
   // snapshot taken when a view is loaded — used to detect unsaved changes
   const savedSnapshot = useRef<{
     sort: SortRule[]
     filters: FilterRule[]
     widths: Record<string, number>
+    viewMode: ViewMode
   } | null>(null)
 
   useEffect(() => {
@@ -68,7 +70,8 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
     savedSnapshot.current !== null &&
     (JSON.stringify(sortRules) !== JSON.stringify(savedSnapshot.current.sort) ||
       JSON.stringify(filterRules) !== JSON.stringify(savedSnapshot.current.filters) ||
-      JSON.stringify(columnWidths) !== JSON.stringify(savedSnapshot.current.widths))
+      JSON.stringify(columnWidths) !== JSON.stringify(savedSnapshot.current.widths) ||
+      viewMode !== savedSnapshot.current.viewMode)
 
   const loadView = useCallback((view: SavedView | null) => {
     if (!view) {
@@ -76,17 +79,20 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
       setSortRules([])
       setFilterRulesState([])
       setColumnWidths({})
+      setViewModeState('list')
       savedSnapshot.current = null
       return
     }
     const sort = view.sort_rules ?? []
     const filters = view.filter_rules ?? []
     const widths = view.column_widths ?? {}
+    const mode: ViewMode = view.view_mode ?? 'list'
     setActiveViewId(view.id)
     setSortRules(sort)
     setFilterRulesState(filters)
     setColumnWidths(widths)
-    savedSnapshot.current = { sort, filters, widths }
+    setViewModeState(mode)
+    savedSnapshot.current = { sort, filters, widths, viewMode: mode }
   }, [])
 
   const setSort = useCallback(
@@ -127,6 +133,10 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
     [isViewReadOnly, activeViewId],
   )
 
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode)
+  }, [])
+
   const saveCurrentView = useCallback(async (): Promise<{ error?: string }> => {
     if (!activeViewId || isViewReadOnly) return { error: 'No editable view' }
     const { error } = await sv()
@@ -134,25 +144,22 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
         sort_rules: sortRules,
         filter_rules: filterRules,
         column_widths: columnWidths,
+        view_mode: viewMode,
         updated_at: new Date().toISOString(),
       })
       .eq('id', activeViewId)
     if (!error) {
-      savedSnapshot.current = {
-        sort: sortRules,
-        filters: filterRules,
-        widths: columnWidths,
-      }
+      savedSnapshot.current = { sort: sortRules, filters: filterRules, widths: columnWidths, viewMode }
       setViews((prev) =>
         prev.map((v) =>
           v.id === activeViewId
-            ? { ...v, sort_rules: sortRules, filter_rules: filterRules, column_widths: columnWidths }
+            ? { ...v, sort_rules: sortRules, filter_rules: filterRules, column_widths: columnWidths, view_mode: viewMode }
             : v,
         ),
       )
     }
     return { error: error?.message }
-  }, [activeViewId, isViewReadOnly, sortRules, filterRules, columnWidths])
+  }, [activeViewId, isViewReadOnly, sortRules, filterRules, columnWidths, viewMode])
 
   const createView = useCallback(
     async (params: CreateViewParams): Promise<{ error?: string }> => {
@@ -169,6 +176,7 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
           column_order: [],
           sort_rules: sortRules,
           filter_rules: filterRules,
+          view_mode: viewMode,
         })
         .select()
         .single()
@@ -176,15 +184,11 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
         const newView = data as SavedView
         setViews((prev) => [...prev, newView])
         setActiveViewId(newView.id)
-        savedSnapshot.current = {
-          sort: sortRules,
-          filters: filterRules,
-          widths: columnWidths,
-        }
+        savedSnapshot.current = { sort: sortRules, filters: filterRules, widths: columnWidths, viewMode }
       }
       return { error: error?.message }
     },
-    [orgId, tableKey, userId, columnWidths, sortRules, filterRules],
+    [orgId, tableKey, userId, columnWidths, sortRules, filterRules, viewMode],
   )
 
   const deleteView = useCallback(
@@ -197,6 +201,7 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
           setSortRules([])
           setFilterRulesState([])
           setColumnWidths({})
+          setViewModeState('list')
           savedSnapshot.current = null
         }
       }
@@ -209,6 +214,7 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
     sortRules,
     filterRules,
     columnWidths,
+    viewMode,
     activeView,
     isDirty,
     isViewReadOnly,
@@ -218,6 +224,7 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
     setSort,
     setFilterRules,
     setColumnWidth,
+    setViewMode,
     loadView,
     saveCurrentView,
     createView,

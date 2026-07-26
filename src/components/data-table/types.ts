@@ -1,5 +1,7 @@
 export type SortDirection = 'asc' | 'desc'
 
+export type ViewMode = 'list' | 'card'
+
 export type SortRule = {
   column: string
   direction: SortDirection
@@ -36,6 +38,7 @@ export type SavedView = {
   column_order: string[]
   sort_rules: SortRule[]
   filter_rules: FilterRule[]
+  view_mode: ViewMode
   is_default: boolean
   created_at: string
   updated_at: string
