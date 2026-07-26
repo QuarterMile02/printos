@@ -12,7 +12,7 @@ type PayRow = { id: string; payment_number: number; invoice_id: string | null; a
 type TaskRow = { id: string; title: string; status: string; due_date: string | null; created_at: string }
 type LeadRow = { id: string; title: string; estimated_value: number | null; created_at: string }
 
-type Tab = 'jobs' | 'quotes' | 'invoices' | 'transactions' | 'payments' | 'tasks' | 'leads' | 'contacts'
+type Tab = 'jobs' | 'quotes' | 'invoices' | 'transactions' | 'payments' | 'tasks' | 'leads' | 'contacts' | 'addresses'
 
 type Props = {
   customerId: string
@@ -22,6 +22,8 @@ type Props = {
   initialInvoices: InvoiceRow[]
   contactsSlot: React.ReactNode
   contactCount: number
+  shippingAddressesSlot: React.ReactNode
+  shippingAddressCount: number
 }
 
 // ── Style maps ─────────────────────────────────────────────────────────────────
@@ -88,7 +90,7 @@ const sc = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-
 
 export default function CustomerTabsSection({
   customerId, orgSlug, initialOpenJobs, initialQuotes, initialInvoices,
-  contactsSlot, contactCount,
+  contactsSlot, contactCount, shippingAddressesSlot, shippingAddressCount,
 }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('transactions')
 
@@ -171,6 +173,7 @@ export default function CustomerTabsSection({
     { key: 'transactions', label: 'Transactions' },
     { key: 'payments', label: 'Payments', count: payments?.length },
     { key: 'contacts', label: 'Contacts', count: contactCount },
+    { key: 'addresses', label: 'Addresses', count: shippingAddressCount },
     { key: 'jobs', label: 'Open Jobs', count: initialOpenJobs.length },
     { key: 'quotes', label: 'Quotes', count: initialQuotes.length },
     { key: 'invoices', label: 'Invoices', count: initialInvoices.length },
@@ -437,6 +440,7 @@ export default function CustomerTabsSection({
     transactions: renderTransactions,
     payments: renderPayments,
     contacts: () => contactsSlot,
+    addresses: () => shippingAddressesSlot,
     jobs: renderJobs,
     quotes: renderQuotes,
     invoices: renderInvoices,
@@ -447,7 +451,7 @@ export default function CustomerTabsSection({
   return (
     <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
       {/* Tab nav */}
-      <div className="overflow-x-auto border-b border-gray-200">
+      <div className="overflow-x-auto overflow-y-hidden border-b border-gray-200">
         <nav className="flex min-w-max">
           {TABS.map((tab) => (
             <button
@@ -473,7 +477,7 @@ export default function CustomerTabsSection({
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 min-h-0 overflow-y-auto max-h-[480px]">
+      <div>
         {contentByTab[activeTab]()}
       </div>
     </div>

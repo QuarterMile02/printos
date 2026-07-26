@@ -19,6 +19,7 @@ type Props = {
   orgId: string
   orgSlug: string
   initialAddresses: ShippingAddress[]
+  inTab?: boolean
 }
 
 function fmtAddr(a: ShippingAddress) {
@@ -26,7 +27,7 @@ function fmtAddr(a: ShippingAddress) {
   return parts.join(', ') || '—'
 }
 
-export default function ShippingAddressesSection({ customerId, orgId, orgSlug, initialAddresses }: Props) {
+export default function ShippingAddressesSection({ customerId, orgId, orgSlug, initialAddresses, inTab }: Props) {
   const [addresses, setAddresses] = useState<ShippingAddress[]>(initialAddresses)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -54,7 +55,7 @@ export default function ShippingAddressesSection({ customerId, orgId, orgSlug, i
   }
 
   return (
-    <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div className={inTab ? '' : 'mt-6 rounded-xl border border-gray-200 bg-white shadow-sm'}>
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
         <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
           Shipping Addresses

@@ -24,6 +24,7 @@ type CustomerData = {
   discount_percent: number | null; website: string | null
   allow_credit_card_payments: boolean | null
   background_info: string | null; special_notes: string | null
+  vat_number: string | null; other_info: string | null
   sms_consent: boolean | null
   portal_enabled: boolean | null
   portal_tier_id: string | null
@@ -547,12 +548,12 @@ export default function CustomerDetailClient({
       {/* ── COMPACT SUMMARY CARD — four columns side-by-side ─────────────── */}
       {!isEditing && (
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 p-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 p-5">
 
             {/* ── Column 1: Account ── */}
             <div>
               <ColHeader label="Account" onEdit={() => { setAcctDraft({ ...data }); setAcctEditing(true); setAcctError(null) }} />
-              <dl className="space-y-2 text-sm">
+              <dl className="space-y-1.5 text-sm">
                 <div className="flex justify-between gap-2">
                   <dt className="text-qm-gray shrink-0">Terms</dt>
                   <dd className="font-medium text-right">{data.terms || <Dash />}</dd>
@@ -568,6 +569,18 @@ export default function CustomerDetailClient({
                     {data.tax_exempt_code && <span className="text-qm-gray ml-1">({data.tax_exempt_code})</span>}
                   </dd>
                 </div>
+                {data.tax_exempt_expires && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-qm-gray shrink-0 text-xs">Exempt Exp.</dt>
+                    <dd className="text-right text-xs">{new Date(data.tax_exempt_expires).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</dd>
+                  </div>
+                )}
+                {data.vat_number && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-qm-gray shrink-0">VAT No.</dt>
+                    <dd className="font-medium text-right">{data.vat_number}</dd>
+                  </div>
+                )}
                 {data.discount_percent != null && (
                   <div className="flex justify-between gap-2">
                     <dt className="text-qm-gray shrink-0">Discount</dt>
@@ -609,7 +622,7 @@ export default function CustomerDetailClient({
               {!primaryAddr && !secondaryAddr ? (
                 <p className="text-sm text-qm-gray">No address on file</p>
               ) : (
-                <div className="space-y-3 text-sm">
+                <div className="space-y-2 text-sm">
                   {primaryAddr && (
                     <div>
                       <p className="text-xs font-semibold text-qm-gray mb-0.5">Bill To</p>
@@ -642,7 +655,7 @@ export default function CustomerDetailClient({
             {/* ── Column 3: Portal ── */}
             <div>
               <ColHeader label="Portal" onEdit={() => { setPortalDraft({ ...data }); setPortalEditing(true); setPortalError(null) }} />
-              <dl className="space-y-3 text-sm">
+              <dl className="space-y-2 text-sm">
                 <div>
                   <dt className="text-xs text-qm-gray mb-0.5">Access</dt>
                   <dd>
@@ -665,7 +678,19 @@ export default function CustomerDetailClient({
             {/* ── Column 4: Details ── */}
             <div>
               <ColHeader label="Details" onEdit={() => { setDetailDraft({ ...data }); setDetailEditing(true); setDetailError(null) }} />
-              <dl className="space-y-2 text-sm">
+              <dl className="space-y-1.5 text-sm">
+                {data.legal_name && (
+                  <div>
+                    <dt className="text-xs text-qm-gray">Legal Name</dt>
+                    <dd className="font-medium text-xs">{data.legal_name}</dd>
+                  </div>
+                )}
+                {data.customer_group && (
+                  <div>
+                    <dt className="text-xs text-qm-gray">Group</dt>
+                    <dd className="font-medium">{data.customer_group}</dd>
+                  </div>
+                )}
                 {data.industry && (
                   <div>
                     <dt className="text-xs text-qm-gray">Industry</dt>
@@ -707,7 +732,7 @@ export default function CustomerDetailClient({
           </div>
 
           {/* Notes / Background / Special Notes — full-width footer row if any are set */}
-          {(data.notes || data.background_info || data.special_notes) && (
+          {(data.notes || data.background_info || data.special_notes || data.other_info) && (
             <div className="border-t border-gray-100 px-6 py-4 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
               {data.notes && (
                 <div>
@@ -725,6 +750,12 @@ export default function CustomerDetailClient({
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-1">Special Notes</p>
                   <p className="text-qm-black whitespace-pre-wrap">{data.special_notes}</p>
+                </div>
+              )}
+              {data.other_info && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-qm-gray mb-1">Other Info</p>
+                  <p className="text-qm-black whitespace-pre-wrap">{data.other_info}</p>
                 </div>
               )}
             </div>
