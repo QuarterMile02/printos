@@ -98,7 +98,6 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
 
   const customers = (customersRes.data ?? []) as CustomerListRow[]
   const totalCount = countRes.count ?? 0
-  console.log('[customers/page] CUSTOMERS_PAGE_SIZE:', CUSTOMERS_PAGE_SIZE, '| initialRows.length:', customers.length, '| totalCount:', totalCount)
 
   // Flatten + dedupe tags
   const distinctTags = [...new Set(

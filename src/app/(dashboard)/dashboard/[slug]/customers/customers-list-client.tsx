@@ -96,7 +96,6 @@ export default function CustomersListClient({
   typeFilter,
   tagFilter,
 }: Props) {
-  console.log('[CustomersListClient] initialRows.length:', initialRows.length, '| PAGE_SIZE:', PAGE_SIZE)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
