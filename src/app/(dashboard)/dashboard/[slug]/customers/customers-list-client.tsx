@@ -8,6 +8,7 @@ import { useSavedView, applySortRules } from '@/components/data-table/use-saved-
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { CustomerCard } from './customer-card'
 import { CUSTOMERS_PAGE_SIZE } from './constants'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -35,16 +36,6 @@ const TYPE_OPTIONS = [
   { value: 'company', label: 'Company' },
   { value: 'individual', label: 'Individual' },
 ]
-const SORT_LABELS: Record<string, string> = {
-  name_asc:  'Name A→Z',
-  name_desc: 'Name Z→A',
-  newest:    'Newest First',
-}
-const SORT_CYCLE: Record<string, string> = {
-  name_asc:  'name_desc',
-  name_desc: 'newest',
-  newest:    'name_asc',
-}
 
 const DB_SELECT = 'id, first_name, last_name, company_name, email, phone, city, state, status, terms, is_active, tags, created_at'
 const PAGE_SIZE = CUSTOMERS_PAGE_SIZE
@@ -113,6 +104,7 @@ export default function CustomersListClient({
     sortRules,
     filterRules,
     columnWidths: savedWidths,
+    viewMode,
     activeView,
     isDirty,
     isViewReadOnly,
@@ -122,6 +114,7 @@ export default function CustomersListClient({
     setSort,
     setFilterRules,
     setColumnWidth,
+    setViewMode,
     loadView,
     saveCurrentView,
     createView,
@@ -343,17 +336,6 @@ export default function CustomersListClient({
           </select>
         )}
 
-        {/* Sort toggle */}
-        <a
-          href={buildUrl(orgSlug, { sort: SORT_CYCLE[sort] ?? 'name_asc', status: statusFilter, type: typeFilter, tag: tagFilter })}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-        >
-          <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
-          </svg>
-          {SORT_LABELS[sort] ?? 'Sort'}
-        </a>
-
         {/* Clear filters */}
         {hasFilters && (
           <a
@@ -381,6 +363,8 @@ export default function CustomersListClient({
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
@@ -409,12 +393,27 @@ export default function CustomersListClient({
         </div>
       )}
 
-      {/* ── Table ── */}
+      {/* ── Card / Table ── */}
       {displayRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-qm-gray">
             {search ? `No customers match "${search}"` : 'No customers match the current filters.'}
           </p>
+        </div>
+      ) : viewMode === 'card' ? (
+        <div className={`transition-opacity ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {displayRows.map((c) => (
+              <CustomerCard key={c.id} c={c} orgSlug={orgSlug} />
+            ))}
+          </div>
+          <div className="mt-3 text-xs text-qm-gray">
+            {searchResults !== null
+              ? (searchResults.length === 50
+                ? 'Showing top 50 matches — refine your search for more specific results.'
+                : `${searchResults.length} result${searchResults.length === 1 ? '' : 's'} from database`)
+              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, liveTotalCount)} of ${liveTotalCount.toLocaleString()} customers`}
+          </div>
         </div>
       ) : (
         <div className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
