@@ -1,21 +1,24 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import type { QuoteStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
-import QuoteTable, { type QuoteRow } from './quote-table'
+import { fetchDataTablePage } from '@/lib/data-table/fetch'
+import { QUOTES_PAGE_SIZE } from './constants'
+import QuotesListClient, { type QuoteListRow } from './quotes-list-client'
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ status?: string }>
 }
 
-export default async function QuotesPage({ params, searchParams }: PageProps) {
+export default async function QuotesPage({ params }: PageProps) {
   const { slug } = await params
-  const { status: statusFilter } = await searchParams
   const supabase = await createClient()
 
-  // Fetch org — RLS ensures user is a member
+  // Auth
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  // Org — RLS ensures user is a member
   type OrgRow = { id: string; name: string; slug: string }
   const { data: org } = await supabase
     .from('organizations')
@@ -25,86 +28,28 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
 
   if (!org) notFound()
 
+  // User role within org
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
-  // Fetch quotes with joined customer data
-  type QuoteDbRow = {
-    id: string
-    quote_number: number
-    title: string
-    status: QuoteStatus
-    created_at: string
-    customer_id: string | null
-    customers: {
-      first_name: string
-      last_name: string
-      company_name: string | null
-      email: string | null
-      phone: string | null
-    } | null
-  }
-
-  let quoteQuery = supabase
-    .from('quotes')
-    .select('id, quote_number, title, status, created_at, customer_id, customers(first_name, last_name, company_name, email, phone)')
-    .eq('organization_id', org.id)
-    .order('quote_number', { ascending: false })
-
-  let countQuery = supabase
-    .from('quotes')
-    .select('id', { count: 'exact', head: true })
-    .eq('organization_id', org.id)
-
-  // Status filter from ?status=… search param. 'all' (or unset) means no filter.
-  if (statusFilter && statusFilter !== 'all') {
-    quoteQuery = quoteQuery.eq('status', statusFilter)
-    countQuery = countQuery.eq('status', statusFilter) as typeof countQuery
-  }
-
-  const [quoteRes, countRes] = await Promise.all([
-    quoteQuery.limit(1000),
-    countQuery,
-  ])
-  const quoteRows = (quoteRes.data ?? []) as QuoteDbRow[]
-  const totalCount = countRes.count ?? 0
-
-  // Fetch line item totals per quote
-  type LineItemRow = { quote_id: string; quantity: number; unit_price: number }
-  const quoteIds = quoteRows.map((q) => q.id)
-
-  let lineItemRows: LineItemRow[] = []
-  if (quoteIds.length > 0) {
-    const { data } = await supabase
-      .from('quote_line_items')
-      .select('quote_id, quantity, unit_price')
-      .in('quote_id', quoteIds) as { data: LineItemRow[] | null; error: unknown }
-    lineItemRows = data ?? []
-  }
-
-  // Aggregate totals per quote
-  const totalsMap = new Map<string, number>()
-  for (const item of lineItemRows) {
-    totalsMap.set(item.quote_id, (totalsMap.get(item.quote_id) ?? 0) + item.quantity * item.unit_price)
-  }
-
-  const quotes: QuoteRow[] = quoteRows.map((r) => ({
-    id: r.id,
-    quote_number: r.quote_number,
-    title: r.title,
-    status: r.status,
-    created_at: r.created_at,
-    total: totalsMap.get(r.id) ?? 0,
-    customer: r.customers ? {
-      first_name: r.customers.first_name,
-      last_name: r.customers.last_name,
-      company_name: r.customers.company_name,
-      email: r.customers.email,
-      phone: r.customers.phone,
-    } : null,
-  }))
-
-  const total = totalCount
-  const loadedCount = quotes.length
+  // SSR page-1 data — uses quotes.total directly (maintained by recalcQuoteTotals)
+  const DB_SELECT = 'id, quote_number, title, status, created_at, total, customer_id, customers(first_name, last_name, company_name)'
+  const { rows: initialRows, totalCount: initialTotalCount } = await fetchDataTablePage({
+    tableKey: 'quotes',
+    orgId: org.id,
+    select: DB_SELECT,
+    filterRules: [],
+    sortRules: [{ column: 'quote_number', direction: 'desc' }],
+    page: 1,
+    pageSize: QUOTES_PAGE_SIZE,
+  })
 
   return (
     <div className="p-8">
@@ -118,32 +63,28 @@ export default async function QuotesPage({ params, searchParams }: PageProps) {
           <span className="text-gray-700">Quotes</span>
         </div>
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Quotes</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              {total === 0
-                ? 'No quotes yet.'
-                : `${total} quote${total === 1 ? '' : 's'}`}
-            </p>
-          </div>
+          <h1 className="text-2xl font-extrabold text-qm-black">Quotes</h1>
           <Link
             href={`/dashboard/${slug}/quotes/new`}
-            className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+            className="inline-flex items-center gap-2 rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-qm-black hover:brightness-105"
           >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
             Create Quote
           </Link>
         </div>
-        {loadedCount === 1000 && total > 1000 && (
-          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
-            Showing 1000 of {total} — use search/filter to narrow results
-          </p>
-        )}
       </div>
 
-      {/* Content — always render the table so the filter tabs stay visible
-          even when the current filter has zero matches. The table renders
-          its own empty state. */}
-      <QuoteTable quotes={quotes} orgId={org.id} orgSlug={org.slug} activeFilter={statusFilter ?? 'all'} canSeePricing={canSeePricing} />
+      <QuotesListClient
+        initialRows={initialRows as QuoteListRow[]}
+        initialTotalCount={initialTotalCount}
+        orgSlug={org.slug}
+        orgId={org.id}
+        userId={userId}
+        userRole={userRole}
+        canSeePricing={canSeePricing}
+      />
     </div>
   )
 }
