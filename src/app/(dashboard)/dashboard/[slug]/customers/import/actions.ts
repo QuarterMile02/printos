@@ -126,6 +126,15 @@ export async function importCustomersBatch(
   const toInsert = cleaned.filter((_, idx) => !skipSet.has(idx))
   if (toInsert.length === 0) return { result }
 
+  // DIAGNOSTIC — remove after confirming city/state bug
+  const firstRow = toInsert[0]?.row
+  console.log('[IMPORT DIAG] rows[0] as received from client (buildRow output):', JSON.stringify({
+    company_name: firstRow?.company_name,
+    email: firstRow?.email,
+    city: firstRow?.city,
+    state: firstRow?.state,
+  }))
+
   const records = toInsert.map(({ row }) => ({
     organization_id: orgId,
     company_name: row.company_name,
@@ -160,6 +169,14 @@ export async function importCustomersBatch(
     tax_exempt_code: row.tax_exempt_code,
     tax_rate: row.tax_rate,
     vat_number: row.vat_number,
+  }))
+
+  // DIAGNOSTIC — remove after confirming city/state bug
+  console.log('[IMPORT DIAG] records[0] right before Supabase insert:', JSON.stringify({
+    company_name: records[0]?.company_name,
+    email: records[0]?.email,
+    city: records[0]?.city,
+    state: records[0]?.state,
   }))
 
   // ── 4. Bulk insert with per-row fallback on failure ───────────────────────
