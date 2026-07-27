@@ -1,119 +1,75 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import type { SalesOrderStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
-import SalesOrderTable from './so-table'
+import { fetchDataTablePage } from '@/lib/data-table/fetch'
+import { SALES_ORDERS_PAGE_SIZE } from './constants'
+import SoListClient, { type SoListRow } from './so-list-client'
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ status?: string }>
 }
 
-export default async function SalesOrdersPage({ params, searchParams }: PageProps) {
+export default async function SalesOrdersPage({ params }: PageProps) {
   const { slug } = await params
-  const sp = await searchParams
   const supabase = await createClient()
 
+  // Auth
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  // Org — RLS ensures user is a member
   type OrgRow = { id: string; name: string; slug: string }
   const { data: org } = await supabase
     .from('organizations')
     .select('id, name, slug')
     .eq('slug', slug)
     .maybeSingle() as { data: OrgRow | null; error: unknown }
+
   if (!org) notFound()
+
+  // User role within org
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
 
-  type SoRow = {
-    id: string
-    so_number: number
-    title: string | null
-    status: SalesOrderStatus
-    total: number | null
-    created_at: string
-    customer_id: string | null
-    quote_id: string | null
-    customers: {
-      first_name: string
-      last_name: string
-      company_name: string | null
-    } | null
-  }
-
-  let query = supabase
-    .from('sales_orders')
-    .select('id, so_number, title, status, total, created_at, customer_id, quote_id, customers(first_name, last_name, company_name)')
-    .eq('organization_id', org.id)
-    .order('so_number', { ascending: false })
-
-  let countQuery = supabase
-    .from('sales_orders')
-    .select('id', { count: 'exact', head: true })
-    .eq('organization_id', org.id)
-
-  const filterStatus = sp.status as string | undefined
-  if (filterStatus && filterStatus !== 'all') {
-    query = query.eq('status', filterStatus) as typeof query
-    countQuery = countQuery.eq('status', filterStatus) as typeof countQuery
-  }
-
-  const [rowsRes, countRes] = await Promise.all([query.limit(1000), countQuery])
-  const rows = (rowsRes.data ?? []) as SoRow[]
-  const totalCount = countRes.count ?? 0
-
-  // Fetch shipment counts for displayed SOs
-  const shipmentCountMap = new Map<string, number>()
-  try {
-    const soIds = rows.map(r => r.id)
-    if (soIds.length > 0) {
-      const { data: shipData } = await supabase
-        .from('shipments')
-        .select('sales_order_id')
-        .in('sales_order_id', soIds) as { data: { sales_order_id: string }[] | null; error: unknown }
-      for (const s of (shipData ?? [])) {
-        shipmentCountMap.set(s.sales_order_id, (shipmentCountMap.get(s.sales_order_id) ?? 0) + 1)
-      }
-    }
-  } catch { /* shipments table not yet applied */ }
-
-  const salesOrders = rows.map((r) => ({
-    id: r.id,
-    so_number: r.so_number,
-    title: r.title ?? '',
-    status: r.status,
-    total: r.total ?? 0,
-    created_at: r.created_at,
-    shipmentCount: shipmentCountMap.get(r.id) ?? 0,
-    customer: r.customers,
-  }))
-
-  const total = totalCount
-  const loadedCount = salesOrders.length
+  // SSR page-1 data — includes nested shipments(id) for shipment count badges
+  const DB_SELECT = 'id, so_number, title, status, total, created_at, customer_id, customers(first_name, last_name, company_name), shipments(id)'
+  const { rows: initialRows, totalCount: initialTotalCount } = await fetchDataTablePage({
+    tableKey: 'sales_orders',
+    orgId: org.id,
+    select: DB_SELECT,
+    filterRules: [],
+    sortRules: [{ column: 'so_number', direction: 'desc' }],
+    page: 1,
+    pageSize: SALES_ORDERS_PAGE_SIZE,
+  })
 
   return (
     <div className="p-8">
+      {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
           <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
           <span>/</span>
           <span className="text-gray-700">Sales Orders</span>
         </div>
-        <h1 className="text-2xl font-bold text-gray-900">Sales Orders</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {total === 0 ? 'No sales orders yet.' : `${total} sales order${total === 1 ? '' : 's'}`}
-        </p>
-        {loadedCount === 1000 && total > 1000 && (
-          <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 inline-block">
-            Showing 1000 of {total} — use filter to narrow results
-          </p>
-        )}
+        <h1 className="text-2xl font-extrabold text-qm-black">Sales Orders</h1>
       </div>
 
-      <SalesOrderTable
-        salesOrders={salesOrders}
-        orgSlug={slug}
-        activeFilter={filterStatus ?? 'all'}
+      <SoListClient
+        initialRows={initialRows as SoListRow[]}
+        initialTotalCount={initialTotalCount}
+        orgSlug={org.slug}
+        orgId={org.id}
+        userId={userId}
+        userRole={userRole}
         canSeePricing={canSeePricing}
       />
     </div>

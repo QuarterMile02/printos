@@ -29,6 +29,16 @@ export const SO_STATUS_LABELS: Record<SalesOrderStatus, string> = {
   void: 'Void',
 }
 
+export const SO_STATUS_OPTIONS: { value: SalesOrderStatus; label: string }[] = [
+  { value: 'new',                label: 'New' },
+  { value: 'in_process',         label: 'In Process' },
+  { value: 'completed',          label: 'Completed' },
+  { value: 'hold',               label: 'Hold' },
+  { value: 'no_charge',          label: 'No Charge' },
+  { value: 'no_charge_approved', label: 'No Charge Approved' },
+  { value: 'void',               label: 'Void' },
+]
+
 export const SO_FILTER_TABS: { value: 'all' | SalesOrderStatus; label: string }[] = [
   { value: 'all',          label: 'All' },
   { value: 'new',          label: 'New' },
