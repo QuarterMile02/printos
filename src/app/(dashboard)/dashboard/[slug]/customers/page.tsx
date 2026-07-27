@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import CreateCustomerForm from './create-customer-form'
-import CustomersListClient from './customers-list-client'
+import CustomersListClient, { PAGE_SIZE } from './customers-list-client'
 import type { CustomerListRow } from './actions'
 
 type PageProps = {
@@ -77,7 +77,7 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
       applyFilters(
         supabase.from('customers').select(baseSelect).eq('organization_id', org.id)
       )
-    ).limit(1000),
+    ).limit(PAGE_SIZE),
 
     applyFilters(
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('organization_id', org.id)

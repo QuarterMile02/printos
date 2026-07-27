@@ -46,7 +46,7 @@ const SORT_CYCLE: Record<string, string> = {
 }
 
 const DB_SELECT = 'id, first_name, last_name, company_name, email, phone, city, state, status, terms, is_active, tags, created_at'
-const PAGE_SIZE = 25
+export const PAGE_SIZE = 25
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
