@@ -8,6 +8,7 @@ import { useSavedView, applySortRules } from '@/components/data-table/use-saved-
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { CUSTOMERS_PAGE_SIZE } from './constants'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ const SORT_CYCLE: Record<string, string> = {
 }
 
 const DB_SELECT = 'id, first_name, last_name, company_name, email, phone, city, state, status, terms, is_active, tags, created_at'
-export const PAGE_SIZE = 25
+const PAGE_SIZE = CUSTOMERS_PAGE_SIZE
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,6 +96,7 @@ export default function CustomersListClient({
   typeFilter,
   tagFilter,
 }: Props) {
+  console.log('[CustomersListClient] initialRows.length:', initialRows.length, '| PAGE_SIZE:', PAGE_SIZE)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)

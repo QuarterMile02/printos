@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import CreateCustomerForm from './create-customer-form'
-import CustomersListClient, { PAGE_SIZE } from './customers-list-client'
+import CustomersListClient from './customers-list-client'
+import { CUSTOMERS_PAGE_SIZE } from './constants'
 import type { CustomerListRow } from './actions'
 
 type PageProps = {
@@ -77,7 +78,7 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
       applyFilters(
         supabase.from('customers').select(baseSelect).eq('organization_id', org.id)
       )
-    ).limit(PAGE_SIZE),
+    ).limit(CUSTOMERS_PAGE_SIZE),
 
     applyFilters(
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('organization_id', org.id)
@@ -97,6 +98,7 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
 
   const customers = (customersRes.data ?? []) as CustomerListRow[]
   const totalCount = countRes.count ?? 0
+  console.log('[customers/page] CUSTOMERS_PAGE_SIZE:', CUSTOMERS_PAGE_SIZE, '| initialRows.length:', customers.length, '| totalCount:', totalCount)
 
   // Flatten + dedupe tags
   const distinctTags = [...new Set(
