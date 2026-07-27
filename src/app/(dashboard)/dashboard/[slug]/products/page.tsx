@@ -101,11 +101,11 @@ export default async function ProductsPage({ params }: PageProps) {
           <span className="text-gray-700">Products</span>
         </div>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div>
             <h1 className="text-2xl font-extrabold text-qm-black">Products</h1>
-            <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2.5 py-0.5 text-xs font-semibold text-qm-lime-dark">
-              {totalCount}
-            </span>
+            <p className="mt-1 text-sm text-gray-500">
+              {totalCount === 0 ? 'No products yet.' : `${totalCount.toLocaleString()} product${totalCount === 1 ? '' : 's'}`}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <BulkImportShopvoxButton orgId={org.id} />

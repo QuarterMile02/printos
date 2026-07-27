@@ -289,10 +289,10 @@ export default function CustomersListClient({
     <div className="space-y-4">
 
       {/* ── Toolbar ── */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
 
         {/* Search */}
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+        <div className="relative flex-1 min-w-[240px]">
           {isSearching ? (
             <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-lime animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -308,7 +308,7 @@ export default function CustomersListClient({
             placeholder="Search name, company, email, city, phone…"
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
-            className="block w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm placeholder-gray-400 focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
           />
         </div>
 
@@ -316,7 +316,7 @@ export default function CustomersListClient({
         <select
           value={statusFilter}
           onChange={(e) => { window.location.href = buildUrl(orgSlug, { sort, status: e.target.value, type: typeFilter, tag: tagFilter }) }}
-          className="rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
         >
           {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -325,7 +325,7 @@ export default function CustomersListClient({
         <select
           value={typeFilter}
           onChange={(e) => { window.location.href = buildUrl(orgSlug, { sort, status: statusFilter, type: e.target.value, tag: tagFilter }) }}
-          className="rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
         >
           {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -335,7 +335,7 @@ export default function CustomersListClient({
           <select
             value={tagFilter}
             onChange={(e) => { window.location.href = buildUrl(orgSlug, { sort, status: statusFilter, type: typeFilter, tag: e.target.value }) }}
-            className="rounded-lg border border-gray-300 bg-white py-2 pl-3 pr-8 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
           >
             <option value="">All Tags</option>
             {distinctTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
