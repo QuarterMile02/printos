@@ -346,7 +346,7 @@ export default function ImportClient({ orgId, orgSlug }: { orgId: string; orgSlu
             </button>
             <button
               type="button"
-              onClick={() => router.push(`/dashboard/${orgSlug}/customers`)}
+              onClick={() => { window.location.href = `/dashboard/${orgSlug}/customers` }}
               className="rounded-md bg-qm-lime px-5 py-2 text-sm font-semibold text-white hover:brightness-110"
             >
               Back to Customers
