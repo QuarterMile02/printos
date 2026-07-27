@@ -7,6 +7,7 @@ import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { QuoteCard } from './quote-card'
 import {
   formatQuoteNumber,
   formatCents,
@@ -86,6 +87,7 @@ export default function QuotesListClient({
     sortRules,
     filterRules,
     columnWidths: savedWidths,
+    viewMode,
     activeView,
     isDirty,
     isViewReadOnly,
@@ -95,6 +97,7 @@ export default function QuotesListClient({
     setSort,
     setFilterRules,
     setColumnWidth,
+    setViewMode,
     loadView,
     saveCurrentView,
     createView,
@@ -292,11 +295,13 @@ export default function QuotesListClient({
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
 
-      {/* ── Table ── */}
+      {/* ── Card grid / Table ── */}
       {liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
@@ -306,6 +311,19 @@ export default function QuotesListClient({
                 ? `No ${QUOTE_STATUS_LABELS[statusTab] ?? statusTab} quotes.`
                 : 'No quotes match the current filters.'}
           </p>
+        </div>
+      ) : viewMode === 'card' ? (
+        <div className={`transition-opacity ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {liveRows.map((q) => (
+              <QuoteCard key={q.id} quote={q} orgSlug={orgSlug} canSeePricing={canSeePricing} />
+            ))}
+          </div>
+          <div className="mt-3 text-xs text-qm-gray">
+            {liveTotalCount === 0
+              ? '0 quotes'
+              : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, liveTotalCount)} of ${liveTotalCount.toLocaleString()} quotes`}
+          </div>
         </div>
       ) : (
         <div className={`overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
