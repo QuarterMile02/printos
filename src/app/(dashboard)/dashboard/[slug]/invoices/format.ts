@@ -26,5 +26,16 @@ export const INV_FILTER_TABS = [
   { value: 'draft', label: 'Draft' },
   { value: 'sent', label: 'Sent' },
   { value: 'paid', label: 'Paid' },
+  { value: 'partial', label: 'Partial' },
   { value: 'overdue', label: 'Overdue' },
+  { value: 'void', label: 'Void' },
+]
+
+export const INV_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'sent', label: 'Sent' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'partial', label: 'Partial' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'void', label: 'Void' },
 ]
