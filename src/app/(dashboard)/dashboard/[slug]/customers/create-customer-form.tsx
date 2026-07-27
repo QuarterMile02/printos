@@ -150,7 +150,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
       {!initialOpen && (
         <button
           onClick={() => { setOpen(true); setError(null) }}
-          className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-qm-fuchsia focus:ring-offset-2"
+          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-qm-lime focus:ring-offset-2"
         >
           Add Customer
         </button>

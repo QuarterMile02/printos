@@ -25,6 +25,9 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
     .maybeSingle() as { data: OrgRow | null; error: unknown }
   if (!org) notFound()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
   // ── Build filtered query (reused for count + data) ─────────────────────────
 
   function applyFilters(q: ReturnType<typeof supabase.from>) {
@@ -74,7 +77,7 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
       applyFilters(
         supabase.from('customers').select(baseSelect).eq('organization_id', org.id)
       )
-    ).range(0, 49),
+    ).limit(1000),
 
     applyFilters(
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('organization_id', org.id)
@@ -89,8 +92,7 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
     supabase
       .from('organization_members')
       .select('user_id, role')
-      .eq('organization_id', org.id)
-      .in('role', ['owner', 'admin', 'member']),
+      .eq('organization_id', org.id),
   ])
 
   const customers = (customersRes.data ?? []) as CustomerListRow[]
@@ -101,16 +103,22 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
     ((tagRows.data ?? []) as { tags: string[] | null }[]).flatMap((r) => r.tags ?? [])
   )].filter(Boolean).sort()
 
-  // Fetch profiles for org members
-  type ProfileRow = { id: string; full_name: string | null }
+  // Derive current user's role from the unfiltered member list
   type MemberRow = { user_id: string; role: string }
-  const userIds = ((memberRows.data ?? []) as MemberRow[]).map((m) => m.user_id)
+  const allMembers = (memberRows.data ?? []) as MemberRow[]
+  const userRole = allMembers.find((m) => m.user_id === userId)?.role ?? 'member'
+
+  // Sales-rep dropdown: only roles that can own work (not viewers)
+  type ProfileRow = { id: string; full_name: string | null }
+  const salesRepUserIds = allMembers
+    .filter((m) => ['owner', 'admin', 'member'].includes(m.role))
+    .map((m) => m.user_id)
   let salesReps: ProfileRow[] = []
-  if (userIds.length > 0) {
+  if (salesRepUserIds.length > 0) {
     const { data: profileData } = await supabase
       .from('profiles')
       .select('id, full_name')
-      .in('id', userIds) as { data: ProfileRow[] | null; error: unknown }
+      .in('id', salesRepUserIds) as { data: ProfileRow[] | null; error: unknown }
     salesReps = (profileData ?? []).sort((a, b) =>
       (a.full_name ?? '').localeCompare(b.full_name ?? '')
     )
@@ -128,7 +136,7 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
+            <h1 className="text-2xl font-extrabold text-qm-black">Customers</h1>
             <p className="mt-1 text-sm text-gray-500">
               {totalCount === 0 ? 'No customers yet.' : `${totalCount.toLocaleString()} customer${totalCount === 1 ? '' : 's'}`}
             </p>
@@ -138,11 +146,12 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
       </div>
 
       <CustomersListClient
-        key={`${sort}-${statusFilter}-${typeFilter}-${tagFilter}`}
         initialRows={customers}
-        totalCount={totalCount}
+        initialTotalCount={totalCount}
         orgSlug={slug}
         orgId={org.id}
+        userId={userId}
+        userRole={userRole}
         distinctTags={distinctTags}
         sort={sort}
         statusFilter={statusFilter}
