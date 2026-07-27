@@ -116,7 +116,7 @@ export default function SoListClient({
   const COLUMNS = useMemo((): ColumnDef<SoListRow>[] => {
     const cols: ColumnDef<SoListRow>[] = [
       {
-        key: 'so_number', label: '#', defaultWidth: 130,
+        key: 'so_number', label: 'SO #', defaultWidth: 130,
         sortable: true, filterable: false,
         getValue: (r) => formatSoNumber(r.so_number, r.created_at),
       },

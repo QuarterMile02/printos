@@ -3,6 +3,89 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+export type InvoiceSearchRow = {
+  id: string
+  invoice_number: number
+  status: string
+  total: number
+  balance_due: number
+  due_date: string | null
+  created_at: string
+  customer_id: string | null
+  customers: { first_name: string; last_name: string; company_name: string | null } | null
+}
+
+// Search across customer name, invoice number, and total (in dollars, typed
+// without a $ sign). fetchDataTablePage's generic ILIKE-across-searchColumns
+// grammar can't express "convert typed dollars to cents and compare", so
+// this runs as a standalone live query via useDataTableQuery's searchFn
+// extension point instead — still a real server-side Supabase query, not
+// client-side filtering, just a different (already-supported) hook path
+// than the plain ILIKE one Quotes/Sales Orders use.
+//
+// PostgREST's or() logic-tree parser does NOT accept embedded-resource dot
+// paths (e.g. "customers.first_name.ilike...") or column casts
+// (e.g. "invoice_number::text.ilike...") as condition fragments — both were
+// tried and empirically fail with "failed to parse logic tree" (confirmed
+// against the live dev DB). So customer-name matching runs as a separate
+// preliminary lookup against the customers table (flat ILIKE, no dot path)
+// whose matching ids feed a plain customer_id.in.(...) condition, and
+// invoice-number matching uses an exact integer equality instead of a cast
+// substring search.
+export async function searchInvoices(orgId: string, term: string): Promise<InvoiceSearchRow[]> {
+  const cleaned = term.trim()
+  if (cleaned.length < 2) return []
+
+  const supabase = await createClient()
+
+  // Strip commas (thousands separators) before checking whether the term is
+  // a bare dollar amount, e.g. "1,234.56" -> "1234.56".
+  const commaless = cleaned.replace(/,/g, '')
+  const isDollarAmount = /^\d+(\.\d+)?$/.test(commaless)
+  const totalCentsMatch = isDollarAmount ? Math.round(parseFloat(commaless) * 100) : null
+  const isPlainInteger = /^\d+$/.test(commaless)
+  const invoiceNumberMatch = isPlainInteger ? parseInt(commaless, 10) : null
+
+  // Strip characters that would break PostgREST's or() filter syntax.
+  const safeTerm = cleaned.replace(/[,()'"]/g, ' ').trim()
+
+  const conditions: string[] = []
+  if (totalCentsMatch !== null) {
+    conditions.push(`total.eq.${totalCentsMatch}`)
+  }
+  if (invoiceNumberMatch !== null) {
+    conditions.push(`invoice_number.eq.${invoiceNumberMatch}`)
+  }
+  if (safeTerm.length >= 2) {
+    const { data: customerRows } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('organization_id', orgId)
+      .or(`first_name.ilike.%${safeTerm}%,last_name.ilike.%${safeTerm}%,company_name.ilike.%${safeTerm}%`)
+      .limit(50)
+    const customerIds = (customerRows ?? []).map((r) => (r as { id: string }).id)
+    if (customerIds.length > 0) {
+      conditions.push(`customer_id.in.(${customerIds.join(',')})`)
+    }
+  }
+  if (conditions.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)')
+    .eq('organization_id', orgId)
+    .or(conditions.join(','))
+    .order('invoice_number', { ascending: false })
+    .limit(50)
+
+  if (error) {
+    console.error('[searchInvoices]', error.message)
+    return []
+  }
+
+  return (data ?? []) as InvoiceSearchRow[]
+}
+
 export async function recordPayment(formData: FormData): Promise<void> {
   const invoiceId = formData.get('invoiceId') as string
   const orgSlug = formData.get('orgSlug') as string

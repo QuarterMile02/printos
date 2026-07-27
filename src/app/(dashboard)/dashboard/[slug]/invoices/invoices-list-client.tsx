@@ -8,6 +8,7 @@ import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { InvoiceCard } from './invoice-card'
+import { searchInvoices } from './actions'
 import {
   formatInvNumber,
   formatCents,
@@ -88,6 +89,7 @@ export default function InvoicesListClient({
   initialBucket,
 }: Props) {
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
   const [statusTab, setStatusTab] = useState<'all' | string>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
@@ -133,12 +135,12 @@ export default function InvoicesListClient({
 
   // The aging-bucket deep link is a snapshot, not a persistent filter mode —
   // it stays visible only while the view is otherwise untouched.
-  const bucketActive = initialBucket && statusTab === 'all' && filterRules.length === 0 && page === 1
+  const bucketActive = initialBucket && statusTab === 'all' && filterRules.length === 0 && page === 1 && !search
 
   // ── Column definitions ────────────────────────────────────────────────────
   const COLUMNS = useMemo((): ColumnDef<InvoiceListRow>[] => [
     {
-      key: 'invoice_number', label: '#', defaultWidth: 130,
+      key: 'invoice_number', label: 'Invoice #', defaultWidth: 130,
       sortable: true, filterable: false,
       getValue: (r) => formatInvNumber(r.invoice_number, r.created_at),
     },
@@ -191,17 +193,22 @@ export default function InvoicesListClient({
     disabled: isViewReadOnly,
   })
 
-  // ── Live query — no free-text search: unlike Quotes/Sales Orders, invoices
-  // have no natural free-text column (no title). notes exists but isn't
-  // displayed and searching it would be a poor fit, so no search box is
-  // offered here, matching the pre-rollout baseline (which also had none). ──
+  // Search spans customer name (nested), invoice number, and total (typed as
+  // a dollar amount) — fetchDataTablePage's plain ILIKE-across-searchColumns
+  // grammar can't express a nested-column ILIKE alongside a cents-converted
+  // numeric equals in one call, so this uses useDataTableQuery's searchFn
+  // extension point (a real server-side query via a server action) instead
+  // of the built-in searchColumns path Quotes/Sales Orders use.
+  const boundSearchFn = useCallback((term: string) => searchInvoices(orgId, term), [orgId])
+
   const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<InvoiceListRow>({
     tableKey: 'invoices',
     orgId,
     select: DB_SELECT,
     filterRules: effectiveFilterRules,
     sortRules: activeSortRules,
-    search: '',
+    search,
+    searchFn: boundSearchFn,
     page,
     pageSize: PAGE_SIZE,
     initialRows,
@@ -295,7 +302,7 @@ export default function InvoicesListClient({
   const totalPages = Math.max(1, Math.ceil(liveTotalCount / PAGE_SIZE))
 
   // ── Empty state (org has zero invoices) ──────────────────────────────────
-  if (initialRows.length === 0 && statusTab === 'all' && filterRules.length === 0 && !initialBucket && !loading) {
+  if (initialRows.length === 0 && statusTab === 'all' && filterRules.length === 0 && !initialBucket && !search && !loading) {
     return (
       <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-qm-lime-light text-qm-lime-dark">
@@ -347,8 +354,30 @@ export default function InvoicesListClient({
         ))}
       </div>
 
-      {/* Bulk export + Filters/Views toolbar */}
+      {/* Search + Bulk export + Filters/Views toolbar */}
       <div className="flex flex-wrap items-center gap-3">
+
+        {/* Search */}
+        <div className="relative flex-1 min-w-[240px]">
+          {loading && search.length >= 2 ? (
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-lime animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          ) : (
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+          )}
+          <input
+            type="text"
+            placeholder="Search customer, invoice #, or total…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+          />
+        </div>
+
         {selected.size > 0 && (
           <button
             onClick={handleBulkExport}
@@ -395,9 +424,11 @@ export default function InvoicesListClient({
       {liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
-            {statusTab !== 'all'
-              ? `No ${INV_STATUS_LABELS[statusTab] ?? statusTab} invoices.`
-              : 'No invoices match the current filters.'}
+            {search
+              ? `No invoices match "${search}"`
+              : statusTab !== 'all'
+                ? `No ${INV_STATUS_LABELS[statusTab] ?? statusTab} invoices.`
+                : 'No invoices match the current filters.'}
           </p>
         </div>
       ) : viewMode === 'card' ? (

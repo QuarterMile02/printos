@@ -119,7 +119,7 @@ export default function QuotesListClient({
   const COLUMNS = useMemo((): ColumnDef<QuoteListRow>[] => {
     const cols: ColumnDef<QuoteListRow>[] = [
       {
-        key: 'quote_number', label: '#', defaultWidth: 130,
+        key: 'quote_number', label: 'Quote #', defaultWidth: 130,
         sortable: true, filterable: false,
         getValue: (r) => formatQuoteNumber(r.quote_number, r.created_at),
       },
