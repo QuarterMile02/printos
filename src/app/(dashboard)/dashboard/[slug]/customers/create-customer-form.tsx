@@ -150,8 +150,11 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
       {!initialOpen && (
         <button
           onClick={() => { setOpen(true); setError(null) }}
-          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-qm-lime focus:ring-offset-2"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all focus:outline-none focus:ring-2 focus:ring-qm-lime focus:ring-offset-2"
         >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
           Add Customer
         </button>
       )}
