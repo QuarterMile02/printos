@@ -13,6 +13,7 @@ type PoItem = {
   id: string
   description: string | null
   quantity: number
+  unit: string | null
   unit_cost: number
   total_cost: number
   received_qty: number
@@ -73,6 +74,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
   const [showAddItem, setShowAddItem] = useState(false)
   const [addDesc, setAddDesc] = useState('')
   const [addQty, setAddQty] = useState('1')
+  const [addUnit, setAddUnit] = useState('')
   const [addCost, setAddCost] = useState('')
   const [addMaterialId, setAddMaterialId] = useState<string | null>(null)
   const [addingItem, setAddingItem] = useState(false)
@@ -80,6 +82,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
   const [editItemId, setEditItemId] = useState<string | null>(null)
   const [editItemDesc, setEditItemDesc] = useState('')
   const [editItemQty, setEditItemQty] = useState('')
+  const [editItemUnit, setEditItemUnit] = useState('')
   const [editItemCost, setEditItemCost] = useState('')
   const [editItemMaterialId, setEditItemMaterialId] = useState<string | null>(null)
   const [savingItem, setSavingItem] = useState(false)
@@ -133,6 +136,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
       body: JSON.stringify({
         description: addDesc.trim(),
         quantity: Number(addQty) || 1,
+        unit: addUnit.trim() || null,
         unit_cost: Number(addCost) || 0,
         sort_order: items.length,
         material_id: addMaterialId,
@@ -143,7 +147,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
       setItems((prev) => [...prev, newItem])
       const subtotal = [...items, newItem].reduce((s, i) => s + Number(i.total_cost), 0)
       setPo((p) => ({ ...p, subtotal, total: subtotal }))
-      setAddDesc(''); setAddQty('1'); setAddCost(''); setAddMaterialId(null)
+      setAddDesc(''); setAddQty('1'); setAddUnit(''); setAddCost(''); setAddMaterialId(null)
       setShowAddItem(false)
     } else {
       showToast('Failed to add item')
@@ -155,6 +159,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
     setEditItemId(item.id)
     setEditItemDesc(item.description ?? '')
     setEditItemQty(String(item.quantity))
+    setEditItemUnit(item.unit ?? '')
     setEditItemCost(String(item.unit_cost))
     setEditItemMaterialId(item.material_id)
   }
@@ -167,6 +172,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
       body: JSON.stringify({
         description: editItemDesc.trim(),
         quantity: Number(editItemQty) || 1,
+        unit: editItemUnit.trim() || null,
         unit_cost: Number(editItemCost) || 0,
         material_id: editItemMaterialId,
       }),
@@ -311,6 +317,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Description</th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700 w-24">Qty</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700 w-24">Unit</th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700 w-28">Unit Cost</th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700 w-28">Total</th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700 w-28">Received</th>
@@ -327,6 +334,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                           onChange={setEditItemDesc}
                           onSelectMaterial={(m: Material) => {
                             setEditItemDesc(m.po_description || m.name)
+                            setEditItemUnit(m.buying_units ?? '')
                             setEditItemCost(String(m.buy_unit_cost))
                             setEditItemMaterialId(m.id)
                           }}
@@ -340,6 +348,15 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                           onChange={(e) => setEditItemQty(e.target.value)}
                           className="w-full rounded border border-gray-300 px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-qm-lime"
                           min="0" step="0.001"
+                        />
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="text"
+                          value={editItemUnit}
+                          onChange={(e) => setEditItemUnit(e.target.value)}
+                          placeholder="Unit"
+                          className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
                       <td className="px-4 py-2">
@@ -366,6 +383,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                     <tr key={item.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-700">{item.description ?? <span className="text-gray-400">—</span>}</td>
                       <td className="px-4 py-3 text-right text-gray-700">{Number(item.quantity)}</td>
+                      <td className="px-4 py-3 text-gray-700">{item.unit || <span className="text-gray-400">—</span>}</td>
                       <td className="px-4 py-3 text-right text-gray-700">{fmtMoney(item.unit_cost)}</td>
                       <td className="px-4 py-3 text-right font-medium text-gray-900">{fmtMoney(item.total_cost)}</td>
                       <td className="px-4 py-3 text-right text-gray-500">{Number(item.received_qty) > 0 ? Number(item.received_qty) : '—'}</td>
@@ -396,6 +414,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                         onChange={setAddDesc}
                         onSelectMaterial={(m: Material) => {
                           setAddDesc(m.po_description || m.name)
+                          setAddUnit(m.buying_units ?? '')
                           setAddCost(String(m.buy_unit_cost))
                           setAddMaterialId(m.id)
                         }}
@@ -411,6 +430,15 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                         onChange={(e) => setAddQty(e.target.value)}
                         className="w-full rounded border border-gray-300 px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         min="0" step="0.001"
+                      />
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        type="text"
+                        value={addUnit}
+                        onChange={(e) => setAddUnit(e.target.value)}
+                        placeholder="Unit"
+                        className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-qm-lime"
                       />
                     </td>
                     <td className="px-4 py-2">
@@ -432,7 +460,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                         <button onClick={handleAddItem} disabled={addingItem || !addDesc.trim()} className="text-xs font-semibold text-qm-lime hover:opacity-80 disabled:opacity-50">
                           {addingItem ? '…' : 'Add'}
                         </button>
-                        <button onClick={() => { setShowAddItem(false); setAddDesc(''); setAddQty('1'); setAddCost(''); setAddMaterialId(null) }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                        <button onClick={() => { setShowAddItem(false); setAddDesc(''); setAddQty('1'); setAddUnit(''); setAddCost(''); setAddMaterialId(null) }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                       </div>
                     </td>
                   </tr>

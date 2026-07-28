@@ -21,6 +21,7 @@ export async function PATCH(
 
   const patch: Record<string, unknown> = {}
   if ('description' in body) patch.description = body.description
+  if ('unit' in body) patch.unit = body.unit
   if ('received_qty' in body) patch.received_qty = Number(body.received_qty)
   if ('material_id' in body) patch.material_id = body.material_id
 
@@ -41,7 +42,7 @@ export async function PATCH(
     .from('purchase_order_items')
     .update(patch)
     .eq('id', itemId)
-    .select('id, description, quantity, unit_cost, total_cost, received_qty, sort_order, material_id')
+    .select('id, description, quantity, unit, unit_cost, total_cost, received_qty, sort_order, material_id')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
