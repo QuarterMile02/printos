@@ -1,7 +1,11 @@
 import type { SalesOrderStatus } from '@/types/database'
 
 export function formatSoNumber(num: number, createdAtIso: string): string {
-  const year = new Date(createdAtIso).getFullYear()
+  // getUTCFullYear (not getFullYear) — matches the timeZone: 'UTC' fix in
+  // so-list-client.tsx's formatDate. Same underlying risk: the ambient local
+  // timezone can put a timestamp near a year boundary on a different
+  // calendar year on server (UTC) vs client, causing a hydration mismatch.
+  const year = new Date(createdAtIso).getUTCFullYear()
   return `SO-${year}-${String(num).padStart(4, '0')}`
 }
 

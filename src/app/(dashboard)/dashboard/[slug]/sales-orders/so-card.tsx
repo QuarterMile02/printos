@@ -13,8 +13,11 @@ type SoCardRow = {
   shipments: { id: string }[] | null
 }
 
+// timeZone: 'UTC' keeps this in sync with the same fix in so-list-client.tsx
+// — pins the calendar day to the stored UTC instant so server/client renders
+// match, avoiding a hydration mismatch near a UTC midnight boundary.
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 export function SalesOrderCard({

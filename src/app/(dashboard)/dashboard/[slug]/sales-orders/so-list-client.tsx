@@ -44,8 +44,14 @@ const DEFAULT_SORT = [{ column: 'so_number', direction: 'desc' as const }]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// timeZone: 'UTC' pins the calendar day to the stored UTC instant so the
+// server (UTC) and client (visitor's local timezone) render identical text.
+// Without it, a created_at near a UTC midnight boundary can format to a
+// different day on each side, causing a hydration text mismatch (React
+// error #418) that forces a full client remount — which was leaving
+// useDataTableQuery's loading state stuck true, disabling every row link.
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 function Dash() {
