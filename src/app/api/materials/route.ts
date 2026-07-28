@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('materials')
-    .select('id, name, cost, buying_units, selling_units, po_description')
+    .select('id, name, cost, buying_units, selling_units, po_description, sell_buy_ratio, sheet_cost')
     .eq('organization_id', profile.organization_id)
     .eq('active', true)
     .order('name')
@@ -38,5 +38,16 @@ export async function GET(request: NextRequest) {
   }
 
   const { data } = await query
-  return NextResponse.json(data ?? [])
+
+  // A PO buys by buying_units (e.g. per Sheet), but materials.cost is
+  // priced per selling_units (e.g. per Sqft) — the unit used for
+  // quoting jobs. sheet_cost is the stored buying-unit price and is
+  // preferred when present; cost * sell_buy_ratio is the fallback
+  // derivation for materials where it's missing.
+  const withBuyUnitCost = (data ?? []).map((m) => ({
+    ...m,
+    buy_unit_cost: m.sheet_cost ?? (m.sell_buy_ratio ? m.cost * m.sell_buy_ratio : null) ?? m.cost,
+  }))
+
+  return NextResponse.json(withBuyUnitCost)
 }

@@ -10,6 +10,9 @@ export type Material = {
   buying_units: string | null
   selling_units: string | null
   po_description: string | null
+  sell_buy_ratio: number | null
+  sheet_cost: number | null
+  buy_unit_cost: number
 }
 
 type Props = {
@@ -114,7 +117,7 @@ export function MaterialSelect({ value, onChange, onSelectMaterial, onKeyDown, p
             >
               <span className="font-medium text-gray-900 truncate">{m.name}</span>
               <span className="text-gray-400 text-xs shrink-0">
-                {fmtCost(m.cost)}{m.buying_units ? ` / ${m.buying_units}` : ''}
+                {fmtCost(m.buy_unit_cost)}{m.buying_units ? ` / ${m.buying_units}` : ''}
               </span>
             </button>
           ))}

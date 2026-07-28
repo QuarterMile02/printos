@@ -327,7 +327,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                           onChange={setEditItemDesc}
                           onSelectMaterial={(m: Material) => {
                             setEditItemDesc(m.po_description || m.name)
-                            setEditItemCost(String(m.cost))
+                            setEditItemCost(String(m.buy_unit_cost))
                             setEditItemMaterialId(m.id)
                           }}
                           autoFocus
@@ -396,7 +396,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                         onChange={setAddDesc}
                         onSelectMaterial={(m: Material) => {
                           setAddDesc(m.po_description || m.name)
-                          setAddCost(String(m.cost))
+                          setAddCost(String(m.buy_unit_cost))
                           setAddMaterialId(m.id)
                         }}
                         onKeyDown={(e) => { if (e.key === 'Enter') handleAddItem() }}
