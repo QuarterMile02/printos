@@ -156,10 +156,10 @@ export async function updateSalesOrderStatus(
         // Get SO details
         const { data: soRow } = await service
           .from('sales_orders')
-          .select('id, customer_id, total, quote_id')
+          .select('id, title, customer_id, total, quote_id')
           .eq('id', soId)
           .single()
-        const so = soRow as { id: string; customer_id: string | null; total: number | null; quote_id: string | null } | null
+        const so = soRow as { id: string; title: string | null; customer_id: string | null; total: number | null; quote_id: string | null } | null
 
         if (so) {
           // Get quote totals if available
@@ -185,6 +185,7 @@ export async function updateSalesOrderStatus(
           const { data: newInvoice } = await service.from('invoices').insert({
             organization_id: orgId,
             sales_order_id: soId,
+            title: so.title,
             customer_id: so.customer_id,
             subtotal,
             tax_total: taxTotal,

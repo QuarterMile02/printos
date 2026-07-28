@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 export type InvoiceSearchRow = {
   id: string
   invoice_number: number
+  title: string | null
   status: string
   total: number
   balance_due: number
@@ -15,13 +16,14 @@ export type InvoiceSearchRow = {
   customers: { first_name: string; last_name: string; company_name: string | null } | null
 }
 
-// Search across customer name, invoice number, and total (in dollars, typed
-// without a $ sign). fetchDataTablePage's generic ILIKE-across-searchColumns
-// grammar can't express "convert typed dollars to cents and compare", so
-// this runs as a standalone live query via useDataTableQuery's searchFn
-// extension point instead — still a real server-side Supabase query, not
-// client-side filtering, just a different (already-supported) hook path
-// than the plain ILIKE one Quotes/Sales Orders use.
+// Search across title, customer name, invoice number, and total (in
+// dollars, typed without a $ sign). fetchDataTablePage's generic
+// ILIKE-across-searchColumns grammar can't express "convert typed dollars
+// to cents and compare", so this runs as a standalone live query via
+// useDataTableQuery's searchFn extension point instead — still a real
+// server-side Supabase query, not client-side filtering, just a different
+// (already-supported) hook path than the plain ILIKE one Quotes/Sales
+// Orders use.
 //
 // PostgREST's or() logic-tree parser does NOT accept embedded-resource dot
 // paths (e.g. "customers.first_name.ilike...") or column casts
@@ -31,7 +33,10 @@ export type InvoiceSearchRow = {
 // preliminary lookup against the customers table (flat ILIKE, no dot path)
 // whose matching ids feed a plain customer_id.in.(...) condition, and
 // invoice-number matching uses an exact integer equality instead of a cast
-// substring search.
+// substring search. Title is a flat column on invoices itself (migration
+// 098 — invoices.sales_order_id has no FK to sales_orders, so its title
+// couldn't be embedded; it's copied onto invoices at creation time
+// instead), so it needs no preliminary lookup — a plain ILIKE works.
 export async function searchInvoices(orgId: string, term: string): Promise<InvoiceSearchRow[]> {
   const cleaned = term.trim()
   if (cleaned.length < 2) return []
@@ -50,6 +55,9 @@ export async function searchInvoices(orgId: string, term: string): Promise<Invoi
   const safeTerm = cleaned.replace(/[,()'"]/g, ' ').trim()
 
   const conditions: string[] = []
+  if (safeTerm.length >= 2) {
+    conditions.push(`title.ilike.%${safeTerm}%`)
+  }
   if (totalCentsMatch !== null) {
     conditions.push(`total.eq.${totalCentsMatch}`)
   }
@@ -72,7 +80,7 @@ export async function searchInvoices(orgId: string, term: string): Promise<Invoi
 
   const { data, error } = await supabase
     .from('invoices')
-    .select('id, invoice_number, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)')
+    .select('id, invoice_number, title, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)')
     .eq('organization_id', orgId)
     .or(conditions.join(','))
     .order('invoice_number', { ascending: false })
@@ -152,12 +160,12 @@ export async function createInvoiceFromSO(
 
   const { data: soRow, error: soError } = await service
     .from('sales_orders')
-    .select('id, customer_id, total, quote_id')
+    .select('id, title, customer_id, total, quote_id')
     .eq('id', salesOrderId)
     .single()
 
   if (soError || !soRow) throw new Error('Sales order not found')
-  const so = soRow as { id: string; customer_id: string | null; total: number | null; quote_id: string | null }
+  const so = soRow as { id: string; title: string | null; customer_id: string | null; total: number | null; quote_id: string | null }
 
   // Prefer quote totals (include tax) over SO total
   let subtotal = so.total ?? 0
@@ -184,6 +192,7 @@ export async function createInvoiceFromSO(
     .insert({
       organization_id: org.id,
       sales_order_id: salesOrderId,
+      title: so.title,
       customer_id: so.customer_id,
       status: 'draft',
       subtotal,

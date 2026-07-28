@@ -34,7 +34,7 @@ function bucketDateRange(bucket: OverdueBucket): { gte?: string; lt?: string } {
   }
 }
 
-const DB_SELECT = 'id, invoice_number, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)'
+const DB_SELECT = 'id, invoice_number, title, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)'
 
 export default async function InvoicesPage({ params, searchParams }: PageProps) {
   const { slug } = await params

@@ -24,6 +24,7 @@ import { INVOICES_PAGE_SIZE } from './constants'
 export type InvoiceListRow = {
   id: string
   invoice_number: number
+  title: string | null
   status: string
   total: number
   balance_due: number
@@ -35,7 +36,7 @@ export type InvoiceListRow = {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DB_SELECT = 'id, invoice_number, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)'
+const DB_SELECT = 'id, invoice_number, title, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)'
 const PAGE_SIZE = INVOICES_PAGE_SIZE
 
 // Stable reference — prevents useDataTableQuery from re-running when
@@ -143,6 +144,11 @@ export default function InvoicesListClient({
       key: 'invoice_number', label: 'Invoice #', defaultWidth: 130,
       sortable: true, filterable: false,
       getValue: (r) => formatInvNumber(r.invoice_number, r.created_at),
+    },
+    {
+      key: 'title', label: 'Title', defaultWidth: 220,
+      sortable: true, filterable: true, filterType: 'text',
+      getValue: (r) => r.title,
     },
     {
       key: 'customer', label: 'Customer', defaultWidth: 220,
@@ -371,7 +377,7 @@ export default function InvoicesListClient({
           )}
           <input
             type="text"
-            placeholder="Search customer, invoice #, or total…"
+            placeholder="Search title, customer, invoice #, or total…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
@@ -515,6 +521,13 @@ export default function InvoicesListClient({
                     <td className="whitespace-nowrap overflow-hidden">
                       <Link href={href} className="block px-4 py-3 text-sm font-medium text-qm-fuchsia">
                         {formatInvNumber(inv.invoice_number, inv.created_at)}
+                      </Link>
+                    </td>
+
+                    {/* Title */}
+                    <td className="overflow-hidden">
+                      <Link href={href} className="block truncate px-4 py-3 text-sm font-medium text-gray-900" title={inv.title ?? undefined}>
+                        {inv.title || <Dash />}
                       </Link>
                     </td>
 

@@ -4,6 +4,7 @@ import { formatInvNumber, formatCents, INV_STATUS_STYLES, INV_STATUS_LABELS } fr
 type InvoiceCardRow = {
   id: string
   invoice_number: number
+  title: string | null
   status: string
   total: number
   balance_due: number
@@ -33,6 +34,11 @@ export function InvoiceCard({ invoice, orgSlug }: { invoice: InvoiceCardRow; org
         {/* Invoice number */}
         <div className="text-xs font-semibold text-qm-fuchsia">
           {formatInvNumber(invoice.invoice_number, invoice.created_at)}
+        </div>
+
+        {/* Title */}
+        <div className="font-semibold text-sm text-qm-black truncate" title={invoice.title || undefined}>
+          {invoice.title || <span className="font-normal text-gray-400">Untitled</span>}
         </div>
 
         {/* Customer */}
