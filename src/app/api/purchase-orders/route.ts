@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       vendor:vendors(id, name),
       sales_order:sales_orders(id, so_number, title)
     `)
-    .eq('org_id', orgId)
+    .eq('organization_id', orgId)
     .order('created_at', { ascending: false })
 
   if (status && status !== 'all') {
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from('purchase_orders')
     .insert({
-      org_id: orgId,
+      organization_id: orgId,
       vendor_id: vendor_id ?? null,
       sales_order_id: sales_order_id ?? null,
       title: title ?? null,

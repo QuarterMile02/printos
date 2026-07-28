@@ -43,7 +43,7 @@ export default async function Page({ params }: PageProps) {
       purchase_order_items(id, description, quantity, unit_cost, total_cost, received_qty, sort_order)
     `)
     .eq('id', id)
-    .eq('org_id', org.id)
+    .eq('organization_id', org.id)
     .single()
 
   if (!po) notFound()
