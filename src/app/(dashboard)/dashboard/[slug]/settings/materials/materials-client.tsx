@@ -420,7 +420,7 @@ export default function MaterialsClient({
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Category</th>
                 <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Cost</th>
-                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
+                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Sell Price</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Selling Units</th>
                 <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
                 <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
