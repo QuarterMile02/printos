@@ -9,6 +9,87 @@ const ALLOWED_STATUSES: SalesOrderStatus[] = [
   'completed', 'hold', 'no_charge', 'no_charge_approved', 'void',
 ]
 
+export type SoSearchRow = {
+  id: string
+  so_number: number
+  title: string | null
+  status: SalesOrderStatus
+  total: number | null
+  created_at: string
+  customer_id: string | null
+  customers: { first_name: string; last_name: string; company_name: string | null } | null
+  shipments: { id: string }[] | null
+}
+
+// Search across title, customer name, SO number, and total (typed as a
+// dollar amount). Same proven approach as invoices/actions.ts's
+// searchInvoices — PostgREST's or() logic-tree parser does NOT accept
+// embedded-resource dot paths ("customers.first_name.ilike...") or column
+// casts ("so_number::text.ilike...") as condition fragments; both were
+// confirmed to fail with "failed to parse logic tree" against the live DB
+// while building the Invoices version of this search. So customer-name
+// matching runs as a separate preliminary lookup against the customers
+// table (flat ILIKE, no dot path) whose matching ids feed a plain
+// customer_id.in.(...) condition, and SO-number matching uses an exact
+// integer equality instead of a cast substring search. Title stays a plain
+// flat ILIKE since it's a real column on sales_orders itself.
+export async function searchSalesOrders(orgId: string, term: string): Promise<SoSearchRow[]> {
+  const cleaned = term.trim()
+  if (cleaned.length < 2) return []
+
+  const supabase = await createClient()
+
+  // Strip commas (thousands separators) before checking whether the term is
+  // a bare dollar amount, e.g. "1,234.56" -> "1234.56".
+  const commaless = cleaned.replace(/,/g, '')
+  const isDollarAmount = /^\d+(\.\d+)?$/.test(commaless)
+  const totalCentsMatch = isDollarAmount ? Math.round(parseFloat(commaless) * 100) : null
+  const isPlainInteger = /^\d+$/.test(commaless)
+  const soNumberMatch = isPlainInteger ? parseInt(commaless, 10) : null
+
+  // Strip characters that would break PostgREST's or() filter syntax.
+  const safeTerm = cleaned.replace(/[,()'"]/g, ' ').trim()
+
+  const conditions: string[] = []
+  if (safeTerm.length >= 2) {
+    conditions.push(`title.ilike.%${safeTerm}%`)
+  }
+  if (totalCentsMatch !== null) {
+    conditions.push(`total.eq.${totalCentsMatch}`)
+  }
+  if (soNumberMatch !== null) {
+    conditions.push(`so_number.eq.${soNumberMatch}`)
+  }
+  if (safeTerm.length >= 2) {
+    const { data: customerRows } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('organization_id', orgId)
+      .or(`first_name.ilike.%${safeTerm}%,last_name.ilike.%${safeTerm}%,company_name.ilike.%${safeTerm}%`)
+      .limit(50)
+    const customerIds = (customerRows ?? []).map((r) => (r as { id: string }).id)
+    if (customerIds.length > 0) {
+      conditions.push(`customer_id.in.(${customerIds.join(',')})`)
+    }
+  }
+  if (conditions.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('sales_orders')
+    .select('id, so_number, title, status, total, created_at, customer_id, customers(first_name, last_name, company_name), shipments(id)')
+    .eq('organization_id', orgId)
+    .or(conditions.join(','))
+    .order('so_number', { ascending: false })
+    .limit(50)
+
+  if (error) {
+    console.error('[searchSalesOrders]', error.message)
+    return []
+  }
+
+  return (data ?? []) as SoSearchRow[]
+}
+
 export async function updateSalesOrderStatus(
   soId: string,
   orgId: string,

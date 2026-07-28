@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import type { ColumnDef, FilterRule } from '@/components/data-table/types'
 import { useSavedView } from '@/components/data-table/use-saved-view'
@@ -8,6 +8,7 @@ import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { QuoteCard } from './quote-card'
+import { searchQuotes } from './actions'
 import {
   formatQuoteNumber,
   formatCents,
@@ -44,15 +45,6 @@ const PAGE_SIZE = QUOTES_PAGE_SIZE
 // Stable reference — prevents useDataTableQuery from re-running when
 // useSavedView's sortRules is empty (no saved view loaded yet).
 const DEFAULT_SORT = [{ column: 'quote_number', direction: 'desc' as const }]
-
-// Stable reference — an inline ['title'] literal here would be a new array
-// on every render, and useDataTableQuery's effect depends on this exact
-// reference, retriggering on every render and self-sustaining into an
-// infinite fetch loop (setLoading(true) -> re-render -> new array ->
-// retrigger). Confirmed live in production: this exact bug was firing
-// continuous POST requests to this route (found while investigating an
-// identical issue on Sales Orders, which uses the same pattern).
-const SEARCH_COLUMNS = ['title']
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -182,6 +174,14 @@ export default function QuotesListClient({
     disabled: isViewReadOnly,
   })
 
+  // Search spans title, customer name (nested), quote number, and total
+  // (typed as a dollar amount) — fetchDataTablePage's plain ILIKE-across-
+  // searchColumns grammar can't express a nested-column ILIKE alongside a
+  // cents-converted numeric equals in one call, so this uses
+  // useDataTableQuery's searchFn extension point (a real server-side query
+  // via a server action) instead of the built-in searchColumns path.
+  const boundSearchFn = useCallback((term: string) => searchQuotes(orgId, term), [orgId])
+
   // ── Live query ────────────────────────────────────────────────────────────
   const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<QuoteListRow>({
     tableKey: 'quotes',
@@ -190,7 +190,7 @@ export default function QuotesListClient({
     filterRules: effectiveFilterRules,
     sortRules: activeSortRules,
     search,
-    searchColumns: SEARCH_COLUMNS,
+    searchFn: boundSearchFn,
     page,
     pageSize: PAGE_SIZE,
     initialRows,
@@ -280,7 +280,7 @@ export default function QuotesListClient({
           )}
           <input
             type="text"
-            placeholder="Search title…"
+            placeholder="Search title, customer, quote #, or total…"
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
