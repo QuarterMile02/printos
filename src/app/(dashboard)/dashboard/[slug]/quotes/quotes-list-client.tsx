@@ -45,6 +45,15 @@ const PAGE_SIZE = QUOTES_PAGE_SIZE
 // useSavedView's sortRules is empty (no saved view loaded yet).
 const DEFAULT_SORT = [{ column: 'quote_number', direction: 'desc' as const }]
 
+// Stable reference — an inline ['title'] literal here would be a new array
+// on every render, and useDataTableQuery's effect depends on this exact
+// reference, retriggering on every render and self-sustaining into an
+// infinite fetch loop (setLoading(true) -> re-render -> new array ->
+// retrigger). Confirmed live in production: this exact bug was firing
+// continuous POST requests to this route (found while investigating an
+// identical issue on Sales Orders, which uses the same pattern).
+const SEARCH_COLUMNS = ['title']
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
@@ -181,7 +190,7 @@ export default function QuotesListClient({
     filterRules: effectiveFilterRules,
     sortRules: activeSortRules,
     search,
-    searchColumns: ['title'],
+    searchColumns: SEARCH_COLUMNS,
     page,
     pageSize: PAGE_SIZE,
     initialRows,

@@ -42,6 +42,17 @@ const PAGE_SIZE = SALES_ORDERS_PAGE_SIZE
 // useSavedView's sortRules is empty (no saved view loaded yet).
 const DEFAULT_SORT = [{ column: 'so_number', direction: 'desc' as const }]
 
+// Stable reference — an inline ['title'] literal here would be a new array
+// on every render, and useDataTableQuery's effect depends on this exact
+// reference. That retriggers the effect on every render (any render, for
+// any reason), which calls setLoading(true), which causes a re-render,
+// which creates a new ['title'] array, which retriggers the effect again —
+// a self-sustaining infinite fetch loop where loading never settles back to
+// false, permanently applying pointer-events-none to the whole table.
+// Confirmed live in production: this exact bug was firing continuous POST
+// requests (670+ and climbing) to this route.
+const SEARCH_COLUMNS = ['title']
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // timeZone: 'UTC' pins the calendar day to the stored UTC instant so the
@@ -189,7 +200,7 @@ export default function SoListClient({
     filterRules: effectiveFilterRules,
     sortRules: activeSortRules,
     search,
-    searchColumns: ['title'],
+    searchColumns: SEARCH_COLUMNS,
     page,
     pageSize: PAGE_SIZE,
     initialRows,
