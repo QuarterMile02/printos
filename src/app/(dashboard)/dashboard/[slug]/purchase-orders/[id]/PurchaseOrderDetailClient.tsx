@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from 'react'
 import Link from 'next/link'
 import { formatPoNumber, PO_STATUS_STYLES, PO_STATUS_LABELS } from '../format'
+import { MaterialSelect, type Material } from '../material-select'
 
 type Vendor = { id: string; name: string; primary_contact: string | null; primary_email: string | null; primary_phone: string | null }
 type SalesOrder = { id: string; so_number: number; title: string | null }
@@ -16,6 +17,7 @@ type PoItem = {
   total_cost: number
   received_qty: number
   sort_order: number
+  material_id: string | null
 }
 
 type FullPo = {
@@ -72,12 +74,14 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
   const [addDesc, setAddDesc] = useState('')
   const [addQty, setAddQty] = useState('1')
   const [addCost, setAddCost] = useState('')
+  const [addMaterialId, setAddMaterialId] = useState<string | null>(null)
   const [addingItem, setAddingItem] = useState(false)
 
   const [editItemId, setEditItemId] = useState<string | null>(null)
   const [editItemDesc, setEditItemDesc] = useState('')
   const [editItemQty, setEditItemQty] = useState('')
   const [editItemCost, setEditItemCost] = useState('')
+  const [editItemMaterialId, setEditItemMaterialId] = useState<string | null>(null)
   const [savingItem, setSavingItem] = useState(false)
 
   const [toast, setToast] = useState<string | null>(null)
@@ -131,6 +135,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
         quantity: Number(addQty) || 1,
         unit_cost: Number(addCost) || 0,
         sort_order: items.length,
+        material_id: addMaterialId,
       }),
     })
     if (res.ok) {
@@ -138,7 +143,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
       setItems((prev) => [...prev, newItem])
       const subtotal = [...items, newItem].reduce((s, i) => s + Number(i.total_cost), 0)
       setPo((p) => ({ ...p, subtotal, total: subtotal }))
-      setAddDesc(''); setAddQty('1'); setAddCost('')
+      setAddDesc(''); setAddQty('1'); setAddCost(''); setAddMaterialId(null)
       setShowAddItem(false)
     } else {
       showToast('Failed to add item')
@@ -151,6 +156,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
     setEditItemDesc(item.description ?? '')
     setEditItemQty(String(item.quantity))
     setEditItemCost(String(item.unit_cost))
+    setEditItemMaterialId(item.material_id)
   }
 
   const handleSaveItem = async (itemId: string) => {
@@ -162,6 +168,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
         description: editItemDesc.trim(),
         quantity: Number(editItemQty) || 1,
         unit_cost: Number(editItemCost) || 0,
+        material_id: editItemMaterialId,
       }),
     })
     if (res.ok) {
@@ -315,12 +322,15 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                   editItemId === item.id ? (
                     <tr key={item.id} className="bg-amber-50">
                       <td className="px-4 py-2">
-                        <input
-                          type="text"
+                        <MaterialSelect
                           value={editItemDesc}
-                          onChange={(e) => setEditItemDesc(e.target.value)}
+                          onChange={setEditItemDesc}
+                          onSelectMaterial={(m: Material) => {
+                            setEditItemDesc(m.po_description || m.name)
+                            setEditItemCost(String(m.cost))
+                            setEditItemMaterialId(m.id)
+                          }}
                           autoFocus
-                          className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </td>
                       <td className="px-4 py-2">
@@ -381,14 +391,17 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                 {showAddItem && (
                   <tr className="bg-green-50">
                     <td className="px-4 py-2">
-                      <input
-                        type="text"
+                      <MaterialSelect
                         value={addDesc}
-                        onChange={(e) => setAddDesc(e.target.value)}
+                        onChange={setAddDesc}
+                        onSelectMaterial={(m: Material) => {
+                          setAddDesc(m.po_description || m.name)
+                          setAddCost(String(m.cost))
+                          setAddMaterialId(m.id)
+                        }}
                         onKeyDown={(e) => { if (e.key === 'Enter') handleAddItem() }}
                         autoFocus
-                        placeholder="Description"
-                        className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                        placeholder="Description or search materials…"
                       />
                     </td>
                     <td className="px-4 py-2">
@@ -419,7 +432,7 @@ export default function PurchaseOrderDetailClient({ slug, orgId, orgName, initia
                         <button onClick={handleAddItem} disabled={addingItem || !addDesc.trim()} className="text-xs font-semibold text-qm-lime hover:opacity-80 disabled:opacity-50">
                           {addingItem ? '…' : 'Add'}
                         </button>
-                        <button onClick={() => { setShowAddItem(false); setAddDesc(''); setAddQty('1'); setAddCost('') }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+                        <button onClick={() => { setShowAddItem(false); setAddDesc(''); setAddQty('1'); setAddCost(''); setAddMaterialId(null) }} className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
                       </div>
                     </td>
                   </tr>

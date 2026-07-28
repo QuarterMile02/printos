@@ -22,6 +22,7 @@ export async function PATCH(
   const patch: Record<string, unknown> = {}
   if ('description' in body) patch.description = body.description
   if ('received_qty' in body) patch.received_qty = Number(body.received_qty)
+  if ('material_id' in body) patch.material_id = body.material_id
 
   if ('quantity' in body || 'unit_cost' in body) {
     const { data: current } = await supabase
@@ -40,7 +41,7 @@ export async function PATCH(
     .from('purchase_order_items')
     .update(patch)
     .eq('id', itemId)
-    .select('id, description, quantity, unit_cost, total_cost, received_qty, sort_order')
+    .select('id, description, quantity, unit_cost, total_cost, received_qty, sort_order, material_id')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

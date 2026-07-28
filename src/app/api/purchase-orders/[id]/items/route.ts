@@ -10,7 +10,7 @@ export async function POST(
 ) {
   const { id: poId } = await context.params
   const body = await request.json()
-  const { description, quantity, unit_cost, sort_order } = body
+  const { description, quantity, unit_cost, sort_order, material_id } = body
 
   const cookieStore = await cookies()
   const supabase = createServerClient(
@@ -34,8 +34,9 @@ export async function POST(
       unit_cost: cost,
       total_cost,
       sort_order: sort_order ?? 0,
+      material_id: material_id ?? null,
     })
-    .select('id, description, quantity, unit_cost, total_cost, received_qty, sort_order')
+    .select('id, description, quantity, unit_cost, total_cost, received_qty, sort_order, material_id')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

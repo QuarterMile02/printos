@@ -40,7 +40,7 @@ export default async function Page({ params }: PageProps) {
       vendor:vendors(id, name, primary_contact, primary_email, primary_phone),
       sales_order:sales_orders(id, so_number, title),
       creator:profiles!purchase_orders_created_by_fkey(id, full_name),
-      purchase_order_items(id, description, quantity, unit_cost, total_cost, received_qty, sort_order)
+      purchase_order_items(id, description, quantity, unit_cost, total_cost, received_qty, sort_order, material_id)
     `)
     .eq('id', id)
     .eq('organization_id', org.id)
