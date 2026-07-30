@@ -4,6 +4,7 @@ import { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Modifier, ModifierType } from '@/types/product-builder'
 import { createModifier, updateModifier, toggleModifierActive, type ModifierFormData } from './actions'
+import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 
 type Props = {
   orgId: string
@@ -190,7 +191,7 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
           <p className="text-sm text-qm-gray">No modifiers match your filters.</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -201,12 +202,12 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
                 <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Customer</th>
                 <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">System Var</th>
                 <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+                <th className={`px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((m) => (
-                <tr key={m.id} className="hover:bg-gray-50">
+                <tr key={m.id} className="group hover:bg-gray-50">
                   <td className="whitespace-nowrap px-6 py-3 text-sm font-semibold text-qm-black">{m.display_name}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-sm text-qm-gray">{m.system_lookup_name ?? <span className="text-gray-300">—</span>}</td>
                   <td className="whitespace-nowrap px-6 py-3">
@@ -226,7 +227,7 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${m.active ? 'translate-x-4' : 'translate-x-0.5'}`} />
                     </button>
                   </td>
-                  <td className="whitespace-nowrap px-6 py-3 text-right">
+                  <td className={`whitespace-nowrap px-6 py-3 text-right ${STICKY_ACTIONS_TD}`}>
                     <button onClick={() => openEdit(m)} className="text-sm font-medium text-qm-lime hover:underline">Edit</button>
                   </td>
                 </tr>

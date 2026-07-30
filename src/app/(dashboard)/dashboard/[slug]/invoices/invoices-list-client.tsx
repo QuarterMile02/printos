@@ -7,6 +7,7 @@ import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 import { InvoiceCard } from './invoice-card'
 import { searchInvoices } from './actions'
 import {
@@ -497,7 +498,7 @@ export default function InvoicesListClient({
                     </th>
                   )
                 })}
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+                <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -505,7 +506,7 @@ export default function InvoicesListClient({
                 const href = `/dashboard/${orgSlug}/invoices/${inv.id}`
                 const dueLabel = formatDueDate(inv.due_date)
                 return (
-                  <tr key={inv.id} className={`hover:bg-gray-50 ${selected.has(inv.id) ? 'bg-green-50/40' : ''}`}>
+                  <tr key={inv.id} className={`group hover:bg-gray-50 ${selected.has(inv.id) ? 'bg-green-50/40' : ''}`}>
 
                     {/* Checkbox */}
                     <td className="px-4 py-3">
@@ -589,7 +590,7 @@ export default function InvoicesListClient({
                     </td>
 
                     {/* Actions — QB export */}
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <td className={`whitespace-nowrap px-4 py-3 text-right ${STICKY_ACTIONS_TD}`}>
                       <a
                         href={`/api/invoices/${inv.id}/export-iif`}
                         className="text-xs font-medium text-green-700 hover:text-green-900 hover:underline"
