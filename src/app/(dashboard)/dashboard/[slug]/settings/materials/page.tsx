@@ -63,10 +63,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
 
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-extrabold text-qm-black">Materials</h1>
-          <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2.5 py-0.5 text-xs font-semibold text-qm-lime-dark">
-            {initialResult.totalCount}
-          </span>
+          <h1 className="text-2xl font-extrabold text-qm-black">Materials <span className="text-sm font-normal text-gray-400">({initialResult.totalCount.toLocaleString()})</span></h1>
         </div>
         <div className="flex items-center gap-2">
           <a
