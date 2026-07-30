@@ -10,6 +10,9 @@ import {
   type PricingFormulaFormData,
 } from './actions'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import { useColumnResize } from '@/components/data-table/use-column-resize'
+import { applySortRules } from '@/components/data-table/use-saved-view'
+import type { ColumnDef, SortRule } from '@/components/data-table/types'
 
 export type PricingFormula = {
   id: string
@@ -175,6 +178,67 @@ export default function PricingFormulasClient({
     })
   }, [initialFormulas, search, originFilter])
 
+  // ── Column resize + click-to-sort — same shared hooks/utilities used by
+  // Materials, Discounts, etc. This list is small and entirely client-side,
+  // so there's no saved-view persistence here, just local state.
+  const COLUMNS = useMemo((): ColumnDef<PricingFormula>[] => [
+    { key: 'name', label: 'Name', defaultWidth: 220, sortable: true, getValue: (f) => f.name },
+    { key: 'formula', label: 'Expression', defaultWidth: 180, sortable: true, getValue: (f) => f.formula },
+    { key: 'uom', label: 'Unit', defaultWidth: 110, sortable: true, getValue: (f) => f.uom },
+    { key: 'description', label: 'Description', defaultWidth: 280, sortable: true, getValue: (f) => f.description },
+    { key: 'actions', label: 'Actions', defaultWidth: 200, sortable: false },
+  ], [])
+
+  const defaultWidths = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const c of COLUMNS) map[c.key] = c.defaultWidth
+    return map
+  }, [COLUMNS])
+
+  const [savedWidths, setSavedWidths] = useState<Record<string, number>>({})
+  const { widths: colWidths, startResize } = useColumnResize({
+    defaultWidths,
+    savedWidths,
+    onWidthCommit: (col, w) => setSavedWidths((prev) => ({ ...prev, [col]: w })),
+  })
+
+  const [sortRules, setSortRules] = useState<SortRule[]>([])
+  function setSort(column: string) {
+    setSortRules((prev) => {
+      const existing = prev.find((r) => r.column === column)
+      if (!existing) return [{ column, direction: 'asc' }]
+      if (existing.direction === 'asc') return [{ column, direction: 'desc' }]
+      return []
+    })
+  }
+
+  const sorted = useMemo(() => applySortRules(filtered, sortRules, COLUMNS), [filtered, sortRules, COLUMNS])
+
+  function SortIcon({ column }: { column: string }) {
+    const rule = sortRules.find((r) => r.column === column)
+    if (rule?.direction === 'asc') {
+      return (
+        <svg className="h-3 w-3 text-qm-lime" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75 12 8.25l7.5 7.5" />
+        </svg>
+      )
+    }
+    if (rule?.direction === 'desc') {
+      return (
+        <svg className="h-3 w-3 text-qm-lime" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+        </svg>
+      )
+    }
+    return (
+      <svg className="h-3 w-3 opacity-20" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15 12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+      </svg>
+    )
+  }
+
+  const totalWidth = COLUMNS.reduce((sum, c) => sum + (colWidths[c.key] ?? c.defaultWidth), 0)
+
   return (
     <>
       {/* Toast */}
@@ -262,31 +326,44 @@ export default function PricingFormulasClient({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
+            <colgroup>
+              {COLUMNS.map((col) => (
+                <col key={col.key} style={{ width: colWidths[col.key] ?? col.defaultWidth }} />
+              ))}
+            </colgroup>
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Name
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Expression
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Unit
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Description
-                </th>
-                <th className={`px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>
-                  Actions
-                </th>
+                {COLUMNS.map((col, i) => {
+                  const isSortable = col.sortable
+                  const isLast = i === COLUMNS.length - 1
+                  const isActions = col.key === 'actions'
+                  return (
+                    <th
+                      key={col.key}
+                      onClick={isSortable ? () => setSort(col.key) : undefined}
+                      className={`relative px-5 py-3 text-xs font-medium uppercase tracking-wide text-gray-500 select-none ${isSortable ? 'cursor-pointer hover:bg-gray-100' : ''} ${isActions ? `text-right ${STICKY_ACTIONS_TH}` : 'text-left'}`}
+                    >
+                      <div className={`flex items-center gap-1 ${isActions ? 'justify-end' : ''}`}>
+                        {col.label}
+                        {col.sortable && <SortIcon column={col.key} />}
+                      </div>
+                      {!isLast && (
+                        <div
+                          onMouseDown={(e) => startResize(col.key, e)}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-qm-lime hover:opacity-30 z-10"
+                        />
+                      )}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((f) => (
+              {sorted.map((f) => (
                 <tr key={f.id} className="group hover:bg-gray-50/60">
-                  <td className="whitespace-nowrap px-5 py-3 text-sm font-semibold text-qm-black">
-                    <div className="flex items-center gap-1.5">
+                  <td className="overflow-hidden px-5 py-3 text-sm font-semibold text-qm-black">
+                    <div className="flex items-center gap-1.5 truncate">
                       {f.is_system && (
                         <span title="System formula — read only">
                           <svg
@@ -324,18 +401,20 @@ export default function PricingFormulasClient({
                       {f.name}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3">
-                    <code className="rounded bg-gray-100 px-2 py-0.5 font-mono text-sm text-gray-800">
+                  <td className="overflow-hidden px-5 py-3">
+                    <code className="inline-block max-w-full truncate rounded bg-gray-100 px-2 py-0.5 font-mono text-sm text-gray-800">
                       {f.formula}
                     </code>
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3">
-                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                  <td className="overflow-hidden px-5 py-3">
+                    <span className="inline-block max-w-full truncate rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                       {f.uom}
                     </span>
                   </td>
-                  <td className="max-w-xs px-5 py-3 text-sm text-gray-500">
-                    {f.description ?? <span className="text-gray-300">—</span>}
+                  <td className="overflow-hidden px-5 py-3 text-sm text-gray-500">
+                    <div className="truncate" title={f.description ?? undefined}>
+                      {f.description ?? <span className="text-gray-300">—</span>}
+                    </div>
                   </td>
                   <td className={`whitespace-nowrap px-5 py-3 text-right ${STICKY_ACTIONS_TD}`}>
                     {f.is_system ? (
