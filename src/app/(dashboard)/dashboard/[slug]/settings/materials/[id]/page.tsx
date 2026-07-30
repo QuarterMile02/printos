@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import MaterialForm from '../material-form'
+import PricingMatrixSection from '../pricing-matrix-section'
 import { cloneMaterial, deleteMaterial } from '../actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 
@@ -59,6 +60,15 @@ export default async function Page({ params, searchParams }: {
     const { data: t } = await supabase.from('material_types').select('name').eq('id', m.material_type_id).single()
     typeName = (t as { name: string } | null)?.name ?? '—'
   }
+
+  // Pricing Matrix tiers
+  const { data: tierRows } = await supabase
+    .from('material_pricing_tiers')
+    .select('id, material_id, from_qty, to_qty, cost, price')
+    .eq('material_id', id)
+    .eq('organization_id', org.id)
+    .order('from_qty', { ascending: true })
+  const tiers = (tierRows ?? []) as { id: string; material_id: string; from_qty: number; to_qty: number | null; cost: number; price: number }[]
 
   // Used In products
   const { data: usedRows } = await supabase.from('product_default_items').select('product_id').eq('material_id', id)
@@ -185,6 +195,8 @@ export default async function Page({ params, searchParams }: {
                 <div className="flex justify-between"><dt className="text-gray-500">Weight</dt><dd className="font-medium tabular-nums">{m.weight != null ? `${n(m.weight)} ${m.weight_uom ?? ''}` : '—'}</dd></div>
               </dl>
             </div>
+
+            <PricingMatrixSection materialId={id} initialTiers={tiers} />
 
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm md:col-span-2">
               <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Charges</h2>
