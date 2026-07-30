@@ -98,7 +98,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   if (!allowed) {
     return (
       <div className="p-8 max-w-5xl">
-        <h1 className="text-2xl font-bold text-gray-900">Labor Rates</h1>
+        <h1 className="text-2xl font-extrabold text-qm-black">Labor Rates</h1>
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
           You don&apos;t have permission to view labor rates. Contact your organization owner to request access.
         </div>
@@ -213,7 +213,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       </div>
 
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Labor Rates <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
+        <h1 className="text-2xl font-extrabold text-qm-black">Labor Rates <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
         <div className="flex gap-2">
           {(() => {
             const p = new URLSearchParams()
