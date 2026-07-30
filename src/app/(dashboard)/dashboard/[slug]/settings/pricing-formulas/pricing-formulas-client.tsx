@@ -9,6 +9,7 @@ import {
   setPricingFormulaLock,
   type PricingFormulaFormData,
 } from './actions'
+import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 
 export type PricingFormula = {
   id: string
@@ -81,6 +82,7 @@ export default function PricingFormulasClient({
 }: Props) {
   const router = useRouter()
   const [search, setSearch] = useState('')
+  const [originFilter, setOriginFilter] = useState<'all' | 'system' | 'custom'>('all')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [form, setForm] = useState<PricingFormulaFormData>(emptyForm())
@@ -165,11 +167,13 @@ export default function PricingFormulasClient({
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) return initialFormulas
-    return initialFormulas.filter((f) =>
-      `${f.name} ${f.formula} ${f.uom} ${f.description ?? ''}`.toLowerCase().includes(term),
-    )
-  }, [initialFormulas, search])
+    return initialFormulas.filter((f) => {
+      if (originFilter === 'system' && !f.is_system) return false
+      if (originFilter === 'custom' && f.is_system) return false
+      if (!term) return true
+      return `${f.name} ${f.formula} ${f.uom} ${f.description ?? ''}`.toLowerCase().includes(term)
+    })
+  }, [initialFormulas, search, originFilter])
 
   return (
     <>
@@ -191,7 +195,7 @@ export default function PricingFormulasClient({
         {isOwnerOrAdmin && (
           <button
             onClick={openNew}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
           >
             <svg
               className="h-4 w-4"
@@ -207,9 +211,9 @@ export default function PricingFormulasClient({
         )}
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
-        <div className="relative max-w-sm">
+      {/* Search + filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative max-w-sm flex-1 min-w-[240px]">
           <svg
             className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
             fill="none"
@@ -231,6 +235,15 @@ export default function PricingFormulasClient({
             className="block w-full rounded-md border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
           />
         </div>
+        <select
+          value={originFilter}
+          onChange={(e) => setOriginFilter(e.target.value as 'all' | 'system' | 'custom')}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        >
+          <option value="all">All formulas</option>
+          <option value="system">System only</option>
+          <option value="custom">Custom only</option>
+        </select>
       </div>
 
       {/* Table */}
@@ -241,14 +254,14 @@ export default function PricingFormulasClient({
           {!search && isOwnerOrAdmin && (
             <button
               onClick={openNew}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
             >
               New Formula
             </button>
           )}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -264,14 +277,14 @@ export default function PricingFormulasClient({
                 <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                   Description
                 </th>
-                <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                <th className={`px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((f) => (
-                <tr key={f.id} className="hover:bg-gray-50/60">
+                <tr key={f.id} className="group hover:bg-gray-50/60">
                   <td className="whitespace-nowrap px-5 py-3 text-sm font-semibold text-qm-black">
                     <div className="flex items-center gap-1.5">
                       {f.is_system && (
@@ -324,7 +337,7 @@ export default function PricingFormulasClient({
                   <td className="max-w-xs px-5 py-3 text-sm text-gray-500">
                     {f.description ?? <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="whitespace-nowrap px-5 py-3 text-right">
+                  <td className={`whitespace-nowrap px-5 py-3 text-right ${STICKY_ACTIONS_TD}`}>
                     {f.is_system ? (
                       <span className="text-xs italic text-gray-400">System</span>
                     ) : f.is_locked ? (
@@ -477,7 +490,7 @@ export default function PricingFormulasClient({
               <button
                 onClick={handleSave}
                 disabled={isPending}
-                className="rounded-md bg-green-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+                className="rounded-md bg-qm-lime px-5 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110 disabled:opacity-50"
               >
                 {isPending ? 'Saving…' : isNew ? 'Create Formula' : 'Save Changes'}
               </button>
