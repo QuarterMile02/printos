@@ -58,12 +58,18 @@ async function PageInner({ params }: PageProps) {
     .eq('user_id', user.id)
     .maybeSingle() as { data: { role: string } | null; error: unknown }
 
+  // Create still follows the original owner-or-admin gate (unchanged).
+  // TEMPORARY: edit/delete/lock on pricing formulas is gated to the
+  // 'owner' role directly because there is no real Team Roles &
+  // Permissions system yet. Once one exists, replace isOwner with a
+  // proper permission check and remove this comment.
   const isOwnerOrAdmin =
     memberRow?.role === 'owner' || memberRow?.role === 'admin'
+  const isOwner = memberRow?.role === 'owner'
 
   const { data: formulas } = await service
     .from('pricing_formulas')
-    .select('id, organization_id, name, formula, uom, is_system, description, created_at')
+    .select('id, organization_id, name, formula, uom, is_system, is_locked, description, created_at')
     .or(`organization_id.eq.${org.id},is_system.eq.true`)
     .order('name', { ascending: true })
 
@@ -82,6 +88,7 @@ async function PageInner({ params }: PageProps) {
         orgSlug={slug}
         initialFormulas={(formulas ?? []) as PricingFormula[]}
         isOwnerOrAdmin={isOwnerOrAdmin}
+        isOwner={isOwner}
       />
     </div>
   )

@@ -55,6 +55,10 @@ export async function createPricingFormula(
   return {}
 }
 
+// TEMPORARY: gated to the 'owner' role directly because there is no real
+// Team Roles & Permissions system yet — once one exists, replace this
+// role === 'owner' check with a proper permission check (e.g.
+// checkPermission(orgId, 'pricing_formulas.edit')) and remove this comment.
 export async function updatePricingFormula(
   id: string,
   orgId: string,
@@ -68,7 +72,7 @@ export async function updatePricingFormula(
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
   if (!membership) return { error: 'You are not a member of this organization.' }
-  if (membership.role === 'viewer') return { error: 'Viewers cannot update pricing formulas.' }
+  if (membership.role !== 'owner') return { error: 'Only the organization owner can edit pricing formulas.' }
 
   const service = createServiceClient()
   const { error } = await service
@@ -83,12 +87,17 @@ export async function updatePricingFormula(
     .eq('id', id)
     .eq('organization_id', orgId)
     .eq('is_system', false)
+    // is_locked formulas are read-only for everyone, including the
+    // owner, until explicitly unlocked via setPricingFormulaLock.
+    .eq('is_locked', false)
 
   if (error) return { error: error.message }
   revalidatePath(`/dashboard/${orgSlug}/settings/pricing-formulas`)
   return {}
 }
 
+// TEMPORARY: see comment on updatePricingFormula above — owner-only is a
+// stand-in until real Team Roles & Permissions exists.
 export async function deletePricingFormula(
   id: string,
   orgId: string,
@@ -97,12 +106,42 @@ export async function deletePricingFormula(
   const { user, membership } = await getMembership(orgId)
   if (!user) return { error: 'Not authenticated.' }
   if (!membership) return { error: 'You are not a member of this organization.' }
-  if (membership.role === 'viewer') return { error: 'Viewers cannot delete pricing formulas.' }
+  if (membership.role !== 'owner') return { error: 'Only the organization owner can delete pricing formulas.' }
 
   const service = createServiceClient()
   const { error } = await service
     .from('pricing_formulas')
     .delete()
+    .eq('id', id)
+    .eq('organization_id', orgId)
+    .eq('is_system', false)
+    .eq('is_locked', false)
+
+  if (error) return { error: error.message }
+  revalidatePath(`/dashboard/${orgSlug}/settings/pricing-formulas`)
+  return {}
+}
+
+// TEMPORARY: see comment on updatePricingFormula above — owner-only is a
+// stand-in until real Team Roles & Permissions exists. Locking is
+// intentionally unavailable for is_system formulas: those are already
+// permanently read-only for everyone via a separate, harder mechanism
+// (is_system), so a lock toggle on them would be meaningless.
+export async function setPricingFormulaLock(
+  id: string,
+  orgId: string,
+  orgSlug: string,
+  locked: boolean,
+): Promise<{ error?: string }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!membership) return { error: 'You are not a member of this organization.' }
+  if (membership.role !== 'owner') return { error: 'Only the organization owner can lock or unlock pricing formulas.' }
+
+  const service = createServiceClient()
+  const { error } = await service
+    .from('pricing_formulas')
+    .update({ is_locked: locked, updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('organization_id', orgId)
     .eq('is_system', false)

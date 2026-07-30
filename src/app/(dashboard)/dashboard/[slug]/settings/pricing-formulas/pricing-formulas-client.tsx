@@ -6,6 +6,7 @@ import {
   createPricingFormula,
   updatePricingFormula,
   deletePricingFormula,
+  setPricingFormulaLock,
   type PricingFormulaFormData,
 } from './actions'
 
@@ -16,6 +17,7 @@ export type PricingFormula = {
   formula: string
   uom: string
   is_system: boolean
+  is_locked: boolean
   description: string | null
   created_at: string
 }
@@ -25,6 +27,11 @@ type Props = {
   orgSlug: string
   initialFormulas: PricingFormula[]
   isOwnerOrAdmin: boolean
+  // TEMPORARY: edit/delete/lock are gated to isOwner directly because
+  // there is no real Team Roles & Permissions system yet. Once one
+  // exists, replace isOwner with a proper permission check throughout
+  // this component and remove this comment.
+  isOwner: boolean
 }
 
 const UOM_OPTIONS = ['Sqft', 'Sq Yd', 'Sq In', 'Cu In', 'Inches', 'Feet', 'Yards', 'Board Ft', 'Clicks']
@@ -70,6 +77,7 @@ export default function PricingFormulasClient({
   orgSlug,
   initialFormulas,
   isOwnerOrAdmin,
+  isOwner,
 }: Props) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -78,6 +86,7 @@ export default function PricingFormulasClient({
   const [form, setForm] = useState<PricingFormulaFormData>(emptyForm())
   const [formError, setFormError] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [lockingId, setLockingId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<string | null>(null)
 
@@ -137,6 +146,20 @@ export default function PricingFormulasClient({
         showToast('Formula deleted')
         router.refresh()
       }
+    })
+  }
+
+  function handleToggleLock(f: PricingFormula) {
+    setLockingId(f.id)
+    startTransition(async () => {
+      const result = await setPricingFormulaLock(f.id, orgId, orgSlug, !f.is_locked)
+      if (result.error) {
+        showToast(`Error: ${result.error}`)
+      } else {
+        showToast(f.is_locked ? 'Formula unlocked' : 'Formula locked')
+        router.refresh()
+      }
+      setLockingId(null)
     })
   }
 
@@ -268,6 +291,23 @@ export default function PricingFormulasClient({
                           </svg>
                         </span>
                       )}
+                      {!f.is_system && f.is_locked && (
+                        <span title="Locked — read only">
+                          <svg
+                            className="h-3.5 w-3.5 shrink-0 text-amber-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2}
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                            />
+                          </svg>
+                        </span>
+                      )}
                       {f.name}
                     </div>
                   </td>
@@ -287,13 +327,35 @@ export default function PricingFormulasClient({
                   <td className="whitespace-nowrap px-5 py-3 text-right">
                     {f.is_system ? (
                       <span className="text-xs italic text-gray-400">System</span>
-                    ) : isOwnerOrAdmin ? (
+                    ) : f.is_locked ? (
+                      isOwner ? (
+                        <div className="flex items-center justify-end gap-3">
+                          <span className="text-xs italic text-gray-400">Locked</span>
+                          <button
+                            onClick={() => handleToggleLock(f)}
+                            disabled={lockingId === f.id}
+                            className="text-sm font-medium text-qm-lime hover:underline disabled:opacity-50"
+                          >
+                            {lockingId === f.id ? '…' : 'Unlock'}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs italic text-gray-400">Locked</span>
+                      )
+                    ) : isOwner ? (
                       <div className="flex items-center justify-end gap-3">
                         <button
                           onClick={() => openEdit(f)}
                           className="text-sm font-medium text-qm-lime hover:underline"
                         >
                           Edit
+                        </button>
+                        <button
+                          onClick={() => handleToggleLock(f)}
+                          disabled={lockingId === f.id}
+                          className="text-sm font-medium text-gray-500 hover:underline disabled:opacity-50"
+                        >
+                          {lockingId === f.id ? '…' : 'Lock'}
                         </button>
                         <button
                           onClick={() => setConfirmDeleteId(f.id)}
