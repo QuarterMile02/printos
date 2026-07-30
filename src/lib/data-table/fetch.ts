@@ -14,6 +14,7 @@ const TABLE_ALLOWLIST: Record<string, string> = {
   purchase_orders: 'purchase_orders',
   vendors: 'vendors',
   tasks: 'tasks',
+  materials: 'materials',
 }
 
 export type DataTableFetchParams = {
