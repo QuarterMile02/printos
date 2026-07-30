@@ -3,13 +3,17 @@ import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
+const TYPES = ['Range', 'Volume', 'Price']
+const APPLIES_TO = ['Product', 'Material', 'Both']
+
 export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ sort?: string }>
+  searchParams: Promise<{ search?: string; type?: string; applies_to?: string; status?: string; sort?: string }>
 }) {
   const { slug } = await params
   const sp = await searchParams
   const sortDesc = sp.sort === 'desc'
+  const search = sp.search?.trim().toLowerCase() ?? ''
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -29,7 +33,13 @@ export default async function Page({ params, searchParams }: {
       .eq('organization_id', org.id),
   ])
   const totalCount = countRes.count ?? 0
-  const discounts = (rowsRes.data ?? []) as { id: string; name: string; discount_type: string | null; applies_to: string | null; discount_by: string | null; active: boolean | null }[]
+  let discounts = (rowsRes.data ?? []) as { id: string; name: string; discount_type: string | null; applies_to: string | null; discount_by: string | null; active: boolean | null }[]
+
+  if (search) discounts = discounts.filter(d => d.name.toLowerCase().includes(search))
+  if (sp.type) discounts = discounts.filter(d => d.discount_type === sp.type)
+  if (sp.applies_to) discounts = discounts.filter(d => d.applies_to === sp.applies_to)
+  if (sp.status === 'active') discounts = discounts.filter(d => d.active !== false)
+  if (sp.status === 'inactive') discounts = discounts.filter(d => d.active === false)
 
   // Get tier counts
   const discountIds = discounts.map(d => d.id)
@@ -49,20 +59,49 @@ export default async function Page({ params, searchParams }: {
         <span className="text-gray-700">Discounts</span>
       </div>
 
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Discounts <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-extrabold text-qm-black">Discounts <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
         <div className="flex items-center gap-2">
-          <Link
-            href={sortDesc ? `/dashboard/${slug}/settings/discounts` : `/dashboard/${slug}/settings/discounts?sort=desc`}
-            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
-          </Link>
+          {(() => {
+            const p = new URLSearchParams()
+            if (sp.search) p.set('search', sp.search)
+            if (sp.type) p.set('type', sp.type)
+            if (sp.applies_to) p.set('applies_to', sp.applies_to)
+            if (sp.status) p.set('status', sp.status)
+            if (!sortDesc) p.set('sort', 'desc')
+            return (
+              <Link
+                href={`/dashboard/${slug}/settings/discounts?${p}`}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
+              >
+                {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
+              </Link>
+            )
+          })()}
           <Link href={`/dashboard/${slug}/settings/discounts/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
             + New Discount
           </Link>
         </div>
       </div>
+
+      <form className="mb-4 flex flex-wrap gap-3">
+        {sortDesc && <input type="hidden" name="sort" value="desc" />}
+        <input type="text" name="search" defaultValue={sp.search ?? ''} placeholder="Search by name..." className="rounded-md border border-gray-300 px-3 py-2 text-sm w-64 focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
+        <select name="type" defaultValue={sp.type ?? ''} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
+          <option value="">All Types</option>
+          {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select name="applies_to" defaultValue={sp.applies_to ?? ''} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
+          <option value="">All Applies To</option>
+          {APPLIES_TO.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select name="status" defaultValue={sp.status ?? ''} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Filter</button>
+      </form>
 
       {totalCount > 1000 && (
         <p className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
@@ -83,7 +122,9 @@ export default async function Page({ params, searchParams }: {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {discounts.length === 0 ? (
-              <tr><td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-400">No discounts yet.</td></tr>
+              <tr><td colSpan={5} className="px-6 py-8 text-center text-sm text-gray-400">
+                No discounts{search ? ` matching "${search}"` : ''}.
+              </td></tr>
             ) : discounts.map(d => (
               <tr key={d.id} className="hover:bg-gray-50">
                 <td className="px-6 py-3">
