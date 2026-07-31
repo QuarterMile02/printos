@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveGeneralCategory } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
-import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import GeneralCategoriesListClient, { type CategoryRow } from './general-categories-list-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,52 +23,9 @@ const SUBTYPES = [
   { value: 'tag',           label: 'Tag'           },
 ]
 
-const SUBTABS = [
-  { label: 'All',           value: '' },
-  { label: 'Asset',         value: 'asset' },
-  { label: 'Industry',      value: 'industry' },
-  { label: 'Lead Source',   value: 'lead_source' },
-  { label: 'Machine',       value: 'machine' },
-  { label: 'Note',          value: 'note' },
-  { label: 'Pricing Level', value: 'pricing_level' },
-  { label: 'Tag',           value: 'tag' },
-]
-
-const TYPE_BADGE: Record<string, string> = {
-  asset: 'bg-purple-50 text-purple-700',
-  job:   'bg-amber-50  text-amber-700',
-  quote: 'bg-blue-50   text-blue-700',
-  all:   'bg-gray-100  text-gray-600',
-}
-const TYPE_LABEL: Record<string, string> = {
-  asset: 'Asset',
-  job:   'Job',
-  quote: 'Quote',
-  all:   'All',
-}
-
-const SUBTYPE_LABEL: Record<string, string> = {
-  asset:         'Asset',
-  industry:      'Industry',
-  lead_source:   'Lead Source',
-  machine:       'Machine',
-  note:          'Note',
-  pricing_level: 'Pricing Level',
-  tag:           'Tag',
-}
-
-type Category = {
-  id: string
-  name: string
-  type: string
-  sub_type: string | null
-  is_active: boolean
-  created_at: string
-}
-
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string; sub_type?: string; sort?: string; search?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -91,10 +48,6 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
-  const sortDesc = sp.sort === 'desc'
-  const typeFilter = sp.type ?? ''
-  const subTypeFilter = sp.sub_type ?? ''
-  const search = (sp.search ?? '').trim().toLowerCase()
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -113,23 +66,24 @@ async function PageInner({ params, searchParams }: PageProps) {
     )
   }
 
-  // Fetch all — sub_type filtering is in-memory; type filter is server-side
-  let query = supabase
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+
+  const { data: allRes } = await supabase
     .from('general_categories')
     .select('id, name, type, sub_type, is_active, created_at')
     .eq('organization_id', org.id)
-    .order('name', { ascending: !sortDesc })
+    .order('name', { ascending: true })
 
-  if (typeFilter) query = query.eq('type', typeFilter)
-
-  const { data: allRes } = await query
+  type Category = CategoryRow & { created_at: string }
   const allCategories = (allRes ?? []) as Category[]
-
-  // In-memory sub_type + search filter
-  let categories = subTypeFilter
-    ? allCategories.filter(c => (c.sub_type ?? '') === subTypeFilter)
-    : allCategories
-  if (search) categories = categories.filter(c => c.name.toLowerCase().includes(search))
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
@@ -150,15 +104,8 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   const isPanelOpen = Boolean(editCategory || showAdd)
 
-  // Helper: build URL preserving all active params
-  function buildUrl(overrides: { sub_type?: string; type?: string; add?: string; edit?: string; saved?: string } = {}) {
+  function buildUrl(overrides: { add?: string; edit?: string; saved?: string } = {}) {
     const p = new URLSearchParams()
-    if (sortDesc) p.set('sort', 'desc')
-    if (sp.search) p.set('search', sp.search)
-    const st = 'sub_type' in overrides ? overrides.sub_type : subTypeFilter
-    if (st) p.set('sub_type', st)
-    const t = 'type' in overrides ? overrides.type : typeFilter
-    if (t) p.set('type', t)
     if (overrides.add)   p.set('add', overrides.add)
     if (overrides.edit)  p.set('edit', overrides.edit)
     if (overrides.saved) p.set('saved', overrides.saved)
@@ -166,21 +113,11 @@ async function PageInner({ params, searchParams }: PageProps) {
     return `/dashboard/${slug}/settings/general-categories${qs ? `?${qs}` : ''}`
   }
 
-  const sortToggleUrl = (() => {
-    const p = new URLSearchParams()
-    if (subTypeFilter) p.set('sub_type', subTypeFilter)
-    if (typeFilter) p.set('type', typeFilter)
-    if (sp.search) p.set('search', sp.search)
-    if (!sortDesc) p.set('sort', 'desc')
-    const qs = p.toString()
-    return `/dashboard/${slug}/settings/general-categories${qs ? `?${qs}` : ''}`
-  })()
-
   const inputCls = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
   const labelCls = 'block text-xs font-medium text-gray-500'
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-8">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
         <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
         <span>/</span>
@@ -189,91 +126,16 @@ async function PageInner({ params, searchParams }: PageProps) {
 
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-extrabold text-qm-black">
-          General Categories <span className="text-sm font-normal text-gray-400">({categories.length})</span>
+          General Categories <span className="text-sm font-normal text-gray-400">({allCategories.length})</span>
         </h1>
-        <div className="flex items-center gap-2">
-          <Link
-            href={sortToggleUrl}
-            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
-          </Link>
-          <Link
-            href={buildUrl({ add: '1' })}
-            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-          >
-            + New Category
-          </Link>
-        </div>
-      </div>
-
-      {/* Search */}
-      <form className="mb-4">
-        {sortDesc && <input type="hidden" name="sort" value="desc" />}
-        {typeFilter && <input type="hidden" name="type" value={typeFilter} />}
-        {subTypeFilter && <input type="hidden" name="sub_type" value={subTypeFilter} />}
-        <input
-          type="text"
-          name="search"
-          defaultValue={sp.search ?? ''}
-          placeholder="Search by name..."
-          className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-        />
-      </form>
-
-      {/* Sub-type tab bar */}
-      <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
-        {SUBTABS.map((tab) => {
-          const isActive = subTypeFilter === tab.value
-          const tabParams = new URLSearchParams()
-          if (sortDesc) tabParams.set('sort', 'desc')
-          if (sp.search) tabParams.set('search', sp.search)
-          if (typeFilter) tabParams.set('type', typeFilter)
-          if (tab.value) tabParams.set('sub_type', tab.value)
-          const qs = tabParams.toString()
-          return (
-            <Link
-              key={tab.value}
-              href={`/dashboard/${slug}/settings/general-categories${qs ? `?${qs}` : ''}`}
-              className={`rounded-lg px-3 py-2 text-center text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </Link>
-          )
-        })}
-      </div>
-
-      {/* Existing type filter */}
-      <form className="mb-4 flex flex-wrap gap-2">
-        {sortDesc && <input type="hidden" name="sort" value="desc" />}
-        {subTypeFilter && <input type="hidden" name="sub_type" value={subTypeFilter} />}
-        {sp.search && <input type="hidden" name="search" value={sp.search} />}
-        <select
-          name="type"
-          defaultValue={typeFilter}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        <Link
+          href={buildUrl({ add: '1' })}
+          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
         >
-          <option value="">All Applies-To Types</option>
-          {TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </select>
-        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
-          Filter
-        </button>
-        {typeFilter && (
-          <Link
-            href={buildUrl({ type: '' })}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-          >
-            Clear
-          </Link>
-        )}
-      </form>
+          + New Category
+        </Link>
+      </div>
 
-      {/* Inline panel */}
       {isPanelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           {sp.saved === '1' && (
@@ -288,7 +150,6 @@ async function PageInner({ params, searchParams }: PageProps) {
             {editCategory && <input type="hidden" name="id" value={editCategory.id} />}
             <input type="hidden" name="orgId" value={org.id} />
             <input type="hidden" name="orgSlug" value={slug} />
-            <input type="hidden" name="returnSubType" value={subTypeFilter} />
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
@@ -303,7 +164,7 @@ async function PageInner({ params, searchParams }: PageProps) {
               </div>
               <div>
                 <label className={labelCls}>Sub-Type</label>
-                <select name="sub_type" defaultValue={editCategory?.sub_type ?? subTypeFilter} className={inputCls}>
+                <select name="sub_type" defaultValue={editCategory?.sub_type ?? ''} className={inputCls}>
                   <option value="">— None —</option>
                   {SUBTYPES.map(st => <option key={st.value} value={st.value}>{st.label}</option>)}
                 </select>
@@ -335,65 +196,7 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      {/* List */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Sub-Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Applies To</th>
-              <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {categories.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
-                  {search
-                    ? `No categories match "${sp.search}".`
-                    : subTypeFilter
-                    ? `No ${SUBTYPE_LABEL[subTypeFilter] ?? subTypeFilter} categories yet.`
-                    : typeFilter
-                    ? `No ${TYPE_LABEL[typeFilter] ?? typeFilter} categories yet.`
-                    : 'No general categories yet.'}
-                </td>
-              </tr>
-            ) : categories.map(c => (
-              <tr key={c.id} className="group hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <Link
-                    href={buildUrl({ edit: c.id })}
-                    className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia"
-                  >
-                    {c.name}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-500">
-                  {c.sub_type ? (SUBTYPE_LABEL[c.sub_type] ?? c.sub_type) : <span className="text-gray-300">—</span>}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${TYPE_BADGE[c.type] ?? 'bg-gray-100 text-gray-600'}`}>
-                    {TYPE_LABEL[c.type] ?? c.type}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`inline-block h-2 w-2 rounded-full ${c.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
-                </td>
-                <td className={`px-4 py-3 text-right ${STICKY_ACTIONS_TD}`}>
-                  <Link
-                    href={buildUrl({ edit: c.id })}
-                    className="text-sm text-qm-lime hover:underline"
-                  >
-                    Edit
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <GeneralCategoriesListClient categories={allCategories} orgSlug={slug} orgId={org.id} userId={userId} userRole={userRole} />
 
       <p className="mt-3 text-xs text-gray-400">
         Categories are used to tag quotes, jobs, and assets. Deactivate a category to hide it from new selections.
