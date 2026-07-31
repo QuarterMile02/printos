@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveGeneralCategory } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
+import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,7 +68,7 @@ type Category = {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string; sub_type?: string; sort?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string; sub_type?: string; sort?: string; search?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -93,6 +94,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   const sortDesc = sp.sort === 'desc'
   const typeFilter = sp.type ?? ''
   const subTypeFilter = sp.sub_type ?? ''
+  const search = (sp.search ?? '').trim().toLowerCase()
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -123,10 +125,11 @@ async function PageInner({ params, searchParams }: PageProps) {
   const { data: allRes } = await query
   const allCategories = (allRes ?? []) as Category[]
 
-  // In-memory sub_type filter
-  const categories = subTypeFilter
+  // In-memory sub_type + search filter
+  let categories = subTypeFilter
     ? allCategories.filter(c => (c.sub_type ?? '') === subTypeFilter)
     : allCategories
+  if (search) categories = categories.filter(c => c.name.toLowerCase().includes(search))
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
@@ -151,6 +154,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   function buildUrl(overrides: { sub_type?: string; type?: string; add?: string; edit?: string; saved?: string } = {}) {
     const p = new URLSearchParams()
     if (sortDesc) p.set('sort', 'desc')
+    if (sp.search) p.set('search', sp.search)
     const st = 'sub_type' in overrides ? overrides.sub_type : subTypeFilter
     if (st) p.set('sub_type', st)
     const t = 'type' in overrides ? overrides.type : typeFilter
@@ -166,6 +170,7 @@ async function PageInner({ params, searchParams }: PageProps) {
     const p = new URLSearchParams()
     if (subTypeFilter) p.set('sub_type', subTypeFilter)
     if (typeFilter) p.set('type', typeFilter)
+    if (sp.search) p.set('search', sp.search)
     if (!sortDesc) p.set('sort', 'desc')
     const qs = p.toString()
     return `/dashboard/${slug}/settings/general-categories${qs ? `?${qs}` : ''}`
@@ -183,7 +188,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       </div>
 
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-extrabold text-qm-black">
           General Categories <span className="text-sm font-normal text-gray-400">({categories.length})</span>
         </h1>
         <div className="flex items-center gap-2">
@@ -202,12 +207,27 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       </div>
 
+      {/* Search */}
+      <form className="mb-4">
+        {sortDesc && <input type="hidden" name="sort" value="desc" />}
+        {typeFilter && <input type="hidden" name="type" value={typeFilter} />}
+        {subTypeFilter && <input type="hidden" name="sub_type" value={subTypeFilter} />}
+        <input
+          type="text"
+          name="search"
+          defaultValue={sp.search ?? ''}
+          placeholder="Search by name..."
+          className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        />
+      </form>
+
       {/* Sub-type tab bar */}
       <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
         {SUBTABS.map((tab) => {
           const isActive = subTypeFilter === tab.value
           const tabParams = new URLSearchParams()
           if (sortDesc) tabParams.set('sort', 'desc')
+          if (sp.search) tabParams.set('search', sp.search)
           if (typeFilter) tabParams.set('type', typeFilter)
           if (tab.value) tabParams.set('sub_type', tab.value)
           const qs = tabParams.toString()
@@ -231,6 +251,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       <form className="mb-4 flex flex-wrap gap-2">
         {sortDesc && <input type="hidden" name="sort" value="desc" />}
         {subTypeFilter && <input type="hidden" name="sub_type" value={subTypeFilter} />}
+        {sp.search && <input type="hidden" name="search" value={sp.search} />}
         <select
           name="type"
           defaultValue={typeFilter}
@@ -323,14 +344,16 @@ async function PageInner({ params, searchParams }: PageProps) {
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Sub-Type</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Applies To</th>
               <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+              <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {categories.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
-                  {subTypeFilter
+                  {search
+                    ? `No categories match "${sp.search}".`
+                    : subTypeFilter
                     ? `No ${SUBTYPE_LABEL[subTypeFilter] ?? subTypeFilter} categories yet.`
                     : typeFilter
                     ? `No ${TYPE_LABEL[typeFilter] ?? typeFilter} categories yet.`
@@ -338,7 +361,7 @@ async function PageInner({ params, searchParams }: PageProps) {
                 </td>
               </tr>
             ) : categories.map(c => (
-              <tr key={c.id} className="hover:bg-gray-50">
+              <tr key={c.id} className="group hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <Link
                     href={buildUrl({ edit: c.id })}
@@ -358,7 +381,7 @@ async function PageInner({ params, searchParams }: PageProps) {
                 <td className="px-4 py-3 text-center">
                   <span className={`inline-block h-2 w-2 rounded-full ${c.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className={`px-4 py-3 text-right ${STICKY_ACTIONS_TD}`}>
                   <Link
                     href={buildUrl({ edit: c.id })}
                     className="text-sm text-qm-lime hover:underline"

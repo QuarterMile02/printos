@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveCustomNote } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
+import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +56,7 @@ type Note = {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string; sort?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string; sort?: string; search?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -80,6 +81,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   const sp = await searchParams
   const sortDesc  = sp.sort === 'desc'
   const typeFilter = sp.type ?? ''
+  const search = (sp.search ?? '').trim().toLowerCase()
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -106,7 +108,8 @@ async function PageInner({ params, searchParams }: PageProps) {
     .order('title', { ascending: !sortDesc })
 
   const allNotes = (allRes ?? []) as Note[]
-  const notes = typeFilter ? allNotes.filter((n) => n.type === typeFilter) : allNotes
+  let notes = typeFilter ? allNotes.filter((n) => n.type === typeFilter) : allNotes
+  if (search) notes = notes.filter((n) => n.title.toLowerCase().includes(search) || n.body.toLowerCase().includes(search))
 
   const editId  = sp.edit
   const showAdd = sp.add === '1'
@@ -129,6 +132,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   function buildUrl(overrides: { type?: string; add?: string; edit?: string; saved?: string } = {}) {
     const params = new URLSearchParams()
     if (sortDesc) params.set('sort', 'desc')
+    if (sp.search) params.set('search', sp.search)
     const type = 'type' in overrides ? overrides.type : typeFilter
     if (type) params.set('type', type)
     if (overrides.add)   params.set('add', overrides.add)
@@ -141,6 +145,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   const sortToggleUrl = (() => {
     const params = new URLSearchParams()
     if (typeFilter) params.set('type', typeFilter)
+    if (sp.search) params.set('search', sp.search)
     if (!sortDesc) params.set('sort', 'desc')
     const qs = params.toString()
     return `/dashboard/${slug}/settings/custom-notes${qs ? `?${qs}` : ''}`
@@ -159,7 +164,7 @@ async function PageInner({ params, searchParams }: PageProps) {
 
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-extrabold text-qm-black">
           Custom Notes <span className="text-sm font-normal text-gray-400">({notes.length})</span>
         </h1>
         <div className="flex items-center gap-2">
@@ -182,12 +187,26 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       </div>
 
+      {/* Search */}
+      <form className="mb-4">
+        {sortDesc && <input type="hidden" name="sort" value="desc" />}
+        {typeFilter && <input type="hidden" name="type" value={typeFilter} />}
+        <input
+          type="text"
+          name="search"
+          defaultValue={sp.search ?? ''}
+          placeholder="Search by title or body..."
+          className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        />
+      </form>
+
       {/* Tab bar */}
       <div className="mb-4 flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
         {TABS.map((tab) => {
           const isActive = typeFilter === tab.value
           const tabParams = new URLSearchParams()
           if (sortDesc) tabParams.set('sort', 'desc')
+          if (sp.search) tabParams.set('search', sp.search)
           if (tab.value) tabParams.set('type', tab.value)
           const qs = tabParams.toString()
           return (
@@ -288,20 +307,22 @@ async function PageInner({ params, searchParams }: PageProps) {
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Body Preview</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
               <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+              <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {notes.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
-                  {typeFilter
+                  {search
+                    ? `No notes match "${sp.search}".`
+                    : typeFilter
                     ? `No ${TYPE_LABEL[typeFilter] ?? typeFilter}s yet.`
                     : 'No custom notes yet.'}
                 </td>
               </tr>
             ) : notes.map((n) => (
-              <tr key={n.id} className="hover:bg-gray-50">
+              <tr key={n.id} className="group hover:bg-gray-50">
                 <td className="px-4 py-3 whitespace-nowrap">
                   <Link
                     href={buildUrl({ edit: n.id })}
@@ -323,7 +344,7 @@ async function PageInner({ params, searchParams }: PageProps) {
                 <td className="px-4 py-3 text-center">
                   <span className={`inline-block h-2 w-2 rounded-full ${n.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
                 </td>
-                <td className="px-4 py-3 text-right whitespace-nowrap">
+                <td className={`px-4 py-3 text-right whitespace-nowrap ${STICKY_ACTIONS_TD}`}>
                   <Link href={buildUrl({ edit: n.id })} className="text-sm text-qm-lime hover:underline">
                     Edit
                   </Link>
