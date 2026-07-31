@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveProductType, deleteProductType } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
+import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,7 @@ type ProductType = {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; sort?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string; sort?: string; search?: string; status?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -62,16 +63,22 @@ async function PageInner({ params, searchParams }: PageProps) {
     .eq('organization_id', org.id)
     .order('name', { ascending: !sortDesc })
 
-  const types = (typesData ?? []) as ProductType[]
+  const allTypes = (typesData ?? []) as ProductType[]
+  const search = (sp.search ?? '').trim().toLowerCase()
+  const statusFilter = sp.status ?? ''
+  let types = allTypes
+  if (search) types = types.filter(t => t.name.toLowerCase().includes(search))
+  if (statusFilter === 'active') types = types.filter(t => t.is_active !== false)
+  if (statusFilter === 'inactive') types = types.filter(t => t.is_active === false)
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
-  const editType = editId ? types.find(t => t.id === editId) ?? null : null
+  const editType = editId ? allTypes.find(t => t.id === editId) ?? null : null
   const isPanelOpen = Boolean(editType || showAdd)
 
   // Usage counts — only allow delete when count = 0
   const usageCounts: Record<string, number> = {}
-  if (types.length > 0) {
+  if (allTypes.length > 0) {
     const { data: usageData } = await supabase
       .from('products')
       .select('product_type_id')
@@ -85,6 +92,17 @@ async function PageInner({ params, searchParams }: PageProps) {
   const inputCls = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
   const labelCls = 'block text-xs font-medium text-gray-500'
 
+  function buildUrl(overrides: { sort?: string; add?: string } = {}) {
+    const p = new URLSearchParams()
+    const sort = 'sort' in overrides ? overrides.sort : (sortDesc ? 'desc' : '')
+    if (sort) p.set('sort', sort)
+    if (sp.search) p.set('search', sp.search)
+    if (statusFilter) p.set('status', statusFilter)
+    if (overrides.add) p.set('add', overrides.add)
+    const qs = p.toString()
+    return `/dashboard/${slug}/settings/product-types${qs ? `?${qs}` : ''}`
+  }
+
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
@@ -94,24 +112,48 @@ async function PageInner({ params, searchParams }: PageProps) {
       </div>
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-extrabold text-qm-black">
           Product Types <span className="text-sm font-normal text-gray-400">({types.length})</span>
         </h1>
         <div className="flex items-center gap-2">
           <Link
-            href={sortDesc ? `/dashboard/${slug}/settings/product-types` : `/dashboard/${slug}/settings/product-types?sort=desc`}
+            href={buildUrl({ sort: sortDesc ? '' : 'desc' })}
             className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
           >
             {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
           </Link>
           <Link
-            href={`/dashboard/${slug}/settings/product-types?add=1`}
+            href={buildUrl({ add: '1' })}
             className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
           >
             + New Type
           </Link>
         </div>
       </div>
+
+      {/* Search + status filter */}
+      <form className="mb-4 flex flex-wrap gap-3">
+        {sortDesc && <input type="hidden" name="sort" value="desc" />}
+        <input
+          type="text"
+          name="search"
+          defaultValue={sp.search ?? ''}
+          placeholder="Search by name..."
+          className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        />
+        <select
+          name="status"
+          defaultValue={statusFilter}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        >
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
+          Filter
+        </button>
+      </form>
 
       {isPanelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -165,20 +207,20 @@ async function PageInner({ params, searchParams }: PageProps) {
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
               <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Products</th>
               <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
+              <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {types.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">
-                  No product types yet. Add your first type above.
+                  {search || statusFilter ? 'No product types match the current filters.' : 'No product types yet. Add your first type above.'}
                 </td>
               </tr>
             ) : types.map(t => {
               const inUse = (usageCounts[t.id] ?? 0) > 0
               return (
-                <tr key={t.id} className="hover:bg-gray-50">
+                <tr key={t.id} className="group hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <Link
                       href={`/dashboard/${slug}/settings/product-types?edit=${t.id}`}
@@ -193,7 +235,7 @@ async function PageInner({ params, searchParams }: PageProps) {
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-block h-2 w-2 rounded-full ${t.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className={`px-4 py-3 text-right ${STICKY_ACTIONS_TD}`}>
                     <div className="flex items-center justify-end gap-3">
                       <Link
                         href={`/dashboard/${slug}/settings/product-types?edit=${t.id}`}
