@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation'
 import type { Modifier } from '@/types/product-builder'
 import ModifiersClient from './modifiers-client'
 
+export const dynamic = 'force-dynamic'
+
 type PageProps = { params: Promise<{ slug: string }> }
 
 export default async function ModifiersPage({ params }: PageProps) {

@@ -536,7 +536,19 @@ async function PageInner({ params, searchParams }: PageProps) {
 
       {!isPanelOpen && (
         <MachineRatesListClient
-          rates={rates}
+          rates={rates.map((r) => ({
+            id: r.id,
+            name: r.name,
+            external_name: r.external_name,
+            cost: r.cost,
+            price: r.price,
+            markup: r.markup,
+            formula: r.formula,
+            units: r.units,
+            production_rate: r.production_rate,
+            active: r.active,
+            department_id: r.department_id,
+          }))}
           rateDeptMap={rateDeptMapObj}
           deptMap={deptMapObj}
           orgSlug={slug}
