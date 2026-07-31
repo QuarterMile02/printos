@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveShippingMethod } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
-import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import ShippingMethodsListClient, { type MethodRow } from './shipping-methods-list-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,26 +16,9 @@ const CARRIERS = [
   { value: 'other',     label: 'Other'    },
 ]
 
-const CARRIER_BADGE: Record<string, string> = {
-  fedex:    'bg-purple-50 text-purple-700',
-  ups:      'bg-amber-50  text-amber-800',
-  usps:     'bg-blue-50   text-blue-700',
-  easypost: 'bg-indigo-50 text-indigo-700',
-  local:    'bg-green-50  text-green-700',
-  pickup:   'bg-teal-50   text-teal-700',
-  other:    'bg-gray-100  text-gray-600',
-}
-
-const CARRIER_LABEL: Record<string, string> = {
-  fedex: 'FedEx', ups: 'UPS', usps: 'USPS', easypost: 'EasyPost',
-  local: 'Local', pickup: 'Pickup', other: 'Other',
-}
-
-type Method = { id: string; name: string; carrier: string | null; is_active: boolean }
-
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; sort?: string; search?: string; carrier?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -48,7 +31,6 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
-  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -65,39 +47,33 @@ async function PageInner({ params, searchParams }: PageProps) {
     </div>
   )
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+
   const { data } = await supabase
     .from('shipping_methods').select('id, name, carrier, is_active')
-    .eq('organization_id', org.id).order('name', { ascending: !sortDesc })
-  const allMethods = (data ?? []) as Method[]
-  const search = (sp.search ?? '').trim().toLowerCase()
-  const carrierFilter = sp.carrier ?? ''
-  let methods = allMethods
-  if (search) methods = methods.filter(m => m.name.toLowerCase().includes(search))
-  if (carrierFilter) methods = methods.filter(m => m.carrier === carrierFilter)
+    .eq('organization_id', org.id).order('name', { ascending: true })
+  const methods = (data ?? []) as MethodRow[]
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
-  let editMethod: Method | null = allMethods.find(m => m.id === editId) ?? null
+  let editMethod: MethodRow | null = methods.find(m => m.id === editId) ?? null
   if (editId && !editMethod) {
     const { data: f } = await supabase.from('shipping_methods').select('id, name, carrier, is_active')
       .eq('id', editId).eq('organization_id', org.id).single()
-    editMethod = (f as Method | null)
+    editMethod = (f as MethodRow | null)
   }
 
   const panelOpen = Boolean(editMethod || showAdd)
   const inp = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
   const lbl = 'block text-xs font-medium text-gray-500'
-
-  function buildUrl(overrides: { sort?: string; add?: string } = {}) {
-    const p = new URLSearchParams()
-    const sort = 'sort' in overrides ? overrides.sort : (sortDesc ? 'desc' : '')
-    if (sort) p.set('sort', sort)
-    if (sp.search) p.set('search', sp.search)
-    if (carrierFilter) p.set('carrier', carrierFilter)
-    if (overrides.add) p.set('add', overrides.add)
-    const qs = p.toString()
-    return `/dashboard/${slug}/settings/shipping-methods${qs ? `?${qs}` : ''}`
-  }
 
   return (
     <div className="p-8 max-w-3xl">
@@ -110,44 +86,13 @@ async function PageInner({ params, searchParams }: PageProps) {
         <h1 className="text-2xl font-extrabold text-qm-black">
           Shipping Methods <span className="text-sm font-normal text-gray-400">({methods.length})</span>
         </h1>
-        <div className="flex items-center gap-2">
-          <Link
-            href={buildUrl({ sort: sortDesc ? '' : 'desc' })}
-            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
-          </Link>
-          <Link
-            href={buildUrl({ add: '1' })}
-            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-          >
-            + New Method
-          </Link>
-        </div>
-      </div>
-
-      {/* Search + carrier filter */}
-      <form className="mb-4 flex flex-wrap gap-3">
-        {sortDesc && <input type="hidden" name="sort" value="desc" />}
-        <input
-          type="text"
-          name="search"
-          defaultValue={sp.search ?? ''}
-          placeholder="Search by name..."
-          className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-        />
-        <select
-          name="carrier"
-          defaultValue={carrierFilter}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        <Link
+          href={`/dashboard/${slug}/settings/shipping-methods?add=1`}
+          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
         >
-          <option value="">All Carriers</option>
-          {CARRIERS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
-          Filter
-        </button>
-      </form>
+          + New Method
+        </Link>
+      </div>
 
       {panelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -188,46 +133,7 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Carrier</th>
-              <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {methods.length === 0 ? (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">
-                {search || carrierFilter ? 'No shipping methods match the current filters.' : 'No shipping methods yet.'}
-              </td></tr>
-            ) : methods.map(m => (
-              <tr key={m.id} className="group hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <Link href={`/dashboard/${slug}/settings/shipping-methods?edit=${m.id}`} className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia">
-                    {m.name}
-                  </Link>
-                </td>
-                <td className="px-4 py-3">
-                  {m.carrier
-                    ? <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${CARRIER_BADGE[m.carrier] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {CARRIER_LABEL[m.carrier] ?? m.carrier}
-                      </span>
-                    : <span className="text-gray-300 text-sm">—</span>}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`inline-block h-2 w-2 rounded-full ${m.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
-                </td>
-                <td className={`px-4 py-3 text-right ${STICKY_ACTIONS_TD}`}>
-                  <Link href={`/dashboard/${slug}/settings/shipping-methods?edit=${m.id}`} className="text-sm text-qm-lime hover:underline">Edit</Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ShippingMethodsListClient methods={methods} orgSlug={slug} orgId={org.id} userId={userId} userRole={userRole} />
     </div>
   )
 }

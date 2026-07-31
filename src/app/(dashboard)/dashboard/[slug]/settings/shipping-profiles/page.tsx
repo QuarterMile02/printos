@@ -2,29 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveShippingProfile } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
-import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import ShippingProfilesListClient, { type ProfileRow } from './shipping-profiles-list-client'
 
 export const dynamic = 'force-dynamic'
 
-type Profile = {
-  id: string
-  name: string
-  length_in: number | null
-  width_in: number | null
-  height_in: number | null
-  max_weight_lbs: number | null
-  is_active: boolean
-}
-
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; sort?: string; search?: string; status?: string }>
-}
-
-function dims(p: Profile): string {
-  const parts = [p.length_in, p.width_in, p.height_in]
-  if (parts.every(v => v == null)) return '—'
-  return parts.map(v => v ?? '?').join(' × ') + '"'
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -37,7 +21,6 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
-  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -54,44 +37,37 @@ async function PageInner({ params, searchParams }: PageProps) {
     </div>
   )
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+
   const { data } = await supabase
     .from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active')
-    .eq('organization_id', org.id).order('name', { ascending: !sortDesc })
-  const allProfiles = (data ?? []) as Profile[]
-  const search = (sp.search ?? '').trim().toLowerCase()
-  const statusFilter = sp.status ?? ''
-  let profiles = allProfiles
-  if (search) profiles = profiles.filter(p => p.name.toLowerCase().includes(search))
-  if (statusFilter === 'active') profiles = profiles.filter(p => p.is_active !== false)
-  if (statusFilter === 'inactive') profiles = profiles.filter(p => p.is_active === false)
+    .eq('organization_id', org.id).order('name', { ascending: true })
+  const profiles = (data ?? []) as ProfileRow[]
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
-  let editProfile: Profile | null = allProfiles.find(p => p.id === editId) ?? null
+  let editProfile: ProfileRow | null = profiles.find(p => p.id === editId) ?? null
   if (editId && !editProfile) {
     const { data: f } = await supabase.from('shipping_profiles')
       .select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active')
       .eq('id', editId).eq('organization_id', org.id).single()
-    editProfile = (f as Profile | null)
+    editProfile = (f as ProfileRow | null)
   }
 
   const panelOpen = Boolean(editProfile || showAdd)
   const inp = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
   const lbl = 'block text-xs font-medium text-gray-500'
 
-  function buildUrl(overrides: { sort?: string; add?: string } = {}) {
-    const p = new URLSearchParams()
-    const sort = 'sort' in overrides ? overrides.sort : (sortDesc ? 'desc' : '')
-    if (sort) p.set('sort', sort)
-    if (sp.search) p.set('search', sp.search)
-    if (statusFilter) p.set('status', statusFilter)
-    if (overrides.add) p.set('add', overrides.add)
-    const qs = p.toString()
-    return `/dashboard/${slug}/settings/shipping-profiles${qs ? `?${qs}` : ''}`
-  }
-
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-8">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
         <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
         <span>/</span><span className="text-gray-700">Shipping Profiles</span>
@@ -101,45 +77,13 @@ async function PageInner({ params, searchParams }: PageProps) {
         <h1 className="text-2xl font-extrabold text-qm-black">
           Shipping Profiles <span className="text-sm font-normal text-gray-400">({profiles.length})</span>
         </h1>
-        <div className="flex items-center gap-2">
-          <Link
-            href={buildUrl({ sort: sortDesc ? '' : 'desc' })}
-            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
-          </Link>
-          <Link
-            href={buildUrl({ add: '1' })}
-            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-          >
-            + New Profile
-          </Link>
-        </div>
-      </div>
-
-      {/* Search + status filter */}
-      <form className="mb-4 flex flex-wrap gap-3">
-        {sortDesc && <input type="hidden" name="sort" value="desc" />}
-        <input
-          type="text"
-          name="search"
-          defaultValue={sp.search ?? ''}
-          placeholder="Search by name..."
-          className="block w-full max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-        />
-        <select
-          name="status"
-          defaultValue={statusFilter}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        <Link
+          href={`/dashboard/${slug}/settings/shipping-profiles?add=1`}
+          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
         >
-          <option value="">All Status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
-        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
-          Filter
-        </button>
-      </form>
+          + New Profile
+        </Link>
+      </div>
 
       {panelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -193,44 +137,8 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Dimensions (L×W×H)</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Max Weight</th>
-              <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              <th className={`px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {profiles.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
-                {search || statusFilter ? 'No shipping profiles match the current filters.' : 'No shipping profiles yet.'}
-              </td></tr>
-            ) : profiles.map(p => (
-              <tr key={p.id} className="group hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <Link href={`/dashboard/${slug}/settings/shipping-profiles?edit=${p.id}`} className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia">
-                    {p.name}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600 font-mono">{dims(p)}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {p.max_weight_lbs != null ? `${p.max_weight_lbs} lbs` : <span className="text-gray-300">—</span>}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`inline-block h-2 w-2 rounded-full ${p.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
-                </td>
-                <td className={`px-4 py-3 text-right ${STICKY_ACTIONS_TD}`}>
-                  <Link href={`/dashboard/${slug}/settings/shipping-profiles?edit=${p.id}`} className="text-sm text-qm-lime hover:underline">Edit</Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ShippingProfilesListClient profiles={profiles} orgSlug={slug} orgId={org.id} userId={userId} userRole={userRole} />
+
       <p className="mt-3 text-xs text-gray-400">
         Profiles define common box sizes. Selecting one on a shipment auto-fills the dimensions.
       </p>
