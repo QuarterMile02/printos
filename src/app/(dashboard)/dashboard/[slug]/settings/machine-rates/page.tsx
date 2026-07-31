@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { saveMachineRate, cloneMachineRate } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 import CostCalculator from './cost-calculator'
+import MachineRatesListClient from './machine-rates-list-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,7 +62,7 @@ type DepartmentOption = { id: string; name: string }
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ search?: string; formula?: string; status?: string; edit?: string; add?: string; saved?: string; sort?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string }>
 }
 
 export default async function Page(props: PageProps) {
@@ -89,7 +90,6 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
-  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -109,12 +109,22 @@ async function PageInner({ params, searchParams }: PageProps) {
     )
   }
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+
   const [ratesRes, countRes] = await Promise.all([
     supabase
       .from('machine_rates')
       .select('id, name, external_name, cost, price, markup, formula, units, production_rate, production_rate_units, setup_charge, labor_charge, other_charge, include_in_base_price, description, show_internal, display_name_in_line_item, active, category, subcategory, material_category_ids, linked_labor_rate_id, margin_width, margin_height, difficulty, per_li_unit, cog_account, volume_discount_id, department_id, calc_equipment_cost, calc_life_expectancy_years, calc_days_per_year, calc_hours_per_day, calc_productivity_percent')
       .eq('organization_id', org.id)
-      .order('name', { ascending: !sortDesc })
+      .order('name', { ascending: true })
       .limit(1000),
     supabase
       .from('machine_rates')
@@ -126,13 +136,7 @@ async function PageInner({ params, searchParams }: PageProps) {
     throw new Error(`machine_rates SELECT failed: ${ratesRes.error.message ?? JSON.stringify(ratesRes.error)}`)
   }
   const totalCount = countRes.count ?? 0
-  let rates = (ratesRes.data ?? []) as Rate[]
-
-  const search = sp.search?.trim().toLowerCase() ?? ''
-  if (search) rates = rates.filter(r => r.name.toLowerCase().includes(search))
-  if (sp.formula) rates = rates.filter(r => r.formula === sp.formula)
-  if (sp.status === 'active') rates = rates.filter(r => r.active !== false)
-  if (sp.status === 'inactive') rates = rates.filter(r => r.active === false)
+  const rates = (ratesRes.data ?? []) as Rate[]
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
@@ -167,6 +171,8 @@ async function PageInner({ params, searchParams }: PageProps) {
     } catch { /* table may not exist yet */ }
   }
   const selectedDeptIds = new Set(editRate ? (rateDeptMap.get(editRate.id) ?? []) : [])
+  const deptMapObj: Record<string, string> = Object.fromEntries(deptMap)
+  const rateDeptMapObj: Record<string, string[]> = Object.fromEntries(rateDeptMap)
 
   // Lookups for dropdowns (only fetched when panel is open)
   let materialCategories: MaterialCategory[] = []
@@ -217,38 +223,11 @@ async function PageInner({ params, searchParams }: PageProps) {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-extrabold text-qm-black">Machine Rates <span className="text-sm font-normal text-gray-400">({totalCount})</span></h1>
         <div className="flex gap-2">
-          {(() => {
-            const p = new URLSearchParams()
-            if (sp.search) p.set('search', sp.search)
-            if (sp.formula) p.set('formula', sp.formula)
-            if (sp.status) p.set('status', sp.status)
-            if (!sortDesc) p.set('sort', 'desc')
-            return (
-              <Link
-                href={`/dashboard/${slug}/settings/machine-rates?${p}`}
-                className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
-              >
-                {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
-              </Link>
-            )
-          })()}
           <a href={`/api/export/machine-rates?orgId=${org.id}`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Export CSV</a>
           <Link href={`/dashboard/${slug}/settings/machine-rates/import`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Import CSV</Link>
           <Link href={`/dashboard/${slug}/settings/machine-rates?add=1`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">+ New Rate</Link>
         </div>
       </div>
-
-      <form className="mb-4 flex flex-wrap gap-3">
-        {sortDesc && <input type="hidden" name="sort" value="desc" />}
-        <input type="text" name="search" defaultValue={search} placeholder="Search by name..." className="rounded-md border border-gray-300 px-3 py-2 text-sm w-64 focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
-        <select name="formula" defaultValue={sp.formula ?? ''} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
-          <option value="">All Formulas</option>{FORMULAS.map(f => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <select name="status" defaultValue={sp.status ?? ''} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none">
-          <option value="">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option>
-        </select>
-        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Filter</button>
-      </form>
 
       {isPanelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -552,48 +531,15 @@ async function PageInner({ params, searchParams }: PageProps) {
       )}
 
       {!isPanelOpen && (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Ext. Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Department</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Cost</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Price</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Markup</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Formula</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Units</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Prod. Rate</th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {rates.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-gray-400">No machine rates{search ? ` matching "${search}"` : ''}.</td></tr>
-              ) : rates.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3"><Link href={`/dashboard/${slug}/settings/machine-rates?edit=${r.id}`} className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia">{r.name}</Link></td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{r.external_name ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {(() => {
-                      const dIds = rateDeptMap.get(r.id) ?? []
-                      if (dIds.length > 0) return dIds.map(id => deptMap.get(id)).filter(Boolean).join(', ') || '—'
-                      return r.department_id ? (deptMap.get(r.department_id) ?? '—') : '—'
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${n(r.cost).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${n(r.price).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{n(r.markup, 1).toFixed(2)}x</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{r.formula ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{r.units ?? '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600 text-right tabular-nums">{r.production_rate != null ? n(r.production_rate) : '—'}</td>
-                  <td className="px-4 py-3 text-center"><span className={`inline-block h-2 w-2 rounded-full ${r.active !== false ? 'bg-green-500' : 'bg-gray-300'}`} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <MachineRatesListClient
+          rates={rates}
+          rateDeptMap={rateDeptMapObj}
+          deptMap={deptMapObj}
+          orgSlug={slug}
+          orgId={org.id}
+          userId={userId}
+          userRole={userRole}
+        />
       )}
     </div>
   )
