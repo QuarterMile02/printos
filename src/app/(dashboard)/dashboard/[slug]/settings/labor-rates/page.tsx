@@ -93,9 +93,19 @@ async function PageInner({ params, searchParams }: PageProps) {
   const org = orgRow as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  // Permission gate — owner + accounting only
-  const { allowed } = await checkPermission(org.id, 'settings.labor_rates')
-  if (!allowed) {
+  // Permission gate — owner + accounting only. Run alongside the auth/member
+  // lookups (independent of each other and of the permission result) rather
+  // than sequentially — checkPermission() already does its own internal
+  // auth.getUser() + profile round trip, so chaining more awaits after it
+  // just stacks additional serial round trips before anything can render.
+  type MemberRow = { user_id: string; role: string }
+  const [permResult, userResult, memberRes] = await Promise.all([
+    checkPermission(org.id, 'settings.labor_rates'),
+    supabase.auth.getUser(),
+    supabase.from('organization_members').select('user_id, role').eq('organization_id', org.id),
+  ])
+
+  if (!permResult.allowed) {
     return (
       <div className="p-8 max-w-5xl">
         <h1 className="text-2xl font-extrabold text-qm-black">Labor Rates</h1>
@@ -106,15 +116,9 @@ async function PageInner({ params, searchParams }: PageProps) {
     )
   }
 
-  const { data: { user } } = await supabase.auth.getUser()
-  const userId = user?.id ?? ''
-
-  type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
-  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+  const userId = userResult.data.user?.id ?? ''
+  const memberRows = (memberRes.data ?? []) as MemberRow[]
+  const userRole = memberRows.find((m) => m.user_id === userId)?.role ?? 'member'
 
   const [ratesRes, countRes] = await Promise.all([
     supabase

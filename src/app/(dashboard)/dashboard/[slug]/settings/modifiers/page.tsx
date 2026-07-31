@@ -18,17 +18,13 @@ export default async function ModifiersPage({ params }: PageProps) {
 
   if (!org) notFound()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  const userId = user?.id ?? ''
-
+  // All four queries below depend only on org.id, not on each other's
+  // results — run them together instead of chaining sequential awaits,
+  // which just stacks round trips before anything can render.
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
-  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
-
-  const [modRes, countRes] = await Promise.all([
+  const [userResult, memberRes, modRes, countRes] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from('organization_members').select('user_id, role').eq('organization_id', org.id),
     supabase
       .from('modifiers')
       .select('*')
@@ -40,6 +36,9 @@ export default async function ModifiersPage({ params }: PageProps) {
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', org.id),
   ])
+  const userId = userResult.data.user?.id ?? ''
+  const memberRows = (memberRes.data ?? []) as MemberRow[]
+  const userRole = memberRows.find((m) => m.user_id === userId)?.role ?? 'member'
   const modifiers = (modRes.data ?? []) as Modifier[]
   const totalCount = countRes.count ?? 0
 
