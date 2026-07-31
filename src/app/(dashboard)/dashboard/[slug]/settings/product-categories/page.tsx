@@ -1,11 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { saveProductCategory, deleteProductCategory } from './actions-sr'
+import { saveProductCategory } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
+import { fetchDataTablePage } from '@/lib/data-table/fetch'
+import { PRODUCT_CATEGORIES_PAGE_SIZE } from './constants'
+import ProductCategoriesListClient, { type ProductCategoryListRow, type ProductTypeOption } from './product-categories-list-client'
 
 export const dynamic = 'force-dynamic'
 
-type ProductType = { id: string; name: string }
 type ProductCategory = {
   id: string
   name: string
@@ -16,8 +18,10 @@ type ProductCategory = {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string; type?: string; sort?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string }>
 }
+
+const DB_SELECT = 'id, name, product_type_id, is_active'
 
 export default async function Page(props: PageProps) {
   try {
@@ -39,7 +43,6 @@ export default async function Page(props: PageProps) {
 async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
-  const sortDesc = sp.sort === 'desc'
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -58,53 +61,53 @@ async function PageInner({ params, searchParams }: PageProps) {
     )
   }
 
-  const [categoriesRes, typesRes] = await Promise.all([
-    supabase
-      .from('product_categories')
-      .select('id, name, product_type_id, is_active, created_at')
-      .eq('organization_id', org.id)
-      .order('name', { ascending: !sortDesc }),
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+
+  const [typesRes, initialResult] = await Promise.all([
     supabase
       .from('product_types')
       .select('id, name')
       .eq('organization_id', org.id)
       .eq('is_active', true)
       .order('name'),
+    fetchDataTablePage<ProductCategoryListRow>({
+      tableKey: 'product_categories',
+      orgId: org.id,
+      select: DB_SELECT,
+      filterRules: [],
+      sortRules: [{ column: 'name', direction: 'asc' }],
+      page: 1,
+      pageSize: PRODUCT_CATEGORIES_PAGE_SIZE,
+    }),
   ])
 
-  const allCategories = (categoriesRes.data ?? []) as ProductCategory[]
-  const productTypes = (typesRes.data ?? []) as ProductType[]
-
-  const typeFilter = sp.type || ''
-  const categories = typeFilter
-    ? allCategories.filter(c => c.product_type_id === typeFilter)
-    : allCategories
+  const productTypes = (typesRes.data ?? []) as ProductTypeOption[]
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
-  const editCategory = editId ? allCategories.find(c => c.id === editId) ?? null : null
-  const isPanelOpen = Boolean(editCategory || showAdd)
-
-  const typeMap = new Map(productTypes.map(t => [t.id, t.name]))
-
-  // Usage counts — only allow delete when count = 0
-  const usageCounts: Record<string, number> = {}
-  if (allCategories.length > 0) {
-    const { data: usageData } = await supabase
-      .from('products')
-      .select('product_category_id')
-      .eq('organization_id', org.id)
-      .not('product_category_id', 'is', null)
-    for (const r of (usageData ?? []) as { product_category_id: string }[]) {
-      usageCounts[r.product_category_id] = (usageCounts[r.product_category_id] ?? 0) + 1
-    }
+  let editCategory: ProductCategory | null = null
+  if (editId) {
+    const { data: found } = await supabase
+      .from('product_categories')
+      .select('id, name, product_type_id, is_active, created_at')
+      .eq('id', editId).eq('organization_id', org.id).single()
+    editCategory = (found as ProductCategory | null)
   }
+  const isPanelOpen = Boolean(editCategory || showAdd)
 
   const inputCls = 'mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
   const labelCls = 'block text-xs font-medium text-gray-500'
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-8">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
         <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
         <span>/</span>
@@ -112,53 +115,16 @@ async function PageInner({ params, searchParams }: PageProps) {
       </div>
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Product Categories <span className="text-sm font-normal text-gray-400">({categories.length})</span>
+        <h1 className="text-2xl font-extrabold text-qm-black">
+          Product Categories <span className="text-sm font-normal text-gray-400">({initialResult.totalCount})</span>
         </h1>
-        <div className="flex items-center gap-2">
-          {(() => {
-            const p = new URLSearchParams()
-            if (typeFilter) p.set('type', typeFilter)
-            if (!sortDesc) p.set('sort', 'desc')
-            const qs = p.toString()
-            return (
-              <Link
-                href={`/dashboard/${slug}/settings/product-categories${qs ? `?${qs}` : ''}`}
-                className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${!sortDesc ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
-              >
-                {sortDesc ? 'Z-A ↓' : 'A-Z ↑'}
-              </Link>
-            )
-          })()}
-          <Link
-            href={`/dashboard/${slug}/settings/product-categories?add=1`}
-            className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-          >
-            + New Category
-          </Link>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <form className="mb-4 flex flex-wrap gap-3">
-        {sortDesc && <input type="hidden" name="sort" value="desc" />}
-        <select
-          name="type"
-          defaultValue={typeFilter}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+        <Link
+          href={`/dashboard/${slug}/settings/product-categories?add=1`}
+          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
         >
-          <option value="">All Product Types</option>
-          {productTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <button type="submit" className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
-          Filter
-        </button>
-        {typeFilter && (
-          <Link href={`/dashboard/${slug}/settings/product-categories`} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
-            Clear
-          </Link>
-        )}
-      </form>
+          + New Category
+        </Link>
+      </div>
 
       {isPanelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -218,73 +184,15 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Product Type</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Products</th>
-              <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {categories.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
-                  {typeFilter ? 'No categories for this product type.' : 'No product categories yet.'}
-                </td>
-              </tr>
-            ) : categories.map(c => {
-              const inUse = (usageCounts[c.id] ?? 0) > 0
-              return (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/dashboard/${slug}/settings/product-categories?edit=${c.id}`}
-                      className="text-sm font-medium text-gray-900 hover:text-qm-fuchsia"
-                    >
-                      {c.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {c.product_type_id ? (typeMap.get(c.product_type_id) ?? '—') : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 text-right tabular-nums">
-                    {usageCounts[c.id] ?? 0}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-block h-2 w-2 rounded-full ${c.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <Link
-                        href={`/dashboard/${slug}/settings/product-categories?edit=${c.id}`}
-                        className="text-sm text-qm-lime hover:underline"
-                      >
-                        Edit
-                      </Link>
-                      {!inUse && (
-                        <form action={deleteProductCategory} className="inline">
-                          <input type="hidden" name="id" value={c.id} />
-                          <input type="hidden" name="orgSlug" value={slug} />
-                          <button type="submit" className="text-sm text-red-500 hover:underline">
-                            Delete
-                          </button>
-                        </form>
-                      )}
-                      {inUse && (
-                        <span className="text-xs text-gray-400">In use</span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <ProductCategoriesListClient
+        initialRows={initialResult.rows}
+        initialTotalCount={initialResult.totalCount}
+        orgSlug={slug}
+        orgId={org.id}
+        userId={userId}
+        userRole={userRole}
+        productTypes={productTypes}
+      />
     </div>
   )
 }
