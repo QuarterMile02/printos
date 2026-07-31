@@ -259,7 +259,7 @@ const PRODUCTS_ITEMS = [
 // ── Collapsible: MATERIALS group ──────────────────────────────────────────────
 const MATERIALS_ITEMS = [
   {
-    label: 'Materials',
+    label: 'Materials List',
     href: '/settings/materials',
     icon: (
       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
