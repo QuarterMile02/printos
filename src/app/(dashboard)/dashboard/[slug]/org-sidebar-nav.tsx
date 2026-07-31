@@ -256,23 +256,13 @@ const PRODUCTS_ITEMS = [
   },
 ]
 
-// ── Flat settings items (Product Types, Product Categories, Labor Rates,
-//    Machine Rates, Modifiers, Discounts removed — they live in groups above)
-const SETTINGS_ITEMS = [
-  {
-    label: 'Team',
-    href: '/settings/team',
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
-      </svg>
-    ),
-  },
+// ── Collapsible: MATERIALS group ──────────────────────────────────────────────
+const MATERIALS_ITEMS = [
   {
     label: 'Materials',
     href: '/settings/materials',
     icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
       </svg>
     ),
@@ -281,7 +271,7 @@ const SETTINGS_ITEMS = [
     label: 'Material Types',
     href: '/settings/material-types',
     icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
         <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" />
       </svg>
@@ -291,16 +281,20 @@ const SETTINGS_ITEMS = [
     label: 'Material Categories',
     href: '/settings/material-categories',
     icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
       </svg>
     ),
   },
+]
+
+// ── Collapsible: EMAIL group ──────────────────────────────────────────────────
+const EMAIL_ITEMS = [
   {
     label: 'Email Templates',
     href: '/settings/email-templates',
     icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
       </svg>
     ),
@@ -309,11 +303,50 @@ const SETTINGS_ITEMS = [
     label: 'Email Signature',
     href: '/settings/email-signature',
     icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
       </svg>
     ),
   },
+]
+
+// ── Collapsible: SHIPPING group ───────────────────────────────────────────────
+const SHIPPING_ITEMS = [
+  {
+    label: 'Shipping Methods',
+    href: '/settings/shipping-methods',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Shipping Profiles',
+    href: '/settings/shipping-profiles',
+    icon: (
+      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+      </svg>
+    ),
+  },
+]
+
+// ── Flat settings items — Team stands alone before the Materials group ────────
+const SETTINGS_ITEMS_TEAM = [
+  {
+    label: 'Team',
+    href: '/settings/team',
+    icon: (
+      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+      </svg>
+    ),
+  },
+]
+
+// ── Flat settings items — between the Email group and the Shipping group ──────
+const SETTINGS_ITEMS_MID = [
   {
     label: 'General Categories',
     href: '/settings/general-categories',
@@ -386,24 +419,10 @@ const SETTINGS_ITEMS = [
       </svg>
     ),
   },
-  {
-    label: 'Shipping Methods',
-    href: '/settings/shipping-methods',
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
-      </svg>
-    ),
-  },
-  {
-    label: 'Shipping Profiles',
-    href: '/settings/shipping-profiles',
-    icon: (
-      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-      </svg>
-    ),
-  },
+]
+
+// ── Flat settings items — Sales Leads and Portal Tiers, after the Shipping group ──
+const SETTINGS_ITEMS_TAIL = [
   {
     label: 'Sales Leads',
     href: '/settings/sales-leads',
@@ -435,6 +454,9 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
   const [open, setOpen] = useState(false)
   const [pricingOpen, setPricingOpen] = useState(false)
   const [productsOpen, setProductsOpen] = useState(false)
+  const [materialsOpen, setMaterialsOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [shippingOpen, setShippingOpen] = useState(false)
   const [comingSoonMsg, setComingSoonMsg] = useState<string | null>(null)
 
   const pathname = usePathname()
@@ -456,6 +478,21 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
     if (v !== null) setProductsOpen(v === 'true')
   }, [])
 
+  useEffect(() => {
+    const v = localStorage.getItem('sidebar_materials_open')
+    if (v !== null) setMaterialsOpen(v === 'true')
+  }, [])
+
+  useEffect(() => {
+    const v = localStorage.getItem('sidebar_email_open')
+    if (v !== null) setEmailOpen(v === 'true')
+  }, [])
+
+  useEffect(() => {
+    const v = localStorage.getItem('sidebar_shipping_open')
+    if (v !== null) setShippingOpen(v === 'true')
+  }, [])
+
   // Close mobile drawer on navigation
   useEffect(() => {
     setOpen(false)
@@ -471,6 +508,24 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
     const next = !productsOpen
     setProductsOpen(next)
     localStorage.setItem('sidebar_products_open', String(next))
+  }
+
+  function toggleMaterials() {
+    const next = !materialsOpen
+    setMaterialsOpen(next)
+    localStorage.setItem('sidebar_materials_open', String(next))
+  }
+
+  function toggleEmail() {
+    const next = !emailOpen
+    setEmailOpen(next)
+    localStorage.setItem('sidebar_email_open', String(next))
+  }
+
+  function toggleShipping() {
+    const next = !shippingOpen
+    setShippingOpen(next)
+    localStorage.setItem('sidebar_shipping_open', String(next))
   }
 
   function showComingSoon(label: string) {
@@ -696,8 +751,159 @@ export function OrgSidebarNav({ slug, email, signOutAction, showReports = false 
               )}
             </div>
 
-            {/* ── Flat settings items ───────────────────────────────── */}
-            {SETTINGS_ITEMS.map((item) => {
+            {/* ── Flat settings items — Team ────────────────────────── */}
+            {SETTINGS_ITEMS_TEAM.map((item) => {
+              const href = basePath + item.href
+              const isActive = pathname.startsWith(href)
+              return (
+                <a
+                  key={item.label}
+                  href={href}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold ${
+                    isActive
+                      ? 'bg-qm-lime-light text-qm-lime'
+                      : 'text-qm-black hover:bg-qm-surface'
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </a>
+              )
+            })}
+
+            {/* ── MATERIALS collapsible group ───────────────────────── */}
+            <div className="mt-0.5">
+              <button
+                type="button"
+                onClick={toggleMaterials}
+                className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-qm-black hover:bg-qm-surface"
+              >
+                {/* Crate / materials icon */}
+                <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
+                </svg>
+                <span className="flex-1 text-left">Materials</span>
+                {materialsOpen ? <ChevronUp /> : <ChevronDown />}
+              </button>
+
+              {materialsOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {MATERIALS_ITEMS.map((item) => {
+                    const href = basePath + item.href
+                    const isActive = pathname.startsWith(href)
+                    return (
+                      <a
+                        key={item.label}
+                        href={href}
+                        className={`flex items-center gap-2 rounded-md pl-8 pr-3 py-1.5 text-sm font-medium ${
+                          isActive ? 'bg-qm-lime-light text-qm-lime' : 'text-qm-black hover:bg-qm-surface'
+                        }`}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── EMAIL collapsible group ───────────────────────────── */}
+            <div className="mt-0.5">
+              <button
+                type="button"
+                onClick={toggleEmail}
+                className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-qm-black hover:bg-qm-surface"
+              >
+                {/* Envelope / email icon */}
+                <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+                </svg>
+                <span className="flex-1 text-left">Email</span>
+                {emailOpen ? <ChevronUp /> : <ChevronDown />}
+              </button>
+
+              {emailOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {EMAIL_ITEMS.map((item) => {
+                    const href = basePath + item.href
+                    const isActive = pathname.startsWith(href)
+                    return (
+                      <a
+                        key={item.label}
+                        href={href}
+                        className={`flex items-center gap-2 rounded-md pl-8 pr-3 py-1.5 text-sm font-medium ${
+                          isActive ? 'bg-qm-lime-light text-qm-lime' : 'text-qm-black hover:bg-qm-surface'
+                        }`}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── Flat settings items — General Categories … Transactions ── */}
+            {SETTINGS_ITEMS_MID.map((item) => {
+              const href = basePath + item.href
+              const isActive = pathname.startsWith(href)
+              return (
+                <a
+                  key={item.label}
+                  href={href}
+                  className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold ${
+                    isActive
+                      ? 'bg-qm-lime-light text-qm-lime'
+                      : 'text-qm-black hover:bg-qm-surface'
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </a>
+              )
+            })}
+
+            {/* ── SHIPPING collapsible group ────────────────────────── */}
+            <div className="mt-0.5">
+              <button
+                type="button"
+                onClick={toggleShipping}
+                className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-semibold text-qm-black hover:bg-qm-surface"
+              >
+                {/* Truck / shipping icon */}
+                <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                </svg>
+                <span className="flex-1 text-left">Shipping</span>
+                {shippingOpen ? <ChevronUp /> : <ChevronDown />}
+              </button>
+
+              {shippingOpen && (
+                <div className="mt-0.5 space-y-0.5">
+                  {SHIPPING_ITEMS.map((item) => {
+                    const href = basePath + item.href
+                    const isActive = pathname.startsWith(href)
+                    return (
+                      <a
+                        key={item.label}
+                        href={href}
+                        className={`flex items-center gap-2 rounded-md pl-8 pr-3 py-1.5 text-sm font-medium ${
+                          isActive ? 'bg-qm-lime-light text-qm-lime' : 'text-qm-black hover:bg-qm-surface'
+                        }`}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </a>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ── Flat settings items — Sales Leads, Portal Tiers ───── */}
+            {SETTINGS_ITEMS_TAIL.map((item) => {
               const href = basePath + item.href
               const isActive = pathname.startsWith(href)
               return (
