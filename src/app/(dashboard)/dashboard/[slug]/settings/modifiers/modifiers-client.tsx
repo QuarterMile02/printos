@@ -5,12 +5,20 @@ import { useRouter } from 'next/navigation'
 import type { Modifier, ModifierType } from '@/types/product-builder'
 import { createModifier, updateModifier, toggleModifierActive, type ModifierFormData } from './actions'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import type { ColumnDef } from '@/components/data-table/types'
+import { useSavedView, applyFilterRules, applySortRules } from '@/components/data-table/use-saved-view'
+import { useColumnResize } from '@/components/data-table/use-column-resize'
+import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 
 type Props = {
   orgId: string
   orgSlug: string
+  userId: string
+  userRole: string
   initialModifiers: Modifier[]
 }
+
+const DEFAULT_SORT = [{ column: 'display_name', direction: 'asc' as const }]
 
 const UNIT_OPTIONS = ['Feet', 'Inches', 'Sqft', 'Unit', 'Miles', 'Yard', '%', 'Pounds', 'Ounces', 'Hours']
 const TYPE_BADGE: Record<ModifierType, string> = {
@@ -49,14 +57,46 @@ function toFormData(m: Modifier): ModifierFormData {
   }
 }
 
-export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Props) {
+export default function ModifiersClient({ orgId, orgSlug, userId, userRole, initialModifiers }: Props) {
   const router = useRouter()
   const [modifiers] = useState<Modifier[]>(initialModifiers)
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<'all' | ModifierType>('all')
-  const [customerFilter, setCustomerFilter] = useState<'all' | 'yes' | 'no'>('all')
 
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const {
+    sortRules, filterRules, columnWidths: savedWidths,
+    activeView, isDirty, isViewReadOnly, myViews, sharedViews, viewsLoading,
+    setSort, setFilterRules, setColumnWidth, loadView, saveCurrentView, createView, deleteView,
+  } = useSavedView({ tableKey: 'modifiers', orgId, userId, userRole })
+  const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
+
+  const COLUMNS = useMemo((): ColumnDef<Modifier>[] => [
+    { key: 'display_name', label: 'Display Name', defaultWidth: 220, sortable: true, filterable: true, filterType: 'text', getValue: (m) => m.display_name },
+    { key: 'system_lookup_name', label: 'System Name', defaultWidth: 200, sortable: false, filterable: true, filterType: 'text', getValue: (m) => m.system_lookup_name },
+    { key: 'modifier_type', label: 'Type', defaultWidth: 130, sortable: true, filterable: true, filterType: 'select', filterOptions: [{ label: 'Boolean', value: 'Boolean' }, { label: 'Numeric', value: 'Numeric' }, { label: 'Range', value: 'Range' }], getValue: (m) => m.modifier_type },
+    { key: 'units', label: 'Units', defaultWidth: 110, sortable: false, filterable: false, getValue: (m) => m.units },
+    { key: 'show_customer', label: 'Customer', defaultWidth: 100, sortable: false, filterable: true, filterType: 'select', filterOptions: [{ label: 'Customer visible', value: 'true' }, { label: 'Internal only', value: 'false' }], getValue: (m) => m.show_customer ? 'true' : 'false' },
+    { key: 'is_system_variable', label: 'System Var', defaultWidth: 110, sortable: false, filterable: true, filterType: 'select', filterOptions: [{ label: 'Yes', value: 'true' }, { label: 'No', value: 'false' }], getValue: (m) => m.is_system_variable ? 'true' : 'false' },
+    { key: 'active', label: 'Active', defaultWidth: 100, sortable: true, filterable: true, filterType: 'select', filterOptions: [{ label: 'Active', value: 'true' }, { label: 'Inactive', value: 'false' }], getValue: (m) => m.active ? 'true' : 'false' },
+    { key: 'actions', label: 'Actions', defaultWidth: 100, sortable: false, filterable: false },
+  ], [])
+
+  const defaultWidths = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const c of COLUMNS) map[c.key] = c.defaultWidth
+    return map
+  }, [COLUMNS])
+
+  const { widths: colWidths, startResize } = useColumnResize({ defaultWidths, savedWidths, onWidthCommit: setColumnWidth, disabled: isViewReadOnly })
+
+  function SortIcon({ column }: { column: string }) {
+    const rule = activeSortRules.find((r) => r.column === column)
+    if (rule?.direction === 'asc') return <svg className="h-3 w-3 text-qm-lime" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75 12 8.25l7.5 7.5" /></svg>
+    if (rule?.direction === 'desc') return <svg className="h-3 w-3 text-qm-lime" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+    return <svg className="h-3 w-3 opacity-20" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15 12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" /></svg>
+  }
+
+  const totalWidth = COLUMNS.reduce((sum, c) => sum + (colWidths[c.key] ?? c.defaultWidth), 0)
+
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [form, setForm] = useState<ModifierFormData>(emptyForm())
@@ -89,20 +129,13 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
   }
 
   const filtered = useMemo(() => {
+    const byRules = applyFilterRules(modifiers, filterRules, COLUMNS)
     const term = search.trim().toLowerCase()
-    const items = modifiers.filter((m) => {
-      if (typeFilter !== 'all' && m.modifier_type !== typeFilter) return false
-      if (customerFilter === 'yes' && !m.show_customer) return false
-      if (customerFilter === 'no' && m.show_customer) return false
-      if (term) {
-        const hay = `${m.display_name} ${m.name} ${m.system_lookup_name ?? ''}`.toLowerCase()
-        if (!hay.includes(term)) return false
-      }
-      return true
-    })
-    if (sortDir === 'desc') return [...items].sort((a, b) => b.display_name.localeCompare(a.display_name))
-    return items
-  }, [modifiers, search, typeFilter, customerFilter, sortDir])
+    const searched = term
+      ? byRules.filter((m) => `${m.display_name} ${m.name} ${m.system_lookup_name ?? ''}`.toLowerCase().includes(term))
+      : byRules
+    return applySortRules(searched, activeSortRules, COLUMNS)
+  }, [modifiers, search, filterRules, activeSortRules, COLUMNS])
 
   function handleSave() {
     setFormError(null)
@@ -144,12 +177,6 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
-            className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${sortDir === 'asc' ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}
-          >
-            {sortDir === 'asc' ? 'A-Z ↑' : 'Z-A ↓'}
-          </button>
           <button onClick={openNew} className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -159,7 +186,7 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters/Views toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-gray" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -167,17 +194,24 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
           </svg>
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by display name or system name..." className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
         </div>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as 'all' | ModifierType)} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
-          <option value="all">All types</option>
-          <option value="Boolean">Boolean</option>
-          <option value="Numeric">Numeric</option>
-          <option value="Range">Range</option>
-        </select>
-        <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value as 'all' | 'yes' | 'no')} className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
-          <option value="all">All (customer visibility)</option>
-          <option value="yes">Customer visible</option>
-          <option value="no">Internal only</option>
-        </select>
+        <div className="ml-auto">
+          <DataTableToolbar
+            columns={COLUMNS}
+            filterRules={filterRules}
+            onFilterRulesChange={setFilterRules}
+            activeView={activeView}
+            myViews={myViews}
+            sharedViews={sharedViews}
+            isDirty={isDirty}
+            isViewReadOnly={isViewReadOnly}
+            viewsLoading={viewsLoading}
+            currentUserId={userId}
+            onLoadView={loadView}
+            onSaveView={saveCurrentView}
+            onCreateView={createView}
+            onDeleteView={deleteView}
+          />
+        </div>
       </div>
 
       {/* Table */}
@@ -192,30 +226,46 @@ export default function ModifiersClient({ orgId, orgSlug, initialModifiers }: Pr
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
+            <colgroup>
+              {COLUMNS.map((col) => <col key={col.key} style={{ width: colWidths[col.key] ?? col.defaultWidth }} />)}
+            </colgroup>
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Display Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">System Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Units</th>
-                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Customer</th>
-                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">System Var</th>
-                <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500">Active</th>
-                <th className={`px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 ${STICKY_ACTIONS_TH}`}>Actions</th>
+                {COLUMNS.map((col, i) => {
+                  const isSortable = col.sortable && !isViewReadOnly
+                  const isLast = i === COLUMNS.length - 1
+                  const isActions = col.key === 'actions'
+                  const isCenter = col.key === 'show_customer' || col.key === 'is_system_variable' || col.key === 'active'
+                  return (
+                    <th
+                      key={col.key}
+                      onClick={isSortable ? () => setSort(col.key) : undefined}
+                      className={`relative px-6 py-3 text-xs font-medium uppercase tracking-wide text-gray-500 select-none ${isSortable ? 'cursor-pointer hover:bg-gray-100' : ''} ${isActions ? `text-right ${STICKY_ACTIONS_TH}` : isCenter ? 'text-center' : 'text-left'}`}
+                    >
+                      <div className={`flex items-center gap-1 ${isActions ? 'justify-end' : isCenter ? 'justify-center' : ''}`}>
+                        {col.label}
+                        {col.sortable && <SortIcon column={col.key} />}
+                      </div>
+                      {!isLast && col.resizable !== false && (
+                        <div onMouseDown={(e) => startResize(col.key, e)} className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-qm-lime hover:opacity-30 z-10" />
+                      )}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((m) => (
                 <tr key={m.id} className="group hover:bg-gray-50">
-                  <td className="whitespace-nowrap px-6 py-3 text-sm font-semibold text-qm-black">{m.display_name}</td>
-                  <td className="whitespace-nowrap px-6 py-3 text-sm text-qm-gray">{m.system_lookup_name ?? <span className="text-gray-300">—</span>}</td>
-                  <td className="whitespace-nowrap px-6 py-3">
+                  <td className="overflow-hidden px-6 py-3 text-sm font-semibold text-qm-black"><span className="block truncate">{m.display_name}</span></td>
+                  <td className="overflow-hidden px-6 py-3 text-sm text-qm-gray"><span className="block truncate">{m.system_lookup_name ?? <span className="text-gray-300">—</span>}</span></td>
+                  <td className="overflow-hidden whitespace-nowrap px-6 py-3">
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${TYPE_BADGE[m.modifier_type]}`}>
                       {m.modifier_type}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-6 py-3 text-sm text-qm-gray">{m.units ?? <span className="text-gray-300">—</span>}</td>
+                  <td className="overflow-hidden whitespace-nowrap px-6 py-3 text-sm text-qm-gray">{m.units ?? <span className="text-gray-300">—</span>}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-center text-sm">{m.show_customer ? '✓' : <span className="text-gray-300">—</span>}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-center text-sm">{m.is_system_variable ? '✓' : <span className="text-gray-300">—</span>}</td>
                   <td className="whitespace-nowrap px-6 py-3 text-center">

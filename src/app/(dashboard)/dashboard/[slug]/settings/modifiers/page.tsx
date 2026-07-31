@@ -18,6 +18,16 @@ export default async function ModifiersPage({ params }: PageProps) {
 
   if (!org) notFound()
 
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id ?? ''
+
+  type MemberRow = { user_id: string; role: string }
+  const { data: memberRows } = await supabase
+    .from('organization_members')
+    .select('user_id, role')
+    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
+
   const [modRes, countRes] = await Promise.all([
     supabase
       .from('modifiers')
@@ -56,6 +66,8 @@ export default async function ModifiersPage({ params }: PageProps) {
       <ModifiersClient
         orgId={org.id}
         orgSlug={slug}
+        userId={userId}
+        userRole={userRole}
         initialModifiers={modifiers}
       />
     </div>
