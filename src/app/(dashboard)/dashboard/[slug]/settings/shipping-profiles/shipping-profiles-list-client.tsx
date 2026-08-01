@@ -7,6 +7,7 @@ import { useSavedView, applyFilterRules, applySortRules } from '@/components/dat
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import { ShippingProfileCard } from './shipping-profile-card'
 
 export type ProfileRow = {
   id: string
@@ -38,9 +39,9 @@ export default function ShippingProfilesListClient({ profiles, orgSlug, orgId, u
   const [search, setSearch] = useState('')
 
   const {
-    sortRules, filterRules, columnWidths: savedWidths,
+    sortRules, filterRules, columnWidths: savedWidths, viewMode,
     activeView, isDirty, isViewReadOnly, myViews, sharedViews, viewsLoading,
-    setSort, setFilterRules, setColumnWidth, loadView, saveCurrentView, createView, deleteView,
+    setSort, setFilterRules, setColumnWidth, setViewMode, loadView, saveCurrentView, createView, deleteView,
   } = useSavedView({ tableKey: 'shipping_profiles', orgId, userId, userRole })
 
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
@@ -109,6 +110,8 @@ export default function ShippingProfilesListClient({ profiles, orgSlug, orgId, u
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
@@ -118,6 +121,12 @@ export default function ShippingProfilesListClient({ profiles, orgSlug, orgId, u
           <p className="text-sm text-gray-500">
             {search || filterRules.length > 0 ? 'No shipping profiles match the current filters.' : 'No shipping profiles yet.'}
           </p>
+        </div>
+      ) : viewMode === 'card' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {sorted.map((p) => (
+            <ShippingProfileCard key={p.id} profile={p} orgSlug={orgSlug} />
+          ))}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">

@@ -8,6 +8,7 @@ import { useSavedView, applyFilterRules, applySortRules } from '@/components/dat
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import { ProductTypeCard } from './product-type-card'
 
 export type ProductTypeRow = {
   id: string
@@ -30,9 +31,9 @@ export default function ProductTypesListClient({ types, usageCounts, orgSlug, or
   const [search, setSearch] = useState('')
 
   const {
-    sortRules, filterRules, columnWidths: savedWidths,
+    sortRules, filterRules, columnWidths: savedWidths, viewMode,
     activeView, isDirty, isViewReadOnly, myViews, sharedViews, viewsLoading,
-    setSort, setFilterRules, setColumnWidth, loadView, saveCurrentView, createView, deleteView,
+    setSort, setFilterRules, setColumnWidth, setViewMode, loadView, saveCurrentView, createView, deleteView,
   } = useSavedView({ tableKey: 'product_types', orgId, userId, userRole })
 
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
@@ -100,6 +101,8 @@ export default function ProductTypesListClient({ types, usageCounts, orgSlug, or
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
@@ -109,6 +112,12 @@ export default function ProductTypesListClient({ types, usageCounts, orgSlug, or
           <p className="text-sm text-gray-500">
             {search || filterRules.length > 0 ? 'No product types match the current filters.' : 'No product types yet.'}
           </p>
+        </div>
+      ) : viewMode === 'card' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {sorted.map((t) => (
+            <ProductTypeCard key={t.id} type={t} orgSlug={orgSlug} count={usageCounts[t.id] ?? 0} />
+          ))}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
