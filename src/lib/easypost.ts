@@ -1,4 +1,5 @@
 import EasyPostClient from '@easypost/api'
+import { createServiceClient } from '@/lib/supabase/server'
 
 const QMI_ADDRESS = {
   name: 'Quarter Mile Inc',
@@ -9,12 +10,38 @@ const QMI_ADDRESS = {
   country: 'US',
 }
 
-function getClient(testMode = false): InstanceType<typeof EasyPostClient> {
-  const key = testMode
-    ? process.env.EASYPOST_TEST_API_KEY
-    : process.env.EASYPOST_API_KEY
-  if (!key) throw new Error('EasyPost API key not configured. Set EASYPOST_API_KEY (or EASYPOST_TEST_API_KEY for test mode).')
-  return new EasyPostClient(key)
+type EasypostCredentials = { api_key?: string; test_api_key?: string }
+
+// Resolves the EasyPost API key to use for a request. Checks the org's
+// connected carrier_connections row first (Settings -> Shipping ->
+// Carriers); falls back to the legacy global env vars ONLY when no
+// connected row exists for that org, so orgs that haven't gone through
+// the Connect flow yet (or when orgId is unknown) keep working.
+async function resolveApiKey(orgId?: string): Promise<{ apiKey: string; testMode: boolean }> {
+  if (orgId) {
+    const service = createServiceClient()
+    const { data } = await service
+      .from('carrier_connections')
+      .select('credentials, use_test_mode, is_connected')
+      .eq('organization_id', orgId)
+      .eq('carrier', 'easypost')
+      .maybeSingle()
+    const row = data as { credentials: EasypostCredentials; use_test_mode: boolean; is_connected: boolean } | null
+    if (row?.is_connected) {
+      const key = row.use_test_mode ? row.credentials?.test_api_key : row.credentials?.api_key
+      if (key) return { apiKey: key, testMode: row.use_test_mode }
+    }
+  }
+
+  const envTestMode = process.env.EASYPOST_TEST_API_KEY != null && !process.env.EASYPOST_API_KEY
+  const key = envTestMode ? process.env.EASYPOST_TEST_API_KEY : process.env.EASYPOST_API_KEY
+  if (!key) throw new Error('EasyPost API key not configured. Connect EasyPost under Settings → Shipping → Carriers, or set EASYPOST_API_KEY (or EASYPOST_TEST_API_KEY for test mode).')
+  return { apiKey: key, testMode: envTestMode }
+}
+
+async function getClient(orgId?: string): Promise<InstanceType<typeof EasyPostClient>> {
+  const { apiKey } = await resolveApiKey(orgId)
+  return new EasyPostClient(apiKey)
 }
 
 export type EasypostAddress = {
@@ -50,9 +77,9 @@ export type RatesResult = {
 export async function getRates(
   toAddress: EasypostAddress,
   parcel: EasypostParcel,
-  testMode = false,
+  orgId?: string,
 ): Promise<RatesResult> {
-  const client = getClient(testMode)
+  const client = await getClient(orgId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shipment = await (client.Shipment as any).create({
     to_address: { country: 'US', ...toAddress },
@@ -84,9 +111,9 @@ export type BuyLabelResult = {
 export async function buyLabel(
   shipmentId: string,
   rateId: string,
-  testMode = false,
+  orgId?: string,
 ): Promise<BuyLabelResult> {
-  const client = getClient(testMode)
+  const client = await getClient(orgId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shipment = await (client.Shipment as any).buy(shipmentId, rateId)
   return {
@@ -98,8 +125,8 @@ export async function buyLabel(
   }
 }
 
-export async function createWebhook(url: string, testMode = false): Promise<string> {
-  const client = getClient(testMode)
+export async function createWebhook(url: string, orgId?: string): Promise<string> {
+  const client = await getClient(orgId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const webhook = await (client.Webhook as any).create({ url })
   return webhook.id as string
