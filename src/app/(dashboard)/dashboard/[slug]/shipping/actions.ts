@@ -85,7 +85,6 @@ async function upsertDeliveryTask(
   userId: string | null,
   shipmentId: string,
   soId: string | null,
-  customerId: string | null,
   notes: string | null,
   assignedTo: string | null,
 ) {
@@ -101,15 +100,15 @@ async function upsertDeliveryTask(
     description: notes,
     assigned_to: assignedTo,
     so_id: soId,
-    related_customer_id: customerId,
     shipment_id: shipmentId,
   }
 
   if (existing) {
-    await service.from('tasks').update(taskFields).eq('id', existing.id)
-  } else {
-    await service.from('tasks').insert({ ...taskFields, created_by: userId, status: 'open', priority: 'medium' })
+    const { error } = await service.from('tasks').update(taskFields).eq('id', existing.id)
+    return error?.message ?? null
   }
+  const { error } = await service.from('tasks').insert({ ...taskFields, created_by: userId, status: 'open', priority: 'medium' })
+  return error?.message ?? null
 }
 
 async function isLocalOrPickupMethod(
@@ -148,7 +147,10 @@ export async function createShipment(formData: FormData) {
   }
 
   if (await isLocalOrPickupMethod(service, fields.shipping_method_id)) {
-    await upsertDeliveryTask(service, orgId, user?.id ?? null, inserted.id, fields.sales_order_id, fields.customer_id, deliveryNotes, taskAssignedTo)
+    const taskError = await upsertDeliveryTask(service, orgId, user?.id ?? null, inserted.id, fields.sales_order_id, deliveryNotes, taskAssignedTo)
+    if (taskError) {
+      redirect(`/dashboard/${orgSlug}/shipping/${inserted.id}?error=${encodeURIComponent(`Shipment saved, but the delivery task failed: ${taskError}`)}`)
+    }
   }
 
   redirect(`/dashboard/${orgSlug}/shipping?created=1`)
@@ -176,7 +178,10 @@ export async function updateShipment(formData: FormData) {
   }
 
   if (await isLocalOrPickupMethod(service, fields.shipping_method_id)) {
-    await upsertDeliveryTask(service, orgId, user?.id ?? null, id, fields.sales_order_id, fields.customer_id, deliveryNotes, taskAssignedTo)
+    const taskError = await upsertDeliveryTask(service, orgId, user?.id ?? null, id, fields.sales_order_id, deliveryNotes, taskAssignedTo)
+    if (taskError) {
+      redirect(`/dashboard/${orgSlug}/shipping/${id}?error=${encodeURIComponent(`Shipment saved, but the delivery task failed: ${taskError}`)}`)
+    }
   }
 
   redirect(`/dashboard/${orgSlug}/shipping/${id}`)
