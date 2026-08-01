@@ -6,6 +6,7 @@ import type { ColumnDef } from '@/components/data-table/types'
 import { useSavedView, applyFilterRules, applySortRules } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { MachineRateCard } from './machine-rate-card'
 
 export type MachineRateRow = {
   id: string
@@ -42,9 +43,9 @@ export default function MachineRatesListClient({ rates, rateDeptMap, deptMap, or
   const [search, setSearch] = useState('')
 
   const {
-    sortRules, filterRules, columnWidths: savedWidths,
+    sortRules, filterRules, columnWidths: savedWidths, viewMode,
     activeView, isDirty, isViewReadOnly, myViews, sharedViews, viewsLoading,
-    setSort, setFilterRules, setColumnWidth, loadView, saveCurrentView, createView, deleteView,
+    setSort, setFilterRules, setColumnWidth, setViewMode, loadView, saveCurrentView, createView, deleteView,
   } = useSavedView({ tableKey: 'machine_rates', orgId, userId, userRole })
 
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
@@ -125,6 +126,8 @@ export default function MachineRatesListClient({ rates, rateDeptMap, deptMap, or
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
@@ -134,6 +137,15 @@ export default function MachineRatesListClient({ rates, rateDeptMap, deptMap, or
           <p className="text-sm text-gray-500">
             {search || filterRules.length > 0 ? 'No machine rates match the current filters.' : 'No machine rates yet.'}
           </p>
+        </div>
+      ) : viewMode === 'card' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {sorted.map((r) => {
+            const label = deptLabel(r)
+            return (
+              <MachineRateCard key={r.id} rate={r} orgSlug={orgSlug} deptLabel={label === '—' ? null : label} />
+            )
+          })}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
