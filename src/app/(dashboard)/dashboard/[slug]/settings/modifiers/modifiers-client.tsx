@@ -9,6 +9,7 @@ import type { ColumnDef } from '@/components/data-table/types'
 import { useSavedView, applyFilterRules, applySortRules } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { ModifierCard } from './modifier-card'
 
 type Props = {
   orgId: string
@@ -63,9 +64,9 @@ export default function ModifiersClient({ orgId, orgSlug, userId, userRole, init
   const [search, setSearch] = useState('')
 
   const {
-    sortRules, filterRules, columnWidths: savedWidths,
+    sortRules, filterRules, columnWidths: savedWidths, viewMode,
     activeView, isDirty, isViewReadOnly, myViews, sharedViews, viewsLoading,
-    setSort, setFilterRules, setColumnWidth, loadView, saveCurrentView, createView, deleteView,
+    setSort, setFilterRules, setColumnWidth, setViewMode, loadView, saveCurrentView, createView, deleteView,
   } = useSavedView({ tableKey: 'modifiers', orgId, userId, userRole })
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
 
@@ -210,6 +211,8 @@ export default function ModifiersClient({ orgId, orgSlug, userId, userRole, init
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
@@ -223,6 +226,12 @@ export default function ModifiersClient({ orgId, orgSlug, userId, userRole, init
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-qm-gray">No modifiers match your filters.</p>
+        </div>
+      ) : viewMode === 'card' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {filtered.map((m) => (
+            <ModifierCard key={m.id} modifier={m} onClick={() => openEdit(m)} />
+          ))}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">

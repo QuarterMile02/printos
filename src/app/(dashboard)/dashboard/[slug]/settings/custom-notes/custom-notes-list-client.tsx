@@ -7,6 +7,7 @@ import { useSavedView, applyFilterRules, applySortRules } from '@/components/dat
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import { CustomNoteCard } from './custom-note-card'
 
 export type NoteRow = {
   id: string
@@ -51,9 +52,9 @@ export default function CustomNotesListClient({ notes, orgSlug, orgId, userId, u
   const [search, setSearch] = useState('')
 
   const {
-    sortRules, filterRules, columnWidths: savedWidths,
+    sortRules, filterRules, columnWidths: savedWidths, viewMode,
     activeView, isDirty, isViewReadOnly, myViews, sharedViews, viewsLoading,
-    setSort, setFilterRules, setColumnWidth, loadView, saveCurrentView, createView, deleteView,
+    setSort, setFilterRules, setColumnWidth, setViewMode, loadView, saveCurrentView, createView, deleteView,
   } = useSavedView({ tableKey: 'custom_notes', orgId, userId, userRole })
 
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
@@ -122,6 +123,8 @@ export default function CustomNotesListClient({ notes, orgSlug, orgId, userId, u
             onSaveView={saveCurrentView}
             onCreateView={createView}
             onDeleteView={deleteView}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
         </div>
       </div>
@@ -131,6 +134,12 @@ export default function CustomNotesListClient({ notes, orgSlug, orgId, userId, u
           <p className="text-sm text-gray-500">
             {search ? `No notes match "${search}"` : 'No notes match the current filters.'}
           </p>
+        </div>
+      ) : viewMode === 'card' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {sorted.map((n) => (
+            <CustomNoteCard key={n.id} note={n} orgSlug={orgSlug} />
+          ))}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
