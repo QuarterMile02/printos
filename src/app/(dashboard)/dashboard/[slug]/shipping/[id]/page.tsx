@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
@@ -80,6 +80,10 @@ export default async function ShipmentDetailPage({ params, searchParams }: PageP
     .maybeSingle() as { data: OrgRow | null; error: unknown }
   if (!org) notFound()
 
+  // profiles RLS only allows selecting your own row (auth.uid() = id), so
+  // team-member lookups (picker + assignee display) need the service client.
+  const service = createServiceClient()
+
   const { allowed: canView } = await checkPermission(org.id, 'shipping.view')
   if (!canView) {
     return (
@@ -146,7 +150,7 @@ export default async function ShipmentDetailPage({ params, searchParams }: PageP
     const [mRes, pRes, tRes, taskRes] = await Promise.all([
       supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
       supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
-      supabase.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name'),
+      service.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name'),
       supabase.from('tasks').select('description, assigned_to').eq('shipment_id', shipment.id).maybeSingle(),
     ])
     const shippingMethods = (mRes.data ?? []) as ShipMethodRow[]
@@ -209,7 +213,7 @@ export default async function ShipmentDetailPage({ params, searchParams }: PageP
     : null
   const isLocalOrPickup = shipment.shipping_methods?.carrier === 'local' || shipment.shipping_methods?.carrier === 'pickup'
   const { data: linkedTaskRO } = isLocalOrPickup
-    ? await supabase.from('tasks').select('description, assigned_profile:profiles!tasks_assigned_to_fkey(full_name)').eq('shipment_id', shipment.id).maybeSingle() as {
+    ? await service.from('tasks').select('description, assigned_profile:profiles!tasks_assigned_to_fkey(full_name)').eq('shipment_id', shipment.id).maybeSingle() as {
         data: { description: string | null; assigned_profile: { full_name: string | null } | null } | null
       }
     : { data: null }

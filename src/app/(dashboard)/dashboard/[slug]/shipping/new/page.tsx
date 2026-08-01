@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
@@ -38,10 +38,13 @@ export default async function NewShipmentPage({ params, searchParams }: PageProp
   type ShipProfileRow = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
   type TeamMemberRow = { id: string; full_name: string | null }
 
+  // profiles RLS only allows selecting your own row (auth.uid() = id), so the
+  // team-member picker needs the service client to see the whole org.
+  const service = createServiceClient()
   const [mRes, pRes, tRes] = await Promise.all([
     supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
     supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
-    supabase.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name'),
+    service.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name'),
   ])
   const shippingMethods = (mRes.data ?? []) as ShipMethodRow[]
   const shippingProfiles = (pRes.data ?? []) as ShipProfileRow[]
