@@ -139,6 +139,7 @@ type Props = {
   canReassignCustomer: boolean
   shipments: Shipment[]
   shipmentSaved?: boolean
+  shipmentError?: string
   shippingMethods: ShippingMethod[]
   shippingProfiles: ShippingProfile[]
   customerShippingAddresses: ShippingAddress[]
@@ -162,7 +163,7 @@ type AddrMode = 'billing' | 'saved' | 'new'
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, lineItems, canSeePricing, canExportPdf,
   initialContactId, initialContactName, initialContactEmail, initialContactPhone, canReassignCustomer,
-  shipments, shipmentSaved, shippingMethods, shippingProfiles, customerShippingAddresses,
+  shipments, shipmentSaved, shipmentError, shippingMethods, shippingProfiles, customerShippingAddresses,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -204,7 +205,8 @@ export default function SoDetailClient({
   const [buyingLabel, setBuyingLabel]               = useState(false)
 
   useEffect(() => {
-    if (shipmentSaved) flash('Shipment saved.', 'success')
+    if (shipmentError) flash(shipmentError, 'error')
+    else if (shipmentSaved) flash('Shipment saved.', 'success')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

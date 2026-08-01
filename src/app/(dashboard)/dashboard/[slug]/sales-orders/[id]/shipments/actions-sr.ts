@@ -49,15 +49,17 @@ export async function saveShipment(formData: FormData) {
     label_url,
   }
 
-  if (id) {
-    await service.from('shipments').update(payload).eq('id', id)
-  } else {
-    await service.from('shipments').insert({
-      ...payload,
-      organization_id: orgId,
-      sales_order_id: soId,
-      created_by: user?.id ?? null,
-    })
+  const { error } = id
+    ? await service.from('shipments').update(payload).eq('id', id)
+    : await service.from('shipments').insert({
+        ...payload,
+        organization_id: orgId,
+        sales_order_id: soId,
+        created_by: user?.id ?? null,
+      })
+
+  if (error) {
+    redirect(`/dashboard/${orgSlug}/sales-orders/${soId}?shipment_error=${encodeURIComponent(error.message)}`)
   }
 
   redirect(`/dashboard/${orgSlug}/sales-orders/${soId}?shipment_saved=1`)
@@ -68,6 +70,9 @@ export async function deleteShipment(formData: FormData) {
   const orgSlug = formData.get('orgSlug') as string
   const soId = formData.get('soId') as string
   const service = createServiceClient()
-  await service.from('shipments').delete().eq('id', id)
+  const { error } = await service.from('shipments').delete().eq('id', id)
+  if (error) {
+    redirect(`/dashboard/${orgSlug}/sales-orders/${soId}?shipment_error=${encodeURIComponent(error.message)}`)
+  }
   redirect(`/dashboard/${orgSlug}/sales-orders/${soId}`)
 }

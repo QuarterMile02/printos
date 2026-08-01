@@ -132,18 +132,20 @@ export default function GeneralCategoriesListClient({ categories, orgSlug, orgId
         </div>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">
-            {search ? `No categories match "${search}"` : 'No categories match the current filters.'}
-          </p>
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {sorted.map((c) => (
-            <GeneralCategoryCard key={c.id} category={c} orgSlug={orgSlug} />
-          ))}
-        </div>
+      {viewMode === 'card' ? (
+        sorted.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+            <p className="text-sm text-gray-500">
+              {search ? `No categories match "${search}"` : 'No categories match the current filters.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {sorted.map((c) => (
+              <GeneralCategoryCard key={c.id} category={c} orgSlug={orgSlug} />
+            ))}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -175,7 +177,13 @@ export default function GeneralCategoriesListClient({ categories, orgSlug, orgId
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((c) => {
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
+                    {search ? `No categories match "${search}"` : 'No categories match the current filters.'}
+                  </td>
+                </tr>
+              ) : sorted.map((c) => {
                 const editHref = `/dashboard/${orgSlug}/settings/general-categories?edit=${c.id}`
                 return (
                   <tr key={c.id} className="group hover:bg-gray-50">

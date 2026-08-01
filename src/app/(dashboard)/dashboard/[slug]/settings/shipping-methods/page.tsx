@@ -13,6 +13,7 @@ const CARRIERS = [
   { value: 'easypost',  label: 'EasyPost' },
   { value: 'local',     label: 'Local'    },
   { value: 'pickup',    label: 'Pickup'   },
+  { value: 'freight',   label: 'Freight'  },
   { value: 'other',     label: 'Other'    },
 ]
 

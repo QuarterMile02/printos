@@ -340,30 +340,32 @@ export default function PricingFormulasClient({
       </div>
 
       {/* Card grid / Table */}
-      {filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
-          <p className="text-sm font-medium text-gray-900">No formulas found</p>
-          {search && <p className="mt-1 text-sm text-gray-500">Try a different search term.</p>}
-          {!search && isOwnerOrAdmin && (
-            <button
-              onClick={openNew}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
-            >
-              New Formula
-            </button>
-          )}
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {sorted.map((f) => (
-            <PricingFormulaCard
-              key={f.id}
-              formula={f}
-              editable={isOwner && !f.is_system && !f.is_locked}
-              onClick={() => openEdit(f)}
-            />
-          ))}
-        </div>
+      {viewMode === 'card' ? (
+        filtered.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
+            <p className="text-sm font-medium text-gray-900">No formulas found</p>
+            {search && <p className="mt-1 text-sm text-gray-500">Try a different search term.</p>}
+            {!search && isOwnerOrAdmin && (
+              <button
+                onClick={openNew}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
+              >
+                New Formula
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {sorted.map((f) => (
+              <PricingFormulaCard
+                key={f.id}
+                formula={f}
+                editable={isOwner && !f.is_system && !f.is_locked}
+                onClick={() => openEdit(f)}
+              />
+            ))}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -400,7 +402,22 @@ export default function PricingFormulasClient({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((f) => (
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-5 py-16 text-center">
+                    <p className="text-sm font-medium text-gray-900">No formulas found</p>
+                    {search && <p className="mt-1 text-sm text-gray-500">Try a different search term.</p>}
+                    {!search && isOwnerOrAdmin && (
+                      <button
+                        onClick={openNew}
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white transition-colors hover:brightness-110"
+                      >
+                        New Formula
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ) : sorted.map((f) => (
                 <tr key={f.id} className="group hover:bg-gray-50/60">
                   <td className="overflow-hidden px-5 py-3 text-sm font-semibold text-qm-black">
                     <div className="flex items-center gap-1.5 truncate">

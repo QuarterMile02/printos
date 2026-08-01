@@ -107,18 +107,20 @@ export default function ProductTypesListClient({ types, usageCounts, orgSlug, or
         </div>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">
-            {search || filterRules.length > 0 ? 'No product types match the current filters.' : 'No product types yet.'}
-          </p>
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {sorted.map((t) => (
-            <ProductTypeCard key={t.id} type={t} orgSlug={orgSlug} count={usageCounts[t.id] ?? 0} />
-          ))}
-        </div>
+      {viewMode === 'card' ? (
+        sorted.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+            <p className="text-sm text-gray-500">
+              {search || filterRules.length > 0 ? 'No product types match the current filters.' : 'No product types yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {sorted.map((t) => (
+              <ProductTypeCard key={t.id} type={t} orgSlug={orgSlug} count={usageCounts[t.id] ?? 0} />
+            ))}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -151,7 +153,13 @@ export default function ProductTypesListClient({ types, usageCounts, orgSlug, or
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((t) => {
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
+                    {search || filterRules.length > 0 ? 'No product types match the current filters.' : 'No product types yet.'}
+                  </td>
+                </tr>
+              ) : sorted.map((t) => {
                 const editHref = `/dashboard/${orgSlug}/settings/product-types?edit=${t.id}`
                 const inUse = (usageCounts[t.id] ?? 0) > 0
                 return (

@@ -18,11 +18,13 @@ const CARRIERS = [
   { value: 'easypost',  label: 'EasyPost' },
   { value: 'local',     label: 'Local'    },
   { value: 'pickup',    label: 'Pickup'   },
+  { value: 'freight',   label: 'Freight'  },
   { value: 'other',     label: 'Other'    },
 ]
 const CARRIER_BADGE: Record<string, string> = {
   fedex: 'bg-purple-50 text-purple-700', ups: 'bg-amber-50 text-amber-800', usps: 'bg-blue-50 text-blue-700',
-  easypost: 'bg-indigo-50 text-indigo-700', local: 'bg-green-50 text-green-700', pickup: 'bg-teal-50 text-teal-700', other: 'bg-gray-100 text-gray-600',
+  easypost: 'bg-indigo-50 text-indigo-700', local: 'bg-green-50 text-green-700', pickup: 'bg-teal-50 text-teal-700',
+  freight: 'bg-orange-50 text-orange-700', other: 'bg-gray-100 text-gray-600',
 }
 const CARRIER_LABEL: Record<string, string> = Object.fromEntries(CARRIERS.map((c) => [c.value, c.label]))
 
@@ -116,18 +118,20 @@ export default function ShippingMethodsListClient({ methods, orgSlug, orgId, use
         </div>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">
-            {search || filterRules.length > 0 ? 'No shipping methods match the current filters.' : 'No shipping methods yet.'}
-          </p>
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {sorted.map((m) => (
-            <ShippingMethodCard key={m.id} method={m} orgSlug={orgSlug} />
-          ))}
-        </div>
+      {viewMode === 'card' ? (
+        sorted.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+            <p className="text-sm text-gray-500">
+              {search || filterRules.length > 0 ? 'No shipping methods match the current filters.' : 'No shipping methods yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {sorted.map((m) => (
+              <ShippingMethodCard key={m.id} method={m} orgSlug={orgSlug} />
+            ))}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -159,7 +163,13 @@ export default function ShippingMethodsListClient({ methods, orgSlug, orgId, use
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((m) => {
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
+                    {search || filterRules.length > 0 ? 'No shipping methods match the current filters.' : 'No shipping methods yet.'}
+                  </td>
+                </tr>
+              ) : sorted.map((m) => {
                 const editHref = `/dashboard/${orgSlug}/settings/shipping-methods?edit=${m.id}`
                 return (
                   <tr key={m.id} className="group hover:bg-gray-50">

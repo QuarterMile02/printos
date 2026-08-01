@@ -3,10 +3,11 @@ import type { MethodRow } from './shipping-methods-list-client'
 
 const CARRIER_BADGE: Record<string, string> = {
   fedex: 'bg-purple-50 text-purple-700', ups: 'bg-amber-50 text-amber-800', usps: 'bg-blue-50 text-blue-700',
-  easypost: 'bg-indigo-50 text-indigo-700', local: 'bg-green-50 text-green-700', pickup: 'bg-teal-50 text-teal-700', other: 'bg-gray-100 text-gray-600',
+  easypost: 'bg-indigo-50 text-indigo-700', local: 'bg-green-50 text-green-700', pickup: 'bg-teal-50 text-teal-700',
+  freight: 'bg-orange-50 text-orange-700', other: 'bg-gray-100 text-gray-600',
 }
 const CARRIER_LABEL: Record<string, string> = {
-  fedex: 'FedEx', ups: 'UPS', usps: 'USPS', easypost: 'EasyPost', local: 'Local', pickup: 'Pickup', other: 'Other',
+  fedex: 'FedEx', ups: 'UPS', usps: 'USPS', easypost: 'EasyPost', local: 'Local', pickup: 'Pickup', freight: 'Freight', other: 'Other',
 }
 
 export function ShippingMethodCard({ method, orgSlug }: { method: MethodRow; orgSlug: string }) {

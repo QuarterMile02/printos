@@ -129,18 +129,20 @@ export default function CustomNotesListClient({ notes, orgSlug, orgId, userId, u
         </div>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">
-            {search ? `No notes match "${search}"` : 'No notes match the current filters.'}
-          </p>
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {sorted.map((n) => (
-            <CustomNoteCard key={n.id} note={n} orgSlug={orgSlug} />
-          ))}
-        </div>
+      {viewMode === 'card' ? (
+        sorted.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+            <p className="text-sm text-gray-500">
+              {search ? `No notes match "${search}"` : 'No notes match the current filters.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {sorted.map((n) => (
+              <CustomNoteCard key={n.id} note={n} orgSlug={orgSlug} />
+            ))}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -172,7 +174,13 @@ export default function CustomNotesListClient({ notes, orgSlug, orgId, userId, u
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((n) => {
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
+                    {search ? `No notes match "${search}"` : 'No notes match the current filters.'}
+                  </td>
+                </tr>
+              ) : sorted.map((n) => {
                 const editHref = `/dashboard/${orgSlug}/settings/custom-notes?edit=${n.id}`
                 return (
                   <tr key={n.id} className="group hover:bg-gray-50">

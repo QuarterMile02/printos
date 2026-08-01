@@ -218,21 +218,23 @@ export default function ModifiersClient({ orgId, orgSlug, userId, userRole, init
       </div>
 
       {/* Table */}
-      {modifiers.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
-          <p className="text-sm font-medium text-gray-900">No modifiers yet</p>
-          <p className="mt-1 text-sm text-gray-500">Add your first modifier to get started.</p>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-qm-gray">No modifiers match your filters.</p>
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filtered.map((m) => (
-            <ModifierCard key={m.id} modifier={m} onClick={() => openEdit(m)} />
-          ))}
-        </div>
+      {viewMode === 'card' ? (
+        modifiers.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-16 text-center">
+            <p className="text-sm font-medium text-gray-900">No modifiers yet</p>
+            <p className="mt-1 text-sm text-gray-500">Add your first modifier to get started.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+            <p className="text-sm text-qm-gray">No modifiers match your filters.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {filtered.map((m) => (
+              <ModifierCard key={m.id} modifier={m} onClick={() => openEdit(m)} />
+            ))}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -265,7 +267,20 @@ export default function ModifiersClient({ orgId, orgSlug, userId, userRole, init
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((m) => (
+              {modifiers.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-6 py-16 text-center">
+                    <p className="text-sm font-medium text-gray-900">No modifiers yet</p>
+                    <p className="mt-1 text-sm text-gray-500">Add your first modifier to get started.</p>
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-6 py-12 text-center text-sm text-qm-gray">
+                    No modifiers match your filters.
+                  </td>
+                </tr>
+              ) : filtered.map((m) => (
                 <tr key={m.id} className="group hover:bg-gray-50">
                   <td className="overflow-hidden px-6 py-3 text-sm font-semibold text-qm-black"><span className="block truncate">{m.display_name}</span></td>
                   <td className="overflow-hidden px-6 py-3 text-sm text-qm-gray"><span className="block truncate">{m.system_lookup_name ?? <span className="text-gray-300">—</span>}</span></td>

@@ -116,18 +116,20 @@ export default function ShippingProfilesListClient({ profiles, orgSlug, orgId, u
         </div>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">
-            {search || filterRules.length > 0 ? 'No shipping profiles match the current filters.' : 'No shipping profiles yet.'}
-          </p>
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {sorted.map((p) => (
-            <ShippingProfileCard key={p.id} profile={p} orgSlug={orgSlug} />
-          ))}
-        </div>
+      {viewMode === 'card' ? (
+        sorted.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+            <p className="text-sm text-gray-500">
+              {search || filterRules.length > 0 ? 'No shipping profiles match the current filters.' : 'No shipping profiles yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {sorted.map((p) => (
+              <ShippingProfileCard key={p.id} profile={p} orgSlug={orgSlug} />
+            ))}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -159,7 +161,13 @@ export default function ShippingProfilesListClient({ profiles, orgSlug, orgId, u
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((p) => {
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
+                    {search || filterRules.length > 0 ? 'No shipping profiles match the current filters.' : 'No shipping profiles yet.'}
+                  </td>
+                </tr>
+              ) : sorted.map((p) => {
                 const editHref = `/dashboard/${orgSlug}/settings/shipping-profiles?edit=${p.id}`
                 return (
                   <tr key={p.id} className="group hover:bg-gray-50">

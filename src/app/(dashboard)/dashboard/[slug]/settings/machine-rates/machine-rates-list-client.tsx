@@ -132,21 +132,23 @@ export default function MachineRatesListClient({ rates, rateDeptMap, deptMap, or
         </div>
       </div>
 
-      {sorted.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-gray-500">
-            {search || filterRules.length > 0 ? 'No machine rates match the current filters.' : 'No machine rates yet.'}
-          </p>
-        </div>
-      ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {sorted.map((r) => {
-            const label = deptLabel(r)
-            return (
-              <MachineRateCard key={r.id} rate={r} orgSlug={orgSlug} deptLabel={label === '—' ? null : label} />
-            )
-          })}
-        </div>
+      {viewMode === 'card' ? (
+        sorted.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
+            <p className="text-sm text-gray-500">
+              {search || filterRules.length > 0 ? 'No machine rates match the current filters.' : 'No machine rates yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {sorted.map((r) => {
+              const label = deptLabel(r)
+              return (
+                <MachineRateCard key={r.id} rate={r} orgSlug={orgSlug} deptLabel={label === '—' ? null : label} />
+              )
+            })}
+          </div>
+        )
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="divide-y divide-gray-200 table-fixed" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -178,7 +180,13 @@ export default function MachineRatesListClient({ rates, rateDeptMap, deptMap, or
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((r) => {
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
+                    {search || filterRules.length > 0 ? 'No machine rates match the current filters.' : 'No machine rates yet.'}
+                  </td>
+                </tr>
+              ) : sorted.map((r) => {
                 const editHref = `/dashboard/${orgSlug}/settings/machine-rates?edit=${r.id}`
                 return (
                   <tr key={r.id} className="hover:bg-gray-50">
