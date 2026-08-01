@@ -46,6 +46,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
       city: string | null
       state: string | null
       zip: string | null
+      shipping_method: string | null
     } | null
   }
 
@@ -54,7 +55,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
     .select(`
       id, so_number, title, status, total, notes, quote_id, customer_id,
       created_at, updated_at,
-      customers(first_name, last_name, company_name, email, phone, street, city, state, zip)
+      customers(first_name, last_name, company_name, email, phone, street, city, state, zip, shipping_method)
     `)
     .eq('id', id)
     .eq('organization_id', org.id)

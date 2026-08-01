@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { SalesOrderStatus, JobStatus } from '@/types/database'
@@ -14,6 +14,7 @@ import {
 import SoCustomerPicker from './so-customer-picker'
 import { saveShipment, deleteShipment } from './shipments/actions-sr'
 import type { EasypostRate } from '@/lib/easypost'
+import { selectShippingRate } from '@/lib/shipping-rate-selection'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New',
@@ -51,6 +52,7 @@ type SalesOrder = {
     city: string | null
     state: string | null
     zip: string | null
+    shipping_method: string | null
   } | null
 }
 
@@ -204,6 +206,15 @@ export default function SoDetailClient({
   const [easypostShipmentId, setEasypostShipmentId] = useState<string | null>(null)
   const [buyingLabel, setBuyingLabel]               = useState(false)
 
+  // Recommended rate — customer's preferred shipping method when it's in the
+  // results and not notably pricier, otherwise the cheapest rate. Recomputed
+  // whenever the fetched rates change; handleGetRates also uses this to
+  // pre-select selectedRateId as soon as rates come back.
+  const rateRecommendation = useMemo(
+    () => selectShippingRate(salesOrder.customer?.shipping_method ?? null, fetchedRates),
+    [fetchedRates, salesOrder.customer?.shipping_method],
+  )
+
   useEffect(() => {
     if (shipmentError) flash(shipmentError, 'error')
     else if (shipmentSaved) flash('Shipment saved.', 'success')
@@ -306,7 +317,10 @@ export default function SoDetailClient({
       const data = await res.json() as { shipmentId?: string; rates?: EasypostRate[]; error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Failed to fetch rates')
       setEasypostShipmentId(data.shipmentId ?? null)
-      setFetchedRates(data.rates ?? [])
+      const rates = data.rates ?? []
+      setFetchedRates(rates)
+      const rec = selectShippingRate(salesOrder.customer?.shipping_method ?? null, rates)
+      setSelectedRateId(rec.selectedRate?.id ?? null)
     } catch (err: unknown) {
       setRatesError(err instanceof Error ? err.message : 'Failed to fetch rates')
     } finally { setRatesLoading(false) }
@@ -739,7 +753,14 @@ export default function SoDetailClient({
 
                     {fetchedRates.length > 0 && (
                       <div className="mt-3 space-y-2">
-                        {fetchedRates.map(r => (
+                        {rateRecommendation.isFlagged && rateRecommendation.flagMessage && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                            ⚠ {rateRecommendation.flagMessage}
+                          </div>
+                        )}
+                        {fetchedRates.map(r => {
+                          const isRecommended = rateRecommendation.selectedRate?.id === r.id
+                          return (
                           <label key={r.id}
                             className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
                               selectedRateId === r.id
@@ -758,10 +779,16 @@ export default function SoDetailClient({
                               {r.delivery_days != null && (
                                 <span className="text-xs text-gray-400">{r.delivery_days} day{r.delivery_days !== 1 ? 's' : ''}</span>
                               )}
+                              {isRecommended && (
+                                <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-qm-lime-dark">
+                                  {rateRecommendation.matchedPreference ? "Customer's preference" : 'Best available'}
+                                </span>
+                              )}
                             </div>
                             <span className="text-sm font-bold tabular-nums text-gray-900">${parseFloat(r.rate).toFixed(2)}</span>
                           </label>
-                        ))}
+                          )
+                        })}
 
                         {selectedRateId && !shipLabelUrl && (
                           <button type="button" onClick={handleBuyLabel} disabled={buyingLabel}

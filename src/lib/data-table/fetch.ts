@@ -18,6 +18,7 @@ const TABLE_ALLOWLIST: Record<string, string> = {
   discounts: 'discounts',
   material_categories: 'material_categories',
   product_categories: 'product_categories',
+  shipments: 'shipments',
 }
 
 export type DataTableFetchParams = {
