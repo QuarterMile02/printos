@@ -2,16 +2,20 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { createShipment, getCustomerShippingInfo, type CustomerShippingInfo } from '../actions'
-import { searchSalesOrders, type SoSearchRow } from '../../sales-orders/actions'
-import { searchCustomers } from '../../customers/actions'
-import { formatSoNumber } from '../../sales-orders/format'
+import { createShipment, updateShipment, getCustomerShippingInfo, type CustomerShippingInfo } from './actions'
+import { searchSalesOrders, type SoSearchRow } from '../sales-orders/actions'
+import { searchCustomers } from '../customers/actions'
+import { formatSoNumber } from '../sales-orders/format'
 import { selectShippingRate, type RateOption } from '@/lib/shipping-rate-selection'
+import { SHIP_STATUS_OPTIONS } from './format'
 import type { EasypostRate } from '@/lib/easypost'
 
 type ShippingMethod = { id: string; name: string; carrier: string | null; is_active: boolean }
 type ShippingProfile = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
 type CustomerResult = { id: string; name: string; company: string | null }
+type TeamMember = { id: string; full_name: string | null }
+
+const LOCAL_CARRIERS = ['local', 'pickup']
 
 type LinkMode = 'none' | 'so' | 'customer'
 
@@ -36,16 +40,40 @@ function carrierBadgeStyle(carrier: string): string {
   return 'bg-gray-100 text-gray-700'
 }
 
+export type ShipmentFormInitial = {
+  linkMode: LinkMode
+  selectedSo: SoSearchRow | null
+  resolvedCustomer: CustomerShippingInfo | null
+  shipToName: string
+  shipToStreet: string
+  shipToCity: string
+  shipToState: string
+  shipToZip: string
+  shippingMethodId: string
+  profileId: string
+  weightLbs: string
+  dimL: string
+  dimW: string
+  dimH: string
+  deliveryNotes: string
+  taskAssignedTo: string
+}
+
 type Props = {
   orgId: string
   orgSlug: string
   shippingMethods: ShippingMethod[]
   shippingProfiles: ShippingProfile[]
+  teamMembers: TeamMember[]
   initialError?: string
+  // When set, the form edits an existing shipment instead of creating one.
+  shipmentId?: string
+  initial?: ShipmentFormInitial
 }
 
-export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shippingProfiles, initialError }: Props) {
+export default function ShipmentFormClient({ orgId, orgSlug, shippingMethods, shippingProfiles, teamMembers, initialError, shipmentId, initial }: Props) {
   const router = useRouter()
+  const isEdit = !!shipmentId
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
   function flash(message: string, type: 'success' | 'error' = 'success') {
@@ -59,12 +87,12 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
   }, [])
 
   // ── Link (SO / Customer / none) ──────────────────────────────────────────
-  const [linkMode, setLinkMode] = useState<LinkMode>('none')
+  const [linkMode, setLinkMode] = useState<LinkMode>(initial?.linkMode ?? 'none')
 
   const [soSearch, setSoSearch] = useState('')
   const [soResults, setSoResults] = useState<SoSearchRow[]>([])
   const [soSearching, setSoSearching] = useState(false)
-  const [selectedSo, setSelectedSo] = useState<SoSearchRow | null>(null)
+  const [selectedSo, setSelectedSo] = useState<SoSearchRow | null>(initial?.selectedSo ?? null)
   const soDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [custSearch, setCustSearch] = useState('')
@@ -74,7 +102,7 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
 
   // The resolved customer info (address + preferred method), whether reached
   // via a direct customer pick or via a linked Sales Order's customer_id.
-  const [resolvedCustomer, setResolvedCustomer] = useState<CustomerShippingInfo | null>(null)
+  const [resolvedCustomer, setResolvedCustomer] = useState<CustomerShippingInfo | null>(initial?.resolvedCustomer ?? null)
   const [loadingCustomerInfo, setLoadingCustomerInfo] = useState(false)
 
   function handleSoSearch(val: string) {
@@ -131,11 +159,11 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
   }
 
   // ── Destination ───────────────────────────────────────────────────────────
-  const [shipToName, setShipToName]     = useState('')
-  const [shipToStreet, setShipToStreet] = useState('')
-  const [shipToCity, setShipToCity]     = useState('')
-  const [shipToState, setShipToState]   = useState('')
-  const [shipToZip, setShipToZip]       = useState('')
+  const [shipToName, setShipToName]     = useState(initial?.shipToName ?? '')
+  const [shipToStreet, setShipToStreet] = useState(initial?.shipToStreet ?? '')
+  const [shipToCity, setShipToCity]     = useState(initial?.shipToCity ?? '')
+  const [shipToState, setShipToState]   = useState(initial?.shipToState ?? '')
+  const [shipToZip, setShipToZip]       = useState(initial?.shipToZip ?? '')
 
   function applyCustomerAddress(info: CustomerShippingInfo) {
     setShipToName(info.company_name || info.name)
@@ -146,12 +174,12 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
   }
 
   // ── Package ───────────────────────────────────────────────────────────────
-  const [shippingMethodId, setShippingMethodId] = useState('')
-  const [profileId, setProfileId]   = useState('')
-  const [weightLbs, setWeightLbs]   = useState('')
-  const [dimL, setDimL]             = useState('')
-  const [dimW, setDimW]             = useState('')
-  const [dimH, setDimH]             = useState('')
+  const [shippingMethodId, setShippingMethodId] = useState(initial?.shippingMethodId ?? '')
+  const [profileId, setProfileId]   = useState(initial?.profileId ?? '')
+  const [weightLbs, setWeightLbs]   = useState(initial?.weightLbs ?? '')
+  const [dimL, setDimL]             = useState(initial?.dimL ?? '')
+  const [dimW, setDimW]             = useState(initial?.dimW ?? '')
+  const [dimH, setDimH]             = useState(initial?.dimH ?? '')
 
   function handleProfileSelect(id: string) {
     setProfileId(id)
@@ -162,6 +190,13 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
       setDimH(p.height_in != null ? String(p.height_in) : '')
     }
   }
+
+  const selectedMethod = shippingMethods.find((m) => m.id === shippingMethodId)
+  const isLocalOrPickup = !!selectedMethod && LOCAL_CARRIERS.includes(selectedMethod.carrier ?? '')
+
+  // ── Delivery / Pickup (local methods skip rate-shopping) ─────────────────
+  const [deliveryNotes, setDeliveryNotes]     = useState(initial?.deliveryNotes ?? '')
+  const [taskAssignedTo, setTaskAssignedTo]   = useState(initial?.taskAssignedTo ?? '')
 
   // ── Live rates ────────────────────────────────────────────────────────────
   const [ratesLoading, setRatesLoading]             = useState(false)
@@ -250,11 +285,17 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
         }`}>{toast.message}</div>
       )}
 
-      <form action={createShipment} className="space-y-6">
+      <form action={isEdit ? updateShipment : createShipment} className="space-y-6">
+        {isEdit && <input type="hidden" name="id" value={shipmentId} />}
         <input type="hidden" name="orgId" value={orgId} />
         <input type="hidden" name="orgSlug" value={orgSlug} />
         <input type="hidden" name="sales_order_id" value={selectedSo?.id ?? ''} />
         <input type="hidden" name="customer_id" value={resolvedCustomer?.id ?? ''} />
+        <input type="hidden" name="ship_to_name" value={shipToName} />
+        <input type="hidden" name="ship_to_street" value={shipToStreet} />
+        <input type="hidden" name="ship_to_city" value={shipToCity} />
+        <input type="hidden" name="ship_to_state" value={shipToState} />
+        <input type="hidden" name="ship_to_zip" value={shipToZip} />
         <input type="hidden" name="status" value={shipStatus} />
         <input type="hidden" name="tracking_number" value={shipTracking} />
         <input type="hidden" name="carrier" value={selectedRate?.carrier ?? ''} />
@@ -262,6 +303,8 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
         <input type="hidden" name="actual_cost" value={shipActualCost} />
         <input type="hidden" name="label_url" value={shipLabelUrl} />
         <input type="hidden" name="easypost_shipment_id" value={easypostShipmentId ?? ''} />
+        <input type="hidden" name="delivery_notes" value={deliveryNotes} />
+        <input type="hidden" name="task_assigned_to" value={taskAssignedTo} />
 
         {/* ── LINK ──────────────────────────────────────────────────────── */}
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -440,7 +483,35 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
           <input type="hidden" name="height_in" value={dimH} />
         </div>
 
-        {/* ── RATES ─────────────────────────────────────────────────────── */}
+        {/* ── DELIVERY / PICKUP (local methods skip rate-shopping) ────────── */}
+        {isLocalOrPickup ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <p className={secHdr}>Delivery / Pickup</p>
+            <p className="mb-3 text-xs text-gray-500">
+              &quot;{selectedMethod?.name}&quot; doesn&apos;t use a carrier, so there&apos;s nothing to rate-shop. Describe what&apos;s needed and assign it to someone.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className={lbl}>Instructions</label>
+                <textarea value={deliveryNotes} onChange={(e) => setDeliveryNotes(e.target.value)} rows={3}
+                  placeholder="What needs to be delivered, any special instructions..." className={inp} />
+              </div>
+              <div>
+                <label className={lbl}>Assign To</label>
+                <select value={taskAssignedTo} onChange={(e) => setTaskAssignedTo(e.target.value)} className={inp}>
+                  <option value="">Unassigned</option>
+                  {teamMembers.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={lbl}>Status</label>
+                <select value={shipStatus} onChange={(e) => setShipStatus(e.target.value)} className={inp}>
+                  {SHIP_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <p className={secHdr}>Get Rates</p>
           <button type="button" onClick={handleGetRates} disabled={ratesLoading}
@@ -507,10 +578,11 @@ export default function NewShipmentClient({ orgId, orgSlug, shippingMethods, shi
             </div>
           )}
         </div>
+        )}
 
         <div className="flex gap-2">
           <button type="submit" className="rounded-md bg-qm-lime px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110">
-            Save Shipment
+            {isEdit ? 'Update Shipment' : 'Save Shipment'}
           </button>
           <button type="button" onClick={() => router.back()} className="rounded-md border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
             Cancel

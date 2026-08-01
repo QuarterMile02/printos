@@ -219,18 +219,15 @@ export default function ShippingListClient({ initialRows, initialTotalCount, org
               </tr>
             ) : liveRows.map((r) => {
               const soHref = r.sales_order_id ? `/dashboard/${orgSlug}/sales-orders/${r.sales_order_id}` : null
+              const detailHref = `/dashboard/${orgSlug}/shipping/${r.id}`
               const custLabel = custName(r.sales_order_id ? r.sales_orders?.customers ?? null : r.customers)
               const methodLabel = r.shipping_methods?.name ?? r.carrier
               return (
-                <tr key={r.id} className="hover:bg-gray-50">
+                <tr key={r.id} className="group hover:bg-gray-50">
                   <td className="overflow-hidden px-4 py-3">
-                    {soHref ? (
-                      <Link href={soHref} className="block truncate text-sm font-medium text-qm-fuchsia hover:underline">
-                        {linkedLabel(r)}
-                      </Link>
-                    ) : (
-                      <span className="block truncate text-sm font-medium text-gray-900">{linkedLabel(r)}</span>
-                    )}
+                    <Link href={detailHref} className="block truncate text-sm font-medium text-qm-fuchsia hover:underline">
+                      {linkedLabel(r)}
+                    </Link>
                     {custLabel && <div className="truncate text-xs text-gray-500">{custLabel}</div>}
                   </td>
                   <td className="overflow-hidden whitespace-nowrap px-4 py-3 text-sm text-gray-700">{methodLabel ?? <Dash />}</td>

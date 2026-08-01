@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
-import NewShipmentClient from './new-shipment-client'
+import ShipmentFormClient from '../shipment-form-client'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -36,13 +36,16 @@ export default async function NewShipmentPage({ params, searchParams }: PageProp
 
   type ShipMethodRow = { id: string; name: string; carrier: string | null; is_active: boolean }
   type ShipProfileRow = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
+  type TeamMemberRow = { id: string; full_name: string | null }
 
-  const [mRes, pRes] = await Promise.all([
+  const [mRes, pRes, tRes] = await Promise.all([
     supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
     supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
+    supabase.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name'),
   ])
   const shippingMethods = (mRes.data ?? []) as ShipMethodRow[]
   const shippingProfiles = (pRes.data ?? []) as ShipProfileRow[]
+  const teamMembers = (tRes.data ?? []) as TeamMemberRow[]
 
   return (
     <div className="p-8 max-w-3xl">
@@ -56,11 +59,12 @@ export default async function NewShipmentPage({ params, searchParams }: PageProp
 
       <h1 className="mb-6 text-2xl font-extrabold text-qm-black">New Shipment</h1>
 
-      <NewShipmentClient
+      <ShipmentFormClient
         orgId={org.id}
         orgSlug={slug}
         shippingMethods={shippingMethods}
         shippingProfiles={shippingProfiles}
+        teamMembers={teamMembers}
         initialError={sp.error ? decodeURIComponent(sp.error) : undefined}
       />
     </div>

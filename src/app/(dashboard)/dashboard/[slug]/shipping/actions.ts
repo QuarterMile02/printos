@@ -47,54 +47,137 @@ export async function getCustomerShippingInfo(orgId: string, customerId: string)
   }
 }
 
+function parseShipmentFields(formData: FormData) {
+  return {
+    sales_order_id: (formData.get('sales_order_id') as string) || null,
+    customer_id: (formData.get('customer_id') as string) || null,
+    shipping_method_id: (formData.get('shipping_method_id') as string) || null,
+    shipping_profile_id: (formData.get('shipping_profile_id') as string) || null,
+    ship_to_name: ((formData.get('ship_to_name') as string) ?? '').trim() || null,
+    ship_to_street: ((formData.get('ship_to_street') as string) ?? '').trim() || null,
+    ship_to_city: ((formData.get('ship_to_city') as string) ?? '').trim() || null,
+    ship_to_state: ((formData.get('ship_to_state') as string) ?? '').trim() || null,
+    ship_to_zip: ((formData.get('ship_to_zip') as string) ?? '').trim() || null,
+    weight_lbs: numOrNull(formData.get('weight_lbs')),
+    length_in: numOrNull(formData.get('length_in')),
+    width_in: numOrNull(formData.get('width_in')),
+    height_in: numOrNull(formData.get('height_in')),
+    status: (formData.get('status') as string) || 'pending',
+    tracking_number: ((formData.get('tracking_number') as string) ?? '').trim() || null,
+    carrier: ((formData.get('carrier') as string) ?? '').trim() || null,
+    quoted_rate: numOrNull(formData.get('quoted_rate')),
+    actual_cost: numOrNull(formData.get('actual_cost')),
+    label_url: ((formData.get('label_url') as string) ?? '').trim() || null,
+    easypost_shipment_id: ((formData.get('easypost_shipment_id') as string) ?? '').trim() || null,
+    easypost_tracker_id: ((formData.get('easypost_tracker_id') as string) ?? '').trim() || null,
+  }
+}
+
+// Local/pickup shipping methods skip EasyPost rate-shopping entirely and
+// instead get a task assigned to whoever is doing the delivery or handling
+// the pickup — reuses the existing tasks table/assignment mechanism (which
+// already has a working "Assign To" picker) rather than jobs.assigned_to,
+// which no UI in the app currently writes to.
+async function upsertDeliveryTask(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  service: any,
+  orgId: string,
+  userId: string | null,
+  shipmentId: string,
+  soId: string | null,
+  customerId: string | null,
+  notes: string | null,
+  assignedTo: string | null,
+) {
+  const { data: existing } = await service
+    .from('tasks')
+    .select('id')
+    .eq('shipment_id', shipmentId)
+    .maybeSingle() as { data: { id: string } | null }
+
+  const taskFields = {
+    org_id: orgId,
+    title: 'Delivery / Pickup',
+    description: notes,
+    assigned_to: assignedTo,
+    so_id: soId,
+    related_customer_id: customerId,
+    shipment_id: shipmentId,
+  }
+
+  if (existing) {
+    await service.from('tasks').update(taskFields).eq('id', existing.id)
+  } else {
+    await service.from('tasks').insert({ ...taskFields, created_by: userId, status: 'open', priority: 'medium' })
+  }
+}
+
+async function isLocalOrPickupMethod(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  service: any,
+  shippingMethodId: string | null,
+): Promise<boolean> {
+  if (!shippingMethodId) return false
+  const { data } = await service
+    .from('shipping_methods')
+    .select('carrier')
+    .eq('id', shippingMethodId)
+    .maybeSingle() as { data: { carrier: string | null } | null }
+  return data?.carrier === 'local' || data?.carrier === 'pickup'
+}
+
 export async function createShipment(formData: FormData) {
   const orgId = formData.get('orgId') as string
   const orgSlug = formData.get('orgSlug') as string
-  const sales_order_id = (formData.get('sales_order_id') as string) || null
-  const customer_id = (formData.get('customer_id') as string) || null
-  const shipping_method_id = (formData.get('shipping_method_id') as string) || null
-  const shipping_profile_id = (formData.get('shipping_profile_id') as string) || null
-  const weight_lbs = numOrNull(formData.get('weight_lbs'))
-  const length_in = numOrNull(formData.get('length_in'))
-  const width_in = numOrNull(formData.get('width_in'))
-  const height_in = numOrNull(formData.get('height_in'))
-  const status = (formData.get('status') as string) || 'pending'
-  const tracking_number = ((formData.get('tracking_number') as string) ?? '').trim() || null
-  const carrier = ((formData.get('carrier') as string) ?? '').trim() || null
-  const quoted_rate = numOrNull(formData.get('quoted_rate'))
-  const actual_cost = numOrNull(formData.get('actual_cost'))
-  const label_url = ((formData.get('label_url') as string) ?? '').trim() || null
-  const easypost_shipment_id = ((formData.get('easypost_shipment_id') as string) ?? '').trim() || null
-  const easypost_tracker_id = ((formData.get('easypost_tracker_id') as string) ?? '').trim() || null
+  const fields = parseShipmentFields(formData)
+  const deliveryNotes = ((formData.get('delivery_notes') as string) ?? '').trim() || null
+  const taskAssignedTo = (formData.get('task_assigned_to') as string) || null
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const service = createServiceClient()
 
-  const { error } = await service.from('shipments').insert({
+  const { data: inserted, error } = await service.from('shipments').insert({
     organization_id: orgId,
-    sales_order_id,
-    customer_id,
-    shipping_method_id,
-    shipping_profile_id,
-    weight_lbs,
-    length_in,
-    width_in,
-    height_in,
-    status,
-    tracking_number,
-    carrier,
-    quoted_rate,
-    actual_cost,
-    label_url,
-    easypost_shipment_id,
-    easypost_tracker_id,
+    ...fields,
     created_by: user?.id ?? null,
-  })
+  }).select('id').single() as { data: { id: string } | null; error: { message: string } | null }
 
-  if (error) {
-    redirect(`/dashboard/${orgSlug}/shipping/new?error=${encodeURIComponent(error.message)}`)
+  if (error || !inserted) {
+    redirect(`/dashboard/${orgSlug}/shipping/new?error=${encodeURIComponent(error?.message ?? 'Failed to create shipment')}`)
+  }
+
+  if (await isLocalOrPickupMethod(service, fields.shipping_method_id)) {
+    await upsertDeliveryTask(service, orgId, user?.id ?? null, inserted.id, fields.sales_order_id, fields.customer_id, deliveryNotes, taskAssignedTo)
   }
 
   redirect(`/dashboard/${orgSlug}/shipping?created=1`)
+}
+
+export async function updateShipment(formData: FormData) {
+  const id = formData.get('id') as string
+  const orgId = formData.get('orgId') as string
+  const orgSlug = formData.get('orgSlug') as string
+  const fields = parseShipmentFields(formData)
+  const deliveryNotes = ((formData.get('delivery_notes') as string) ?? '').trim() || null
+  const taskAssignedTo = (formData.get('task_assigned_to') as string) || null
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const service = createServiceClient()
+
+  const { error } = await service.from('shipments')
+    .update(fields)
+    .eq('id', id)
+    .eq('organization_id', orgId)
+
+  if (error) {
+    redirect(`/dashboard/${orgSlug}/shipping/${id}?error=${encodeURIComponent(error.message)}`)
+  }
+
+  if (await isLocalOrPickupMethod(service, fields.shipping_method_id)) {
+    await upsertDeliveryTask(service, orgId, user?.id ?? null, id, fields.sales_order_id, fields.customer_id, deliveryNotes, taskAssignedTo)
+  }
+
+  redirect(`/dashboard/${orgSlug}/shipping/${id}`)
 }
