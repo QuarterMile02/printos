@@ -112,11 +112,25 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
 
   const rateMap = new Map<string, { name: string; cost: number; price: number; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }>()
 
+  // material_id -> quantity-break tiers, sorted ascending by from_qty
+  const materialTierMap = new Map<string, { from_qty: number; to_qty: number | null; cost: number; price: number }[]>()
+
   if (matIds.length > 0) {
     const { data, error: matErr } = await service.from('materials').select('id, name, cost, price, selling_units').in('id', matIds)
     console.log('[pricing] materials loaded:', data?.length, 'error:', matErr?.message)
     for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; selling_units: string | null }[])
       rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units, setup_charge: null, other_charge: null })
+
+    const { data: tierRows } = await service
+      .from('material_pricing_tiers')
+      .select('material_id, from_qty, to_qty, cost, price')
+      .in('material_id', matIds)
+      .order('from_qty', { ascending: true })
+    for (const t of (tierRows ?? []) as { material_id: string; from_qty: number; to_qty: number | null; cost: number; price: number }[]) {
+      const arr = materialTierMap.get(t.material_id) ?? []
+      arr.push({ from_qty: Number(t.from_qty), to_qty: t.to_qty == null ? null : Number(t.to_qty), cost: Number(t.cost), price: Number(t.price) })
+      materialTierMap.set(t.material_id, arr)
+    }
   }
   if (laborIds.length > 0) {
     const { data, error: laborErr } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units, setup_charge, other_charge').in('id', laborIds)
@@ -209,10 +223,20 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     if (item.fixed_quantity && Number(item.fixed_quantity) > 0) {
       const fq = Number(item.fixed_quantity)
       const fqQty = item.charge_per_li_unit ? input.quantity : 1
+      const effectiveQty = fq * mult * fqQty
+      if (item.material_id) {
+        const tier = findMaterialTier(materialTierMap.get(item.material_id), effectiveQty)
+        if (tier) { rateCost = tier.cost; ratePrice = tier.price }
+      }
       itemCost = rateCost * fq * mult * fqQty
       itemPrice = ratePrice * fq * mult * fqQty
     } else {
       const chargeQty = item.charge_per_li_unit ? input.quantity : 1
+      const effectiveQty = fMult * mult * chargeQty
+      if (item.material_id) {
+        const tier = findMaterialTier(materialTierMap.get(item.material_id), effectiveQty)
+        if (tier) { rateCost = tier.cost; ratePrice = tier.price }
+      }
       const { totalCost, totalPrice } = computeLineItem(
         { name, cost: rateCost, price: ratePrice, markup: 1, production_rate: productionRate ?? undefined, setup_charge: rateSetup ?? undefined, other_charge: rateOther ?? undefined },
         fMult * mult,
@@ -432,6 +456,28 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     discount_percent: discountPercent,
     discount_type: discountType ?? (product.volume_discount_id || product.range_discount_id ? 'none_matched' : 'no_discount_assigned'),
   }
+}
+
+// ── Material pricing tier lookup ─────────────────────────────────────
+//
+// `tiers` must be sorted ascending by from_qty. Returns the tier whose
+// [from_qty, to_qty] range covers `qty`. If qty falls in a gap between
+// tiers (data-entry gap, or above the last tier's to_qty), falls back
+// to the tier with the highest from_qty <= qty — never the flat rate,
+// never an error. Returns null only if qty is below every tier's
+// from_qty (no lower tier exists to fall back to).
+
+function findMaterialTier(
+  tiers: { from_qty: number; to_qty: number | null; cost: number; price: number }[] | undefined,
+  qty: number,
+): { cost: number; price: number } | null {
+  if (!tiers || tiers.length === 0) return null
+  let fallback: { cost: number; price: number } | null = null
+  for (const t of tiers) {
+    if (qty >= t.from_qty && (t.to_qty == null || qty <= t.to_qty)) return { cost: t.cost, price: t.price }
+    if (t.from_qty <= qty) fallback = { cost: t.cost, price: t.price }
+  }
+  return fallback
 }
 
 // ── Discount tier lookup ─────────────────────────────────────────────
