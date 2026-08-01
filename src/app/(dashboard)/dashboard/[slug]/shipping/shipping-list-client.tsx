@@ -46,6 +46,7 @@ const DB_SELECT = `
 `
 const PAGE_SIZE = SHIPPING_PAGE_SIZE
 const DEFAULT_SORT = [{ column: 'created_at', direction: 'desc' as const }]
+const SEARCH_COLUMNS = ['tracking_number']
 
 function custName(c: { first_name: string; last_name: string; company_name: string | null } | null): string | null {
   if (!c) return null
@@ -116,7 +117,7 @@ export default function ShippingListClient({ initialRows, initialTotalCount, org
     filterRules,
     sortRules: activeSortRules,
     search,
-    searchColumns: ['tracking_number'],
+    searchColumns: SEARCH_COLUMNS,
     page,
     pageSize: PAGE_SIZE,
     initialRows,
