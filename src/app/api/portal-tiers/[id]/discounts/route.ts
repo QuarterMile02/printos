@@ -51,11 +51,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     await request.json();
 
   // Replace all rows for this tier
-  await supabase
+  const { error: deleteError } = await supabase
     .from('portal_tier_discounts')
     .delete()
     .eq('tier_id', id)
     .eq('organization_id', profile.organization_id);
+  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
 
   const toInsert = rows
     .filter((r) => typeof r.discount_percent === 'number' && r.discount_percent > 0)

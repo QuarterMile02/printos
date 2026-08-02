@@ -43,13 +43,14 @@ export async function POST(
   const cost = Number(body.cost)
   const price = Number(body.price)
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from('material_pricing_tiers')
     .select('from_qty, to_qty')
     .eq('material_id', materialId)
     .eq('organization_id', orgId)
+  if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 })
 
-  const overlapError = checkNoOverlap({ from_qty, to_qty }, (existing ?? []) as { from_qty: number; to_qty: number | null }[])
+  const overlapError = checkNoOverlap({ from_qty, to_qty }, existing as { from_qty: number; to_qty: number | null }[])
   if (overlapError) return NextResponse.json({ error: overlapError }, { status: 400 })
 
   const { data, error } = await supabase

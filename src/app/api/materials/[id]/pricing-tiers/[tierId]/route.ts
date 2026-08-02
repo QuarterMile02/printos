@@ -21,13 +21,14 @@ export async function PATCH(
   const cost = Number(body.cost)
   const price = Number(body.price)
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from('material_pricing_tiers')
     .select('id, from_qty, to_qty')
     .eq('material_id', materialId)
     .eq('organization_id', orgId)
+  if (existingError) return NextResponse.json({ error: existingError.message }, { status: 500 })
 
-  const others = ((existing ?? []) as { id: string; from_qty: number; to_qty: number | null }[])
+  const others = (existing as { id: string; from_qty: number; to_qty: number | null }[])
     .filter((t) => t.id !== tierId)
   const overlapError = checkNoOverlap({ from_qty, to_qty }, others)
   if (overlapError) return NextResponse.json({ error: overlapError }, { status: 400 })

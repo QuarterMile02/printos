@@ -79,10 +79,14 @@ export async function POST(request: Request) {
 
   // Update task to record the SWO id
   if (body.task_id && swo) {
-    await supabase
+    const { error: linkError } = await supabase
       .from('tasks')
       .update({ sample_work_order_id: swo.id, is_sample_work_order: true })
       .eq('id', body.task_id);
+    if (linkError) {
+      console.error('[sample-work-orders POST] Failed to link task back to SWO:', linkError.message, { taskId: body.task_id, swoId: swo.id });
+      return NextResponse.json({ ...swo, _warning: 'Sample work order created, but linking it back to the task failed.' });
+    }
   }
 
   return NextResponse.json(swo);

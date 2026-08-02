@@ -135,7 +135,13 @@ export async function POST(req: NextRequest) {
 
   if (!shipment) return NextResponse.json({ received: true })
 
-  await service.from('shipments').update({ status: newStatus }).eq('id', shipment.id)
+  const { error: updateError } = await service.from('shipments').update({ status: newStatus }).eq('id', shipment.id)
+  if (updateError) {
+    console.error('[shipping/webhook] Failed to update shipment status:', updateError.message, { shipmentId: shipment.id, newStatus })
+    // Non-2xx so EasyPost retries — an ACK here would tell EasyPost we
+    // recorded the update when the write never actually happened.
+    return NextResponse.json({ error: 'Failed to update shipment status' }, { status: 500 })
+  }
 
   if (NOTIFY_STATUSES.has(epStatus)) {
     const so = shipment.sales_orders

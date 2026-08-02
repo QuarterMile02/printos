@@ -78,13 +78,19 @@ export async function POST(req: NextRequest) {
       email ? `email.eq.${email}` : null,
       phone ? `phone.eq.${phone}` : null,
     ].filter(Boolean).join(',')
-    const { data: existing } = await supabase
+    const { data: existing, error: lookupErr } = await supabase
       .from('customers')
       .select('id')
       .eq('organization_id', orgId)
       .or(orParts)
       .limit(1)
       .maybeSingle()
+    if (lookupErr) {
+      // Don't fall through to "create customer" on a failed dedup lookup —
+      // that would silently create a duplicate for an existing contact.
+      console.error('[ghl-webhook] Dedup lookup failed:', lookupErr.message)
+      return NextResponse.json({ error: 'Failed to look up existing customer' }, { status: 500 })
+    }
     if (existing) customerId = (existing as { id: string }).id
   }
 

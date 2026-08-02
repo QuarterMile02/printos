@@ -165,10 +165,11 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const service = createServiceClient();
 
   // Usage check
-  const { count } = await service
+  const { count, error: countError } = await service
     .from('quote_line_items')
     .select('id', { count: 'exact', head: true })
     .eq('product_id', productId);
+  if (countError) return NextResponse.json({ error: countError.message }, { status: 500 });
 
   if ((count ?? 0) > 0) {
     return NextResponse.json(

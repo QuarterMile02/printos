@@ -25,11 +25,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   // Auto-set won_at / lost_at based on destination stage
   if (body.stage_id) {
-    const { data: stage } = await supabase
+    const { data: stage, error: stageError } = await supabase
       .from('pipeline_stages')
       .select('is_won, is_lost')
       .eq('id', body.stage_id)
       .single();
+    if (stageError) return NextResponse.json({ error: stageError.message }, { status: 500 });
 
     if (stage?.is_won) {
       updateData.won_at = updateData.won_at ?? new Date().toISOString();

@@ -42,13 +42,21 @@ export async function POST(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const { data: items } = await supabase
+  const { data: items, error: itemsError } = await supabase
     .from('purchase_order_items')
     .select('total_cost')
     .eq('po_id', poId)
+  if (itemsError) {
+    console.error('[purchase-orders items POST] Failed to re-read items for total recompute:', itemsError.message, { poId })
+    return NextResponse.json({ ...data, _warning: 'Item saved, but PO totals could not be recalculated.' }, { status: 201 })
+  }
 
-  const subtotal = (items ?? []).reduce((s, i) => s + Number(i.total_cost ?? 0), 0)
-  await supabase.from('purchase_orders').update({ subtotal, total: subtotal }).eq('id', poId)
+  const subtotal = items.reduce((s, i) => s + Number(i.total_cost ?? 0), 0)
+  const { error: totalsError } = await supabase.from('purchase_orders').update({ subtotal, total: subtotal }).eq('id', poId)
+  if (totalsError) {
+    console.error('[purchase-orders items POST] Failed to update PO totals:', totalsError.message, { poId, subtotal })
+    return NextResponse.json({ ...data, _warning: 'Item saved, but PO totals could not be recalculated.' }, { status: 201 })
+  }
 
   return NextResponse.json(data, { status: 201 })
 }
