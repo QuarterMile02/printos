@@ -7,6 +7,7 @@ import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-templa
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { createInvoiceFromSO } from '@/app/(dashboard)/dashboard/[slug]/invoices/actions'
+import { dbOrThrow } from '@/lib/db'
 
 function toE164(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -485,7 +486,7 @@ export async function updateJobPhaseDates(formData: FormData): Promise<void> {
   if (!membership || membership.role === 'viewer') return
 
   const service = createServiceClient()
-  await service
+  await dbOrThrow(service
     .from('jobs')
     .update({
       production_due_date:   productionDueDate,
@@ -493,7 +494,7 @@ export async function updateJobPhaseDates(formData: FormData): Promise<void> {
       installation_due_date: installationDueDate,
     })
     .eq('id', jobId)
-    .eq('organization_id', orgId)
+    .eq('organization_id', orgId))
 
   revalidatePath(`/dashboard/${orgSlug}/jobs/${jobId}`)
 }

@@ -47,12 +47,13 @@ export async function resetLayout(
   if (!user) return { error: 'Not authenticated.' }
 
   const service = createServiceClient()
-  await service
+  const { error } = await service
     .from('dashboard_layouts')
     .delete()
     .eq('user_id', user.id)
     .eq('organization_id', orgId)
 
+  if (error) return { error: error.message }
   revalidatePath(`/dashboard/${orgSlug}`)
   return {}
 }

@@ -290,6 +290,8 @@ export default function DashboardGrid({
       setEditMode(false)
       showToast('Reset to default')
       router.refresh()
+    } else {
+      showToast(`Failed to reset layout: ${res.error}`)
     }
   }
 

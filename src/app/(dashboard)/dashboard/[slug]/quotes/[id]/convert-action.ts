@@ -128,17 +128,31 @@ export async function convertToSalesOrder(formData: FormData) {
     .eq('id', quoteId)
     .eq('organization_id', orgId)
 
+  let quoteUpdateFailed = false
   if (updateErr) {
     // Fallback: if converted_to_so_id column doesn't exist, just update status
     if (updateErr.message?.includes('does not exist')) {
-      await service
+      const { error: fallbackErr } = await service
         .from('quotes')
         .update({ status: 'ordered' })
         .eq('id', quoteId)
         .eq('organization_id', orgId)
+      if (fallbackErr) {
+        console.error('[convertToSalesOrder] Fallback quote update also failed:', fallbackErr.message)
+        quoteUpdateFailed = true
+      }
     } else {
       console.error('[convertToSalesOrder] Quote update failed:', updateErr.message)
+      quoteUpdateFailed = true
     }
+  }
+
+  // The SO was already created successfully above — it's real and the
+  // redirect is correct either way. But if the quote itself never got
+  // marked 'ordered', it can still show as open and get converted again,
+  // creating a duplicate SO — so that failure must stay visible, not silent.
+  if (quoteUpdateFailed) {
+    redirect(`/dashboard/${orgSlug}/sales-orders/${soId}?warning=${encodeURIComponent('Sales order created, but the source quote could not be marked as converted — it may still show as open.')}`)
   }
 
   redirect(`/dashboard/${orgSlug}/sales-orders/${soId}`)

@@ -2,6 +2,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { dbOrThrow } from '@/lib/db'
 
 export async function clockIn(formData: FormData) {
   const jobId = formData.get('jobId') as string
@@ -14,13 +15,13 @@ export async function clockIn(formData: FormData) {
   if (!user) throw new Error('Not authenticated')
 
   const service = createServiceClient()
-  await service.from('job_time_logs').insert({
+  await dbOrThrow(service.from('job_time_logs').insert({
     job_id: jobId,
     organization_id: orgId,
     user_id: user.id,
     action: 'clock_in',
     stage,
-  })
+  }))
 
   redirect(`/dashboard/${orgSlug}/jobs/${jobId}/scan`)
 }
@@ -55,14 +56,14 @@ export async function clockOut(formData: FormData) {
     durationMinutes = Math.round(((now - inTime) / 60000) * 100) / 100
   }
 
-  await service.from('job_time_logs').insert({
+  await dbOrThrow(service.from('job_time_logs').insert({
     job_id: jobId,
     organization_id: orgId,
     user_id: user.id,
     action: 'clock_out',
     stage,
     duration_minutes: durationMinutes,
-  })
+  }))
 
   redirect(`/dashboard/${orgSlug}/jobs/${jobId}/scan`)
 }

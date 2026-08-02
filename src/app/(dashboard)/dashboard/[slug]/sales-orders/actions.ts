@@ -182,7 +182,7 @@ export async function updateSalesOrderStatus(
           const dueDate = new Date()
           dueDate.setDate(dueDate.getDate() + 30) // Net 30
 
-          const { data: newInvoice } = await service.from('invoices').insert({
+          const { data: newInvoice, error: invoiceErr } = await service.from('invoices').insert({
             organization_id: orgId,
             sales_order_id: soId,
             title: so.title,
@@ -193,7 +193,14 @@ export async function updateSalesOrderStatus(
             balance_due: total,
             due_date: dueDate.toISOString().slice(0, 10),
             status: 'draft',
-          }).select('id').single() as { data: { id: string } | null; error: unknown }
+          }).select('id').single() as { data: { id: string } | null; error: { message: string } | null }
+
+          if (invoiceErr) {
+            // Best-effort by design (see catch below) — but a discarded
+            // error here means the SO looks "invoiced" with no invoice ever
+            // created, so it must not pass silently.
+            console.error('[updateSalesOrderStatus] Auto-invoice insert failed:', invoiceErr.message, { soId })
+          }
 
           if (newInvoice?.id) {
             await logActivity({

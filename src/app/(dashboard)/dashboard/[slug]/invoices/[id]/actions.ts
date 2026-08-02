@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { logActivity } from '@/lib/logActivity'
+import { dbOrThrow } from '@/lib/db'
 
 export async function recordPayment(formData: FormData) {
   const invoiceId = formData.get('invoiceId') as string
@@ -25,12 +26,12 @@ export async function recordPayment(formData: FormData) {
   const newBalance = invoice.total - newPaid
   const newStatus = newBalance <= 0 ? 'paid' : 'partial'
 
-  await service.from('invoices').update({
+  await dbOrThrow(service.from('invoices').update({
     amount_paid: newPaid,
     balance_due: Math.max(0, newBalance),
     status: newStatus,
     updated_at: new Date().toISOString(),
-  }).eq('id', invoiceId)
+  }).eq('id', invoiceId))
 
   if (user && newStatus === 'paid' && invoice.status !== 'paid') {
     await logActivity({

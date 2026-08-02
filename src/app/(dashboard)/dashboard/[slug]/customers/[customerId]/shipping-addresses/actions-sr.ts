@@ -2,6 +2,7 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { dbOrThrow } from '@/lib/db'
 
 export async function saveShippingAddress(formData: FormData) {
   const id        = (formData.get('id') as string) || null
@@ -23,22 +24,22 @@ export async function saveShippingAddress(formData: FormData) {
   const service = createServiceClient()
 
   if (isDefault) {
-    await service.from('shipping_addresses')
+    await dbOrThrow(service.from('shipping_addresses')
       .update({ is_default: false })
       .eq('customer_id', customerId)
-      .eq('organization_id', orgId)
+      .eq('organization_id', orgId))
   }
 
   const payload = { label, street, city, state, zip, country, is_default: isDefault }
 
   if (id) {
-    await service.from('shipping_addresses').update(payload).eq('id', id)
+    await dbOrThrow(service.from('shipping_addresses').update(payload).eq('id', id))
   } else {
-    await service.from('shipping_addresses').insert({
+    await dbOrThrow(service.from('shipping_addresses').insert({
       ...payload,
       organization_id: orgId,
       customer_id: customerId,
-    })
+    }))
   }
 
   revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
@@ -54,7 +55,7 @@ export async function deleteShippingAddress(formData: FormData) {
   if (!user) throw new Error('Unauthorized')
 
   const service = createServiceClient()
-  await service.from('shipping_addresses').delete().eq('id', id)
+  await dbOrThrow(service.from('shipping_addresses').delete().eq('id', id))
 
   revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
 }
@@ -70,9 +71,9 @@ export async function setDefaultShippingAddress(formData: FormData) {
   if (!user) throw new Error('Unauthorized')
 
   const service = createServiceClient()
-  await service.from('shipping_addresses').update({ is_default: false })
-    .eq('customer_id', customerId).eq('organization_id', orgId)
-  await service.from('shipping_addresses').update({ is_default: true }).eq('id', id)
+  await dbOrThrow(service.from('shipping_addresses').update({ is_default: false })
+    .eq('customer_id', customerId).eq('organization_id', orgId))
+  await dbOrThrow(service.from('shipping_addresses').update({ is_default: true }).eq('id', id))
 
   revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
 }

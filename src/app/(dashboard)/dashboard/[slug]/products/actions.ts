@@ -177,9 +177,10 @@ function buildRecord(data: ProductFormData) {
 
 // ---- Relation save helpers ----
 
-async function replaceDefaultItems(productId: string, orgId: string, items: DefaultItemInput[]) {
+async function replaceDefaultItems(productId: string, orgId: string, items: DefaultItemInput[]): Promise<string | null> {
   const service = createServiceClient()
-  await service.from('product_default_items').delete().eq('product_id', productId).eq('organization_id', orgId)
+  const del = await service.from('product_default_items').delete().eq('product_id', productId).eq('organization_id', orgId)
+  if (del.error) return del.error.message
 
   if (items.length > 0) {
     const rows = items.map((item, i) => ({
@@ -198,13 +199,16 @@ async function replaceDefaultItems(productId: string, orgId: string, items: Defa
       multiplier: item.multiplier,
       sort_order: i,
     }))
-    await service.from('product_default_items').insert(rows)
+    const ins = await service.from('product_default_items').insert(rows)
+    if (ins.error) return ins.error.message
   }
+  return null
 }
 
-async function replaceProductModifiers(productId: string, orgId: string, modifiers: ProductModifierInput[]) {
+async function replaceProductModifiers(productId: string, orgId: string, modifiers: ProductModifierInput[]): Promise<string | null> {
   const service = createServiceClient()
-  await service.from('product_modifiers').delete().eq('product_id', productId).eq('organization_id', orgId)
+  const del = await service.from('product_modifiers').delete().eq('product_id', productId).eq('organization_id', orgId)
+  if (del.error) return del.error.message
 
   if (modifiers.length > 0) {
     const rows = modifiers.map((m, i) => ({
@@ -215,17 +219,20 @@ async function replaceProductModifiers(productId: string, orgId: string, modifie
       default_value: m.default_value,
       sort_order: i,
     }))
-    await service.from('product_modifiers').insert(rows)
+    const ins = await service.from('product_modifiers').insert(rows)
+    if (ins.error) return ins.error.message
   }
+  return null
 }
 
 async function replaceProductCustomFields(
   productId: string,
   orgId: string,
   fields: ProductCustomFieldInput[],
-) {
+): Promise<string | null> {
   const service = createServiceClient()
-  await service.from('product_custom_fields').delete().eq('product_id', productId).eq('organization_id', orgId)
+  const del = await service.from('product_custom_fields').delete().eq('product_id', productId).eq('organization_id', orgId)
+  if (del.error) return del.error.message
 
   if (fields.length > 0) {
     const rows = fields
@@ -241,32 +248,37 @@ async function replaceProductCustomFields(
         sort_order: i,
       }))
     if (rows.length > 0) {
-      await service.from('product_custom_fields').insert(rows)
+      const ins = await service.from('product_custom_fields').insert(rows)
+      if (ins.error) return ins.error.message
     }
   }
+  return null
 }
 
-async function replaceDropdownMenus(productId: string, orgId: string, menus: DropdownMenuInput[]) {
+async function replaceDropdownMenus(productId: string, orgId: string, menus: DropdownMenuInput[]): Promise<string | null> {
   const service = createServiceClient()
 
   // Get existing menus to delete their items first (cascade would handle this but explicit is clearer)
-  const { data: existingMenus } = await service
+  const { data: existingMenus, error: existingError } = await service
     .from('product_dropdown_menus')
     .select('id')
     .eq('product_id', productId)
     .eq('organization_id', orgId)
+  if (existingError) return existingError.message
 
   const existingIds = (existingMenus ?? []).map((m) => m.id)
   if (existingIds.length > 0) {
-    await service.from('product_dropdown_items').delete().in('dropdown_menu_id', existingIds)
-    await service.from('product_dropdown_menus').delete().in('id', existingIds)
+    const delItems = await service.from('product_dropdown_items').delete().in('dropdown_menu_id', existingIds)
+    if (delItems.error) return delItems.error.message
+    const delMenus = await service.from('product_dropdown_menus').delete().in('id', existingIds)
+    if (delMenus.error) return delMenus.error.message
   }
 
   // Insert new menus + their items
   for (let i = 0; i < menus.length; i++) {
     const menu = menus[i]
     if (!menu.menu_name.trim()) continue
-    const { data: insertedMenu } = await service
+    const { data: insertedMenu, error: menuError } = await service
       .from('product_dropdown_menus')
       .insert({
         organization_id: orgId,
@@ -276,7 +288,8 @@ async function replaceDropdownMenus(productId: string, orgId: string, menus: Dro
         sort_order: i,
       })
       .select('id')
-      .single() as { data: { id: string } | null; error: unknown }
+      .single() as { data: { id: string } | null; error: { message: string } | null }
+    if (menuError) return menuError.message
 
     if (!insertedMenu) continue
 
@@ -293,9 +306,11 @@ async function replaceDropdownMenus(productId: string, orgId: string, menus: Dro
         is_optional: item.is_optional,
         sort_order: j,
       }))
-      await service.from('product_dropdown_items').insert(itemRows)
+      const insItems = await service.from('product_dropdown_items').insert(itemRows)
+      if (insItems.error) return insItems.error.message
     }
   }
+  return null
 }
 
 export async function createProduct(
@@ -324,10 +339,12 @@ export async function createProduct(
 
   if (error || !inserted) return { error: error?.message ?? 'Failed to create product.' }
 
-  await replaceDefaultItems(inserted.id, orgId, bundle.defaultItems)
-  await replaceProductModifiers(inserted.id, orgId, bundle.modifiers)
-  await replaceDropdownMenus(inserted.id, orgId, bundle.dropdownMenus)
-  await replaceProductCustomFields(inserted.id, orgId, bundle.customFields)
+  const replaceError =
+    (await replaceDefaultItems(inserted.id, orgId, bundle.defaultItems)) ??
+    (await replaceProductModifiers(inserted.id, orgId, bundle.modifiers)) ??
+    (await replaceDropdownMenus(inserted.id, orgId, bundle.dropdownMenus)) ??
+    (await replaceProductCustomFields(inserted.id, orgId, bundle.customFields))
+  if (replaceError) return { error: replaceError, id: inserted.id }
 
   revalidatePath(`/dashboard/${orgSlug}/products`)
   return { id: inserted.id }
@@ -355,10 +372,12 @@ export async function updateProduct(
 
   if (error) return { error: error.message }
 
-  await replaceDefaultItems(id, orgId, bundle.defaultItems)
-  await replaceProductModifiers(id, orgId, bundle.modifiers)
-  await replaceDropdownMenus(id, orgId, bundle.dropdownMenus)
-  await replaceProductCustomFields(id, orgId, bundle.customFields)
+  const replaceError =
+    (await replaceDefaultItems(id, orgId, bundle.defaultItems)) ??
+    (await replaceProductModifiers(id, orgId, bundle.modifiers)) ??
+    (await replaceDropdownMenus(id, orgId, bundle.dropdownMenus)) ??
+    (await replaceProductCustomFields(id, orgId, bundle.customFields))
+  if (replaceError) return { error: replaceError }
 
   revalidatePath(`/dashboard/${orgSlug}/products`)
   revalidatePath(`/dashboard/${orgSlug}/products/${id}`)
@@ -432,50 +451,62 @@ export async function copyProduct(
 
   if (insErr || !inserted) return { error: insErr?.message ?? 'Failed to copy product.' }
 
-  // Copy default items
-  const { data: items } = await service
+  // Copy default items/modifiers/custom fields — the product row itself is
+  // already created at this point, so a failure here doesn't block the
+  // redirect (the copy did happen), but it must not pass silently: log
+  // loudly so a partially-copied product is visible in server logs instead
+  // of just quietly missing its recipe/modifiers/fields.
+  const { data: items, error: itemsErr } = await service
     .from('product_default_items')
     .select('*')
     .eq('product_id', sourceId)
     .eq('organization_id', orgId)
-
-  if (items && items.length > 0) {
+  if (itemsErr) {
+    console.error('[copyProduct] Failed to read source default items:', itemsErr.message, { sourceId, newProductId: inserted.id })
+  } else if (items.length > 0) {
     const rows = (items as Record<string, unknown>[]).map((it) => {
       const { id: _iid, created_at: _ic, updated_at: _iu, product_id: _ip, ...rest } = it
       void _iid; void _ic; void _iu; void _ip
       return { ...rest, product_id: inserted.id, organization_id: orgId }
     })
-    await service.from('product_default_items').insert(rows)
+    const { error: insErr2 } = await service.from('product_default_items').insert(rows)
+    if (insErr2) console.error('[copyProduct] Failed to copy default items:', insErr2.message, { sourceId, newProductId: inserted.id })
   }
 
   // Copy product_modifiers
-  const { data: mods } = await service
+  const { data: mods, error: modsErr } = await service
     .from('product_modifiers')
     .select('*')
     .eq('product_id', sourceId)
     .eq('organization_id', orgId)
-  if (mods && mods.length > 0) {
+  if (modsErr) {
+    console.error('[copyProduct] Failed to read source modifiers:', modsErr.message, { sourceId, newProductId: inserted.id })
+  } else if (mods.length > 0) {
     const rows = (mods as Record<string, unknown>[]).map((m) => {
       const { id: _mid, created_at: _mc, product_id: _mp, ...rest } = m
       void _mid; void _mc; void _mp
       return { ...rest, product_id: inserted.id, organization_id: orgId }
     })
-    await service.from('product_modifiers').insert(rows)
+    const { error: insErr3 } = await service.from('product_modifiers').insert(rows)
+    if (insErr3) console.error('[copyProduct] Failed to copy modifiers:', insErr3.message, { sourceId, newProductId: inserted.id })
   }
 
   // Copy product_custom_fields
-  const { data: cfs } = await service
+  const { data: cfs, error: cfsErr } = await service
     .from('product_custom_fields')
     .select('*')
     .eq('product_id', sourceId)
     .eq('organization_id', orgId)
-  if (cfs && cfs.length > 0) {
+  if (cfsErr) {
+    console.error('[copyProduct] Failed to read source custom fields:', cfsErr.message, { sourceId, newProductId: inserted.id })
+  } else if (cfs.length > 0) {
     const rows = (cfs as Record<string, unknown>[]).map((f) => {
       const { id: _fid, created_at: _fc, product_id: _fp, ...rest } = f
       void _fid; void _fc; void _fp
       return { ...rest, product_id: inserted.id, organization_id: orgId }
     })
-    await service.from('product_custom_fields').insert(rows)
+    const { error: insErr4 } = await service.from('product_custom_fields').insert(rows)
+    if (insErr4) console.error('[copyProduct] Failed to copy custom fields:', insErr4.message, { sourceId, newProductId: inserted.id })
   }
 
   revalidatePath(`/dashboard/${orgSlug}/products`)

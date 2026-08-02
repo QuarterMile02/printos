@@ -15,6 +15,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
   const sp = searchParams ? await searchParams : {}
   const shipmentSaved = sp.shipment_saved === '1'
   const shipmentError = sp.shipment_error ? decodeURIComponent(sp.shipment_error) : undefined
+  const warning = sp.warning ? decodeURIComponent(sp.warning) : undefined
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
@@ -238,6 +239,7 @@ export default async function SalesOrderDetailPage({ params, searchParams }: Pag
         shipments={shipments}
         shipmentSaved={shipmentSaved}
         shipmentError={shipmentError}
+        warning={warning}
         shippingMethods={shippingMethods}
         shippingProfiles={shippingProfiles}
         customerShippingAddresses={customerShippingAddresses}

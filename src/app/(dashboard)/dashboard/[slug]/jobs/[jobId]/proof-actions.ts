@@ -3,6 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { logActivity } from '@/lib/logActivity'
+import { dbOrThrow } from '@/lib/db'
 
 export async function uploadProof(formData: FormData) {
   const jobId = formData.get('jobId') as string
@@ -101,7 +102,7 @@ export async function updateProofStatus(formData: FormData) {
 
   const service = createServiceClient()
 
-  await service.from('proof_versions').update({ status: newStatus }).eq('id', proofId)
+  await dbOrThrow(service.from('proof_versions').update({ status: newStatus }).eq('id', proofId))
 
   if (user && newStatus === 'approved') {
     await logActivity({
@@ -125,10 +126,10 @@ export async function updateProofStatus(formData: FormData) {
     if (currentStatus) {
       const nextStatus = STATUS_ADVANCE[currentStatus]
       if (nextStatus) {
-        await service.from('jobs').update({
+        await dbOrThrow(service.from('jobs').update({
           status: nextStatus,
           updated_at: new Date().toISOString(),
-        }).eq('id', jobId).eq('organization_id', orgId)
+        }).eq('id', jobId).eq('organization_id', orgId))
 
         if (user) {
           await logActivity({

@@ -100,10 +100,11 @@ function canEdit(role: OrgRole | undefined | null) {
   return role && role !== 'viewer'
 }
 
-async function replaceDefaultItems(productId: string, orgId: string, items: MigrateDefaultItem[]) {
+async function replaceDefaultItems(productId: string, orgId: string, items: MigrateDefaultItem[]): Promise<string | null> {
   const service = createServiceClient()
-  await service.from('product_default_items').delete().eq('product_id', productId).eq('organization_id', orgId)
-  if (items.length === 0) return
+  const del = await service.from('product_default_items').delete().eq('product_id', productId).eq('organization_id', orgId)
+  if (del.error) return del.error.message
+  if (items.length === 0) return null
   const rows = items.map((item, i) => ({
     organization_id: orgId,
     product_id: productId,
@@ -125,13 +126,15 @@ async function replaceDefaultItems(productId: string, orgId: string, items: Migr
     overrides_material_category_id: item.overrides_material_category_id,
     sort_order: i,
   }))
-  await service.from('product_default_items').insert(rows)
+  const ins = await service.from('product_default_items').insert(rows)
+  return ins.error?.message ?? null
 }
 
-async function replaceOptionRates(productId: string, rates: MigrateOptionRate[]) {
+async function replaceOptionRates(productId: string, rates: MigrateOptionRate[]): Promise<string | null> {
   const service = createServiceClient()
-  await service.from('product_option_rates').delete().eq('product_id', productId)
-  if (rates.length === 0) return
+  const del = await service.from('product_option_rates').delete().eq('product_id', productId)
+  if (del.error) return del.error.message
+  if (rates.length === 0) return null
   const rows = rates.map((r, i) => ({
     product_id: productId,
     rate_type: r.rate_type,
@@ -145,13 +148,15 @@ async function replaceOptionRates(productId: string, rates: MigrateOptionRate[])
     workflow_step: r.workflow_step,
     sort_order: i,
   }))
-  await service.from('product_option_rates').insert(rows)
+  const ins = await service.from('product_option_rates').insert(rows)
+  return ins.error?.message ?? null
 }
 
-async function replaceProductModifiers(productId: string, orgId: string, modifiers: MigrateModifier[]) {
+async function replaceProductModifiers(productId: string, orgId: string, modifiers: MigrateModifier[]): Promise<string | null> {
   const service = createServiceClient()
-  await service.from('product_modifiers').delete().eq('product_id', productId).eq('organization_id', orgId)
-  if (modifiers.length === 0) return
+  const del = await service.from('product_modifiers').delete().eq('product_id', productId).eq('organization_id', orgId)
+  if (del.error) return del.error.message
+  if (modifiers.length === 0) return null
   const rows = modifiers.map((m, i) => ({
     organization_id: orgId,
     product_id: productId,
@@ -160,27 +165,31 @@ async function replaceProductModifiers(productId: string, orgId: string, modifie
     default_value: m.default_value,
     sort_order: i,
   }))
-  await service.from('product_modifiers').insert(rows)
+  const ins = await service.from('product_modifiers').insert(rows)
+  return ins.error?.message ?? null
 }
 
-async function replaceDropdownMenus(productId: string, orgId: string, menus: MigrateDropdownMenu[]) {
+async function replaceDropdownMenus(productId: string, orgId: string, menus: MigrateDropdownMenu[]): Promise<string | null> {
   const service = createServiceClient()
-  const { data: existingMenus } = await service
+  const { data: existingMenus, error: existingError } = await service
     .from('product_dropdown_menus')
     .select('id')
     .eq('product_id', productId)
     .eq('organization_id', orgId)
+  if (existingError) return existingError.message
 
   const existingIds = (existingMenus ?? []).map((m) => m.id)
   if (existingIds.length > 0) {
-    await service.from('product_dropdown_items').delete().in('dropdown_menu_id', existingIds)
-    await service.from('product_dropdown_menus').delete().in('id', existingIds)
+    const delItems = await service.from('product_dropdown_items').delete().in('dropdown_menu_id', existingIds)
+    if (delItems.error) return delItems.error.message
+    const delMenus = await service.from('product_dropdown_menus').delete().in('id', existingIds)
+    if (delMenus.error) return delMenus.error.message
   }
 
   for (let i = 0; i < menus.length; i++) {
     const menu = menus[i]
     if (!menu.menu_name.trim()) continue
-    const { data: insertedMenu } = await service
+    const { data: insertedMenu, error: menuError } = await service
       .from('product_dropdown_menus')
       .insert({
         organization_id: orgId,
@@ -190,7 +199,8 @@ async function replaceDropdownMenus(productId: string, orgId: string, menus: Mig
         sort_order: i,
       })
       .select('id')
-      .single() as { data: { id: string } | null; error: unknown }
+      .single() as { data: { id: string } | null; error: { message: string } | null }
+    if (menuError) return menuError.message
     if (!insertedMenu) continue
 
     if (menu.items.length > 0) {
@@ -206,9 +216,11 @@ async function replaceDropdownMenus(productId: string, orgId: string, menus: Mig
         is_optional: item.is_optional,
         sort_order: j,
       }))
-      await service.from('product_dropdown_items').insert(itemRows)
+      const insItems = await service.from('product_dropdown_items').insert(itemRows)
+      if (insItems.error) return insItems.error.message
     }
   }
+  return null
 }
 
 export async function saveMigrationDraft(
@@ -244,10 +256,12 @@ export async function saveMigrationDraft(
 
   if (error) return { error: error.message }
 
-  await replaceDefaultItems(productId, orgId, bundle.defaultItems)
-  await replaceOptionRates(productId, bundle.optionRates)
-  await replaceProductModifiers(productId, orgId, bundle.modifiers)
-  await replaceDropdownMenus(productId, orgId, bundle.dropdownMenus)
+  const replaceError =
+    (await replaceDefaultItems(productId, orgId, bundle.defaultItems)) ??
+    (await replaceOptionRates(productId, bundle.optionRates)) ??
+    (await replaceProductModifiers(productId, orgId, bundle.modifiers)) ??
+    (await replaceDropdownMenus(productId, orgId, bundle.dropdownMenus))
+  if (replaceError) return { error: replaceError }
 
   revalidatePath(`/dashboard/${orgSlug}/products`)
   revalidatePath(`/dashboard/${orgSlug}/products/${productId}`)
@@ -296,10 +310,12 @@ export async function publishMigration(
 
   if (error) return { error: error.message }
 
-  await replaceDefaultItems(productId, orgId, bundle.defaultItems)
-  await replaceOptionRates(productId, bundle.optionRates)
-  await replaceProductModifiers(productId, orgId, bundle.modifiers)
-  await replaceDropdownMenus(productId, orgId, bundle.dropdownMenus)
+  const replaceError =
+    (await replaceDefaultItems(productId, orgId, bundle.defaultItems)) ??
+    (await replaceOptionRates(productId, bundle.optionRates)) ??
+    (await replaceProductModifiers(productId, orgId, bundle.modifiers)) ??
+    (await replaceDropdownMenus(productId, orgId, bundle.dropdownMenus))
+  if (replaceError) return { error: replaceError }
 
   revalidatePath(`/dashboard/${orgSlug}/products`)
   revalidatePath(`/dashboard/${orgSlug}/products/${productId}`)

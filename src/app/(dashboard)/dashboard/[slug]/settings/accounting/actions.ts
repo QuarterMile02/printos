@@ -85,7 +85,8 @@ export async function deleteSalesTax(id: string, orgId: string, orgSlug: string)
 
 export async function setDefaultSalesTax(id: string, orgId: string, orgSlug: string): Promise<{ error?: string }> {
   const svc = createServiceClient()
-  await svc.from('sales_taxes').update({ is_default: false }).eq('organization_id', orgId)
+  const { error: clearError } = await svc.from('sales_taxes').update({ is_default: false }).eq('organization_id', orgId)
+  if (clearError) return { error: clearError.message }
   const { error } = await svc.from('sales_taxes').update({ is_default: true }).eq('id', id).eq('organization_id', orgId)
   if (error) return { error: error.message }
   rev(orgSlug)
@@ -142,7 +143,8 @@ export async function deleteTermCode(id: string, orgId: string, orgSlug: string)
 
 export async function setDefaultTermCode(id: string, orgId: string, orgSlug: string): Promise<{ error?: string }> {
   const svc = createServiceClient()
-  await svc.from('term_codes').update({ is_default: false }).eq('organization_id', orgId)
+  const { error: clearError } = await svc.from('term_codes').update({ is_default: false }).eq('organization_id', orgId)
+  if (clearError) return { error: clearError.message }
   const { error } = await svc.from('term_codes').update({ is_default: true }).eq('id', id).eq('organization_id', orgId)
   if (error) return { error: error.message }
   rev(orgSlug)
