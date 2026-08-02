@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
         email: email || null,
         phone: phone || null,
         company_name: companyName || null,
-        status: 'Active',
+        status: 'lead',
         lead_source: 'GHL',
         is_active: true,
       })
