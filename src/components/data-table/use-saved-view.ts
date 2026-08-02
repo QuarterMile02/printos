@@ -125,7 +125,9 @@ export function useSavedView({ tableKey, orgId, userId, userRole }: Options) {
           sv()
             .update({ column_widths: newWidths, updated_at: new Date().toISOString() })
             .eq('id', activeViewId)
-            .then(() => {})
+            .then(({ error }: { error: { message: string } | null }) => {
+              if (error) console.error('[useSavedView] Failed to persist column width:', error.message)
+            })
         }
         return newWidths
       })

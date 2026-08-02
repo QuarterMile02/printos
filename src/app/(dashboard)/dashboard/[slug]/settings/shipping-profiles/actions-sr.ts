@@ -22,12 +22,14 @@ export async function saveShippingProfile(formData: FormData) {
   const service = createServiceClient()
   let savedId = id
   if (id) {
-    await service.from('shipping_profiles').update({ name, length_in, width_in, height_in, max_weight_lbs, is_active }).eq('id', id)
+    const { error } = await service.from('shipping_profiles').update({ name, length_in, width_in, height_in, max_weight_lbs, is_active }).eq('id', id)
+    if (error) redirect(`/dashboard/${orgSlug}/settings/shipping-profiles?edit=${id}&error=${encodeURIComponent(error.message)}`)
   } else {
-    const { data } = await service
+    const { data, error } = await service
       .from('shipping_profiles')
       .insert({ organization_id: orgId, name, length_in, width_in, height_in, max_weight_lbs, is_active })
       .select('id').single()
+    if (error) redirect(`/dashboard/${orgSlug}/settings/shipping-profiles?add=1&error=${encodeURIComponent(error.message)}`)
     savedId = (data as { id: string } | null)?.id ?? null
   }
   redirect(savedId

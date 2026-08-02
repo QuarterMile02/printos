@@ -14,12 +14,14 @@ export async function saveShippingMethod(formData: FormData) {
   const service = createServiceClient()
   let savedId = id
   if (id) {
-    await service.from('shipping_methods').update({ name, carrier, is_active }).eq('id', id)
+    const { error } = await service.from('shipping_methods').update({ name, carrier, is_active }).eq('id', id)
+    if (error) redirect(`/dashboard/${orgSlug}/settings/shipping-methods?edit=${id}&error=${encodeURIComponent(error.message)}`)
   } else {
-    const { data } = await service
+    const { data, error } = await service
       .from('shipping_methods')
       .insert({ organization_id: orgId, name, carrier, is_active })
       .select('id').single()
+    if (error) redirect(`/dashboard/${orgSlug}/settings/shipping-methods?add=1&error=${encodeURIComponent(error.message)}`)
     savedId = (data as { id: string } | null)?.id ?? null
   }
   redirect(savedId
