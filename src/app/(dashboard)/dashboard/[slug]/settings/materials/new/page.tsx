@@ -5,8 +5,9 @@ import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
-export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ error?: string }> }) {
   const { slug } = await params
+  const sp = await searchParams
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -49,6 +50,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       </div>
 
       <h1 className="text-2xl font-bold text-gray-900 mb-6">New Material</h1>
+
+      {sp.error && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {decodeURIComponent(sp.error)}
+        </div>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <MaterialForm

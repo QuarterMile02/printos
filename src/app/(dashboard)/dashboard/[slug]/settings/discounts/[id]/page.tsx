@@ -4,8 +4,9 @@ import { saveDiscount, deleteDiscount } from '../actions-sr'
 
 export const dynamic = 'force-dynamic'
 
-export default async function Page({ params }: { params: Promise<{ slug: string; id: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ slug: string; id: string }>; searchParams: Promise<{ error?: string }> }) {
   const { slug, id } = await params
+  const sp = await searchParams
   const isNew = id === 'new'
   const supabase = await createClient()
 
@@ -43,6 +44,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h1 className="text-xl font-bold text-gray-900 mb-6">{isNew ? 'New Discount' : `Edit: ${discount?.name}`}</h1>
+
+        {sp.error && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            {decodeURIComponent(sp.error)}
+          </div>
+        )}
 
         <form action={saveDiscount} className="space-y-6">
           {!isNew && <input type="hidden" name="id" value={discount!.id} />}

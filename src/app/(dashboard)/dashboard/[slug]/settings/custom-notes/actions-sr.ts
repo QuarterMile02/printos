@@ -15,13 +15,15 @@ export async function saveCustomNote(formData: FormData) {
   const service = createServiceClient()
   let savedId = id
   if (id) {
-    await service.from('custom_notes').update({ title, body, type, is_active }).eq('id', id)
+    const { error } = await service.from('custom_notes').update({ title, body, type, is_active }).eq('id', id)
+    if (error) redirect(`/dashboard/${orgSlug}/settings/custom-notes?edit=${id}&error=${encodeURIComponent(error.message)}`)
   } else {
-    const { data } = await service
+    const { data, error } = await service
       .from('custom_notes')
       .insert({ organization_id: orgId, title, body, type, is_active })
       .select('id')
       .single()
+    if (error) redirect(`/dashboard/${orgSlug}/settings/custom-notes?add=1&error=${encodeURIComponent(error.message)}`)
     savedId = (data as { id: string } | null)?.id ?? null
   }
   redirect(savedId

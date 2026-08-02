@@ -15,22 +15,27 @@ export async function saveDiscount(formData: FormData) {
 
   const service = createServiceClient()
 
+  const editUrl = `/dashboard/${orgSlug}/settings/discounts/${id ?? 'new'}`
+
   let discountId = id
   if (id) {
-    await service.from('discounts').update({
+    const { error } = await service.from('discounts').update({
       name, discount_type, applies_to, discount_by, active,
       updated_at: new Date().toISOString(),
     }).eq('id', id)
+    if (error) redirect(`${editUrl}?error=${encodeURIComponent(error.message)}`)
   } else {
-    const { data } = await service.from('discounts').insert({
+    const { data, error } = await service.from('discounts').insert({
       organization_id: orgId, name, discount_type, applies_to, discount_by, active,
     }).select('id').single()
+    if (error) redirect(`${editUrl}?error=${encodeURIComponent(error.message)}`)
     discountId = (data as { id: string } | null)?.id ?? null
   }
 
   // Save tiers — delete existing and re-insert
   if (discountId) {
-    await service.from('discount_tiers').delete().eq('discount_id', discountId)
+    const { error: delErr } = await service.from('discount_tiers').delete().eq('discount_id', discountId)
+    if (delErr) redirect(`/dashboard/${orgSlug}/settings/discounts/${discountId}?error=${encodeURIComponent(delErr.message)}`)
 
     const tierCount = parseInt(formData.get('tierCount') as string) || 0
     const tiers = []
@@ -47,7 +52,8 @@ export async function saveDiscount(formData: FormData) {
       })
     }
     if (tiers.length > 0) {
-      await service.from('discount_tiers').insert(tiers)
+      const { error: insErr } = await service.from('discount_tiers').insert(tiers)
+      if (insErr) redirect(`/dashboard/${orgSlug}/settings/discounts/${discountId}?error=${encodeURIComponent(insErr.message)}`)
     }
   }
 
@@ -58,7 +64,9 @@ export async function deleteDiscount(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
-  await service.from('discount_tiers').delete().eq('discount_id', id)
-  await service.from('discounts').delete().eq('id', id)
+  const { error: tierErr } = await service.from('discount_tiers').delete().eq('discount_id', id)
+  if (tierErr) redirect(`/dashboard/${orgSlug}/settings/discounts/${id}?error=${encodeURIComponent(tierErr.message)}`)
+  const { error } = await service.from('discounts').delete().eq('id', id)
+  if (error) redirect(`/dashboard/${orgSlug}/settings/discounts/${id}?error=${encodeURIComponent(error.message)}`)
   redirect(`/dashboard/${orgSlug}/settings/discounts`)
 }

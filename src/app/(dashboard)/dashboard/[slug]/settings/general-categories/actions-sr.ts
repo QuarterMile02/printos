@@ -16,13 +16,21 @@ export async function saveGeneralCategory(formData: FormData) {
   const service = createServiceClient()
   let savedId = id
   if (id) {
-    await service.from('general_categories').update({ name, type, sub_type, is_active }).eq('id', id)
+    const { error } = await service.from('general_categories').update({ name, type, sub_type, is_active }).eq('id', id)
+    if (error) {
+      const p = new URLSearchParams({ edit: id, error: error.message })
+      redirect(`/dashboard/${orgSlug}/settings/general-categories?${p.toString()}`)
+    }
   } else {
-    const { data } = await service
+    const { data, error } = await service
       .from('general_categories')
       .insert({ organization_id: orgId, name, type, sub_type, is_active })
       .select('id')
       .single()
+    if (error) {
+      const p = new URLSearchParams({ add: '1', error: error.message })
+      redirect(`/dashboard/${orgSlug}/settings/general-categories?${p.toString()}`)
+    }
     savedId = (data as { id: string } | null)?.id ?? null
   }
 

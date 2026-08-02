@@ -8,8 +8,9 @@ export const dynamic = 'force-dynamic'
 
 const DB_SELECT = 'id, name, external_name, cost, price, selling_units, material_type_id, category_id, active'
 
-export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ error?: string }> }) {
   const { slug } = await params
+  const sp = await searchParams
   const supabase = await createClient()
 
   const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
@@ -60,6 +61,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         <span>/</span>
         <span className="text-gray-700">Materials</span>
       </div>
+
+      {sp.error && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {decodeURIComponent(sp.error)}
+        </div>
+      )}
 
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">

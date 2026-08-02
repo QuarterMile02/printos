@@ -67,22 +67,26 @@ export async function saveLaborRate(formData: FormData) {
 
   let savedId = id
   if (id) {
-    await service.from('labor_rates').update(fields).eq('id', id)
+    const { error } = await service.from('labor_rates').update(fields).eq('id', id)
+    if (error) redirect(`/dashboard/${orgSlug}/settings/labor-rates?edit=${id}&error=${encodeURIComponent(error.message)}`)
   } else {
-    const { data: inserted } = await service
+    const { data: inserted, error } = await service
       .from('labor_rates')
       .insert({ ...fields, organization_id: orgId })
       .select('id')
       .single()
+    if (error) redirect(`/dashboard/${orgSlug}/settings/labor-rates?add=1&error=${encodeURIComponent(error.message)}`)
     savedId = (inserted as { id: string } | null)?.id ?? null
   }
 
   if (savedId) {
-    await service.from('labor_rate_departments').delete().eq('labor_rate_id', savedId)
+    const { error: delErr } = await service.from('labor_rate_departments').delete().eq('labor_rate_id', savedId)
+    if (delErr) redirect(`/dashboard/${orgSlug}/settings/labor-rates?edit=${savedId}&error=${encodeURIComponent(delErr.message)}`)
     if (deptIds.length > 0) {
-      await service.from('labor_rate_departments').insert(
+      const { error: deptErr } = await service.from('labor_rate_departments').insert(
         deptIds.map(dId => ({ labor_rate_id: savedId!, department_id: dId }))
       )
+      if (deptErr) redirect(`/dashboard/${orgSlug}/settings/labor-rates?edit=${savedId}&error=${encodeURIComponent(deptErr.message)}`)
     }
   }
 
@@ -95,7 +99,8 @@ export async function deleteLaborRate(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
-  await service.from('labor_rates').delete().eq('id', id)
+  const { error } = await service.from('labor_rates').delete().eq('id', id)
+  if (error) redirect(`/dashboard/${orgSlug}/settings/labor-rates?error=${encodeURIComponent(error.message)}`)
   redirect(`/dashboard/${orgSlug}/settings/labor-rates`)
 }
 
@@ -104,10 +109,11 @@ export async function cloneLaborRate(formData: FormData) {
   const orgId = formData.get('orgId') as string
   const orgSlug = formData.get('orgSlug') as string
   const targetTable = formData.get('targetTable') as string // 'labor_rates' or 'machine_rates'
+  const path = targetTable === 'machine_rates' ? 'machine-rates' : 'labor-rates'
 
   const service = createServiceClient()
-  const { data: src } = await service.from('labor_rates').select('name, cost, price, markup, formula, units, setup_charge, other_charge, include_in_base_price, production_rate, production_rate_units, description, show_internal, active').eq('id', sourceId).single()
-  if (!src) throw new Error('Rate not found')
+  const { data: src, error: srcErr } = await service.from('labor_rates').select('name, cost, price, markup, formula, units, setup_charge, other_charge, include_in_base_price, production_rate, production_rate_units, description, show_internal, active').eq('id', sourceId).single()
+  if (srcErr || !src) redirect(`/dashboard/${orgSlug}/settings/${path}?error=${encodeURIComponent(srcErr?.message ?? 'Rate not found')}`)
   const s = src as Record<string, unknown>
 
   const clone = {
@@ -121,9 +127,9 @@ export async function cloneLaborRate(formData: FormData) {
     description: s.description, show_internal: s.show_internal, active: true,
   }
 
-  const { data: inserted } = await service.from(targetTable).insert(clone).select('id').single()
+  const { data: inserted, error: insErr } = await service.from(targetTable).insert(clone).select('id').single()
+  if (insErr) redirect(`/dashboard/${orgSlug}/settings/${path}?error=${encodeURIComponent(insErr.message)}`)
   const newId = (inserted as { id: string } | null)?.id
-  const path = targetTable === 'machine_rates' ? 'machine-rates' : 'labor-rates'
   redirect(`/dashboard/${orgSlug}/settings/${path}${newId ? '?edit=' + newId : ''}`)
 }
 
@@ -141,9 +147,10 @@ export async function importLaborRatesCsv(formData: FormData): Promise<{ created
   if (nameIdx < 0) return { created: 0, updated: 0, errors: 0 }
 
   const service = createServiceClient()
-  const { data: existing } = await service.from('labor_rates').select('id, name').eq('organization_id', orgId)
+  const { data: existing, error: existingErr } = await service.from('labor_rates').select('id, name').eq('organization_id', orgId)
+  if (existingErr) return { created: 0, updated: 0, errors: lines.length - 1 }
   const nameToId = new Map<string, string>()
-  for (const r of (existing ?? []) as { id: string; name: string }[]) nameToId.set(r.name.toLowerCase(), r.id)
+  for (const r of existing as { id: string; name: string }[]) nameToId.set(r.name.toLowerCase(), r.id)
 
   let created = 0, updated = 0, errors = 0
   for (let i = 1; i < lines.length; i++) {
@@ -164,12 +171,14 @@ export async function importLaborRatesCsv(formData: FormData): Promise<{ created
 
     const existingId = nameToId.get(name.toLowerCase())
     if (existingId) {
-      await service.from('labor_rates').update(row).eq('id', existingId)
-      updated++
+      const { error } = await service.from('labor_rates').update(row).eq('id', existingId)
+      if (error) errors++
+      else updated++
     } else {
       row.organization_id = orgId
-      await service.from('labor_rates').insert(row)
-      created++
+      const { error } = await service.from('labor_rates').insert(row)
+      if (error) errors++
+      else created++
     }
   }
   return { created, updated, errors }

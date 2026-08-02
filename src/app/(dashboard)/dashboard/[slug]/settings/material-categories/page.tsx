@@ -18,7 +18,7 @@ type MaterialCategory = {
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ edit?: string; add?: string; saved?: string }>
+  searchParams: Promise<{ edit?: string; add?: string; saved?: string; error?: string }>
 }
 
 const DB_SELECT = 'id, name, material_type_id, is_active'
@@ -126,11 +126,22 @@ async function PageInner({ params, searchParams }: PageProps) {
         </Link>
       </div>
 
+      {sp.error && !isPanelOpen && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {decodeURIComponent(sp.error)}
+        </div>
+      )}
+
       {isPanelOpen && (
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           {sp.saved === '1' && (
             <div className="mb-4 rounded-md border border-qm-lime/30 bg-qm-lime/10 px-3 py-2 text-sm font-medium text-qm-lime-dark">
               Saved successfully.
+            </div>
+          )}
+          {sp.error && (
+            <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {decodeURIComponent(sp.error)}
             </div>
           )}
           <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">

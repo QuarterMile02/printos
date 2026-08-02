@@ -91,11 +91,13 @@ export async function saveMaterial(formData: FormData) {
   const service = createServiceClient()
 
   if (id) {
-    await service.from('materials').update(fields).eq('id', id)
+    const { error } = await service.from('materials').update(fields).eq('id', id)
+    if (error) redirect(`/dashboard/${orgSlug}/settings/materials/${id}?edit=1&error=${encodeURIComponent(error.message)}`)
     redirect(`/dashboard/${orgSlug}/settings/materials/${id}`)
   } else {
     fields.organization_id = orgId
-    const { data } = await service.from('materials').insert(fields).select('id').single()
+    const { data, error } = await service.from('materials').insert(fields).select('id').single()
+    if (error) redirect(`/dashboard/${orgSlug}/settings/materials/new?error=${encodeURIComponent(error.message)}`)
     const newId = (data as { id: string } | null)?.id
     redirect(`/dashboard/${orgSlug}/settings/materials${newId ? '/' + newId : ''}`)
   }
@@ -107,13 +109,14 @@ export async function cloneMaterial(formData: FormData) {
   const orgSlug = formData.get('orgSlug') as string
 
   const service = createServiceClient()
-  const { data: src } = await service.from('materials').select('name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active').eq('id', sourceId).single()
-  if (!src) throw new Error('Material not found')
+  const { data: src, error: srcErr } = await service.from('materials').select('name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active').eq('id', sourceId).single()
+  if (srcErr || !src) redirect(`/dashboard/${orgSlug}/settings/materials?error=${encodeURIComponent(srcErr?.message ?? 'Material not found')}`)
   const s = src as Record<string, unknown>
 
-  const { data: inserted } = await service.from('materials').insert({
+  const { data: inserted, error: insErr } = await service.from('materials').insert({
     ...s, organization_id: orgId, name: s.name + ' (copy)',
   }).select('id').single()
+  if (insErr) redirect(`/dashboard/${orgSlug}/settings/materials?error=${encodeURIComponent(insErr.message)}`)
   const newId = (inserted as { id: string } | null)?.id
   redirect(`/dashboard/${orgSlug}/settings/materials${newId ? '/' + newId + '?edit=1' : ''}`)
 }
@@ -122,7 +125,8 @@ export async function deleteMaterial(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
-  await service.from('materials').delete().eq('id', id)
+  const { error } = await service.from('materials').delete().eq('id', id)
+  if (error) redirect(`/dashboard/${orgSlug}/settings/materials/${id}?edit=1&error=${encodeURIComponent(error.message)}`)
   redirect(`/dashboard/${orgSlug}/settings/materials`)
 }
 
@@ -140,9 +144,10 @@ export async function importMaterialsCsv(formData: FormData): Promise<{ created:
   if (nameIdx < 0) return { created: 0, updated: 0, errors: 0 }
 
   const service = createServiceClient()
-  const { data: existing } = await service.from('materials').select('id, name').eq('organization_id', orgId)
+  const { data: existing, error: existingErr } = await service.from('materials').select('id, name').eq('organization_id', orgId)
+  if (existingErr) return { created: 0, updated: 0, errors: lines.length - 1 }
   const nameToId = new Map<string, string>()
-  for (const r of (existing ?? []) as { id: string; name: string }[]) nameToId.set(r.name.toLowerCase(), r.id)
+  for (const r of existing as { id: string; name: string }[]) nameToId.set(r.name.toLowerCase(), r.id)
 
   let created = 0, updated = 0, errors = 0
   const map: Record<string, string> = { 'external name': 'external_name', cost: 'cost', price: 'price', multiplier: 'multiplier', 'buying units': 'buying_units', 'selling units': 'selling_units', formula: 'formula', width: 'width', height: 'height', 'wastage markup': 'wastage_markup', 'labor charge': 'labor_charge', 'machine charge': 'machine_charge', 'setup charge': 'setup_charge', 'preferred vendor': 'preferred_vendor', active: 'active' }
@@ -165,12 +170,14 @@ export async function importMaterialsCsv(formData: FormData): Promise<{ created:
 
     const existingId = nameToId.get(name.toLowerCase())
     if (existingId) {
-      await service.from('materials').update(row).eq('id', existingId)
-      updated++
+      const { error } = await service.from('materials').update(row).eq('id', existingId)
+      if (error) errors++
+      else updated++
     } else {
       row.organization_id = orgId
-      await service.from('materials').insert(row)
-      created++
+      const { error } = await service.from('materials').insert(row)
+      if (error) errors++
+      else created++
     }
   }
   return { created, updated, errors }

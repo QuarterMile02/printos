@@ -20,11 +20,13 @@ export async function saveEmailTemplate(formData: FormData) {
   const service = createServiceClient()
 
   if (id) {
-    await service.from('email_templates').update(fields).eq('id', id)
+    const { error } = await service.from('email_templates').update(fields).eq('id', id)
+    if (error) redirect(`/dashboard/${orgSlug}/settings/email-templates/${id}?edit=1&error=${encodeURIComponent(error.message)}`)
     redirect(`/dashboard/${orgSlug}/settings/email-templates/${id}`)
   } else {
     fields.organization_id = orgId
-    const { data } = await service.from('email_templates').insert(fields).select('id').single()
+    const { data, error } = await service.from('email_templates').insert(fields).select('id').single()
+    if (error) redirect(`/dashboard/${orgSlug}/settings/email-templates/new?edit=1&error=${encodeURIComponent(error.message)}`)
     const newId = (data as { id: string } | null)?.id
     redirect(`/dashboard/${orgSlug}/settings/email-templates${newId ? '/' + newId : ''}`)
   }
@@ -34,6 +36,7 @@ export async function deleteEmailTemplate(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
-  await service.from('email_templates').delete().eq('id', id)
+  const { error } = await service.from('email_templates').delete().eq('id', id)
+  if (error) redirect(`/dashboard/${orgSlug}/settings/email-templates/${id}?edit=1&error=${encodeURIComponent(error.message)}`)
   redirect(`/dashboard/${orgSlug}/settings/email-templates`)
 }

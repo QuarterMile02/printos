@@ -22,7 +22,7 @@ const VARIABLES = [
 
 export default async function Page({ params, searchParams }: {
   params: Promise<{ slug: string; id: string }>
-  searchParams: Promise<{ edit?: string }>
+  searchParams: Promise<{ edit?: string; error?: string }>
 }) {
   const { slug, id } = await params
   const sp = await searchParams
@@ -55,6 +55,11 @@ export default async function Page({ params, searchParams }: {
       {editing ? (
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <h1 className="text-xl font-bold text-gray-900 mb-6">{isNew ? 'New Email Template' : 'Edit Template'}</h1>
+          {sp.error && (
+            <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {decodeURIComponent(sp.error)}
+            </div>
+          )}
           <form action={saveEmailTemplate} className="space-y-4">
             {!isNew && <input type="hidden" name="id" value={t!.id} />}
             <input type="hidden" name="orgId" value={org.id} />

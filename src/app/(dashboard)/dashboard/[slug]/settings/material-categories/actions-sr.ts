@@ -14,13 +14,15 @@ export async function saveMaterialCategory(formData: FormData) {
   const service = createServiceClient()
   let savedId = id
   if (id) {
-    await service.from('material_categories').update({ name, material_type_id, is_active }).eq('id', id)
+    const { error } = await service.from('material_categories').update({ name, material_type_id, is_active }).eq('id', id)
+    if (error) redirect(`/dashboard/${orgSlug}/settings/material-categories?edit=${id}&error=${encodeURIComponent(error.message)}`)
   } else {
-    const { data } = await service
+    const { data, error } = await service
       .from('material_categories')
       .insert({ organization_id: orgId, name, material_type_id, is_active })
       .select('id')
       .single()
+    if (error) redirect(`/dashboard/${orgSlug}/settings/material-categories?add=1&error=${encodeURIComponent(error.message)}`)
     savedId = (data as { id: string } | null)?.id ?? null
   }
   redirect(savedId
@@ -32,12 +34,15 @@ export async function deleteMaterialCategory(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
-  const { count } = await service
+  const { count, error: countError } = await service
     .from('materials')
     .select('id', { count: 'exact', head: true })
     .eq('category_id', id)
-  if (!count) {
-    await service.from('material_categories').delete().eq('id', id)
+  if (countError) redirect(`/dashboard/${orgSlug}/settings/material-categories?error=${encodeURIComponent(countError.message)}`)
+  if (count) {
+    redirect(`/dashboard/${orgSlug}/settings/material-categories?error=${encodeURIComponent(`This category is used by ${count} material(s) and cannot be deleted.`)}`)
   }
+  const { error } = await service.from('material_categories').delete().eq('id', id)
+  if (error) redirect(`/dashboard/${orgSlug}/settings/material-categories?error=${encodeURIComponent(error.message)}`)
   redirect(`/dashboard/${orgSlug}/settings/material-categories`)
 }
