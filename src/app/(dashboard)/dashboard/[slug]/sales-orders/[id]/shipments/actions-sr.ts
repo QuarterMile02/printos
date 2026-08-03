@@ -14,6 +14,7 @@ export async function saveShipment(formData: FormData) {
   const orgSlug = formData.get('orgSlug') as string
   const soId = formData.get('soId') as string
   const shipping_method_id = (formData.get('shipping_method_id') as string) || null
+  const carrier = ((formData.get('carrier') as string) ?? '').trim() || null
   const tracking_number = ((formData.get('tracking_number') as string) ?? '').trim() || null
   const shipped_date = (formData.get('shipped_date') as string) || null
   const estimated_delivery = (formData.get('estimated_delivery') as string) || null
@@ -34,6 +35,7 @@ export async function saveShipment(formData: FormData) {
 
   const payload = {
     shipping_method_id,
+    carrier,
     tracking_number,
     shipped_date,
     estimated_delivery,
