@@ -10,6 +10,27 @@ const QMI_ADDRESS = {
   country: 'US',
 }
 
+// FedEx's PHONENUMBER.EMPTY validation checks BOTH addresses on the
+// shipment, not just the destination -- confirmed live: buying a FedEx
+// label failed with the same error even after the destination address had
+// a phone, and only succeeded once QMI_ADDRESS (from_address, used
+// unconditionally for every shipment) also had one. The org's real
+// business phone lives in org_profile (Settings -> Billing), same place
+// invoices/quotes pull their sender info from.
+async function resolveFromAddress(orgId?: string): Promise<typeof QMI_ADDRESS & { phone?: string }> {
+  if (orgId) {
+    const service = createServiceClient()
+    const { data } = await service
+      .from('org_profile')
+      .select('phone')
+      .eq('organization_id', orgId)
+      .maybeSingle()
+    const phone = (data as { phone: string | null } | null)?.phone
+    if (phone) return { ...QMI_ADDRESS, phone }
+  }
+  return QMI_ADDRESS
+}
+
 type EasypostCredentials = { api_key?: string; test_api_key?: string }
 
 // Resolves the EasyPost API key to use for a request. Checks the org's
@@ -85,10 +106,11 @@ export async function getRates(
   orgId?: string,
 ): Promise<RatesResult> {
   const client = await getClient(orgId)
+  const fromAddress = await resolveFromAddress(orgId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shipment = await (client.Shipment as any).create({
     to_address: { country: 'US', ...toAddress },
-    from_address: QMI_ADDRESS,
+    from_address: fromAddress,
     parcel,
   })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
