@@ -5,8 +5,8 @@ import { upsertPaymentGateway, disconnectPaymentGateway } from './actions'
 
 type GatewaySettings = {
   gateway_type: string
-  api_login_id: string | null
-  transaction_key: string | null
+  hasApiLoginId: boolean
+  hasTransactionKey: boolean
   use_test_mode: boolean
   is_connected: boolean
 }
@@ -36,8 +36,12 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
     setTimeout(() => setToast(null), 2500)
   }
 
-  const [loginId, setLoginId] = useState(initialSettings.api_login_id ?? '')
-  const [txKey, setTxKey] = useState(initialSettings.transaction_key ?? '')
+  // Inputs always start blank -- a saved credential is never sent to the browser, only
+  // whether one exists (hasLoginId/hasTxKey), shown as a masked placeholder instead.
+  const [loginId, setLoginId] = useState('')
+  const [txKey, setTxKey] = useState('')
+  const [hasLoginId, setHasLoginId] = useState(initialSettings.hasApiLoginId ?? false)
+  const [hasTxKey, setHasTxKey] = useState(initialSettings.hasTransactionKey ?? false)
   const [testMode, setTestMode] = useState(initialSettings.use_test_mode ?? false)
   const [connected, setConnected] = useState(initialSettings.is_connected ?? false)
   const [saving, setSaving] = useState(false)
@@ -46,20 +50,24 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
 
   async function handleSave() {
     const errs: typeof errors = {}
-    if (!loginId.trim()) errs.loginId = 'API Login ID is required'
-    if (!txKey.trim()) errs.txKey = 'Transaction Key is required'
+    if (!loginId.trim() && !hasLoginId) errs.loginId = 'API Login ID is required'
+    if (!txKey.trim() && !hasTxKey) errs.txKey = 'Transaction Key is required'
     if (Object.keys(errs).length) { setErrors(errs); return }
     setErrors({})
     setSaving(true)
     const res = await upsertPaymentGateway(orgId, orgSlug, {
       gateway_type: 'authorize_net',
-      api_login_id: loginId.trim(),
-      transaction_key: txKey.trim(),
+      api_login_id: loginId.trim() || undefined,
+      transaction_key: txKey.trim() || undefined,
       use_test_mode: testMode,
       is_connected: true,
     })
     setSaving(false)
     if (res.error) { showToast(`Error: ${res.error}`); return }
+    if (loginId.trim()) setHasLoginId(true)
+    if (txKey.trim()) setHasTxKey(true)
+    setLoginId('')
+    setTxKey('')
     setConnected(true)
     showToast('Saved')
   }
@@ -71,6 +79,8 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
     if (res.error) { showToast(`Error: ${res.error}`); return }
     setLoginId('')
     setTxKey('')
+    setHasLoginId(false)
+    setHasTxKey(false)
     setConnected(false)
     showToast('Disconnected')
   }
@@ -115,7 +125,7 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
               </svg>
             </div>
             <p className="text-xs text-gray-500">
-              Credentials managed via environment variables. Use the fields below to update.
+              Credentials are encrypted at rest. Use the fields below to update.
             </p>
           </div>
         </div>
@@ -144,7 +154,7 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
               type="text"
               value={loginId}
               onChange={(e) => { setLoginId(e.target.value); setErrors((p) => ({ ...p, loginId: undefined })) }}
-              placeholder={connected ? 'Re-enter to update' : 'Your API Login ID'}
+              placeholder={hasLoginId ? '•••••••• (saved — leave blank to keep)' : 'Your API Login ID'}
               className={`w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 ${errors.loginId ? 'border-red-300 focus:border-red-400 focus:ring-red-200' : 'border-gray-200 focus:border-qm-lime focus:ring-qm-lime'}`}
             />
             {errors.loginId && <p className="mt-1 text-xs text-red-600">{errors.loginId}</p>}
@@ -157,7 +167,7 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
               type="password"
               value={txKey}
               onChange={(e) => { setTxKey(e.target.value); setErrors((p) => ({ ...p, txKey: undefined })) }}
-              placeholder={connected ? 'Re-enter to update' : 'Your Transaction Key'}
+              placeholder={hasTxKey ? '•••••••• (saved — leave blank to keep)' : 'Your Transaction Key'}
               className={`w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 ${errors.txKey ? 'border-red-300 focus:border-red-400 focus:ring-red-200' : 'border-gray-200 focus:border-qm-lime focus:ring-qm-lime'}`}
             />
             {errors.txKey && <p className="mt-1 text-xs text-red-600">{errors.txKey}</p>}

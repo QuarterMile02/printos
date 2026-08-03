@@ -55,7 +55,18 @@ async function PageInner({ params }: PageProps) {
       .from('carrier_connections')
       .select('carrier, is_connected, credentials, use_test_mode')
       .eq('organization_id', org.id)
-    connections = (data ?? []) as CarrierConnectionRow[]
+    // Never send decrypted (or even encrypted) credential values to the browser --
+    // only whether each field already has a saved value, so the form can render a
+    // masked placeholder instead of the real secret.
+    connections = ((data ?? []) as { carrier: string; is_connected: boolean; credentials: Record<string, string>; use_test_mode: boolean }[])
+      .map((row) => ({
+        carrier: row.carrier,
+        is_connected: row.is_connected,
+        use_test_mode: row.use_test_mode,
+        savedFields: Object.fromEntries(
+          Object.entries(row.credentials ?? {}).map(([key, value]) => [key, Boolean(value)]),
+        ),
+      }))
   } catch {}
 
   return (

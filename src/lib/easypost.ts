@@ -1,5 +1,6 @@
 import EasyPostClient from '@easypost/api'
 import { createServiceClient } from '@/lib/supabase/server'
+import { decryptCredentialTolerant } from '@/lib/credential-crypto'
 
 const QMI_ADDRESS = {
   name: 'Quarter Mile Inc',
@@ -49,8 +50,11 @@ async function resolveApiKey(orgId?: string): Promise<{ apiKey: string; testMode
       .maybeSingle()
     const row = data as { credentials: EasypostCredentials; use_test_mode: boolean; is_connected: boolean } | null
     if (row?.is_connected) {
-      const key = row.use_test_mode ? row.credentials?.test_api_key : row.credentials?.api_key
-      if (key) return { apiKey: key, testMode: row.use_test_mode }
+      const stored = row.use_test_mode ? row.credentials?.test_api_key : row.credentials?.api_key
+      // Tolerant: decrypts if the stored value is in encrypted form, otherwise uses it
+      // as-is. Lets this decrypt-aware code deploy safely before the one-time migration
+      // (that encrypts existing plaintext rows) has run, and keep working after.
+      if (stored) return { apiKey: decryptCredentialTolerant(stored), testMode: row.use_test_mode }
     }
   }
 

@@ -6,7 +6,8 @@ import { upsertCarrierConnection, disconnectCarrierConnection } from './actions'
 export type CarrierConnectionRow = {
   carrier: string
   is_connected: boolean
-  credentials: Record<string, string>
+  // Which credential fields already have a saved value -- never the values themselves.
+  savedFields: Record<string, boolean>
   use_test_mode: boolean
 }
 
@@ -65,7 +66,9 @@ const CARRIERS: CarrierDef[] = [
 ]
 
 type FormState = {
+  // Only what the user has typed THIS session -- never pre-filled from a saved value.
   credentials: Record<string, string>
+  savedFields: Record<string, boolean>
   useTestMode: boolean
   connected: boolean
   expanded: boolean
@@ -75,13 +78,18 @@ type FormState = {
 
 function initialFormState(row: CarrierConnectionRow | undefined): FormState {
   return {
-    credentials: { ...(row?.credentials ?? {}) },
+    credentials: {},
+    savedFields: { ...(row?.savedFields ?? {}) },
     useTestMode: row?.use_test_mode ?? false,
     connected: row?.is_connected ?? false,
     expanded: false,
     saving: false,
     disconnecting: false,
   }
+}
+
+function fieldPlaceholder(f: FieldDef, s: FormState): string {
+  return s.savedFields[f.key] ? '•••••••• (saved — leave blank to keep)' : f.placeholder
 }
 
 type Props = {
@@ -118,9 +126,11 @@ export default function CarriersClient({ orgId, orgSlug, initialConnections }: P
 
   async function handleSave(carrier: CarrierDef) {
     const s = state[carrier.key]
+    // A field is only required if it has neither a saved value already nor one typed
+    // just now -- leaving a saved field blank means "keep what's there," not "missing."
     const missing = carrier.fields
       .filter((f) => f.group === 'shared' || f.group === (s.useTestMode ? 'test' : 'live'))
-      .find((f) => !s.credentials[f.key]?.trim())
+      .find((f) => !s.savedFields[f.key] && !s.credentials[f.key]?.trim())
     if (missing) { showToast(`Error: ${missing.label} is required`); return }
 
     patch(carrier.key, { saving: true })
@@ -131,7 +141,9 @@ export default function CarriersClient({ orgId, orgSlug, initialConnections }: P
     })
     patch(carrier.key, { saving: false })
     if (res.error) { showToast(`Error: ${res.error}`); return }
-    patch(carrier.key, { connected: true })
+    const savedFields = { ...s.savedFields }
+    for (const [key, value] of Object.entries(s.credentials)) if (value?.trim()) savedFields[key] = true
+    patch(carrier.key, { connected: true, credentials: {}, savedFields })
     showToast(`${carrier.name} connected`)
   }
 
@@ -140,7 +152,7 @@ export default function CarriersClient({ orgId, orgSlug, initialConnections }: P
     const res = await disconnectCarrierConnection(orgId, orgSlug, carrier.key)
     patch(carrier.key, { disconnecting: false })
     if (res.error) { showToast(`Error: ${res.error}`); return }
-    patch(carrier.key, { connected: false, credentials: {} })
+    patch(carrier.key, { connected: false, credentials: {}, savedFields: {} })
     showToast(`${carrier.name} disconnected`)
   }
 
@@ -223,7 +235,7 @@ export default function CarriersClient({ orgId, orgSlug, initialConnections }: P
                           type={f.type}
                           value={s.credentials[f.key] ?? ''}
                           onChange={(e) => setField(carrier.key, f.key, e.target.value)}
-                          placeholder={s.connected ? 'Re-enter to update' : f.placeholder}
+                          placeholder={fieldPlaceholder(f, s)}
                           className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </div>
@@ -242,7 +254,7 @@ export default function CarriersClient({ orgId, orgSlug, initialConnections }: P
                             type={f.type}
                             value={s.credentials[f.key] ?? ''}
                             onChange={(e) => setField(carrier.key, f.key, e.target.value)}
-                            placeholder={s.connected ? 'Re-enter to update' : f.placeholder}
+                            placeholder={fieldPlaceholder(f, s)}
                             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                           />
                         </div>
@@ -260,7 +272,7 @@ export default function CarriersClient({ orgId, orgSlug, initialConnections }: P
                           type={f.type}
                           value={s.credentials[f.key] ?? ''}
                           onChange={(e) => setField(carrier.key, f.key, e.target.value)}
-                          placeholder={s.connected ? 'Re-enter to update' : f.placeholder}
+                          placeholder={fieldPlaceholder(f, s)}
                           className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
                       </div>
