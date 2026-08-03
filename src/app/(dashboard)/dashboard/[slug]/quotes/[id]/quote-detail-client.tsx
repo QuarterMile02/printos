@@ -225,6 +225,7 @@ export default function QuoteDetailClient({
   const [smCity, setSmCity]                                 = useState('')
   const [smState, setSmState]                               = useState('')
   const [smZip, setSmZip]                                   = useState('')
+  const [smPhone, setSmPhone]                               = useState('')
   const [smRatesLoading, setSmRatesLoading]                 = useState(false)
   const [smRates, setSmRates]                               = useState<EasypostRate[]>([])
   const [smRatesError, setSmRatesError]                     = useState<string | null>(null)
@@ -243,6 +244,7 @@ export default function QuoteDetailClient({
     setSmCity('')
     setSmState('')
     setSmZip('')
+    setSmPhone('')
     setSmRates([])
     setSmRatesError(null)
     setSmSelectedRateId(null)
@@ -255,13 +257,14 @@ export default function QuoteDetailClient({
     setSmToName(c.company_name || `${c.first_name} ${c.last_name}`)
     setSmToStreet(c.street ?? ''); setSmCity(c.city ?? '')
     setSmState(c.state ?? ''); setSmZip(c.zip ?? '')
+    setSmPhone(c.phone ?? '')
   }
 
   function smHandleAddrMode(mode: 'billing' | 'saved' | 'new') {
     setSmAddrMode(mode)
     setSmRates([]); setSmRatesError(null); setSmSelectedRateId(null)
     if (mode === 'billing') { smPrefillBilling() }
-    else if (mode === 'new') { setSmToName(''); setSmToStreet(''); setSmCity(''); setSmState(''); setSmZip('') }
+    else if (mode === 'new') { setSmToName(''); setSmToStreet(''); setSmCity(''); setSmState(''); setSmZip(''); setSmPhone('') }
   }
 
   function smHandleSavedAddr(id: string) {
@@ -298,12 +301,13 @@ export default function QuoteDetailClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to_address: {
-            name: 'Customer',
-            street1: '1 Main St',
+            name: smToName || 'Customer',
+            street1: smToStreet || '1 Main St',
             city: smCity || smZip,
             state: smState || 'TX',
             zip: smZip,
             country: 'US',
+            ...(smPhone ? { phone: smPhone } : {}),
           },
           parcel: { length: l, width: wi, height: h, weight: w * 16 },
         }),
@@ -1508,6 +1512,12 @@ export default function QuoteDetailClient({
                     <input type="text" value={smZip} onChange={e => setSmZip(e.target.value)} placeholder="78041" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
                   </div>
                 )}
+                <div className="ml-6 mt-2 max-w-[220px]">
+                  <label className="block text-xs font-medium text-gray-500">
+                    Phone <span className="text-gray-400 font-normal">(required by some carriers, e.g. FedEx)</span>
+                  </label>
+                  <input type="tel" value={smPhone} onChange={e => setSmPhone(e.target.value)} placeholder="(555) 555-5555" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                </div>
               </div>
             </div>
 

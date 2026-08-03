@@ -34,6 +34,7 @@ type ShipmentRow = {
   ship_to_city: string | null
   ship_to_state: string | null
   ship_to_zip: string | null
+  ship_to_phone: string | null
   label_url: string | null
   sales_orders: {
     id: string
@@ -55,7 +56,7 @@ const DB_SELECT = `
   id, status, tracking_number, actual_cost, quoted_rate, carrier, created_at,
   sales_order_id, customer_id, shipping_method_id, shipping_profile_id,
   weight_lbs, length_in, width_in, height_in,
-  ship_to_name, ship_to_street, ship_to_city, ship_to_state, ship_to_zip, label_url,
+  ship_to_name, ship_to_street, ship_to_city, ship_to_state, ship_to_zip, ship_to_phone, label_url,
   sales_orders(id, so_number, title, status, total, created_at, customer_id, customers(first_name, last_name, company_name), shipments(id)),
   customers(first_name, last_name, company_name),
   shipping_methods(name, carrier),
@@ -167,6 +168,7 @@ export default async function ShipmentDetailPage({ params, searchParams }: PageP
       shipToCity: shipment.ship_to_city ?? '',
       shipToState: shipment.ship_to_state ?? '',
       shipToZip: shipment.ship_to_zip ?? '',
+      shipToPhone: shipment.ship_to_phone ?? '',
       shippingMethodId: shipment.shipping_method_id ?? '',
       profileId: shipment.shipping_profile_id ?? '',
       weightLbs: shipment.weight_lbs != null ? String(shipment.weight_lbs) : '',
@@ -246,6 +248,7 @@ export default async function ShipmentDetailPage({ params, searchParams }: PageP
               {shipment.ship_to_name && <p className="font-medium text-gray-900">{shipment.ship_to_name}</p>}
               {shipment.ship_to_street && <p>{shipment.ship_to_street}</p>}
               <p>{[shipment.ship_to_city, shipment.ship_to_state, shipment.ship_to_zip].filter(Boolean).join(', ')}</p>
+              {shipment.ship_to_phone && <p className="text-gray-500">{shipment.ship_to_phone}</p>}
             </div>
           ) : (
             <p className="text-sm text-gray-400 italic">No destination on file.</p>

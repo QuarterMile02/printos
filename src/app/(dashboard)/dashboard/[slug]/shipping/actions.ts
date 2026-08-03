@@ -17,6 +17,7 @@ export type CustomerShippingInfo = {
   city: string | null
   state: string | null
   zip: string | null
+  phone: string | null
 }
 
 // Fetches the address/preference fields the new-shipment form needs for a
@@ -26,7 +27,7 @@ export async function getCustomerShippingInfo(orgId: string, customerId: string)
   const supabase = await createClient()
   const { data } = await supabase
     .from('customers')
-    .select('id, first_name, last_name, company_name, shipping_method, street, city, state, zip')
+    .select('id, first_name, last_name, company_name, shipping_method, street, city, state, zip, phone')
     .eq('organization_id', orgId)
     .eq('id', customerId)
     .maybeSingle()
@@ -34,6 +35,7 @@ export async function getCustomerShippingInfo(orgId: string, customerId: string)
   const row = data as {
     id: string; first_name: string; last_name: string; company_name: string | null
     shipping_method: string | null; street: string | null; city: string | null; state: string | null; zip: string | null
+    phone: string | null
   }
   return {
     id: row.id,
@@ -44,6 +46,7 @@ export async function getCustomerShippingInfo(orgId: string, customerId: string)
     city: row.city,
     state: row.state,
     zip: row.zip,
+    phone: row.phone,
   }
 }
 
@@ -58,6 +61,7 @@ function parseShipmentFields(formData: FormData) {
     ship_to_city: ((formData.get('ship_to_city') as string) ?? '').trim() || null,
     ship_to_state: ((formData.get('ship_to_state') as string) ?? '').trim() || null,
     ship_to_zip: ((formData.get('ship_to_zip') as string) ?? '').trim() || null,
+    ship_to_phone: ((formData.get('ship_to_phone') as string) ?? '').trim() || null,
     weight_lbs: numOrNull(formData.get('weight_lbs')),
     length_in: numOrNull(formData.get('length_in')),
     width_in: numOrNull(formData.get('width_in')),

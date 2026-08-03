@@ -49,6 +49,7 @@ export type ShipmentFormInitial = {
   shipToCity: string
   shipToState: string
   shipToZip: string
+  shipToPhone: string
   shippingMethodId: string
   profileId: string
   weightLbs: string
@@ -164,6 +165,7 @@ export default function ShipmentFormClient({ orgId, orgSlug, shippingMethods, sh
   const [shipToCity, setShipToCity]     = useState(initial?.shipToCity ?? '')
   const [shipToState, setShipToState]   = useState(initial?.shipToState ?? '')
   const [shipToZip, setShipToZip]       = useState(initial?.shipToZip ?? '')
+  const [shipToPhone, setShipToPhone]   = useState(initial?.shipToPhone ?? '')
 
   function applyCustomerAddress(info: CustomerShippingInfo) {
     setShipToName(info.company_name || info.name)
@@ -171,6 +173,7 @@ export default function ShipmentFormClient({ orgId, orgSlug, shippingMethods, sh
     setShipToCity(info.city ?? '')
     setShipToState(info.state ?? '')
     setShipToZip(info.zip ?? '')
+    setShipToPhone(info.phone ?? '')
   }
 
   // ── Package ───────────────────────────────────────────────────────────────
@@ -237,6 +240,7 @@ export default function ShipmentFormClient({ orgId, orgSlug, shippingMethods, sh
             state: shipToState || 'TX',
             zip: shipToZip,
             country: 'US',
+            ...(shipToPhone ? { phone: shipToPhone } : {}),
           },
           parcel: { length: l, width: w, height: h, weight: wLbs * 16 },
         }),
@@ -296,6 +300,7 @@ export default function ShipmentFormClient({ orgId, orgSlug, shippingMethods, sh
         <input type="hidden" name="ship_to_city" value={shipToCity} />
         <input type="hidden" name="ship_to_state" value={shipToState} />
         <input type="hidden" name="ship_to_zip" value={shipToZip} />
+        <input type="hidden" name="ship_to_phone" value={shipToPhone} />
         <input type="hidden" name="status" value={shipStatus} />
         <input type="hidden" name="tracking_number" value={shipTracking} />
         <input type="hidden" name="carrier" value={selectedRate?.carrier ?? ''} />
@@ -431,6 +436,10 @@ export default function ShipmentFormClient({ orgId, orgSlug, shippingMethods, sh
             <div>
               <label className={lbl}>ZIP *</label>
               <input type="text" value={shipToZip} onChange={(e) => setShipToZip(e.target.value)} className={inp} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={lbl}>Phone <span className="text-gray-400 font-normal">(required by some carriers, e.g. FedEx)</span></label>
+              <input type="tel" value={shipToPhone} onChange={(e) => setShipToPhone(e.target.value)} placeholder="(555) 555-5555" className={inp} />
             </div>
           </div>
         </div>

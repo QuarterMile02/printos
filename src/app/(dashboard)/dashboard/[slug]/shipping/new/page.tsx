@@ -78,6 +78,7 @@ export default async function NewShipmentPage({ params, searchParams }: PageProp
         shipToCity: resolvedCustomer?.city ?? '',
         shipToState: resolvedCustomer?.state ?? '',
         shipToZip: resolvedCustomer?.zip ?? '',
+        shipToPhone: resolvedCustomer?.phone ?? '',
         shippingMethodId: '',
         profileId: '',
         weightLbs: '',

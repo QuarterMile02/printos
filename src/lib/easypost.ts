@@ -51,6 +51,11 @@ export type EasypostAddress = {
   state: string
   zip: string
   country?: string
+  // FedEx specifically rejects rate/label requests with no phone on the
+  // destination address (PHONENUMBER.EMPTY) -- USPS and others don't need
+  // it, but EasyPost accepts it universally, so it's always passed through
+  // when present rather than only wiring it up for FedEx.
+  phone?: string
 }
 
 export type EasypostParcel = {
