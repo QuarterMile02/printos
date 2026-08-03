@@ -2,11 +2,14 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
-import ShipmentFormClient from '../shipment-form-client'
+import { getCustomerShippingInfo } from '../actions'
+import type { SoSearchRow } from '../../sales-orders/actions'
+import { formatSoNumber } from '../../sales-orders/format'
+import ShipmentFormClient, { type ShipmentFormInitial } from '../shipment-form-client'
 
 type PageProps = {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; so?: string }>
 }
 
 export default async function NewShipmentPage({ params, searchParams }: PageProps) {
@@ -50,6 +53,43 @@ export default async function NewShipmentPage({ params, searchParams }: PageProp
   const shippingProfiles = (pRes.data ?? []) as ShipProfileRow[]
   const teamMembers = (tRes.data ?? []) as TeamMemberRow[]
 
+  // When arriving from a Sales Order (e.g. its "+ Add Shipment" link), the SO
+  // and its customer's address are pre-resolved server-side so the form opens
+  // already linked, not blank with the SO left for the user to search for.
+  let initial: ShipmentFormInitial | undefined
+  let soHref: string | null = null
+  if (sp.so) {
+    const { data: soRow } = await supabase
+      .from('sales_orders')
+      .select('id, so_number, title, status, total, created_at, customer_id, customers(first_name, last_name, company_name), shipments(id)')
+      .eq('id', sp.so)
+      .eq('organization_id', org.id)
+      .maybeSingle() as { data: SoSearchRow | null; error: unknown }
+
+    if (soRow) {
+      soHref = `/dashboard/${slug}/sales-orders/${soRow.id}`
+      const resolvedCustomer = soRow.customer_id ? await getCustomerShippingInfo(org.id, soRow.customer_id) : null
+      initial = {
+        linkMode: 'so',
+        selectedSo: soRow,
+        resolvedCustomer,
+        shipToName: resolvedCustomer ? (resolvedCustomer.company_name || resolvedCustomer.name) : '',
+        shipToStreet: resolvedCustomer?.street ?? '',
+        shipToCity: resolvedCustomer?.city ?? '',
+        shipToState: resolvedCustomer?.state ?? '',
+        shipToZip: resolvedCustomer?.zip ?? '',
+        shippingMethodId: '',
+        profileId: '',
+        weightLbs: '',
+        dimL: '',
+        dimW: '',
+        dimH: '',
+        deliveryNotes: '',
+        taskAssignedTo: '',
+      }
+    }
+  }
+
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
@@ -60,7 +100,14 @@ export default async function NewShipmentPage({ params, searchParams }: PageProp
         <span className="text-gray-700">New</span>
       </div>
 
-      <h1 className="mb-6 text-2xl font-extrabold text-qm-black">New Shipment</h1>
+      <div className="mb-6 flex items-center gap-3">
+        <h1 className="text-2xl font-extrabold text-qm-black">New Shipment</h1>
+        {soHref && initial?.selectedSo && (
+          <Link href={soHref} className="text-sm text-qm-fuchsia hover:underline">
+            ← Back to {formatSoNumber(initial.selectedSo.so_number, initial.selectedSo.created_at)}
+          </Link>
+        )}
+      </div>
 
       <ShipmentFormClient
         orgId={org.id}
@@ -69,6 +116,7 @@ export default async function NewShipmentPage({ params, searchParams }: PageProp
         shippingProfiles={shippingProfiles}
         teamMembers={teamMembers}
         initialError={sp.error ? decodeURIComponent(sp.error) : undefined}
+        initial={initial}
       />
     </div>
   )

@@ -153,6 +153,13 @@ export async function createShipment(formData: FormData) {
     }
   }
 
+  // Created from a Sales Order's context (linked via sales_order_id) — land
+  // back on that SO rather than the org-wide list, same flash-banner pattern
+  // the SO detail page already uses for its own writes.
+  if (fields.sales_order_id) {
+    redirect(`/dashboard/${orgSlug}/sales-orders/${fields.sales_order_id}?shipment_saved=1`)
+  }
+
   redirect(`/dashboard/${orgSlug}/shipping?created=1`)
 }
 
@@ -185,4 +192,20 @@ export async function updateShipment(formData: FormData) {
   }
 
   redirect(`/dashboard/${orgSlug}/shipping/${id}`)
+}
+
+export async function deleteShipment(formData: FormData) {
+  const id = formData.get('id') as string
+  const orgId = formData.get('orgId') as string
+  const orgSlug = formData.get('orgSlug') as string
+  const soId = (formData.get('soId') as string) || null
+  const service = createServiceClient()
+
+  const { error } = await service.from('shipments').delete().eq('id', id).eq('organization_id', orgId)
+
+  const backTarget = soId ? `/dashboard/${orgSlug}/sales-orders/${soId}` : `/dashboard/${orgSlug}/shipping`
+  if (error) {
+    redirect(`${backTarget}?shipment_error=${encodeURIComponent(error.message)}`)
+  }
+  redirect(backTarget)
 }
