@@ -4,6 +4,7 @@ import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow, DbError } from '@/lib/db'
 import { resolveDateRange, paginate, type DateRangePreset } from '@/lib/reports/report-utils'
 import ReportShell from '../report-shell'
+import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,16 +29,7 @@ export default async function PaymentsReport(props: PageProps) {
     return await PageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[reports-payments] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (reports-payments)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
-      </div>
-    )
+    return renderPageError('reports-payments', err)
   }
 }
 

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { REPORT_DEFS, FINANCIAL_REPORT_DEFS } from '@/lib/reports/report-utils'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -69,16 +70,7 @@ export default async function ReportsIndex(props: PageProps) {
     return await PageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[reports-index] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (reports-index)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
-      </div>
-    )
+    return renderPageError('reports-index', err)
   }
 }
 
