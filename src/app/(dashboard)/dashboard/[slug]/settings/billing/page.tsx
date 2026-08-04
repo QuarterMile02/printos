@@ -1,5 +1,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { dbOrThrow } from '@/lib/db'
 import AccountClient, { type Props as ClientProps, type DayHours } from './billing-client'
 
 export const dynamic = 'force-dynamic'
@@ -26,9 +27,9 @@ async function PageInner({ params }: PageProps) {
   const supabase = await createClient()
   const service = createServiceClient()
 
-  const { data: orgRow } = await supabase
-    .from('organizations').select('id, name').eq('slug', slug).single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
   const { data: { user } } = await supabase.auth.getUser()
