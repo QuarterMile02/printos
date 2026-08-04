@@ -5,6 +5,7 @@ import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { SHIPPING_PAGE_SIZE } from './constants'
 import ShippingListClient, { type ShippingListRow } from './shipping-list-client'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -18,7 +19,22 @@ const DB_SELECT = `
   shipping_methods(name, carrier)
 `
 
-export default async function ShippingPage({ params }: PageProps) {
+export default async function ShippingPage(props: PageProps) {
+  try {
+    return await ShippingPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[shipping-list] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (shipping-list)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function ShippingPageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
 
@@ -26,11 +42,9 @@ export default async function ShippingPage({ params }: PageProps) {
   const userId = user?.id ?? ''
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
   if (!org) notFound()
 
   const { allowed } = await checkPermission(org.id, 'shipping.view')

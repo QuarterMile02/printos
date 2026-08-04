@@ -7,6 +7,7 @@ import type { SoSearchRow } from '../../sales-orders/actions'
 import { formatSoNumber } from '../../sales-orders/format'
 import { SHIP_STATUS_STYLES, SHIP_STATUS_LABELS, formatShipDate } from '../format'
 import ShipmentFormClient, { type ShipmentFormInitial } from '../shipment-form-client'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = {
   params: Promise<{ slug: string; id: string }>
@@ -68,17 +69,30 @@ function custName(c: { first_name: string; last_name: string; company_name: stri
   return c.company_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || null
 }
 
-export default async function ShipmentDetailPage({ params, searchParams }: PageProps) {
+export default async function ShipmentDetailPage(props: PageProps) {
+  try {
+    return await ShipmentDetailPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[shipping-detail] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (shipping-detail)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function ShipmentDetailPageInner({ params, searchParams }: PageProps) {
   const { slug, id } = await params
   const sp = await searchParams
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
   if (!org) notFound()
 
   // profiles RLS only allows selecting your own row (auth.uid() = id), so

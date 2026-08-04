@@ -5,12 +5,28 @@ import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { QUOTES_PAGE_SIZE } from './constants'
 import QuotesListClient, { type QuoteListRow } from './quotes-list-client'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = {
   params: Promise<{ slug: string }>
 }
 
-export default async function QuotesPage({ params }: PageProps) {
+export default async function QuotesPage(props: PageProps) {
+  try {
+    return await QuotesPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[quotes-list] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (quotes-list)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function QuotesPageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
 
@@ -20,11 +36,9 @@ export default async function QuotesPage({ params }: PageProps) {
 
   // Org — RLS ensures user is a member
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
 
   if (!org) notFound()
 

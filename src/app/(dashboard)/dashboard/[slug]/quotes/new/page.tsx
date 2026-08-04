@@ -2,19 +2,33 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import NewQuoteForm from './new-quote-form'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
-export default async function NewQuotePage({ params }: PageProps) {
+export default async function NewQuotePage(props: PageProps) {
+  try {
+    return await NewQuotePageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[quotes-new] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (quotes-new)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function NewQuotePageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
   if (!org) notFound()
 
   const { data: { user } } = await supabase.auth.getUser()

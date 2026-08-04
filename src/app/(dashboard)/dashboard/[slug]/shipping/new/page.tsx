@@ -6,23 +6,37 @@ import { getCustomerShippingInfo } from '../actions'
 import type { SoSearchRow } from '../../sales-orders/actions'
 import { formatSoNumber } from '../../sales-orders/format'
 import ShipmentFormClient, { type ShipmentFormInitial } from '../shipment-form-client'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ error?: string; so?: string }>
 }
 
-export default async function NewShipmentPage({ params, searchParams }: PageProps) {
+export default async function NewShipmentPage(props: PageProps) {
+  try {
+    return await NewShipmentPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[shipping-new] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (shipping-new)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function NewShipmentPageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
   if (!org) notFound()
 
   const { allowed } = await checkPermission(org.id, 'shipping.create')

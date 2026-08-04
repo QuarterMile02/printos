@@ -5,6 +5,7 @@ import type { Role, Tier } from '@/lib/permissions'
 import { ROLE_LABELS, TIER_LABELS } from '@/lib/permissions'
 import InviteMemberForm from './invite-member-form'
 import MemberSettings from './member-settings'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -31,17 +32,30 @@ function formatDate(iso: string) {
   })
 }
 
-export default async function TeamPage({ params }: PageProps) {
+export default async function TeamPage(props: PageProps) {
+  try {
+    return await TeamPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[team-members] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (team-members)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function TeamPageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
 
   // Fetch org — RLS ensures user is a member
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
 
   if (!org) notFound()
 

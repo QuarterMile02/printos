@@ -6,21 +6,35 @@ import QuoteDetailClient from './quote-detail-client'
 import { convertToSalesOrder } from './convert-action'
 import type { EmailTemplate } from '../actions'
 import { checkPermission } from '@/lib/check-permission'
+import { dbOrThrow } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
-export default async function QuoteDetailPage({ params }: PageProps) {
+export default async function QuoteDetailPage(props: PageProps) {
+  try {
+    return await QuoteDetailPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[quotes-detail] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (quotes-detail)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function QuoteDetailPageInner({ params }: PageProps) {
   const { slug, id } = await params
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
   if (!org) notFound()
 
   type QuoteRow = {
