@@ -66,16 +66,18 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     } | null
   }
 
-  const { data: so } = await supabase
-    .from('sales_orders')
-    .select(`
-      id, so_number, title, status, total, notes, quote_id, customer_id,
-      created_at, updated_at,
-      customers(first_name, last_name, company_name, email, phone, street, city, state, zip, shipping_method)
-    `)
-    .eq('id', id)
-    .eq('organization_id', org.id)
-    .maybeSingle() as { data: SoRow | null; error: unknown }
+  const so = await dbOrThrow(
+    supabase
+      .from('sales_orders')
+      .select(`
+        id, so_number, title, status, total, notes, quote_id, customer_id,
+        created_at, updated_at,
+        customers(first_name, last_name, company_name, email, phone, street, city, state, zip, shipping_method)
+      `)
+      .eq('id', id)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  ) as SoRow | null
 
   if (!so) notFound()
 
@@ -83,11 +85,13 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
   const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
   // Owner/admin role
-  const { data: soMemberRow } = await supabase
-    .from('organization_members').select('role')
-    .eq('organization_id', org.id)
-    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const soMemberRow = await dbOrThrow(
+    supabase
+      .from('organization_members').select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+  ) as { role: string } | null
   const canReassignSoCustomer = ['owner', 'admin', 'member'].includes(soMemberRow?.role ?? '')
 
   // contact_id (migration 058)
@@ -114,11 +118,13 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
   type QuoteRef = { id: string; quote_number: number; title: string; created_at: string }
   let parentQuote: QuoteRef | null = null
   if (so.quote_id) {
-    const { data: q } = await supabase
-      .from('quotes')
-      .select('id, quote_number, title, created_at')
-      .eq('id', so.quote_id)
-      .maybeSingle() as { data: QuoteRef | null; error: unknown }
+    const q = await dbOrThrow(
+      supabase
+        .from('quotes')
+        .select('id, quote_number, title, created_at')
+        .eq('id', so.quote_id)
+        .maybeSingle()
+    ) as QuoteRef | null
     parentQuote = q
   }
 
@@ -130,11 +136,13 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
   }
   let soLineItems: SoLineItem[] = []
   if (so.quote_id) {
-    const { data: liData } = await supabase
-      .from('quote_line_items')
-      .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order')
-      .eq('quote_id', so.quote_id)
-      .order('sort_order') as { data: SoLineItem[] | null; error: unknown }
+    const liData = await dbOrThrow(
+      supabase
+        .from('quote_line_items')
+        .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order')
+        .eq('quote_id', so.quote_id)
+        .order('sort_order')
+    ) as SoLineItem[] | null
     soLineItems = liData ?? []
   }
 
@@ -146,12 +154,14 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     status: JobStatus
     due_date: string | null
   }
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select('id, job_number, title, status, due_date')
-    .eq('source_quote_id', so.quote_id ?? '')
-    .eq('organization_id', org.id)
-    .order('job_number', { ascending: true }) as { data: JobRow[] | null; error: unknown }
+  const jobs = await dbOrThrow(
+    supabase
+      .from('jobs')
+      .select('id, job_number, title, status, due_date')
+      .eq('source_quote_id', so.quote_id ?? '')
+      .eq('organization_id', org.id)
+      .order('job_number', { ascending: true })
+  ) as JobRow[] | null
 
   // Fetch shipments for this SO
   type ShipmentRow = {

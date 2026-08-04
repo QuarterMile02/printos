@@ -42,11 +42,13 @@ async function NewQuotePageInner({ params }: PageProps) {
   // not to profiles, so PostgREST embedded joins don't work here.
 
   type RawMemberRow = { user_id: string }
-  const { data: rawMembers } = await supabase
-    .from('organization_members')
-    .select('user_id')
-    .eq('organization_id', org.id)
-    .in('role', ['owner', 'admin', 'member']) as { data: RawMemberRow[] | null; error: unknown }
+  const rawMembers = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id')
+      .eq('organization_id', org.id)
+      .in('role', ['owner', 'admin', 'member'])
+  ) as RawMemberRow[] | null
 
   const memberUserIds = (rawMembers ?? []).map(m => m.user_id)
 
@@ -56,10 +58,12 @@ async function NewQuotePageInner({ params }: PageProps) {
   if (memberUserIds.length > 0) {
     // Fetch full_name from profiles via service client (bypasses RLS)
     type ProfileRow = { id: string; full_name: string | null }
-    const { data: profileRows } = await service
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    const profileRows = await dbOrThrow(
+      service
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', memberUserIds)
+    ) as ProfileRow[] | null
     for (const p of profileRows ?? []) {
       if (p.full_name) nameMap.set(p.id, p.full_name)
     }

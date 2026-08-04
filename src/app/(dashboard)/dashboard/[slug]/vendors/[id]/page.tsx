@@ -32,12 +32,14 @@ async function VendorDetailPageInner({ params }: PageProps) {
   ) as OrgRow | null
   if (!org) notFound()
 
-  const { data: membership } = await supabase
-    .from('organization_members')
-    .select('role')
-    .eq('organization_id', org.id)
-    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const membership = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+  ) as { role: string } | null
   const isOwnerOrAdmin = membership?.role === 'owner' || membership?.role === 'admin'
 
   type VendorRow = {
@@ -53,16 +55,18 @@ async function VendorDetailPageInner({ params }: PageProps) {
     categories: string | null; hours_of_operation: string | null
     background_info: string | null; is_active: boolean | null; created_at: string
   }
-  const { data: vendor } = await supabase
-    .from('vendors')
-    .select(`id, name, legal_name, primary_contact, primary_email, primary_phone,
-      street, city, state, zip, country,
-      secondary_street, secondary_city, secondary_state, secondary_zip,
-      website, catalog_url, account_id, tax_id, tax, terms, payment_method,
-      categories, hours_of_operation, background_info, is_active, created_at`)
-    .eq('id', id)
-    .eq('organization_id', org.id)
-    .maybeSingle() as { data: VendorRow | null; error: unknown }
+  const vendor = await dbOrThrow(
+    supabase
+      .from('vendors')
+      .select(`id, name, legal_name, primary_contact, primary_email, primary_phone,
+        street, city, state, zip, country,
+        secondary_street, secondary_city, secondary_state, secondary_zip,
+        website, catalog_url, account_id, tax_id, tax, terms, payment_method,
+        categories, hours_of_operation, background_info, is_active, created_at`)
+      .eq('id', id)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  ) as VendorRow | null
   if (!vendor) notFound()
 
   type MaterialVendorRow = {
@@ -71,13 +75,15 @@ async function VendorDetailPageInner({ params }: PageProps) {
     part_number: string | null
     materials: { id: string; name: string; buying_units: string | null } | null
   }
-  const { data: materialVendorRows } = await supabase
-    .from('material_vendors')
-    .select('material_id, vendor_price, part_number, materials(id, name, buying_units)')
-    .eq('organization_id', org.id)
-    .eq('vendor_name', vendor.name)
-    .eq('active', true)
-    .order('vendor_price', { ascending: true }) as { data: MaterialVendorRow[] | null; error: unknown }
+  const materialVendorRows = await dbOrThrow(
+    supabase
+      .from('material_vendors')
+      .select('material_id, vendor_price, part_number, materials(id, name, buying_units)')
+      .eq('organization_id', org.id)
+      .eq('vendor_name', vendor.name)
+      .eq('active', true)
+      .order('vendor_price', { ascending: true })
+  ) as MaterialVendorRow[] | null
 
   const materials = materialVendorRows ?? []
 

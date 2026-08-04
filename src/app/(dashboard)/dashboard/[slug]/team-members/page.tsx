@@ -63,12 +63,14 @@ async function TeamPageInner({ params }: PageProps) {
   // Get current user's role to decide if they can invite
   const { data: { user } } = await supabase.auth.getUser()
   type MembershipRow = { role: OrgRole }
-  const { data: currentMembership } = await supabase
-    .from('organization_members')
-    .select('role')
-    .eq('organization_id', org.id)
-    .eq('user_id', user!.id)
-    .single() as { data: MembershipRow | null; error: unknown }
+  const currentMembership = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', user!.id)
+      .maybeSingle()
+  ) as MembershipRow | null
 
   const currentRole = currentMembership?.role ?? 'viewer'
   const canInvite = currentRole === 'owner' || currentRole === 'admin'
@@ -88,11 +90,13 @@ async function TeamPageInner({ params }: PageProps) {
   // 1. organization_members for this org (anon client — RLS allows any
   //    member to see all rows for orgs they belong to, per 002).
   type RawMemberRow = { id: string; user_id: string; role: OrgRole; created_at: string }
-  const { data: rawMembers } = await supabase
-    .from('organization_members')
-    .select('id, user_id, role, created_at')
-    .eq('organization_id', org.id)
-    .order('created_at', { ascending: true }) as { data: RawMemberRow[] | null; error: unknown }
+  const rawMembers = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('id, user_id, role, created_at')
+      .eq('organization_id', org.id)
+      .order('created_at', { ascending: true })
+  ) as RawMemberRow[] | null
 
   const memberUserIds = (rawMembers ?? []).map((m) => m.user_id)
 
@@ -101,10 +105,12 @@ async function TeamPageInner({ params }: PageProps) {
   const profileMap = new Map<string, ProfileFields>()
   if (memberUserIds.length > 0) {
     type ProfileRow = { id: string } & ProfileFields
-    const { data: profileRows } = await service
-      .from('profiles')
-      .select('id, full_name, role, tier, departments, title, phone')
-      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    const profileRows = await dbOrThrow(
+      service
+        .from('profiles')
+        .select('id, full_name, role, tier, departments, title, phone')
+        .in('id', memberUserIds)
+    ) as ProfileRow[] | null
     for (const p of profileRows ?? []) {
       profileMap.set(p.id, {
         full_name: p.full_name, role: p.role, tier: p.tier,
@@ -148,12 +154,14 @@ async function TeamPageInner({ params }: PageProps) {
 
   // Fetch pending invites (visible to all members via RLS)
   type InviteRow = { id: string; email: string; role: OrgRole; status: InviteStatus; created_at: string; expires_at: string }
-  const { data: inviteRows } = await supabase
-    .from('organization_invites')
-    .select('id, email, role, status, created_at, expires_at')
-    .eq('organization_id', org.id)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false }) as { data: InviteRow[] | null; error: unknown }
+  const inviteRows = await dbOrThrow(
+    supabase
+      .from('organization_invites')
+      .select('id, email, role, status, created_at, expires_at')
+      .eq('organization_id', org.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+  ) as InviteRow[] | null
 
   const pendingInvites = inviteRows ?? []
 

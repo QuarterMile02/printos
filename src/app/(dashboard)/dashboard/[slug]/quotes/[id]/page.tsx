@@ -98,11 +98,13 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     quote = q1
     // Always fetch customer via service client to ensure fresh data (bypasses RLS join cache)
     if (q1.customer_id) {
-      const { data: custRow } = await createServiceClient()
-        .from('customers')
-        .select('first_name, last_name, company_name, email, phone, street, city, state, zip, status, terms, credit_limit, special_notes, background_info')
-        .eq('id', q1.customer_id)
-        .maybeSingle()
+      const custRow = await dbOrThrow(
+        createServiceClient()
+          .from('customers')
+          .select('first_name, last_name, company_name, email, phone, street, city, state, zip, status, terms, credit_limit, special_notes, background_info')
+          .eq('id', q1.customer_id)
+          .maybeSingle()
+      )
       if (custRow) {
         quote = { ...q1, customers: custRow as typeof q1.customers }
       }
@@ -179,13 +181,15 @@ async function QuoteDetailPageInner({ params }: PageProps) {
 
   // Products for the line item picker (edit mode).
   type ProductOption = { id: string; name: string; formula: string | null }
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, name, formula')
-    .eq('organization_id', org.id)
-    .eq('active', true)
-    .order('name', { ascending: true })
-    .limit(2000) as { data: ProductOption[] | null; error: unknown }
+  const products = await dbOrThrow(
+    supabase
+      .from('products')
+      .select('id, name, formula')
+      .eq('organization_id', org.id)
+      .eq('active', true)
+      .order('name', { ascending: true })
+      .limit(2000)
+  ) as ProductOption[] | null
 
   // Fetch materials for each product used in line items, via product_items.
   const productIds = [...new Set(
@@ -221,11 +225,13 @@ async function QuoteDetailPageInner({ params }: PageProps) {
   // profiles RLS policy is own-row-only — PostgREST embedded joins don't work.
   // Use the service client to bypass RLS, same pattern as team-members/page.tsx.
   type RawMemberRow = { user_id: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id')
-    .eq('organization_id', org.id)
-    .in('role', ['owner', 'admin', 'member']) as { data: RawMemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id')
+      .eq('organization_id', org.id)
+      .in('role', ['owner', 'admin', 'member'])
+  ) as RawMemberRow[] | null
 
   const memberUserIds = (memberRows ?? []).map(m => m.user_id)
   const service = createServiceClient()
@@ -233,10 +239,12 @@ async function QuoteDetailPageInner({ params }: PageProps) {
 
   if (memberUserIds.length > 0) {
     type ProfileRow = { id: string; full_name: string | null }
-    const { data: profileRows } = await service
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    const profileRows = await dbOrThrow(
+      service
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', memberUserIds)
+    ) as ProfileRow[] | null
     for (const p of profileRows ?? []) {
       if (p.full_name) nameMap.set(p.id, p.full_name)
     }
@@ -262,11 +270,13 @@ async function QuoteDetailPageInner({ params }: PageProps) {
   type SoRef = { id: string; so_number: number; created_at: string }
   let salesOrder: SoRef | null = null
   if (quote.converted_to_so_id) {
-    const { data: so } = await supabase
-      .from('sales_orders')
-      .select('id, so_number, created_at')
-      .eq('id', quote.converted_to_so_id)
-      .maybeSingle() as { data: SoRef | null; error: unknown }
+    const so = await dbOrThrow(
+      supabase
+        .from('sales_orders')
+        .select('id, so_number, created_at')
+        .eq('id', quote.converted_to_so_id)
+        .maybeSingle()
+    ) as SoRef | null
     salesOrder = so
   }
 
@@ -297,10 +307,12 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     modifier_type: string
     units: string | null
   }
-  const { data: modRows } = await supabase
-    .from('modifiers')
-    .select('id, system_lookup_name, display_name, modifier_type, units')
-    .eq('organization_id', org.id) as { data: ModifierDefRow[] | null; error: unknown }
+  const modRows = await dbOrThrow(
+    supabase
+      .from('modifiers')
+      .select('id, system_lookup_name, display_name, modifier_type, units')
+      .eq('organization_id', org.id)
+  ) as ModifierDefRow[] | null
   const modifierDefs: ModifierDefRow[] = modRows ?? []
 
   // Check if user can see pricing columns
@@ -308,11 +320,13 @@ async function QuoteDetailPageInner({ params }: PageProps) {
   const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
   // Resolve org role for owner/admin gating
-  const { data: membershipRow } = await supabase
-    .from('organization_members').select('role')
-    .eq('organization_id', org.id)
-    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const membershipRow = await dbOrThrow(
+    supabase
+      .from('organization_members').select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+  ) as { role: string } | null
   const isOwnerOrAdmin = membershipRow?.role === 'owner' || membershipRow?.role === 'admin'
 
   // Fetch contact_id (column added in migration 058 — may not exist yet)

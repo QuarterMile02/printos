@@ -45,10 +45,12 @@ async function SalesOrdersPageInner({ params }: PageProps) {
 
   // User role within org
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
 
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 

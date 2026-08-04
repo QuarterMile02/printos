@@ -112,12 +112,14 @@ async function ShipmentDetailPageInner({ params, searchParams }: PageProps) {
     )
   }
 
-  const { data: shipment } = await supabase
-    .from('shipments')
-    .select(DB_SELECT)
-    .eq('organization_id', org.id)
-    .eq('id', id)
-    .maybeSingle() as { data: ShipmentRow | null; error: unknown }
+  const shipment = await dbOrThrow(
+    supabase
+      .from('shipments')
+      .select(DB_SELECT)
+      .eq('organization_id', org.id)
+      .eq('id', id)
+      .maybeSingle()
+  ) as ShipmentRow | null
   if (!shipment) notFound()
 
   const soHref = shipment.sales_order_id ? `/dashboard/${slug}/sales-orders/${shipment.sales_order_id}` : null
@@ -163,16 +165,16 @@ async function ShipmentDetailPageInner({ params, searchParams }: PageProps) {
     type ShipProfileRow = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
     type TeamMemberRow = { id: string; full_name: string | null }
 
-    const [mRes, pRes, tRes, taskRes] = await Promise.all([
-      supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
-      supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
-      service.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name'),
-      supabase.from('tasks').select('description, assigned_to').eq('shipment_id', shipment.id).maybeSingle(),
+    const [mRows, pRows, tRows, taskData] = await Promise.all([
+      dbOrThrow(supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).eq('is_active', true).order('name')),
+      dbOrThrow(supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).eq('is_active', true).order('name')),
+      dbOrThrow(service.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name')),
+      dbOrThrow(supabase.from('tasks').select('description, assigned_to').eq('shipment_id', shipment.id).maybeSingle()),
     ])
-    const shippingMethods = (mRes.data ?? []) as ShipMethodRow[]
-    const shippingProfiles = (pRes.data ?? []) as ShipProfileRow[]
-    const teamMembers = (tRes.data ?? []) as TeamMemberRow[]
-    const linkedTask = taskRes.data as { description: string | null; assigned_to: string | null } | null
+    const shippingMethods = (mRows ?? []) as ShipMethodRow[]
+    const shippingProfiles = (pRows ?? []) as ShipProfileRow[]
+    const teamMembers = (tRows ?? []) as TeamMemberRow[]
+    const linkedTask = taskData as { description: string | null; assigned_to: string | null } | null
 
     const initial: ShipmentFormInitial = {
       linkMode: shipment.sales_order_id ? 'so' : shipment.customer_id ? 'customer' : 'none',
@@ -229,11 +231,11 @@ async function ShipmentDetailPageInner({ params, searchParams }: PageProps) {
     ? `${shipment.length_in}×${shipment.width_in}×${shipment.height_in}"`
     : null
   const isLocalOrPickup = shipment.shipping_methods?.carrier === 'local' || shipment.shipping_methods?.carrier === 'pickup'
-  const { data: linkedTaskRO } = isLocalOrPickup
-    ? await service.from('tasks').select('description, assigned_profile:profiles!tasks_assigned_to_fkey(full_name)').eq('shipment_id', shipment.id).maybeSingle() as {
-        data: { description: string | null; assigned_profile: { full_name: string | null } | null } | null
-      }
-    : { data: null }
+  const linkedTaskRO = isLocalOrPickup
+    ? await dbOrThrow(
+        service.from('tasks').select('description, assigned_profile:profiles!tasks_assigned_to_fkey(full_name)').eq('shipment_id', shipment.id).maybeSingle()
+      ) as { description: string | null; assigned_profile: { full_name: string | null } | null } | null
+    : null
 
   return (
     <div className="p-8 max-w-3xl">

@@ -59,14 +59,14 @@ async function NewShipmentPageInner({ params, searchParams }: PageProps) {
   // profiles RLS only allows selecting your own row (auth.uid() = id), so the
   // team-member picker needs the service client to see the whole org.
   const service = createServiceClient()
-  const [mRes, pRes, tRes] = await Promise.all([
-    supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
-    supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).eq('is_active', true).order('name'),
-    service.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name'),
+  const [mRows, pRows, tRows] = await Promise.all([
+    dbOrThrow(supabase.from('shipping_methods').select('id, name, carrier, is_active').eq('organization_id', org.id).eq('is_active', true).order('name')),
+    dbOrThrow(supabase.from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active').eq('organization_id', org.id).eq('is_active', true).order('name')),
+    dbOrThrow(service.from('profiles').select('id, full_name').eq('organization_id', org.id).order('full_name')),
   ])
-  const shippingMethods = (mRes.data ?? []) as ShipMethodRow[]
-  const shippingProfiles = (pRes.data ?? []) as ShipProfileRow[]
-  const teamMembers = (tRes.data ?? []) as TeamMemberRow[]
+  const shippingMethods = (mRows ?? []) as ShipMethodRow[]
+  const shippingProfiles = (pRows ?? []) as ShipProfileRow[]
+  const teamMembers = (tRows ?? []) as TeamMemberRow[]
 
   // When arriving from a Sales Order (e.g. its "+ Add Shipment" link), the SO
   // and its customer's address are pre-resolved server-side so the form opens
@@ -74,12 +74,14 @@ async function NewShipmentPageInner({ params, searchParams }: PageProps) {
   let initial: ShipmentFormInitial | undefined
   let soHref: string | null = null
   if (sp.so) {
-    const { data: soRow } = await supabase
-      .from('sales_orders')
-      .select('id, so_number, title, status, total, created_at, customer_id, customers(first_name, last_name, company_name), shipments(id)')
-      .eq('id', sp.so)
-      .eq('organization_id', org.id)
-      .maybeSingle() as { data: SoSearchRow | null; error: unknown }
+    const soRow = await dbOrThrow(
+      supabase
+        .from('sales_orders')
+        .select('id, so_number, title, status, total, created_at, customer_id, customers(first_name, last_name, company_name), shipments(id)')
+        .eq('id', sp.so)
+        .eq('organization_id', org.id)
+        .maybeSingle()
+    ) as SoSearchRow | null
 
     if (soRow) {
       soHref = `/dashboard/${slug}/sales-orders/${soRow.id}`

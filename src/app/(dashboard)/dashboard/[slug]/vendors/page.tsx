@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import VendorsListClient from './vendors-list-client'
 import type { VendorListRow } from './actions'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -45,6 +45,9 @@ async function VendorsPageInner({ params }: PageProps) {
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', org.id),
   ])
+
+  if (vendorsRes.error) throw new DbError(vendorsRes.error)
+  if (countRes.error) throw new DbError(countRes.error)
 
   const vendors = (vendorsRes.data ?? []) as VendorListRow[]
   const totalCount = countRes.count ?? 0
