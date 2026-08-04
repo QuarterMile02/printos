@@ -55,19 +55,23 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const { data: typesData } = await supabase
-    .from('product_types')
-    .select('id, name, is_active, created_at')
-    .eq('organization_id', org.id)
-    .order('name', { ascending: true })
-
   type ProductType = ProductTypeRow & { created_at: string }
+  const typesData = await dbOrThrow(
+    supabase
+      .from('product_types')
+      .select('id, name, is_active, created_at')
+      .eq('organization_id', org.id)
+      .order('name', { ascending: true })
+  ) as ProductType[] | null
+
   const types = (typesData ?? []) as ProductType[]
 
   const editId = sp.edit
@@ -77,11 +81,13 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   const usageCounts: Record<string, number> = {}
   if (types.length > 0) {
-    const { data: usageData } = await supabase
-      .from('products')
-      .select('product_type_id')
-      .eq('organization_id', org.id)
-      .not('product_type_id', 'is', null)
+    const usageData = await dbOrThrow(
+      supabase
+        .from('products')
+        .select('product_type_id')
+        .eq('organization_id', org.id)
+        .not('product_type_id', 'is', null)
+    ) as { product_type_id: string }[] | null
     for (const r of (usageData ?? []) as { product_type_id: string }[]) {
       usageCounts[r.product_type_id] = (usageCounts[r.product_type_id] ?? 0) + 1
     }

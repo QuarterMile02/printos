@@ -42,25 +42,29 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
-  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
-
-  const [materialTypesRes, materialCategoriesRes, initialResult] = await Promise.all([
-    supabase
-      .from('material_types')
-      .select('id, name')
-      .eq('organization_id', org.id)
-      .eq('is_active', true)
-      .order('name'),
-    supabase
-      .from('material_categories')
-      .select('id, name')
-      .eq('organization_id', org.id)
-      .eq('is_active', true)
-      .order('name'),
+  const [memberRows, materialTypesData, materialCategoriesData, initialResult] = await Promise.all([
+    dbOrThrow(
+      supabase
+        .from('organization_members')
+        .select('user_id, role')
+        .eq('organization_id', org.id)
+    ) as Promise<MemberRow[] | null>,
+    dbOrThrow(
+      supabase
+        .from('material_types')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('name')
+    ),
+    dbOrThrow(
+      supabase
+        .from('material_categories')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('name')
+    ),
     fetchDataTablePage<MaterialListRow>({
       tableKey: 'materials',
       orgId: org.id,
@@ -71,9 +75,10 @@ async function PageInner({ params, searchParams }: PageProps) {
       pageSize: MATERIALS_PAGE_SIZE,
     }),
   ])
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const materialTypes = (materialTypesRes.data ?? []) as MaterialTypeOption[]
-  const materialCategories = (materialCategoriesRes.data ?? []) as MaterialCategoryOption[]
+  const materialTypes = (materialTypesData ?? []) as MaterialTypeOption[]
+  const materialCategories = (materialCategoriesData ?? []) as MaterialCategoryOption[]
 
   return (
     <div className="p-8">

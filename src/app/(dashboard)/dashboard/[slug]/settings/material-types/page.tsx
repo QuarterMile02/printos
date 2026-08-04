@@ -55,19 +55,23 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const { data: typesData } = await supabase
-    .from('material_types')
-    .select('id, name, is_active, created_at')
-    .eq('organization_id', org.id)
-    .order('name', { ascending: true })
-
   type MaterialType = MaterialTypeRow & { created_at: string }
+  const typesData = await dbOrThrow(
+    supabase
+      .from('material_types')
+      .select('id, name, is_active, created_at')
+      .eq('organization_id', org.id)
+      .order('name', { ascending: true })
+  ) as MaterialType[] | null
+
   const types = (typesData ?? []) as MaterialType[]
 
   const editId = sp.edit
@@ -78,11 +82,13 @@ async function PageInner({ params, searchParams }: PageProps) {
   // Usage counts — only allow delete when count = 0
   const usageCounts: Record<string, number> = {}
   if (types.length > 0) {
-    const { data: usageData } = await supabase
-      .from('materials')
-      .select('material_type_id')
-      .eq('organization_id', org.id)
-      .not('material_type_id', 'is', null)
+    const usageData = await dbOrThrow(
+      supabase
+        .from('materials')
+        .select('material_type_id')
+        .eq('organization_id', org.id)
+        .not('material_type_id', 'is', null)
+    ) as { material_type_id: string }[] | null
     for (const r of (usageData ?? []) as { material_type_id: string }[]) {
       usageCounts[r.material_type_id] = (usageCounts[r.material_type_id] ?? 0) + 1
     }

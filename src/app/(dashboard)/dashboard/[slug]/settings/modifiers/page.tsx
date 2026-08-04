@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import type { Modifier } from '@/types/product-builder'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 import ModifiersClient from './modifiers-client'
 
 export const dynamic = 'force-dynamic'
@@ -45,24 +45,27 @@ async function PageInner({ params }: PageProps) {
   // results — run them together instead of chaining sequential awaits,
   // which just stacks round trips before anything can render.
   type MemberRow = { user_id: string; role: string }
-  const [userResult, memberRes, modRes, countRes] = await Promise.all([
+  const [userResult, memberRows, modifiers, countRes] = await Promise.all([
     supabase.auth.getUser(),
-    supabase.from('organization_members').select('user_id, role').eq('organization_id', org.id),
-    supabase
-      .from('modifiers')
-      .select('*')
-      .eq('organization_id', org.id)
-      .order('display_name', { ascending: true })
-      .limit(1000),
+    dbOrThrow(
+      supabase.from('organization_members').select('user_id, role').eq('organization_id', org.id)
+    ) as Promise<MemberRow[] | null>,
+    dbOrThrow(
+      supabase
+        .from('modifiers')
+        .select('*')
+        .eq('organization_id', org.id)
+        .order('display_name', { ascending: true })
+        .limit(1000)
+    ) as Promise<Modifier[] | null>,
     supabase
       .from('modifiers')
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', org.id),
   ])
+  if (countRes.error) throw new DbError(countRes.error)
   const userId = userResult.data.user?.id ?? ''
-  const memberRows = (memberRes.data ?? []) as MemberRow[]
-  const userRole = memberRows.find((m) => m.user_id === userId)?.role ?? 'member'
-  const modifiers = (modRes.data ?? []) as Modifier[]
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
   const totalCount = countRes.count ?? 0
 
   return (
@@ -90,7 +93,7 @@ async function PageInner({ params }: PageProps) {
         orgSlug={slug}
         userId={userId}
         userRole={userRole}
-        initialModifiers={modifiers}
+        initialModifiers={modifiers ?? []}
       />
     </div>
   )

@@ -54,12 +54,14 @@ async function PageInner({ params }: PageProps) {
     return <div className="p-8 text-red-600">Not authenticated</div>
   }
 
-  const { data: memberRow } = await supabase
-    .from('organization_members')
-    .select('role')
-    .eq('organization_id', org.id)
-    .eq('user_id', user.id)
-    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const memberRow = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+  ) as { role: string } | null
 
   // Create still follows the original owner-or-admin gate (unchanged).
   // TEMPORARY: edit/delete/lock on pricing formulas is gated to the
@@ -70,11 +72,13 @@ async function PageInner({ params }: PageProps) {
     memberRow?.role === 'owner' || memberRow?.role === 'admin'
   const isOwner = memberRow?.role === 'owner'
 
-  const { data: formulas } = await service
-    .from('pricing_formulas')
-    .select('id, organization_id, name, formula, uom, is_system, is_locked, description, created_at')
-    .or(`organization_id.eq.${org.id},is_system.eq.true`)
-    .order('name', { ascending: true })
+  const formulas = await dbOrThrow(
+    service
+      .from('pricing_formulas')
+      .select('id, organization_id, name, formula, uom, is_system, is_locked, description, created_at')
+      .or(`organization_id.eq.${org.id},is_system.eq.true`)
+      .order('name', { ascending: true })
+  )
 
   return (
     <div className="max-w-5xl p-8">

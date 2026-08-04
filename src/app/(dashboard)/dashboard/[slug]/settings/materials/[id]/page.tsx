@@ -41,12 +41,14 @@ async function PageInner({ params, searchParams }: PageProps) {
   ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const { data: matRow } = await supabase
-    .from('materials')
-    .select('id, name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active, material_type_id, category_id, current_stock, min_stock_level, reorder_quantity, last_inventory_count_at, material_type, material_category, unit_width, unit_height, unit_cost, other_charge, per_li_unit, calculate_wastage, include_in_base_price, discount_id, part_number, sku, weight, weight_uom, cog_account, qb_item_type, po_description, info_url, print_image_on_pdf, show_internal, display_description_in_li, description')
-    .eq('id', id)
-    .eq('organization_id', org.id)
-    .single()
+  const matRow = await dbOrThrow(
+    supabase
+      .from('materials')
+      .select('id, name, external_name, cost, price, multiplier, buying_units, selling_units, formula, fixed_side, width, height, sheet_cost, wastage_markup, sell_buy_ratio, preferred_vendor, labor_charge, machine_charge, setup_charge, active, material_type_id, category_id, current_stock, min_stock_level, reorder_quantity, last_inventory_count_at, material_type, material_category, unit_width, unit_height, unit_cost, other_charge, per_li_unit, calculate_wastage, include_in_base_price, discount_id, part_number, sku, weight, weight_uom, cog_account, qb_item_type, po_description, info_url, print_image_on_pdf, show_internal, display_description_in_li, description')
+      .eq('id', id)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  )
   const m = matRow as {
     id: string; name: string; external_name: string | null
     cost: number | null; price: number | null; multiplier: number | null
@@ -78,25 +80,33 @@ async function PageInner({ params, searchParams }: PageProps) {
   // Type name (legacy FK fallback)
   let typeName = m.material_type ?? '—'
   if (!m.material_type && m.material_type_id) {
-    const { data: t } = await supabase.from('material_types').select('name').eq('id', m.material_type_id).single()
+    const t = await dbOrThrow(
+      supabase.from('material_types').select('name').eq('id', m.material_type_id).maybeSingle()
+    )
     typeName = (t as { name: string } | null)?.name ?? '—'
   }
 
   // Pricing Matrix tiers
-  const { data: tierRows } = await supabase
-    .from('material_pricing_tiers')
-    .select('id, material_id, from_qty, to_qty, cost, price')
-    .eq('material_id', id)
-    .eq('organization_id', org.id)
-    .order('from_qty', { ascending: true })
+  const tierRows = await dbOrThrow(
+    supabase
+      .from('material_pricing_tiers')
+      .select('id, material_id, from_qty, to_qty, cost, price')
+      .eq('material_id', id)
+      .eq('organization_id', org.id)
+      .order('from_qty', { ascending: true })
+  )
   const tiers = (tierRows ?? []) as { id: string; material_id: string; from_qty: number; to_qty: number | null; cost: number; price: number }[]
 
   // Used In products
-  const { data: usedRows } = await supabase.from('product_default_items').select('product_id').eq('material_id', id)
+  const usedRows = await dbOrThrow(
+    supabase.from('product_default_items').select('product_id').eq('material_id', id)
+  )
   const usedProductIds = [...new Set(((usedRows ?? []) as { product_id: string }[]).map(u => u.product_id))]
   let usedInProducts: { id: string; name: string }[] = []
   if (usedProductIds.length > 0) {
-    const { data: prods } = await supabase.from('products').select('id, name').in('id', usedProductIds)
+    const prods = await dbOrThrow(
+      supabase.from('products').select('id, name').in('id', usedProductIds)
+    )
     usedInProducts = (prods ?? []) as { id: string; name: string }[]
   }
   const canDelete = sp.edit === '1' && usedProductIds.length === 0
@@ -104,7 +114,9 @@ async function PageInner({ params, searchParams }: PageProps) {
   // Category name (FK fallback for view mode)
   let categoryName = m.material_category ?? ''
   if (!m.material_category && m.category_id) {
-    const { data: c } = await supabase.from('material_categories').select('name').eq('id', m.category_id).single()
+    const c = await dbOrThrow(
+      supabase.from('material_categories').select('name').eq('id', m.category_id).maybeSingle()
+    )
     categoryName = (c as { name: string } | null)?.name ?? ''
   }
 
@@ -113,28 +125,34 @@ async function PageInner({ params, searchParams }: PageProps) {
   let materialCategories: { id: string; name: string }[] = []
   let discounts: { id: string; name: string }[] = []
   if (editing) {
-    const [typesRes, catsRes, dRes] = await Promise.all([
-      supabase
-        .from('material_types')
-        .select('id, name')
-        .eq('organization_id', org.id)
-        .eq('is_active', true)
-        .order('name'),
-      supabase
-        .from('material_categories')
-        .select('id, name')
-        .eq('organization_id', org.id)
-        .eq('is_active', true)
-        .order('name'),
-      supabase
-        .from('discounts')
-        .select('id, name')
-        .eq('organization_id', org.id)
-        .order('name'),
+    const [typesData, catsData, dData] = await Promise.all([
+      dbOrThrow(
+        supabase
+          .from('material_types')
+          .select('id, name')
+          .eq('organization_id', org.id)
+          .eq('is_active', true)
+          .order('name')
+      ),
+      dbOrThrow(
+        supabase
+          .from('material_categories')
+          .select('id, name')
+          .eq('organization_id', org.id)
+          .eq('is_active', true)
+          .order('name')
+      ),
+      dbOrThrow(
+        supabase
+          .from('discounts')
+          .select('id, name')
+          .eq('organization_id', org.id)
+          .order('name')
+      ),
     ])
-    materialTypes = (typesRes.data ?? []) as { id: string; name: string }[]
-    materialCategories = (catsRes.data ?? []) as { id: string; name: string }[]
-    discounts = (dRes.data ?? []) as { id: string; name: string }[]
+    materialTypes = (typesData ?? []) as { id: string; name: string }[]
+    materialCategories = (catsData ?? []) as { id: string; name: string }[]
+    discounts = (dData ?? []) as { id: string; name: string }[]
   }
 
   const n = (v: number | null, d = 0) => Number(v ?? d)

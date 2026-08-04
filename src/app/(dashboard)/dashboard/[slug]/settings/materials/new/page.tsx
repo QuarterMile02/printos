@@ -37,28 +37,34 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   const { allowed: canEditInventory } = await checkPermission(org.id, 'materials.edit_inventory')
 
-  const [typesRes, catsRes, dRes] = await Promise.all([
-    supabase
-      .from('material_types')
-      .select('id, name')
-      .eq('organization_id', org.id)
-      .eq('is_active', true)
-      .order('name'),
-    supabase
-      .from('material_categories')
-      .select('id, name')
-      .eq('organization_id', org.id)
-      .eq('is_active', true)
-      .order('name'),
-    supabase
-      .from('discounts')
-      .select('id, name')
-      .eq('organization_id', org.id)
-      .order('name'),
+  const [typesData, catsData, dData] = await Promise.all([
+    dbOrThrow(
+      supabase
+        .from('material_types')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('name')
+    ),
+    dbOrThrow(
+      supabase
+        .from('material_categories')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('name')
+    ),
+    dbOrThrow(
+      supabase
+        .from('discounts')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .order('name')
+    ),
   ])
-  const materialTypes = (typesRes.data ?? []) as { id: string; name: string }[]
-  const materialCategories = (catsRes.data ?? []) as { id: string; name: string }[]
-  const discounts = (dRes.data ?? []) as { id: string; name: string }[]
+  const materialTypes = (typesData ?? []) as { id: string; name: string }[]
+  const materialCategories = (catsData ?? []) as { id: string; name: string }[]
+  const discounts = (dData ?? []) as { id: string; name: string }[]
 
   return (
     <div className="p-8 max-w-4xl">

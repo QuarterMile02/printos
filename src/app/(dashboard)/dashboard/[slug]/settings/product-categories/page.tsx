@@ -67,19 +67,21 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
-  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
-
-  const [typesRes, initialResult] = await Promise.all([
-    supabase
-      .from('product_types')
-      .select('id, name')
-      .eq('organization_id', org.id)
-      .eq('is_active', true)
-      .order('name'),
+  const [memberRows, typesData, initialResult] = await Promise.all([
+    dbOrThrow(
+      supabase
+        .from('organization_members')
+        .select('user_id, role')
+        .eq('organization_id', org.id)
+    ) as Promise<MemberRow[] | null>,
+    dbOrThrow(
+      supabase
+        .from('product_types')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('name')
+    ),
     fetchDataTablePage<ProductCategoryListRow>({
       tableKey: 'product_categories',
       orgId: org.id,
@@ -90,17 +92,20 @@ async function PageInner({ params, searchParams }: PageProps) {
       pageSize: PRODUCT_CATEGORIES_PAGE_SIZE,
     }),
   ])
+  const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const productTypes = (typesRes.data ?? []) as ProductTypeOption[]
+  const productTypes = (typesData ?? []) as ProductTypeOption[]
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
   let editCategory: ProductCategory | null = null
   if (editId) {
-    const { data: found } = await supabase
-      .from('product_categories')
-      .select('id, name, product_type_id, is_active, created_at')
-      .eq('id', editId).eq('organization_id', org.id).single()
+    const found = await dbOrThrow(
+      supabase
+        .from('product_categories')
+        .select('id, name, product_type_id, is_active, created_at')
+        .eq('id', editId).eq('organization_id', org.id).maybeSingle()
+    )
     editCategory = (found as ProductCategory | null)
   }
   const isPanelOpen = Boolean(editCategory || showAdd)

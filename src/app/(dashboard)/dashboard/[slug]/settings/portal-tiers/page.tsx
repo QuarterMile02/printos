@@ -42,12 +42,14 @@ async function PageInner({ params }: PageProps) {
   if (!org) redirect('/login')
 
   type ProductTypeRow = { id: string; name: string; sort_order: number | null }
-  const { data: productTypeRows } = await supabase
-    .from('product_types')
-    .select('id, name, sort_order')
-    .eq('organization_id', org.id)
-    .eq('is_active', true)
-    .order('sort_order', { ascending: true }) as { data: ProductTypeRow[] | null; error: unknown }
+  const productTypeRows = await dbOrThrow(
+    supabase
+      .from('product_types')
+      .select('id, name, sort_order')
+      .eq('organization_id', org.id)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+  ) as ProductTypeRow[] | null
 
   return (
     <PortalTiersClient

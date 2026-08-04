@@ -43,24 +43,30 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const { data } = await supabase
-    .from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active')
-    .eq('organization_id', org.id).order('name', { ascending: true })
+  const data = await dbOrThrow(
+    supabase
+      .from('shipping_profiles').select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active')
+      .eq('organization_id', org.id).order('name', { ascending: true })
+  )
   const profiles = (data ?? []) as ProfileRow[]
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
   let editProfile: ProfileRow | null = profiles.find(p => p.id === editId) ?? null
   if (editId && !editProfile) {
-    const { data: f } = await supabase.from('shipping_profiles')
-      .select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active')
-      .eq('id', editId).eq('organization_id', org.id).single()
+    const f = await dbOrThrow(
+      supabase.from('shipping_profiles')
+        .select('id, name, length_in, width_in, height_in, max_weight_lbs, is_active')
+        .eq('id', editId).eq('organization_id', org.id).maybeSingle()
+    )
     editProfile = (f as ProfileRow | null)
   }
 
