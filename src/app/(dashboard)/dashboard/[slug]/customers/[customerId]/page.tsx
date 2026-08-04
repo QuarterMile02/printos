@@ -125,13 +125,16 @@ async function CustomerDetailPageInner({ params }: PageProps) {
 
   const primaryContact = (contactRows ?? []).find((c) => c.is_primary) ?? null
 
-  // Open jobs only (exclude completed + cancelled)
+  // Open jobs only (exclude completed). Note: job_status has no 'cancelled'
+  // member (see supabase/migrations/003_jobs.sql) -- a .neq('status',
+  // 'cancelled') filter here always errored (22P02, invalid enum literal),
+  // silently for years since the old query never checked its error.
   type JobRow = { id: string; job_number: number; title: string; status: string; created_at: string }
   const openJobRows = await dbOrThrow(
     supabase
       .from('jobs').select('id, job_number, title, status, created_at')
       .eq('organization_id', org.id).eq('customer_id', customerId)
-      .neq('status', 'completed').neq('status', 'cancelled')
+      .neq('status', 'completed')
       .order('created_at', { ascending: false })
   ) as JobRow[] | null
 
