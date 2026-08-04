@@ -39,7 +39,7 @@ import QuotesNeedingApproval from './_widgets/quotes-needing-approval'
 import RescueList from './_widgets/rescue-list'
 import { WidgetStub } from './_widgets/widget-card'
 import type { DateRangePreset } from '@/lib/reports/report-utils'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, dbBestEffort } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
@@ -102,15 +102,20 @@ async function DashboardPageInner({ params, searchParams }: PageProps) {
   const biPreset = (sp.bi_preset as DateRangePreset) ?? 'this_month'
   const biMode: 'count' | 'value' = sp.bi_mode === 'value' ? 'value' : 'count'
 
-  // Load saved layout for this user+org
+  // Load saved layout for this user+org. Best-effort, not dbOrThrow: some
+  // environments' dashboard_layouts table predates/drifted from migration
+  // 039 and is missing widget_config (42703) -- the dashboard must still
+  // render its default layout in that case, not crash outright.
   type LayoutRow = { widget_config: WidgetConfig }
-  const layoutRow = await dbOrThrow(
+  const layoutRow = await dbBestEffort(
     service
       .from('dashboard_layouts')
       .select('widget_config')
       .eq('user_id', user.id)
       .eq('organization_id', org.id)
-      .maybeSingle()
+      .maybeSingle(),
+    'dashboard_layouts',
+    null,
   ) as LayoutRow | null
 
   const savedConfig = layoutRow?.widget_config ?? null
