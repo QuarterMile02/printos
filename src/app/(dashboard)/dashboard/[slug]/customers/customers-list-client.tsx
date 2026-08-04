@@ -8,6 +8,7 @@ import { useSavedView, applySortRules } from '@/components/data-table/use-saved-
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { DataTableError } from '@/components/data-table/data-table-error'
 import { CustomerCard } from './customer-card'
 import { CUSTOMERS_PAGE_SIZE } from './constants'
 
@@ -181,7 +182,7 @@ export default function CustomersListClient({
   })
 
   // ── Live query (browse mode — bypassed when searchResults is active) ─────
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<CustomerListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<CustomerListRow>({
     tableKey: 'customers',
     orgId,
     select: DB_SELECT,
@@ -394,7 +395,9 @@ export default function CustomersListClient({
       )}
 
       {/* ── Card / Table ── */}
-      {displayRows.length === 0 && !loading ? (
+      {error && searchResults === null ? (
+        <DataTableError />
+      ) : displayRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-qm-gray">
             {search ? `No customers match "${search}"` : 'No customers match the current filters.'}

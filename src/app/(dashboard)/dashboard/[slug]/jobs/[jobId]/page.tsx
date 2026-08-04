@@ -10,7 +10,8 @@ import { checkPermission } from '@/lib/check-permission'
 import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 import JobCustomerPicker from './job-customer-picker'
 import TasksTab from '@/components/tasks/TasksTab'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,14 +36,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[jobs-detail] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (jobs-detail)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('jobs-detail', err)
   }
 }
 
@@ -108,6 +102,11 @@ async function PageInner({ params }: PageProps) {
       .eq('organization_id', org.id)
       .single()
     if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer' | 'label_printed_at' | 'department' | 'production_due_date' | 'fabrication_due_date' | 'installation_due_date'>), material_selection: null, assigned_printer: null, label_printed_at: null, department: null, production_due_date: null, fabrication_due_date: null, installation_due_date: null }
+  } else if (jobErr1 && jobErr1.code !== 'PGRST116') {
+    // Genuine error (bad UUID, RLS, network, etc.) — not the "0 or >1 rows"
+    // shape .single() uses to signal a real not-found. Surface it instead of
+    // silently falling through to the not-found UI below.
+    throw new DbError(jobErr1)
   }
   if (!job) return <div className="p-8 text-red-600">Job not found</div>
 

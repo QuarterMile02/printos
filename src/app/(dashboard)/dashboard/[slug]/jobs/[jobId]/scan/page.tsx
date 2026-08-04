@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { clockIn, clockOut } from './actions'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,14 +16,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[jobs-scan] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (jobs-scan)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('jobs-scan', err)
   }
 }
 

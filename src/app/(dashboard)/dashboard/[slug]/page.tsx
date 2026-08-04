@@ -40,6 +40,7 @@ import RescueList from './_widgets/rescue-list'
 import { WidgetStub } from './_widgets/widget-card'
 import type { DateRangePreset } from '@/lib/reports/report-utils'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,14 +54,7 @@ export default async function DashboardPage(props: PageProps) {
     return await DashboardPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[dashboard-overview] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (dashboard-overview)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('dashboard-overview', err)
   }
 }
 

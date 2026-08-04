@@ -4,6 +4,7 @@ import type { JobStatus, JobFlag } from '@/types/database'
 import type { Role, Tier } from '@/lib/permissions'
 import KanbanBoard, { type JobCard } from './kanban-board'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -15,14 +16,7 @@ export default async function JobsPage(props: PageProps) {
     return await JobsPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[jobs-list] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (jobs-list)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('jobs-list', err)
   }
 }
 

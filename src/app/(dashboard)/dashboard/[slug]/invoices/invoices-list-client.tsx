@@ -6,6 +6,7 @@ import type { ColumnDef, FilterRule } from '@/components/data-table/types'
 import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
+import { DataTableError } from '@/components/data-table/data-table-error'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 import { InvoiceCard } from './invoice-card'
@@ -208,7 +209,7 @@ export default function InvoicesListClient({
   // of the built-in searchColumns path Quotes/Sales Orders use.
   const boundSearchFn = useCallback((term: string) => searchInvoices(orgId, term), [orgId])
 
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<InvoiceListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<InvoiceListRow>({
     tableKey: 'invoices',
     orgId,
     select: DB_SELECT,
@@ -428,7 +429,9 @@ export default function InvoicesListClient({
       </div>
 
       {/* Card grid / Table */}
-      {liveRows.length === 0 && !loading ? (
+      {error ? (
+        <DataTableError />
+      ) : liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
             {search

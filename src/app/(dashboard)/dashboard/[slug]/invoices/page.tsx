@@ -5,6 +5,7 @@ import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { INVOICES_PAGE_SIZE } from './constants'
 import InvoicesListClient, { type InvoiceListRow } from './invoices-list-client'
 import { dbOrThrow, DbError } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,14 +43,7 @@ export default async function InvoicesPage(props: PageProps) {
     return await InvoicesPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[invoices-list] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (invoices-list)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('invoices-list', err)
   }
 }
 
@@ -133,6 +127,7 @@ async function InvoicesPageInner({ params, searchParams }: PageProps) {
       page: 1,
       pageSize: INVOICES_PAGE_SIZE,
     })
+    if (result.error) throw new Error(result.error)
     initialRows = result.rows as InvoiceListRow[]
     initialTotalCount = result.totalCount
   }

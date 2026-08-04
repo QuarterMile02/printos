@@ -7,6 +7,7 @@ import ShippingAddressesSection from './shipping-addresses-section'
 import CustomerTabsSection from './CustomerTabsSection'
 import CustomerDetailsCollapsible from './customer-details-collapsible'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -30,14 +31,7 @@ export default async function CustomerDetailPage(props: PageProps) {
     return await CustomerDetailPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[customers-detail] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (customers-detail)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('customers-detail', err)
   }
 }
 

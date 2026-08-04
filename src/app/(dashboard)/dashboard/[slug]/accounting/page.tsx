@@ -5,6 +5,7 @@ import { checkPermission } from '@/lib/check-permission'
 import AccountingClient from './accounting-client'
 import { postInvoices } from './actions'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,14 +18,7 @@ export default async function Page(props: PageProps) {
     return await PageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[accounting] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (accounting)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('accounting', err)
   }
 }
 
