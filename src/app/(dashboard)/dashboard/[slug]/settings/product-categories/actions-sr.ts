@@ -37,13 +37,20 @@ export async function deleteProductCategory(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
+
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  const { data: category } = await service.from('product_categories').select('is_active').eq('id', id).maybeSingle()
+  if (category?.is_active !== false) {
+    redirect(`/dashboard/${orgSlug}/settings/product-categories?error=${encodeURIComponent('Cannot delete — category must be deactivated first.')}`)
+  }
+
   const { count, error: countError } = await service
     .from('products')
     .select('id', { count: 'exact', head: true })
     .eq('product_category_id', id)
   if (countError) redirect(`/dashboard/${orgSlug}/settings/product-categories?error=${encodeURIComponent(countError.message)}`)
   if (count) {
-    redirect(`/dashboard/${orgSlug}/settings/product-categories?error=${encodeURIComponent(`This category is used by ${count} product(s) and cannot be deleted.`)}`)
+    redirect(`/dashboard/${orgSlug}/settings/product-categories?error=${encodeURIComponent(`Cannot delete — used by ${count} product${count === 1 ? '' : 's'}. Modify those first.`)}`)
   }
   const { error } = await service.from('product_categories').delete().eq('id', id)
   if (error) redirect(`/dashboard/${orgSlug}/settings/product-categories?error=${encodeURIComponent(error.message)}`)

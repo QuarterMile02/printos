@@ -33,13 +33,20 @@ export async function deleteMaterialType(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
+
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  const { data: type } = await service.from('material_types').select('is_active').eq('id', id).maybeSingle()
+  if (type?.is_active !== false) {
+    redirect(`/dashboard/${orgSlug}/settings/material-types?error=${encodeURIComponent('Cannot delete — material type must be deactivated first.')}`)
+  }
+
   const { count, error: countError } = await service
     .from('materials')
     .select('id', { count: 'exact', head: true })
     .eq('material_type_id', id)
   if (countError) redirect(`/dashboard/${orgSlug}/settings/material-types?error=${encodeURIComponent(countError.message)}`)
   if (count) {
-    redirect(`/dashboard/${orgSlug}/settings/material-types?error=${encodeURIComponent(`This material type is used by ${count} material(s) and cannot be deleted.`)}`)
+    redirect(`/dashboard/${orgSlug}/settings/material-types?error=${encodeURIComponent(`Cannot delete — used by ${count} material${count === 1 ? '' : 's'}. Modify those first.`)}`)
   }
   const { error } = await service.from('material_types').delete().eq('id', id)
   if (error) redirect(`/dashboard/${orgSlug}/settings/material-types?error=${encodeURIComponent(error.message)}`)

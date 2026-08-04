@@ -48,6 +48,7 @@ export async function createVendor(
 export async function searchVendors(
   orgId: string,
   term: string,
+  activeOnly?: boolean,
 ): Promise<VendorListRow[]> {
   const service = createServiceClient()
 
@@ -57,7 +58,11 @@ export async function searchVendors(
       p_org_id: orgId,
       p_term: term,
     }) as { data: VendorListRow[] | null; error: unknown }
-    if (!error && fuzzyData) return fuzzyData
+    if (!error && fuzzyData) {
+      // The RPC has no active-status param -- filter its results here
+      // instead of altering the DB function.
+      return activeOnly === undefined ? fuzzyData : fuzzyData.filter((v) => v.is_active === activeOnly)
+    }
   } catch {
     // pg_trgm not installed — fall through
   }
@@ -73,13 +78,14 @@ export async function searchVendors(
   ]
   if (digits && digits !== term) conds.push(`primary_phone.ilike.%${digits}%`)
 
-  const { data } = await service
+  let query = service
     .from('vendors')
     .select('id, name, primary_contact, primary_phone, primary_email, city, state, is_active, created_at')
     .eq('organization_id', orgId)
     .or(conds.join(','))
-    .order('name', { ascending: true })
-    .limit(50)
+  if (activeOnly !== undefined) query = query.eq('is_active', activeOnly)
+
+  const { data } = await query.order('name', { ascending: true }).limit(50)
   return (data ?? []) as VendorListRow[]
 }
 
@@ -107,8 +113,13 @@ export async function deleteVendor(
 
   // Get vendor name for material_vendors lookup (FK is by name, not ID)
   const { data: vendor } = await service
-    .from('vendors').select('name').eq('id', vendorId).eq('organization_id', orgId).single()
+    .from('vendors').select('name, is_active').eq('id', vendorId).eq('organization_id', orgId).single()
   if (!vendor) return { error: 'Vendor not found.' }
+
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  if (vendor.is_active !== false) {
+    return { error: 'Cannot delete — vendor must be deactivated first.' }
+  }
 
   const { count: matCount } = await service
     .from('material_vendors')
@@ -117,7 +128,7 @@ export async function deleteVendor(
     .eq('vendor_name', vendor.name)
 
   if ((matCount ?? 0) > 0) {
-    return { error: `Cannot delete — vendor is linked to ${matCount} material${matCount === 1 ? '' : 's'}. Deactivate instead.` }
+    return { error: `Cannot delete — vendor is linked to ${matCount} material${matCount === 1 ? '' : 's'}. Modify those first.` }
   }
 
   const { error } = await service.from('vendors').delete().eq('id', vendorId).eq('organization_id', orgId)
@@ -149,6 +160,7 @@ export async function loadMoreVendors(
   orgId: string,
   search: string,
   offset: number,
+  activeOnly?: boolean,
 ): Promise<VendorListRow[]> {
   const service = createServiceClient()
 
@@ -165,6 +177,7 @@ export async function loadMoreVendors(
       `name.ilike.%${q}%,primary_contact.ilike.%${q}%,primary_email.ilike.%${q}%,primary_phone.ilike.%${q}%,city.ilike.%${q}%`
     )
   }
+  if (activeOnly !== undefined) query = query.eq('is_active', activeOnly)
 
   query = query.range(offset, offset + 49)
   const { data } = await query

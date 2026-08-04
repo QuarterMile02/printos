@@ -509,6 +509,13 @@ export async function deleteCustomer(
 
   const service = createServiceClient()
 
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  const { data: customerRow } = await service
+    .from('customers').select('is_active').eq('id', customerId).eq('organization_id', orgId).maybeSingle()
+  if (customerRow?.is_active !== false) {
+    return { error: 'Cannot delete — customer must be deactivated first.' }
+  }
+
   // Dependency check — run in parallel
   const [{ count: quoteCount }, { count: jobCount }, { count: soCount }, { count: invCount }] =
     await Promise.all([
@@ -525,7 +532,7 @@ export async function deleteCustomer(
   if ((invCount ?? 0) > 0) linked.push(`${invCount} invoice${invCount === 1 ? '' : 's'}`)
 
   if (linked.length > 0) {
-    return { error: `Cannot delete — customer is linked to ${linked.join(', ')}. Deactivate instead.` }
+    return { error: `Cannot delete — customer is linked to ${linked.join(', ')}. Modify those first.` }
   }
 
   const { error } = await service.from('customers').delete().eq('id', customerId).eq('organization_id', orgId)

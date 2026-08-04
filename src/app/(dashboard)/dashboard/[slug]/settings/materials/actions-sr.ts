@@ -125,6 +125,19 @@ export async function deleteMaterial(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
+
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  const { data: material } = await service.from('materials').select('active').eq('id', id).maybeSingle()
+  if (material?.active !== false) {
+    redirect(`/dashboard/${orgSlug}/settings/materials/${id}?edit=1&error=${encodeURIComponent('Cannot delete — material must be deactivated first.')}`)
+  }
+
+  const { count: usedCount } = await service
+    .from('product_default_items').select('id', { count: 'exact', head: true }).eq('material_id', id)
+  if ((usedCount ?? 0) > 0) {
+    redirect(`/dashboard/${orgSlug}/settings/materials/${id}?edit=1&error=${encodeURIComponent(`Cannot delete — used in ${usedCount} product${usedCount === 1 ? '' : 's'}. Modify those first.`)}`)
+  }
+
   const { error } = await service.from('materials').delete().eq('id', id)
   if (error) redirect(`/dashboard/${orgSlug}/settings/materials/${id}?edit=1&error=${encodeURIComponent(error.message)}`)
   redirect(`/dashboard/${orgSlug}/settings/materials`)
