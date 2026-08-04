@@ -7,6 +7,7 @@ import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { DataTableError } from '@/components/data-table/data-table-error'
 import { PurchaseOrderCard } from './po-card'
 import { searchPurchaseOrders } from './actions'
 import {
@@ -192,7 +193,7 @@ export default function PoListClient({
   const boundSearchFn = useCallback((term: string) => searchPurchaseOrders(orgId, term), [orgId])
 
   // ── Live query ────────────────────────────────────────────────────────────
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<PurchaseOrderListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<PurchaseOrderListRow>({
     tableKey: 'purchase_orders',
     orgId,
     select: DB_SELECT,
@@ -320,7 +321,9 @@ export default function PoListClient({
       </div>
 
       {/* ── Card grid / Table ── */}
-      {liveRows.length === 0 && !loading ? (
+      {error ? (
+        <DataTableError />
+      ) : liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
             {search

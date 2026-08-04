@@ -3,6 +3,7 @@ import { notFound, unstable_rethrow } from 'next/navigation'
 import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import { PURCHASE_ORDERS_PAGE_SIZE } from './constants'
 import { CreatePoButton } from './create-po-button'
 import PoListClient, { type PurchaseOrderListRow } from './po-list-client'
@@ -20,16 +21,7 @@ export default async function PurchaseOrdersPage(props: PageProps) {
     return await PageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[purchase-orders-list] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (purchase-orders-list)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
-      </div>
-    )
+    return renderPageError('purchase-orders-list', err)
   }
 }
 
@@ -76,6 +68,7 @@ async function PageInner({ params }: PageProps) {
     page: 1,
     pageSize: PURCHASE_ORDERS_PAGE_SIZE,
   })
+  if (result.error) throw new Error(result.error)
 
   return (
     <div className="p-8">
