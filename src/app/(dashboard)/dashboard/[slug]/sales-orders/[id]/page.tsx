@@ -5,6 +5,7 @@ import type { SalesOrderStatus, JobStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
 import SoDetailClient from './so-detail-client'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = {
   params: Promise<{ slug: string; id: string }>
@@ -16,14 +17,7 @@ export default async function SalesOrderDetailPage(props: PageProps) {
     return await SalesOrderDetailPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[sales-orders-detail] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (sales-orders-detail)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('sales-orders-detail', err)
   }
 }
 

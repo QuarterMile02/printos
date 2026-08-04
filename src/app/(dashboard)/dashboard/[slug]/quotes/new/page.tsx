@@ -3,6 +3,7 @@ import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import NewQuoteForm from './new-quote-form'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -11,14 +12,7 @@ export default async function NewQuotePage(props: PageProps) {
     return await NewQuotePageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[quotes-new] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (quotes-new)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('quotes-new', err)
   }
 }
 

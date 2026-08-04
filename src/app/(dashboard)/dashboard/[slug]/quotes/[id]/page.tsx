@@ -7,6 +7,7 @@ import { convertToSalesOrder } from './convert-action'
 import type { EmailTemplate } from '../actions'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,14 +18,7 @@ export default async function QuoteDetailPage(props: PageProps) {
     return await QuoteDetailPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[quotes-detail] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (quotes-detail)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('quotes-detail', err)
   }
 }
 
@@ -139,6 +133,12 @@ async function QuoteDetailPageInner({ params }: PageProps) {
         production_notes: null,
       }
     }
+  } else if (e1) {
+    // maybeSingle() only errors on a genuine failure (bad UUID, RLS,
+    // network, etc.) — a real "0 rows" not-found returns null/null, so any
+    // error here is real and should surface instead of falling through to
+    // the not-found UI below.
+    throw new Error(e1.message)
   }
 
   if (!quote) notFound()

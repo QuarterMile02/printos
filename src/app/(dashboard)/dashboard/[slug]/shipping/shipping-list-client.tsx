@@ -110,7 +110,7 @@ export default function ShippingListClient({ initialRows, initialTotalCount, org
 
   const { widths: colWidths, startResize } = useColumnResize({ defaultWidths, savedWidths, onWidthCommit: setColumnWidth, disabled: isViewReadOnly })
 
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<ShippingListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<ShippingListRow>({
     tableKey: 'shipments',
     orgId,
     select: DB_SELECT,
@@ -211,7 +211,13 @@ export default function ShippingListClient({ initialRows, initialTotalCount, org
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {liveRows.length === 0 ? (
+            {error ? (
+              <tr>
+                <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
+                  Something went wrong loading this data. Please try again, or contact support if this keeps happening.
+                </td>
+              </tr>
+            ) : liveRows.length === 0 ? (
               <tr>
                 <td colSpan={COLUMNS.length} className="px-4 py-12 text-center text-sm text-gray-500">
                   {search || filterRules.length > 0 ? 'No shipments match the current filters.' : 'No shipments yet.'}

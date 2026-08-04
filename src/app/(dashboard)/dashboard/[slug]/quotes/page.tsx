@@ -6,6 +6,7 @@ import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { QUOTES_PAGE_SIZE } from './constants'
 import QuotesListClient, { type QuoteListRow } from './quotes-list-client'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -16,14 +17,7 @@ export default async function QuotesPage(props: PageProps) {
     return await QuotesPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[quotes-list] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (quotes-list)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('quotes-list', err)
   }
 }
 
@@ -58,7 +52,7 @@ async function QuotesPageInner({ params }: PageProps) {
 
   // SSR page-1 data — uses quotes.total directly (maintained by recalcQuoteTotals)
   const DB_SELECT = 'id, quote_number, title, status, created_at, total, customer_id, customers(first_name, last_name, company_name)'
-  const { rows: initialRows, totalCount: initialTotalCount } = await fetchDataTablePage({
+  const quotesResult = await fetchDataTablePage({
     tableKey: 'quotes',
     orgId: org.id,
     select: DB_SELECT,
@@ -67,6 +61,8 @@ async function QuotesPageInner({ params }: PageProps) {
     page: 1,
     pageSize: QUOTES_PAGE_SIZE,
   })
+  if (quotesResult.error) throw new Error(quotesResult.error)
+  const { rows: initialRows, totalCount: initialTotalCount } = quotesResult
 
   return (
     <div className="p-8">

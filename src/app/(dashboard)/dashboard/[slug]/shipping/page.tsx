@@ -6,6 +6,7 @@ import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { SHIPPING_PAGE_SIZE } from './constants'
 import ShippingListClient, { type ShippingListRow } from './shipping-list-client'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -24,14 +25,7 @@ export default async function ShippingPage(props: PageProps) {
     return await ShippingPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[shipping-list] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (shipping-list)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('shipping-list', err)
   }
 }
 
@@ -69,7 +63,7 @@ async function ShippingPageInner({ params }: PageProps) {
   ) as MemberRow[] | null
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const { rows: initialRows, totalCount: initialTotalCount } = await fetchDataTablePage({
+  const shippingResult = await fetchDataTablePage({
     tableKey: 'shipments',
     orgId: org.id,
     select: DB_SELECT,
@@ -78,6 +72,8 @@ async function ShippingPageInner({ params }: PageProps) {
     page: 1,
     pageSize: SHIPPING_PAGE_SIZE,
   })
+  if (shippingResult.error) throw new Error(shippingResult.error)
+  const { rows: initialRows, totalCount: initialTotalCount } = shippingResult
 
   return (
     <div className="p-8">

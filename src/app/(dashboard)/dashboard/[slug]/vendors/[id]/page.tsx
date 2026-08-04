@@ -3,6 +3,7 @@ import { notFound, unstable_rethrow } from 'next/navigation'
 import VendorDetailClient from './vendor-detail-client'
 import VendorDangerZone from './vendor-danger-zone'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
@@ -11,14 +12,7 @@ export default async function VendorDetailPage(props: PageProps) {
     return await VendorDetailPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[vendors-detail] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (vendors-detail)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('vendors-detail', err)
   }
 }
 

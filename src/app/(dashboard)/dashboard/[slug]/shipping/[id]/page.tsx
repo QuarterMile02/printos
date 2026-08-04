@@ -8,6 +8,7 @@ import { formatSoNumber } from '../../sales-orders/format'
 import { SHIP_STATUS_STYLES, SHIP_STATUS_LABELS, formatShipDate } from '../format'
 import ShipmentFormClient, { type ShipmentFormInitial } from '../shipment-form-client'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = {
   params: Promise<{ slug: string; id: string }>
@@ -74,14 +75,7 @@ export default async function ShipmentDetailPage(props: PageProps) {
     return await ShipmentDetailPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[shipping-detail] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (shipping-detail)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('shipping-detail', err)
   }
 }
 

@@ -7,6 +7,7 @@ import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { DataTableError } from '@/components/data-table/data-table-error'
 import { QuoteCard } from './quote-card'
 import { searchQuotes } from './actions'
 import {
@@ -183,7 +184,7 @@ export default function QuotesListClient({
   const boundSearchFn = useCallback((term: string) => searchQuotes(orgId, term), [orgId])
 
   // ── Live query ────────────────────────────────────────────────────────────
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<QuoteListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<QuoteListRow>({
     tableKey: 'quotes',
     orgId,
     select: DB_SELECT,
@@ -311,7 +312,9 @@ export default function QuotesListClient({
       </div>
 
       {/* ── Card grid / Table ── */}
-      {liveRows.length === 0 && !loading ? (
+      {error ? (
+        <DataTableError />
+      ) : liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
             {search

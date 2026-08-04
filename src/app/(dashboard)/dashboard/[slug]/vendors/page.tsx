@@ -3,6 +3,7 @@ import { notFound, unstable_rethrow } from 'next/navigation'
 import VendorsListClient from './vendors-list-client'
 import type { VendorListRow } from './actions'
 import { dbOrThrow, DbError } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -11,14 +12,7 @@ export default async function VendorsPage(props: PageProps) {
     return await VendorsPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[vendors-list] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (vendors-list)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('vendors-list', err)
   }
 }
 

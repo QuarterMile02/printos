@@ -6,6 +6,7 @@ import { ROLE_LABELS, TIER_LABELS } from '@/lib/permissions'
 import InviteMemberForm from './invite-member-form'
 import MemberSettings from './member-settings'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = { params: Promise<{ slug: string }> }
 
@@ -37,14 +38,7 @@ export default async function TeamPage(props: PageProps) {
     return await TeamPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[team-members] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (team-members)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('team-members', err)
   }
 }
 

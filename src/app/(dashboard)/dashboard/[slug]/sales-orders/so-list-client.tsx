@@ -7,6 +7,7 @@ import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { DataTableError } from '@/components/data-table/data-table-error'
 import { SalesOrderCard } from './so-card'
 import { searchSalesOrders } from './actions'
 import {
@@ -191,7 +192,7 @@ export default function SoListClient({
   const boundSearchFn = useCallback((term: string) => searchSalesOrders(orgId, term), [orgId])
 
   // ── Live query ────────────────────────────────────────────────────────────
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<SoListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<SoListRow>({
     tableKey: 'sales_orders',
     orgId,
     select: DB_SELECT,
@@ -319,7 +320,9 @@ export default function SoListClient({
       </div>
 
       {/* ── Card grid / Table ── */}
-      {liveRows.length === 0 && !loading ? (
+      {error ? (
+        <DataTableError />
+      ) : liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
             {search

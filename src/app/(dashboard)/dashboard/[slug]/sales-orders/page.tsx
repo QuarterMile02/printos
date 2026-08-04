@@ -6,6 +6,7 @@ import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { SALES_ORDERS_PAGE_SIZE } from './constants'
 import SoListClient, { type SoListRow } from './so-list-client'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -16,14 +17,7 @@ export default async function SalesOrdersPage(props: PageProps) {
     return await SalesOrdersPageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[sales-orders-list] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (sales-orders-list)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('sales-orders-list', err)
   }
 }
 
@@ -58,7 +52,7 @@ async function SalesOrdersPageInner({ params }: PageProps) {
 
   // SSR page-1 data — includes nested shipments(id) for shipment count badges
   const DB_SELECT = 'id, so_number, title, status, total, created_at, customer_id, customers(first_name, last_name, company_name), shipments(id)'
-  const { rows: initialRows, totalCount: initialTotalCount } = await fetchDataTablePage({
+  const soResult = await fetchDataTablePage({
     tableKey: 'sales_orders',
     orgId: org.id,
     select: DB_SELECT,
@@ -67,6 +61,8 @@ async function SalesOrdersPageInner({ params }: PageProps) {
     page: 1,
     pageSize: SALES_ORDERS_PAGE_SIZE,
   })
+  if (soResult.error) throw new Error(soResult.error)
+  const { rows: initialRows, totalCount: initialTotalCount } = soResult
 
   return (
     <div className="p-8">
