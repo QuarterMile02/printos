@@ -72,6 +72,7 @@ export function useDataTableQuery<T>({
     if (seqRef.current !== seq) return
     setLoading(false)
     if (result.error) {
+      console.error(`[useDataTableQuery:${tableKey}] fetch failed:`, result.error)
       setError(result.error)
     } else {
       setRows(result.rows)
