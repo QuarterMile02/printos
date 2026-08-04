@@ -8,6 +8,7 @@ import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { DataTableError } from '@/components/data-table/data-table-error'
 import { DiscountCard } from './discount-card'
 import { DISCOUNTS_PAGE_SIZE, DISCOUNT_TYPES, DISCOUNT_APPLIES_TO } from './constants'
 
@@ -120,7 +121,7 @@ export default function DiscountsListClient({
     disabled: isViewReadOnly,
   })
 
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<DiscountListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<DiscountListRow>({
     tableKey: 'discounts',
     orgId,
     select: DB_SELECT,
@@ -240,7 +241,9 @@ export default function DiscountsListClient({
       </div>
 
       {/* Card grid / Table */}
-      {liveRows.length === 0 && !loading ? (
+      {error ? (
+        <DataTableError />
+      ) : liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
             {search ? `No discounts match "${search}"` : 'No discounts match the current filters.'}

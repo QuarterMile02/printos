@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { saveMaterialCategory } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { MATERIAL_CATEGORIES_PAGE_SIZE } from './constants'
 import MaterialCategoriesListClient, { type MaterialCategoryListRow, type MaterialTypeOption } from './material-categories-list-client'
@@ -28,16 +29,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[material-categories] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (material-categories)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
-      </div>
-    )
+    return renderPageError('material-categories', err)
   }
 }
 
@@ -94,6 +86,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       pageSize: MATERIAL_CATEGORIES_PAGE_SIZE,
     }),
   ])
+  if (initialResult.error) throw new Error(initialResult.error)
 
   const materialTypes = (typesRes ?? []) as MaterialTypeOption[]
 

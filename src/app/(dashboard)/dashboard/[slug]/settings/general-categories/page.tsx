@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { saveGeneralCategory } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import GeneralCategoriesListClient, { type CategoryRow } from './general-categories-list-client'
 
 export const dynamic = 'force-dynamic'
@@ -33,16 +34,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[general-categories] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (general-categories)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
-      </div>
-    )
+    return renderPageError('general-categories', err)
   }
 }
 

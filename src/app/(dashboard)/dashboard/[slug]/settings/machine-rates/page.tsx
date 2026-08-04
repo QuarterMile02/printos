@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { saveMachineRate, cloneMachineRate } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import CostCalculator from './cost-calculator'
 import MachineRatesListClient from './machine-rates-list-client'
 
@@ -70,21 +71,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[machine-rates] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (machine-rates)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && (
-          <>
-            <div style={{ marginTop: '1rem' }}><strong>Stack:</strong></div>
-            <pre style={{ fontSize: '0.75rem', overflowX: 'auto' }}>{stack}</pre>
-          </>
-        )}
-      </div>
-    )
+    return renderPageError('machine-rates', err)
   }
 }
 
