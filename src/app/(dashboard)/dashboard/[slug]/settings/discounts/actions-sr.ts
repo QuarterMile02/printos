@@ -64,6 +64,40 @@ export async function deleteDiscount(formData: FormData) {
   const id = formData.get('id') as string
   const orgSlug = formData.get('orgSlug') as string
   const service = createServiceClient()
+
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  const { data: discount } = await service.from('discounts').select('active').eq('id', id).maybeSingle()
+  if (discount?.active !== false) {
+    redirect(`/dashboard/${orgSlug}/settings/discounts/${id}?error=${encodeURIComponent('Cannot delete — discount must be deactivated first.')}`)
+  }
+
+  // A discount can be referenced from 5 different tables (6 columns) --
+  // products' two FK columns have no ON DELETE clause (default RESTRICT), so
+  // an unguarded delete would previously throw a raw FK-violation error;
+  // materials/customers/labor_rates/machine_rates all SET NULL, so it would
+  // otherwise silently unassign the discount with no warning. Block instead,
+  // matching every other section's "in use" convention.
+  const [products1, products2, materials, customers, laborRates, machineRates] = await Promise.all([
+    service.from('products').select('id', { count: 'exact', head: true }).eq('volume_discount_id', id),
+    service.from('products').select('id', { count: 'exact', head: true }).eq('range_discount_id', id),
+    service.from('materials').select('id', { count: 'exact', head: true }).eq('discount_id', id),
+    service.from('customers').select('id', { count: 'exact', head: true }).eq('discount_id', id),
+    service.from('labor_rates').select('id', { count: 'exact', head: true }).eq('volume_discount_id', id),
+    service.from('machine_rates').select('id', { count: 'exact', head: true }).eq('volume_discount_id', id),
+  ])
+
+  const productCount = (products1.count ?? 0) + (products2.count ?? 0)
+  const linked: string[] = []
+  if (productCount > 0) linked.push(`${productCount} product${productCount === 1 ? '' : 's'}`)
+  if ((materials.count ?? 0) > 0) linked.push(`${materials.count} material${materials.count === 1 ? '' : 's'}`)
+  if ((customers.count ?? 0) > 0) linked.push(`${customers.count} customer${customers.count === 1 ? '' : 's'}`)
+  if ((laborRates.count ?? 0) > 0) linked.push(`${laborRates.count} labor rate${laborRates.count === 1 ? '' : 's'}`)
+  if ((machineRates.count ?? 0) > 0) linked.push(`${machineRates.count} machine rate${machineRates.count === 1 ? '' : 's'}`)
+
+  if (linked.length > 0) {
+    redirect(`/dashboard/${orgSlug}/settings/discounts/${id}?error=${encodeURIComponent(`Cannot delete — linked to ${linked.join(', ')}. Modify those first.`)}`)
+  }
+
   const { error: tierErr } = await service.from('discount_tiers').delete().eq('discount_id', id)
   if (tierErr) redirect(`/dashboard/${orgSlug}/settings/discounts/${id}?error=${encodeURIComponent(tierErr.message)}`)
   const { error } = await service.from('discounts').delete().eq('id', id)

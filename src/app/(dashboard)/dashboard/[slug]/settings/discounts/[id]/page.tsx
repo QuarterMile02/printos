@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveDiscount, deleteDiscount } from '../actions-sr'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
@@ -44,6 +44,40 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   // For new discounts, start with one empty tier
   if (isNew) tiers = [{ id: 'new-0', min_qty: 0, max_qty: 0, discount_percent: 0, sort_order: 1 }]
+
+  // Same "linked to X" check deleteDiscount itself enforces server-side --
+  // computed here so the Delete button's enabled state never lies about
+  // whether delete will actually succeed. A discount can be referenced from
+  // 5 different tables (6 columns): products' two FK columns, plus
+  // materials/customers/labor_rates/machine_rates.
+  let linkedRecords: string[] = []
+  let canDelete = false
+  let deleteBlockedReason = ''
+  if (!isNew && discount) {
+    const [products1, products2, materials, customers, laborRates, machineRates] = await Promise.all([
+      supabase.from('products').select('id', { count: 'exact', head: true }).eq('volume_discount_id', id),
+      supabase.from('products').select('id', { count: 'exact', head: true }).eq('range_discount_id', id),
+      supabase.from('materials').select('id', { count: 'exact', head: true }).eq('discount_id', id),
+      supabase.from('customers').select('id', { count: 'exact', head: true }).eq('discount_id', id),
+      supabase.from('labor_rates').select('id', { count: 'exact', head: true }).eq('volume_discount_id', id),
+      supabase.from('machine_rates').select('id', { count: 'exact', head: true }).eq('volume_discount_id', id),
+    ])
+    for (const res of [products1, products2, materials, customers, laborRates, machineRates]) {
+      if (res.error) throw new DbError(res.error)
+    }
+    const productCount = (products1.count ?? 0) + (products2.count ?? 0)
+    if (productCount > 0) linkedRecords.push(`${productCount} product${productCount === 1 ? '' : 's'}`)
+    if ((materials.count ?? 0) > 0) linkedRecords.push(`${materials.count} material${materials.count === 1 ? '' : 's'}`)
+    if ((customers.count ?? 0) > 0) linkedRecords.push(`${customers.count} customer${customers.count === 1 ? '' : 's'}`)
+    if ((laborRates.count ?? 0) > 0) linkedRecords.push(`${laborRates.count} labor rate${laborRates.count === 1 ? '' : 's'}`)
+    if ((machineRates.count ?? 0) > 0) linkedRecords.push(`${machineRates.count} machine rate${machineRates.count === 1 ? '' : 's'}`)
+
+    const hasLinkedRecords = linkedRecords.length > 0
+    canDelete = discount.active === false && !hasLinkedRecords
+    deleteBlockedReason = hasLinkedRecords
+      ? `Cannot delete — linked to ${linkedRecords.join(', ')}. Modify those first.`
+      : 'Deactivate this discount first before it can be deleted.'
+  }
 
   return (
     <div className="p-8 max-w-3xl">
@@ -141,11 +175,15 @@ async function PageInner({ params, searchParams }: PageProps) {
             <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">Save</button>
             <Link href={`/dashboard/${slug}/settings/discounts`} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</Link>
             {!isNew && (
-              <form action={deleteDiscount} className="inline ml-auto">
-                <input type="hidden" name="id" value={discount!.id} />
-                <input type="hidden" name="orgSlug" value={slug} />
-                <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete</button>
-              </form>
+              canDelete ? (
+                <form action={deleteDiscount} className="inline ml-auto">
+                  <input type="hidden" name="id" value={discount!.id} />
+                  <input type="hidden" name="orgSlug" value={slug} />
+                  <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete</button>
+                </form>
+              ) : (
+                <span title={deleteBlockedReason} className="ml-auto rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-400 cursor-not-allowed">Delete</span>
+              )
             )}
           </div>
         </form>
