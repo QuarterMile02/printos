@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
+import { dbOrThrow } from '@/lib/db'
 import { PURCHASE_ORDERS_PAGE_SIZE } from './constants'
 import { CreatePoButton } from './create-po-button'
 import PoListClient, { type PurchaseOrderListRow } from './po-list-client'
@@ -14,16 +15,30 @@ type PageProps = {
 
 const DB_SELECT = 'id, po_number, title, status, total, expected_delivery_date, received_date, created_at, vendor_id, vendors(name), sales_order_id, sales_orders(so_number, title)'
 
-export default async function PurchaseOrdersPage({ params }: PageProps) {
+export default async function PurchaseOrdersPage(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[purchase-orders-list] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (purchase-orders-list)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
 
-  const { data: orgRow } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .single()
-  const org = orgRow as { id: string; name: string; slug: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string; slug: string } | null
   if (!org) notFound()
 
   const { allowed } = await checkPermission(org.id, 'purchase_orders.view')

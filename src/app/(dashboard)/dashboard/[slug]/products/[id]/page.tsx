@@ -2,8 +2,11 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { checkPermission } from '@/lib/check-permission'
+import { dbOrThrow } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
+
+type PageProps = { params: Promise<{ slug: string; id: string }> }
 
 async function saveProductDiscounts(formData: FormData) {
   'use server'
@@ -21,17 +24,31 @@ async function saveProductDiscounts(formData: FormData) {
   redirect(`/dashboard/${orgSlug}/products/${productId}`)
 }
 
-export default async function Page({ params }: { params: Promise<{ slug: string; id: string }> }) {
+export default async function Page(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[products-detail] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (products-detail)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params }: PageProps) {
   const { slug, id } = await params
   const supabase = await createClient()
 
   // Org
-  const { data: orgRow } = await supabase
-    .from('organizations')
-    .select('id, name')
-    .eq('slug', slug)
-    .single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
 
   // Product
   const { data: prodRow } = await supabase

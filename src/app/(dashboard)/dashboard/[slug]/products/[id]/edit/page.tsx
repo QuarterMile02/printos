@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
+import { dbOrThrow } from '@/lib/db'
 import type {
   Product, ProductCategory, WorkflowTemplate, Discount,
   Material, LaborRate, MachineRate, Modifier,
@@ -12,16 +13,31 @@ export const dynamic = 'force-dynamic'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
 
-export default async function EditProductPage({ params }: PageProps) {
+export default async function EditProductPage(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[products-edit] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (products-edit)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params }: PageProps) {
   const { slug, id } = await params
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
 
   if (!org) notFound()
 
