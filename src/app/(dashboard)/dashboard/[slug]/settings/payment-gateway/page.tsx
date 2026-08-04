@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import PaymentGatewayClient, { type Props as ClientProps } from './payment-gateway-client'
 
 export const dynamic = 'force-dynamic'
@@ -11,14 +12,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[payment-gateway-settings] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (payment gateway settings)</h1>
-        <div>{message}</div>
-      </div>
-    )
+    return renderPageError('payment-gateway-settings', err)
   }
 }
 

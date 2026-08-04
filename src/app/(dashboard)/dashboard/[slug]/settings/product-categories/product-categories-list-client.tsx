@@ -9,6 +9,7 @@ import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { DataTableError } from '@/components/data-table/data-table-error'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 import { PRODUCT_CATEGORIES_PAGE_SIZE } from './constants'
 
@@ -122,7 +123,7 @@ export default function ProductCategoriesListClient({
     disabled: isViewReadOnly,
   })
 
-  const { rows: liveRows, totalCount: liveTotalCount, loading } = useDataTableQuery<ProductCategoryListRow>({
+  const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<ProductCategoryListRow>({
     tableKey: 'product_categories',
     orgId,
     select: DB_SELECT,
@@ -239,7 +240,9 @@ export default function ProductCategoriesListClient({
         </div>
       </div>
 
-      {liveRows.length === 0 && !loading ? (
+      {error ? (
+        <DataTableError />
+      ) : liveRows.length === 0 && !loading ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
           <p className="text-sm text-gray-500">
             {search ? `No categories match "${search}"` : 'No categories match the current filters.'}

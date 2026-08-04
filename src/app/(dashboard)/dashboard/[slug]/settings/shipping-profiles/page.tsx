@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { saveShippingProfile } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import ShippingProfilesListClient, { type ProfileRow } from './shipping-profiles-list-client'
 
 export const dynamic = 'force-dynamic'
@@ -14,8 +15,7 @@ type PageProps = {
 
 export default async function Page(props: PageProps) {
   try { return await PageInner(props) } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace' }}><b>PAGE ERROR</b><br />{msg}</div>
+    return renderPageError('shipping-profiles-settings', err)
   }
 }
 

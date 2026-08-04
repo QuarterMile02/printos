@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { saveShippingMethod } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import ShippingMethodsListClient, { type MethodRow } from './shipping-methods-list-client'
 
 export const dynamic = 'force-dynamic'
@@ -25,8 +26,7 @@ type PageProps = {
 
 export default async function Page(props: PageProps) {
   try { return await PageInner(props) } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace' }}><b>PAGE ERROR</b><br />{msg}</div>
+    return renderPageError('shipping-methods-settings', err)
   }
 }
 

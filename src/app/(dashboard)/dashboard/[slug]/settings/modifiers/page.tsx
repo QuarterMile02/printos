@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import type { Modifier } from '@/types/product-builder'
 import { dbOrThrow, DbError } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import ModifiersClient from './modifiers-client'
 
 export const dynamic = 'force-dynamic'
@@ -13,16 +14,7 @@ export default async function ModifiersPage(props: PageProps) {
     return await PageInner(props)
   } catch (err) {
     unstable_rethrow(err)
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[modifiers] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (modifiers)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
-      </div>
-    )
+    return renderPageError('modifiers', err)
   }
 }
 

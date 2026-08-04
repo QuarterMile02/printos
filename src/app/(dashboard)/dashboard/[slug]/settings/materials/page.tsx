@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { dbOrThrow } from '@/lib/db'
+import { renderPageError } from '@/lib/page-error'
 import { MATERIALS_PAGE_SIZE } from './constants'
 import MaterialsListClient, { type MaterialListRow, type MaterialTypeOption, type MaterialCategoryOption } from './materials-list-client'
 
@@ -15,16 +16,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const stack = err instanceof Error ? err.stack : undefined
-    console.error('[materials] page crash:', err)
-    return (
-      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (materials)</h1>
-        <div><strong>Message:</strong> {message}</div>
-        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
-      </div>
-    )
+    return renderPageError('materials', err)
   }
 }
 
@@ -75,6 +67,7 @@ async function PageInner({ params, searchParams }: PageProps) {
       pageSize: MATERIALS_PAGE_SIZE,
     }),
   ])
+  if (initialResult.error) throw new Error(initialResult.error)
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
   const materialTypes = (materialTypesData ?? []) as MaterialTypeOption[]
