@@ -39,6 +39,7 @@ import QuotesNeedingApproval from './_widgets/quotes-needing-approval'
 import RescueList from './_widgets/rescue-list'
 import { WidgetStub } from './_widgets/widget-card'
 import type { DateRangePreset } from '@/lib/reports/report-utils'
+import { dbOrThrow } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,7 +48,22 @@ type PageProps = {
   searchParams: Promise<{ bi_preset?: string; bi_mode?: string }>
 }
 
-export default async function DashboardPage({ params, searchParams }: PageProps) {
+export default async function DashboardPage(props: PageProps) {
+  try {
+    return await DashboardPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[dashboard-overview] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (dashboard-overview)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function DashboardPageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const supabase = await createClient()
@@ -56,8 +72,9 @@ export default async function DashboardPage({ params, searchParams }: PageProps)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) notFound()
 
-  const { data: org } = await supabase
-    .from('organizations').select('id, name').eq('slug', slug).maybeSingle() as { data: { id: string; name: string } | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) notFound()
 
   // Resolve role + tier (profile → fallback to org_members)

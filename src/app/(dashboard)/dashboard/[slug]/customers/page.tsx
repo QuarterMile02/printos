@@ -5,13 +5,29 @@ import CreateCustomerForm from './create-customer-form'
 import CustomersListClient from './customers-list-client'
 import { CUSTOMERS_PAGE_SIZE } from './constants'
 import type { CustomerListRow } from './actions'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ sort?: string; status?: string; type?: string; tag?: string; new?: string }>
 }
 
-export default async function CustomersPage({ params, searchParams }: PageProps) {
+export default async function CustomersPage(props: PageProps) {
+  try {
+    return await CustomersPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[customers-list] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (customers-list)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function CustomersPageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const sort = sp.sort ?? 'name_asc'
@@ -22,9 +38,9 @@ export default async function CustomersPage({ params, searchParams }: PageProps)
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations').select('id, name, slug').eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
   if (!org) notFound()
 
   const { data: { user } } = await supabase.auth.getUser()

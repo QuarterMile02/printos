@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
 import AccountingClient from './accounting-client'
 import { postInvoices } from './actions'
+import { dbOrThrow } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,12 +12,28 @@ type PageProps = {
   params: Promise<{ slug: string }>
 }
 
-export default async function Page({ params }: PageProps) {
+export default async function Page(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[accounting] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (accounting)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params }: PageProps) {
   const { slug } = await params
   const supabase = await createClient()
 
-  const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) notFound()
 
   const { allowed } = await checkPermission(org.id, 'invoices.view')

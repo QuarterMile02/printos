@@ -3,24 +3,38 @@ import { notFound } from 'next/navigation'
 import type { JobStatus, JobFlag } from '@/types/database'
 import type { Role, Tier } from '@/lib/permissions'
 import KanbanBoard, { type JobCard } from './kanban-board'
+import { dbOrThrow } from '@/lib/db'
 
 type PageProps = {
   params: Promise<{ slug: string }>
   searchParams: Promise<{ department?: string }>
 }
 
-export default async function JobsPage({ params, searchParams }: PageProps) {
+export default async function JobsPage(props: PageProps) {
+  try {
+    return await JobsPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[jobs-list] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (jobs-list)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function JobsPageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const { department: departmentParam } = await searchParams
   const supabase = await createClient()
 
   // Fetch org — RLS ensures user is a member
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('id, name, slug')
-    .eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
 
   if (!org) notFound()
 

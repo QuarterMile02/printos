@@ -6,6 +6,7 @@ import CustomerActionMenu from './customer-action-menu'
 import ShippingAddressesSection from './shipping-addresses-section'
 import CustomerTabsSection from './CustomerTabsSection'
 import CustomerDetailsCollapsible from './customer-details-collapsible'
+import { dbOrThrow } from '@/lib/db'
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -24,14 +25,29 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 
 type PageProps = { params: Promise<{ slug: string; customerId: string }> }
 
-export default async function CustomerDetailPage({ params }: PageProps) {
+export default async function CustomerDetailPage(props: PageProps) {
+  try {
+    return await CustomerDetailPageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[customers-detail] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (customers-detail)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function CustomerDetailPageInner({ params }: PageProps) {
   const { slug, customerId } = await params
   const supabase = await createClient()
 
   type OrgRow = { id: string; name: string; slug: string }
-  const { data: org } = await supabase
-    .from('organizations').select('id, name, slug').eq('slug', slug)
-    .maybeSingle() as { data: OrgRow | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name, slug').eq('slug', slug).maybeSingle()
+  ) as OrgRow | null
   if (!org) notFound()
 
   type CustomerRow = {

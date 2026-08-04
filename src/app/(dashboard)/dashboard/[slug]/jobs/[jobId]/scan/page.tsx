@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { clockIn, clockOut } from './actions'
+import { dbOrThrow } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,12 +9,30 @@ const STATUS_LABELS: Record<string, string> = {
   ready_for_pickup: 'Ready for Pickup', completed: 'Completed',
 }
 
-export default async function Page({ params }: { params: Promise<{ slug: string; jobId: string }> }) {
+type PageProps = { params: Promise<{ slug: string; jobId: string }> }
+
+export default async function Page(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[jobs-scan] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (jobs-scan)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params }: PageProps) {
   const { slug, jobId } = await params
   const supabase = await createClient()
 
-  const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600 text-center">Organization not found</div>
 
   const { data: jobRow } = await supabase

@@ -10,6 +10,7 @@ import { checkPermission } from '@/lib/check-permission'
 import CustomerContactPicker from '@/components/ui/CustomerContactPicker'
 import JobCustomerPicker from './job-customer-picker'
 import TasksTab from '@/components/tasks/TasksTab'
+import { dbOrThrow } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,13 +29,31 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export default async function Page({ params }: { params: Promise<{ slug: string; jobId: string }> }) {
+type PageProps = { params: Promise<{ slug: string; jobId: string }> }
+
+export default async function Page(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[jobs-detail] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (jobs-detail)</h1>
+        <div>{message}</div>
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params }: PageProps) {
   const { slug, jobId } = await params
   const supabase = await createClient()
 
   // Org
-  const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Organization not found</div>
 
   // Job. material_selection / assigned_printer may not exist on older
