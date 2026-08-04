@@ -27,6 +27,10 @@ type Props = {
   customerName: string
   isActive: boolean | null
   isOwnerOrAdmin: boolean
+  // Quotes/jobs/sales orders/invoices currently linked to this customer, as
+  // display strings (e.g. "3 quotes") -- same check deleteCustomer itself
+  // enforces server-side. Empty array means delete is actually possible.
+  linkedRecords: string[]
 }
 
 export default function CustomerActionMenu({
@@ -36,6 +40,7 @@ export default function CustomerActionMenu({
   customerName,
   isActive,
   isOwnerOrAdmin,
+  linkedRecords,
 }: Props) {
   const router   = useRouter()
   const [open, setOpen]   = useState(false)
@@ -129,7 +134,7 @@ export default function CustomerActionMenu({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const canDelete = isActive === false
+  const canDelete = linkedRecords.length === 0
 
   return (
     <div className="flex items-center gap-2">
@@ -248,7 +253,7 @@ export default function CustomerActionMenu({
                   <button
                     type="button"
                     disabled
-                    title="Disable customer first to enable deletion"
+                    title={`Cannot delete — linked to ${linkedRecords.join(', ')}. Deactivate instead.`}
                     className="w-full text-left px-4 py-2 text-sm text-gray-300 cursor-not-allowed"
                   >
                     Delete Customer

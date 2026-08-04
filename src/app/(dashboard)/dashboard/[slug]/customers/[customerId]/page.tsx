@@ -6,7 +6,7 @@ import CustomerActionMenu from './customer-action-menu'
 import ShippingAddressesSection from './shipping-addresses-section'
 import CustomerTabsSection from './CustomerTabsSection'
 import CustomerDetailsCollapsible from './customer-details-collapsible'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
 function formatDate(iso: string) {
@@ -167,6 +167,18 @@ async function CustomerDetailPageInner({ params }: PageProps) {
       .order('created_at', { ascending: false })
   ) as InvoiceRow[] | null
 
+  // Total job/SO counts (all statuses) for the delete guard below -- mirrors
+  // exactly what the deleteCustomer server action itself checks, so the
+  // button's enabled state never lies about whether delete will succeed.
+  const [jobCountRes, soCountRes] = await Promise.all([
+    supabase.from('jobs').select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id).eq('customer_id', customerId),
+    supabase.from('sales_orders').select('id', { count: 'exact', head: true })
+      .eq('organization_id', org.id).eq('customer_id', customerId),
+  ])
+  if (jobCountRes.error) throw new DbError(jobCountRes.error)
+  if (soCountRes.error) throw new DbError(soCountRes.error)
+
   // Fetch shipping methods for dropdown
   type ShipMethodRow = { id: string; name: string }
   let shippingMethods: ShipMethodRow[] = []
@@ -210,6 +222,17 @@ async function CustomerDetailPageInner({ params }: PageProps) {
     : { name: null as string | null, email: customer.email, phone: customer.phone }
 
   const headerName = customer.company_name || `${customer.first_name} ${customer.last_name}`
+
+  // Same "linked to X" check the deleteCustomer server action itself
+  // enforces -- computed here purely so the Delete button can reflect the
+  // real reason instead of always rendering as if it might work.
+  const jobCount = jobCountRes.count ?? 0
+  const soCount = soCountRes.count ?? 0
+  const linkedRecords: string[] = []
+  if (quotes.length > 0) linkedRecords.push(`${quotes.length} quote${quotes.length === 1 ? '' : 's'}`)
+  if (jobCount > 0) linkedRecords.push(`${jobCount} job${jobCount === 1 ? '' : 's'}`)
+  if (soCount > 0) linkedRecords.push(`${soCount} sales order${soCount === 1 ? '' : 's'}`)
+  if (invoices.length > 0) linkedRecords.push(`${invoices.length} invoice${invoices.length === 1 ? '' : 's'}`)
 
   return (
     <div>
@@ -277,6 +300,7 @@ async function CustomerDetailPageInner({ params }: PageProps) {
           customerName={headerName}
           isActive={customer.is_active}
           isOwnerOrAdmin={isOwnerOrAdmin}
+          linkedRecords={linkedRecords}
         />
       </div>
 
