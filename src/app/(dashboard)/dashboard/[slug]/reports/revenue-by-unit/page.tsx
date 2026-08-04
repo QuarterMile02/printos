@@ -65,15 +65,17 @@ async function PageInner({ params, searchParams }: PageProps) {
   const range = resolveDateRange(sp.preset as DateRangePreset | undefined, sp.start, sp.end)
 
   // Fetch jobs with invoice_id + department in range
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select('department, invoice_id')
-    .eq('organization_id', org.id)
-    .not('invoice_id', 'is', null)
-    .not('department', 'is', null)
-    .gte('created_at', range.start)
-    .lte('created_at', range.end)
-    .limit(2000) as { data: JobRow[] | null; error: unknown }
+  const jobs = await dbOrThrow(
+    supabase
+      .from('jobs')
+      .select('department, invoice_id')
+      .eq('organization_id', org.id)
+      .not('invoice_id', 'is', null)
+      .not('department', 'is', null)
+      .gte('created_at', range.start)
+      .lte('created_at', range.end)
+      .limit(2000)
+  ) as JobRow[] | null
 
   // Map invoice_id -> department (first job wins to avoid double-count)
   const invoiceDeptMap = new Map<string, string>()
@@ -96,11 +98,13 @@ async function PageInner({ params, searchParams }: PageProps) {
     for (let i = 0; i < invoiceIds.length; i += 200) chunks.push(invoiceIds.slice(i, i + 200))
 
     for (const chunk of chunks) {
-      const { data: invoices } = await supabase
-        .from('invoices')
-        .select('id, total, status')
-        .in('id', chunk)
-        .not('status', 'in', '("draft","void","cancelled")') as { data: InvoiceRow[] | null; error: unknown }
+      const invoices = await dbOrThrow(
+        supabase
+          .from('invoices')
+          .select('id, total, status')
+          .in('id', chunk)
+          .not('status', 'in', '("draft","void","cancelled")')
+      ) as InvoiceRow[] | null
 
       for (const inv of invoices ?? []) {
         const dept = invoiceDeptMap.get(inv.id)

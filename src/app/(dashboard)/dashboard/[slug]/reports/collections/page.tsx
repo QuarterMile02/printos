@@ -1,7 +1,7 @@
 import { notFound, unstable_rethrow } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 import { resolveDateRange, paginate, type DateRangePreset } from '@/lib/reports/report-utils'
 import ReportShell from '../report-shell'
 
@@ -83,24 +83,29 @@ async function PageInner({ params, searchParams }: PageProps) {
       .lte('created_at', range.end)
   }
 
-  const { count: totalCount } = await buildBase().limit(1)
+  const { count: totalCount, error: countError } = await buildBase().limit(1)
+  if (countError) throw new DbError(countError)
   const total = totalCount ?? 0
   const { from, to, pageCount, page: safePage } = paginate(total, page)
-  const { data: rows } = await buildBase()
-    .order('due_date', { ascending: true, nullsFirst: false })
-    .range(from, to) as { data: InvoiceRow[] | null; error: unknown }
+  const rows = await dbOrThrow(
+    buildBase()
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .range(from, to)
+  ) as InvoiceRow[] | null
 
   // Fetch latest collection call per customer for rows on this page
   const customerIds = [...new Set((rows ?? []).map(r => r.customer_id).filter((id): id is string => !!id))]
   const lastCallMap = new Map<string, { logged_at: string; outcome: string | null }>()
 
   if (customerIds.length > 0) {
-    const { data: callLogs } = await supabase
-      .from('collection_call_logs')
-      .select('customer_id, logged_at, outcome')
-      .eq('organization_id', org.id)
-      .in('customer_id', customerIds)
-      .order('logged_at', { ascending: false }) as { data: CallLog[] | null; error: unknown }
+    const callLogs = await dbOrThrow(
+      supabase
+        .from('collection_call_logs')
+        .select('customer_id, logged_at, outcome')
+        .eq('organization_id', org.id)
+        .in('customer_id', customerIds)
+        .order('logged_at', { ascending: false })
+    ) as CallLog[] | null
 
     for (const log of callLogs ?? []) {
       if (!lastCallMap.has(log.customer_id)) {

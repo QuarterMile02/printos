@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 import type { QuoteStatus } from '@/types/database'
 import { resolveDateRange, paginate, PAGE_SIZE } from '@/lib/reports/report-utils'
 import ReportShell from '../report-shell'
@@ -74,11 +74,13 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   // Sales reps for the filter dropdown via service client (bypasses RLS).
   type RawMemberRow = { user_id: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id')
-    .eq('organization_id', org.id)
-    .in('role', ['owner', 'admin', 'member']) as { data: RawMemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id')
+      .eq('organization_id', org.id)
+      .in('role', ['owner', 'admin', 'member'])
+  ) as RawMemberRow[] | null
 
   const memberUserIds = (memberRows ?? []).map(m => m.user_id)
   const service = createServiceClient()
@@ -86,10 +88,12 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   if (memberUserIds.length > 0) {
     type ProfileRow = { id: string; full_name: string | null }
-    const { data: profileRows } = await service
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    const profileRows = await dbOrThrow(
+      service
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', memberUserIds)
+    ) as ProfileRow[] | null
     for (const p of profileRows ?? []) {
       repNameMap.set(p.id, p.full_name ?? p.id)
     }
@@ -120,14 +124,17 @@ async function PageInner({ params, searchParams }: PageProps) {
   }
 
   // 1) Count first (for pagination math)
-  const { count: totalCount } = await buildBase().limit(1)
+  const { count: totalCount, error: countError } = await buildBase().limit(1)
+  if (countError) throw new DbError(countError)
   const total = totalCount ?? 0
   const { from, to, pageCount, page: safePage } = paginate(total, page)
 
   // 2) Page query
-  const { data: rows } = await buildBase()
-    .order('quote_number', { ascending: false })
-    .range(from, to) as { data: QuoteJoinRow[] | null; error: unknown }
+  const rows = await dbOrThrow(
+    buildBase()
+      .order('quote_number', { ascending: false })
+      .range(from, to)
+  ) as QuoteJoinRow[] | null
 
   const repNameById = new Map(salesReps.map((r) => [r.id, r.name]))
 

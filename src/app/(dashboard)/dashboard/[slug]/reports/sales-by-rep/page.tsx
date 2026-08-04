@@ -65,11 +65,13 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   // Fetch team members for name resolution via service client (bypasses RLS).
   type RawMemberRow = { user_id: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id')
-    .eq('organization_id', org.id)
-    .in('role', ['owner', 'admin', 'member']) as { data: RawMemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id')
+      .eq('organization_id', org.id)
+      .in('role', ['owner', 'admin', 'member'])
+  ) as RawMemberRow[] | null
 
   const memberUserIds = (memberRows ?? []).map(m => m.user_id)
   const service = createServiceClient()
@@ -77,10 +79,12 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   if (memberUserIds.length > 0) {
     type ProfileRow = { id: string; full_name: string | null }
-    const { data: profileRows } = await service
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', memberUserIds) as { data: ProfileRow[] | null; error: unknown }
+    const profileRows = await dbOrThrow(
+      service
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', memberUserIds)
+    ) as ProfileRow[] | null
     for (const p of profileRows ?? []) {
       nameById.set(p.id, p.full_name ?? p.id)
     }
@@ -94,13 +98,15 @@ async function PageInner({ params, searchParams }: PageProps) {
   }
 
   // Fetch all quotes in range (aggregate in JS — reps count is small)
-  const { data: quotes } = await supabase
-    .from('quotes')
-    .select('sales_rep_id, status, total')
-    .eq('organization_id', org.id)
-    .gte('created_at', range.start)
-    .lte('created_at', range.end)
-    .limit(2000) as { data: QuoteRow[] | null; error: unknown }
+  const quotes = await dbOrThrow(
+    supabase
+      .from('quotes')
+      .select('sales_rep_id, status, total')
+      .eq('organization_id', org.id)
+      .gte('created_at', range.start)
+      .lte('created_at', range.end)
+      .limit(2000)
+  ) as QuoteRow[] | null
 
   const repMap = new Map<string, RepStat>()
 

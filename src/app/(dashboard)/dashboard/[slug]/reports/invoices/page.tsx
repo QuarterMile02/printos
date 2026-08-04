@@ -1,7 +1,7 @@
 import { notFound, unstable_rethrow } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 import { resolveDateRange, paginate, type DateRangePreset } from '@/lib/reports/report-utils'
 import ReportShell from '../report-shell'
 import ReportFilters from '../report-filters'
@@ -90,12 +90,15 @@ async function PageInner({ params, searchParams }: PageProps) {
     return q
   }
 
-  const { count: totalCount } = await buildBase().limit(1)
+  const { count: totalCount, error: countError } = await buildBase().limit(1)
+  if (countError) throw new DbError(countError)
   const total = totalCount ?? 0
   const { from, to, pageCount, page: safePage } = paginate(total, page)
-  const { data: rows } = await buildBase()
-    .order('invoice_number', { ascending: false })
-    .range(from, to) as { data: InvoiceRow[] | null; error: unknown }
+  const rows = await dbOrThrow(
+    buildBase()
+      .order('invoice_number', { ascending: false })
+      .range(from, to)
+  ) as InvoiceRow[] | null
 
   const exportParams = new URLSearchParams()
   if (sp.preset) exportParams.set('preset', sp.preset)
