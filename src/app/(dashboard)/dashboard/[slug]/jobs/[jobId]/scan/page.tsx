@@ -35,12 +35,14 @@ async function PageInner({ params }: PageProps) {
   ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600 text-center">Organization not found</div>
 
-  const { data: jobRow } = await supabase
-    .from('jobs')
-    .select('id, job_number, title, status')
-    .eq('id', jobId)
-    .eq('organization_id', org.id)
-    .single()
+  const jobRow = await dbOrThrow(
+    supabase
+      .from('jobs')
+      .select('id, job_number, title, status')
+      .eq('id', jobId)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  )
   const job = jobRow as { id: string; job_number: number; title: string; status: string } | null
   if (!job) return <div className="p-8 text-red-600 text-center">Job not found</div>
 
@@ -48,13 +50,15 @@ async function PageInner({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
   let isClockedIn = false
   if (user) {
-    const { data: logs } = await supabase
-      .from('job_time_logs')
-      .select('action')
-      .eq('job_id', jobId)
-      .eq('user_id', user.id)
-      .order('scanned_at', { ascending: false })
-      .limit(1)
+    const logs = await dbOrThrow(
+      supabase
+        .from('job_time_logs')
+        .select('action')
+        .eq('job_id', jobId)
+        .eq('user_id', user.id)
+        .order('scanned_at', { ascending: false })
+        .limit(1)
+    )
     const lastAction = (logs as { action: string }[] | null)?.[0]?.action
     isClockedIn = lastAction === 'clock_in'
   }

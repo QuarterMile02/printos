@@ -115,11 +115,13 @@ async function PageInner({ params }: PageProps) {
   const { allowed: canAssignDepartment } = await checkPermission(org.id, 'jobs.assign_department')
 
   // Owner/admin role
-  const { data: jobMemberRow } = await supabase
-    .from('organization_members').select('role')
-    .eq('organization_id', org.id)
-    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const jobMemberRow = await dbOrThrow(
+    supabase
+      .from('organization_members').select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+  ) as { role: string } | null
   const isOwnerOrAdmin = jobMemberRow?.role === 'owner' || jobMemberRow?.role === 'admin'
   // Owner, admin, or member (sales manager) can reassign the job's customer
   const canReassignJobCustomer = ['owner', 'admin', 'member'].includes(jobMemberRow?.role ?? '')
@@ -148,11 +150,13 @@ async function PageInner({ params }: PageProps) {
   if (job.source_quote_id) {
     // 1. Get product_ids from quote line items
     type LiProd = { product_id: string | null }
-    const { data: liRows } = await service
-      .from('quote_line_items')
-      .select('product_id')
-      .eq('quote_id', job.source_quote_id)
-      .not('product_id', 'is', null) as { data: LiProd[] | null; error: unknown }
+    const liRows = await dbOrThrow(
+      service
+        .from('quote_line_items')
+        .select('product_id')
+        .eq('quote_id', job.source_quote_id)
+        .not('product_id', 'is', null)
+    ) as LiProd[] | null
 
     const productIds = [...new Set((liRows ?? []).map((r) => r.product_id).filter(Boolean) as string[])]
 
@@ -164,12 +168,14 @@ async function PageInner({ params }: PageProps) {
         labor_rates: { name: string } | null
         machine_rates: { name: string } | null
       }
-      const { data: pdiRows } = await service
-        .from('product_default_items')
-        .select('id, item_type, custom_item_name, sort_order, materials(name), labor_rates(name), machine_rates(name)')
-        .in('product_id', productIds)
-        .eq('workflow_step', true)
-        .order('sort_order') as { data: PdiRow[] | null; error: unknown }
+      const pdiRows = await dbOrThrow(
+        service
+          .from('product_default_items')
+          .select('id, item_type, custom_item_name, sort_order, materials(name), labor_rates(name), machine_rates(name)')
+          .in('product_id', productIds)
+          .eq('workflow_step', true)
+          .order('sort_order')
+      ) as PdiRow[] | null
 
       for (const r of pdiRows ?? []) {
         let name = r.custom_item_name
@@ -182,17 +188,20 @@ async function PageInner({ params }: PageProps) {
 
     // 3. Fetch existing progress for this job
     type ProgRow = { step_name: string; checked_by: string | null; checked_at: string | null }
-    const { data: progRows } = await service
-      .from('jobs_workflow_progress')
-      .select('step_name, checked_by, checked_at')
-      .eq('job_id', jobId) as { data: ProgRow[] | null; error: unknown }
+    const progRows = await dbOrThrow(
+      service
+        .from('jobs_workflow_progress')
+        .select('step_name, checked_by, checked_at')
+        .eq('job_id', jobId)
+    ) as ProgRow[] | null
 
     // Resolve checked_by user names
     const checkerIds = [...new Set((progRows ?? []).map((p) => p.checked_by).filter(Boolean) as string[])]
     const nameMap = new Map<string, string>()
     if (checkerIds.length > 0) {
-      const { data: profiles } = await service
-        .from('profiles').select('id, full_name').in('id', checkerIds) as { data: { id: string; full_name: string | null }[] | null; error: unknown }
+      const profiles = await dbOrThrow(
+        service.from('profiles').select('id, full_name').in('id', checkerIds)
+      ) as { id: string; full_name: string | null }[] | null
       for (const p of profiles ?? []) if (p.full_name) nameMap.set(p.id, p.full_name)
     }
 
@@ -209,7 +218,9 @@ async function PageInner({ params }: PageProps) {
   let sourceQuoteNum: number | null = null
   let sourceQuoteId: string | null = job.source_quote_id
   if (sourceQuoteId) {
-    const { data: q } = await supabase.from('quotes').select('quote_number').eq('id', sourceQuoteId).single()
+    const q = await dbOrThrow(
+      supabase.from('quotes').select('quote_number').eq('id', sourceQuoteId).maybeSingle()
+    )
     sourceQuoteNum = (q as { quote_number: number } | null)?.quote_number ?? null
   }
 
@@ -217,7 +228,9 @@ async function PageInner({ params }: PageProps) {
   let soId: string | null = null
   let soNum: number | null = null
   if (sourceQuoteId) {
-    const { data: soRow } = await supabase.from('sales_orders').select('id, so_number').eq('quote_id', sourceQuoteId).limit(1).maybeSingle()
+    const soRow = await dbOrThrow(
+      supabase.from('sales_orders').select('id, so_number').eq('quote_id', sourceQuoteId).limit(1).maybeSingle()
+    )
     if (soRow) {
       const so = soRow as { id: string; so_number: number }
       soId = so.id
@@ -228,17 +241,21 @@ async function PageInner({ params }: PageProps) {
   // Assigned team member name
   let assignedName: string | null = null
   if (job.assigned_to) {
-    const { data: profile } = await supabase.from('profiles').select('full_name, email').eq('id', job.assigned_to).single()
+    const profile = await dbOrThrow(
+      supabase.from('profiles').select('full_name, email').eq('id', job.assigned_to).maybeSingle()
+    )
     const p = profile as { full_name: string | null; email: string } | null
     assignedName = p?.full_name || p?.email || null
   }
 
   // Proof versions
-  const { data: proofRows } = await supabase
-    .from('proof_versions')
-    .select('id, file_url, file_name, version_number, status, created_at')
-    .eq('job_id', jobId)
-    .order('version_number', { ascending: false })
+  const proofRows = await dbOrThrow(
+    supabase
+      .from('proof_versions')
+      .select('id, file_url, file_name, version_number, status, created_at')
+      .eq('job_id', jobId)
+      .order('version_number', { ascending: false })
+  )
   const proofs = (proofRows ?? []) as {
     id: string; file_url: string; file_name: string; version_number: number
     status: string; created_at: string
@@ -251,11 +268,13 @@ async function PageInner({ params }: PageProps) {
   }
 
   // Time logs
-  const { data: timeLogRows } = await supabase
-    .from('job_time_logs')
-    .select('id, action, stage, duration_minutes, scanned_at, user_id')
-    .eq('job_id', jobId)
-    .order('scanned_at', { ascending: false })
+  const timeLogRows = await dbOrThrow(
+    supabase
+      .from('job_time_logs')
+      .select('id, action, stage, duration_minutes, scanned_at, user_id')
+      .eq('job_id', jobId)
+      .order('scanned_at', { ascending: false })
+  )
   const timeLogs = (timeLogRows ?? []) as {
     id: string; action: string; stage: string | null; duration_minutes: number | null
     scanned_at: string; user_id: string | null
@@ -273,10 +292,12 @@ async function PageInner({ params }: PageProps) {
   const lineItemQty = new Map<string, number>()
   if (materialLines.length > 0 && job.source_quote_id) {
     type LiRow = { id: string; description: string | null; width: number | null; height: number | null; quantity: number | null }
-    const { data: liRows } = await supabase
-      .from('quote_line_items')
-      .select('id, description, width, height, quantity')
-      .in('id', materialLines.map((l) => l.line_item_id)) as { data: LiRow[] | null; error: unknown }
+    const liRows = await dbOrThrow(
+      supabase
+        .from('quote_line_items')
+        .select('id, description, width, height, quantity')
+        .in('id', materialLines.map((l) => l.line_item_id))
+    ) as LiRow[] | null
     for (const li of liRows ?? []) {
       const dims = li.width != null && li.height != null ? ` ${li.width}″×${li.height}″` : ''
       const qty = li.quantity != null && li.quantity !== 1 ? ` × ${li.quantity}` : ''

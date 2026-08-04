@@ -49,12 +49,14 @@ async function PageInner({ params }: PageProps) {
     )
   }
 
-  const { data: invRows } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, status, subtotal, tax_total, total, created_at, customers(first_name, last_name, company_name)')
-    .eq('organization_id', org.id)
-    .eq('is_posted', false)
-    .order('invoice_number', { ascending: false })
+  const invRows = await dbOrThrow(
+    supabase
+      .from('invoices')
+      .select('id, invoice_number, status, subtotal, tax_total, total, created_at, customers(first_name, last_name, company_name)')
+      .eq('organization_id', org.id)
+      .eq('is_posted', false)
+      .order('invoice_number', { ascending: false })
+  )
 
   type UnpostedInvoice = {
     id: string

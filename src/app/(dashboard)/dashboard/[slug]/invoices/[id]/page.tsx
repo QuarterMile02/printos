@@ -33,12 +33,14 @@ async function PageInner({ params }: PageProps) {
   ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const { data: invRow } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, status, subtotal, tax_total, total, amount_paid, balance_due, due_date, notes, sales_order_id, customer_id, created_at, customers(first_name, last_name, company_name, email)')
-    .eq('id', id)
-    .eq('organization_id', org.id)
-    .single()
+  const invRow = await dbOrThrow(
+    supabase
+      .from('invoices')
+      .select('id, invoice_number, status, subtotal, tax_total, total, amount_paid, balance_due, due_date, notes, sales_order_id, customer_id, created_at, customers(first_name, last_name, company_name, email)')
+      .eq('id', id)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  )
   const inv = invRow as {
     id: string; invoice_number: number; status: string
     subtotal: number; tax_total: number; total: number; amount_paid: number; balance_due: number
@@ -53,7 +55,9 @@ async function PageInner({ params }: PageProps) {
   // SO reference
   let soNum: number | null = null
   if (inv.sales_order_id) {
-    const { data: so } = await supabase.from('sales_orders').select('so_number').eq('id', inv.sales_order_id).single()
+    const so = await dbOrThrow(
+      supabase.from('sales_orders').select('so_number').eq('id', inv.sales_order_id).maybeSingle()
+    )
     soNum = (so as { so_number: number } | null)?.so_number ?? null
   }
 
@@ -61,10 +65,14 @@ async function PageInner({ params }: PageProps) {
   type LineItem = { description: string; quantity: number; unit_price: number; total_price: number }
   let lineItems: LineItem[] = []
   if (inv.sales_order_id) {
-    const { data: soRow } = await supabase.from('sales_orders').select('quote_id').eq('id', inv.sales_order_id).single()
+    const soRow = await dbOrThrow(
+      supabase.from('sales_orders').select('quote_id').eq('id', inv.sales_order_id).maybeSingle()
+    )
     const quoteId = (soRow as { quote_id: string | null } | null)?.quote_id
     if (quoteId) {
-      const { data: li } = await supabase.from('quote_line_items').select('description, quantity, unit_price, total_price').eq('quote_id', quoteId).order('sort_order')
+      const li = await dbOrThrow(
+        supabase.from('quote_line_items').select('description, quantity, unit_price, total_price').eq('quote_id', quoteId).order('sort_order')
+      )
       lineItems = (li ?? []) as LineItem[]
     }
   }

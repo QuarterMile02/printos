@@ -75,17 +75,19 @@ async function CustomerDetailPageInner({ params }: PageProps) {
     shipping_method: string | null
   }
 
-  const { data: customer } = await supabase
-    .from('customers')
-    .select(`id, first_name, last_name, company_name, email, phone, phone2, phone_ext, notes, created_at,
+  const customer = await dbOrThrow(
+    supabase
+      .from('customers')
+      .select(`id, first_name, last_name, company_name, email, phone, phone2, phone_ext, notes, created_at,
       legal_name, sales_rep, industry, lead_source, customer_group, status, is_active,
       street, street2, city, state, zip, country,
       secondary_street, secondary_city, secondary_state, secondary_zip, secondary_country,
       terms, taxable, tax_exempt_code, tax_exempt_expires, credit_limit,
       pricing_level, discount_percent, website, allow_credit_card_payments,
       background_info, special_notes, vat_number, other_info, sms_consent, portal_enabled, portal_tier_id, shipping_method`)
-    .eq('id', customerId).eq('organization_id', org.id)
-    .maybeSingle() as { data: CustomerRow | null; error: unknown }
+      .eq('id', customerId).eq('organization_id', org.id)
+      .maybeSingle()
+  ) as CustomerRow | null
   if (!customer) notFound()
 
   type PortalTierOption = { id: string; name: string }
@@ -100,12 +102,14 @@ async function CustomerDetailPageInner({ params }: PageProps) {
     portalTiers = ptData ?? []
   } catch { /* migration 097 not yet applied */ }
 
-  const { data: membership } = await supabase
-    .from('organization_members')
-    .select('role')
-    .eq('organization_id', org.id)
-    .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  const membership = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+  ) as { role: string } | null
   const isOwnerOrAdmin = membership?.role === 'owner' || membership?.role === 'admin'
 
   type ContactRow = {
@@ -114,47 +118,57 @@ async function CustomerDetailPageInner({ params }: PageProps) {
     phone2: string | null; phone_ext: string | null; title: string | null
     is_primary: boolean | null; is_ap_contact: boolean | null; is_active: boolean | null
   }
-  const { data: contactRows } = await supabase
-    .from('customer_contacts')
-    .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active')
-    .eq('customer_id', customerId)
-    .eq('organization_id', org.id)
-    .order('is_primary', { ascending: false })
-    .order('last_name', { ascending: true, nullsFirst: false })
-    .order('full_name', { ascending: true }) as { data: ContactRow[] | null; error: unknown }
+  const contactRows = await dbOrThrow(
+    supabase
+      .from('customer_contacts')
+      .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active')
+      .eq('customer_id', customerId)
+      .eq('organization_id', org.id)
+      .order('is_primary', { ascending: false })
+      .order('last_name', { ascending: true, nullsFirst: false })
+      .order('full_name', { ascending: true })
+  ) as ContactRow[] | null
 
   const primaryContact = (contactRows ?? []).find((c) => c.is_primary) ?? null
 
   // Open jobs only (exclude completed + cancelled)
   type JobRow = { id: string; job_number: number; title: string; status: string; created_at: string }
-  const { data: openJobRows } = await supabase
-    .from('jobs').select('id, job_number, title, status, created_at')
-    .eq('organization_id', org.id).eq('customer_id', customerId)
-    .neq('status', 'completed').neq('status', 'cancelled')
-    .order('created_at', { ascending: false }) as { data: JobRow[] | null; error: unknown }
+  const openJobRows = await dbOrThrow(
+    supabase
+      .from('jobs').select('id, job_number, title, status, created_at')
+      .eq('organization_id', org.id).eq('customer_id', customerId)
+      .neq('status', 'completed').neq('status', 'cancelled')
+      .order('created_at', { ascending: false })
+  ) as JobRow[] | null
 
   type QuoteRow = { id: string; quote_number: number; title: string; status: string; created_at: string }
-  const { data: quoteRows } = await supabase
-    .from('quotes').select('id, quote_number, title, status, created_at')
-    .eq('organization_id', org.id).eq('customer_id', customerId)
-    .order('created_at', { ascending: false }) as { data: QuoteRow[] | null; error: unknown }
+  const quoteRows = await dbOrThrow(
+    supabase
+      .from('quotes').select('id, quote_number, title, status, created_at')
+      .eq('organization_id', org.id).eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+  ) as QuoteRow[] | null
 
   type LineItemRow = { quote_id: string; quantity: number; unit_price: number }
   const quoteIds = (quoteRows ?? []).map((q) => q.id)
   const perQuoteTotals = new Map<string, number>()
   if (quoteIds.length > 0) {
-    const { data: items } = await supabase
-      .from('quote_line_items').select('quote_id, quantity, unit_price')
-      .in('quote_id', quoteIds) as { data: LineItemRow[] | null; error: unknown }
+    const items = await dbOrThrow(
+      supabase
+        .from('quote_line_items').select('quote_id, quantity, unit_price')
+        .in('quote_id', quoteIds)
+    ) as LineItemRow[] | null
     for (const item of items ?? [])
       perQuoteTotals.set(item.quote_id, (perQuoteTotals.get(item.quote_id) ?? 0) + item.quantity * item.unit_price)
   }
 
   type InvoiceRow = { id: string; invoice_number: number; status: string; total: number; due_date: string | null; created_at: string }
-  const { data: invoiceRows } = await supabase
-    .from('invoices').select('id, invoice_number, status, total, due_date, created_at')
-    .eq('organization_id', org.id).eq('customer_id', customerId)
-    .order('created_at', { ascending: false }) as { data: InvoiceRow[] | null; error: unknown }
+  const invoiceRows = await dbOrThrow(
+    supabase
+      .from('invoices').select('id, invoice_number, status, total, due_date, created_at')
+      .eq('organization_id', org.id).eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+  ) as InvoiceRow[] | null
 
   // Fetch shipping methods for dropdown
   type ShipMethodRow = { id: string; name: string }

@@ -43,13 +43,15 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
   const service = createServiceClient()
   type ProfileRow = { role: Role; tier: Tier; departments: string[] }
-  const { data: profile } = user
-    ? await service
-        .from('profiles')
-        .select('role, tier, departments')
-        .eq('id', user.id)
-        .maybeSingle() as { data: ProfileRow | null; error: unknown }
-    : { data: null }
+  const profile = user
+    ? await dbOrThrow(
+        service
+          .from('profiles')
+          .select('role, tier, departments')
+          .eq('id', user.id)
+          .maybeSingle()
+      ) as ProfileRow | null
+    : null
 
   // Load departments for this org (for dropdown options)
   type DeptRow = { code: string; name: string }
@@ -152,10 +154,12 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
   const customerIds = [...new Set(allJobs.map(j => j.customer_id).filter(Boolean) as string[])]
   const customerMap = new Map<string, { first_name: string; last_name: string; company_name: string | null }>()
   if (customerIds.length > 0) {
-    const { data: customerRows } = await service
-      .from('customers')
-      .select('id, first_name, last_name, company_name')
-      .in('id', customerIds) as { data: CustomerRow[] | null; error: unknown }
+    const customerRows = await dbOrThrow(
+      service
+        .from('customers')
+        .select('id, first_name, last_name, company_name')
+        .in('id', customerIds)
+    ) as CustomerRow[] | null
     for (const c of (customerRows ?? [])) {
       customerMap.set(c.id, { first_name: c.first_name, last_name: c.last_name, company_name: c.company_name })
     }
@@ -165,11 +169,13 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
   const quoteIds = [...new Set(allJobs.map(j => j.source_quote_id).filter(Boolean) as string[])]
   const lineItemMap = new Map<string, { description: string; width: number | null; height: number | null; quantity: number }>()
   if (quoteIds.length > 0) {
-    const { data: liRows } = await supabase
-      .from('quote_line_items')
-      .select('quote_id, description, width, height, quantity')
-      .in('quote_id', quoteIds)
-      .order('sort_order', { ascending: true })
+    const liRows = await dbOrThrow(
+      supabase
+        .from('quote_line_items')
+        .select('quote_id, description, width, height, quantity')
+        .in('quote_id', quoteIds)
+        .order('sort_order', { ascending: true })
+    )
     for (const li of (liRows ?? []) as { quote_id: string; description: string; width: number | null; height: number | null; quantity: number }[]) {
       if (!lineItemMap.has(li.quote_id)) lineItemMap.set(li.quote_id, li)
     }
@@ -179,7 +185,9 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
   const assignedIds = [...new Set(allJobs.map(j => j.assigned_to).filter(Boolean) as string[])]
   const initialsMap = new Map<string, string>()
   if (assignedIds.length > 0) {
-    const { data: profiles } = await supabase.from('profiles').select('id, full_name, email').in('id', assignedIds)
+    const profiles = await dbOrThrow(
+      supabase.from('profiles').select('id, full_name, email').in('id', assignedIds)
+    )
     for (const p of (profiles ?? []) as { id: string; full_name: string | null; email: string }[]) {
       const name = p.full_name || p.email
       const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)

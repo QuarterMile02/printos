@@ -83,20 +83,20 @@ async function DashboardPageInner({ params, searchParams }: PageProps) {
   let tier: Tier = 'staff'
   let displayName: string | null = null
   let userDepartments: string[] = []
-  const { data: profile } = await service
-    .from('profiles').select('role, tier, full_name, departments').eq('id', user.id).maybeSingle() as {
-      data: { role: Role | null; tier: Tier | null; full_name: string | null; departments: string[] | null } | null; error: unknown
-    }
+  const profile = await dbOrThrow(
+    service
+      .from('profiles').select('role, tier, full_name, departments').eq('id', user.id).maybeSingle()
+  ) as { role: Role | null; tier: Tier | null; full_name: string | null; departments: string[] | null } | null
   if (profile) {
     role = (profile.role as Role) ?? 'production'
     tier = (profile.tier as Tier) ?? 'staff'
     displayName = profile.full_name
     userDepartments = profile.departments ?? []
   } else {
-    const { data: mem } = await service
-      .from('organization_members').select('role').eq('user_id', user.id).eq('organization_id', org.id).maybeSingle() as {
-        data: { role: string } | null; error: unknown
-      }
+    const mem = await dbOrThrow(
+      service
+        .from('organization_members').select('role').eq('user_id', user.id).eq('organization_id', org.id).maybeSingle()
+    ) as { role: string } | null
     if (mem && (mem.role === 'owner' || mem.role === 'admin')) { role = 'owner'; tier = 'manager' }
   }
 
@@ -110,12 +110,14 @@ async function DashboardPageInner({ params, searchParams }: PageProps) {
 
   // Load saved layout for this user+org
   type LayoutRow = { widget_config: WidgetConfig }
-  const { data: layoutRow } = await service
-    .from('dashboard_layouts')
-    .select('widget_config')
-    .eq('user_id', user.id)
-    .eq('organization_id', org.id)
-    .maybeSingle() as { data: LayoutRow | null; error: unknown }
+  const layoutRow = await dbOrThrow(
+    service
+      .from('dashboard_layouts')
+      .select('widget_config')
+      .eq('user_id', user.id)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  ) as LayoutRow | null
 
   const savedConfig = layoutRow?.widget_config ?? null
 

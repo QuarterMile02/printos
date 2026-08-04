@@ -5,7 +5,7 @@ import CreateCustomerForm from './create-customer-form'
 import CustomersListClient from './customers-list-client'
 import { CUSTOMERS_PAGE_SIZE } from './constants'
 import type { CustomerListRow } from './actions'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 
 type PageProps = {
   params: Promise<{ slug: string }>
@@ -114,6 +114,11 @@ async function CustomersPageInner({ params, searchParams }: PageProps) {
       .eq('organization_id', org.id),
   ])
 
+  if (customersRes.error) throw new DbError(customersRes.error)
+  if (countRes.error) throw new DbError(countRes.error)
+  if (tagRows.error) throw new DbError(tagRows.error)
+  if (memberRows.error) throw new DbError(memberRows.error)
+
   const customers = (customersRes.data ?? []) as CustomerListRow[]
   const totalCount = countRes.count ?? 0
 
@@ -134,10 +139,12 @@ async function CustomersPageInner({ params, searchParams }: PageProps) {
     .map((m) => m.user_id)
   let salesReps: ProfileRow[] = []
   if (salesRepUserIds.length > 0) {
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('id, full_name')
-      .in('id', salesRepUserIds) as { data: ProfileRow[] | null; error: unknown }
+    const profileData = await dbOrThrow(
+      supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', salesRepUserIds)
+    ) as ProfileRow[] | null
     salesReps = (profileData ?? []).sort((a, b) =>
       (a.full_name ?? '').localeCompare(b.full_name ?? '')
     )

@@ -4,7 +4,7 @@ import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { INVOICES_PAGE_SIZE } from './constants'
 import InvoicesListClient, { type InvoiceListRow } from './invoices-list-client'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,10 +79,12 @@ async function InvoicesPageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
 
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
@@ -117,6 +119,8 @@ async function InvoicesPageInner({ params, searchParams }: PageProps) {
       countQuery = countQuery.lt('due_date', range.lt) as typeof countQuery
     }
     const [rowsRes, countRes] = await Promise.all([query.limit(INVOICES_PAGE_SIZE), countQuery])
+    if (rowsRes.error) throw new DbError(rowsRes.error)
+    if (countRes.error) throw new DbError(countRes.error)
     initialRows = (rowsRes.data ?? []) as InvoiceListRow[]
     initialTotalCount = countRes.count ?? 0
   } else {
