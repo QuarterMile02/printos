@@ -101,7 +101,14 @@ async function PageInner({ params, searchParams }: PageProps) {
     )
     usedInProducts = (prods ?? []) as { id: string; name: string }[]
   }
-  const canDelete = sp.edit === '1' && usedProductIds.length === 0
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  // Linked records is checked first since deactivating alone wouldn't
+  // actually unblock delete while records are still linked.
+  const hasLinkedRecords = usedProductIds.length > 0
+  const canDelete = m.active === false && !hasLinkedRecords
+  const deleteBlockedReason = hasLinkedRecords
+    ? `Cannot delete — used in ${usedProductIds.length} product${usedProductIds.length === 1 ? '' : 's'}. Modify those first.`
+    : 'Deactivate this material first before it can be deleted.'
 
   // Category name (FK fallback for view mode)
   let categoryName = m.material_category ?? ''
@@ -304,9 +311,9 @@ async function PageInner({ params, searchParams }: PageProps) {
                   <input type="hidden" name="orgSlug" value={slug} />
                   <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete Material</button>
                 </form>
-              ) : usedProductIds.length > 0 ? (
-                <span className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-400">Cannot delete — used in {usedProductIds.length} product{usedProductIds.length === 1 ? '' : 's'}</span>
-              ) : null}
+              ) : (
+                <span title={deleteBlockedReason} className="rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-400 cursor-not-allowed">Delete Material</span>
+              )}
             </div>
           </div>
         </>

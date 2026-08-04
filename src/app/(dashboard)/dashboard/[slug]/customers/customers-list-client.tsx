@@ -3,7 +3,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { searchCustomers, type CustomerListRow } from './actions'
-import type { ColumnDef } from '@/components/data-table/types'
+import { createClient } from '@/lib/supabase/client'
+import type { ColumnDef, FilterRule } from '@/components/data-table/types'
 import { useSavedView, applySortRules } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
@@ -40,6 +41,8 @@ const TYPE_OPTIONS = [
 
 const DB_SELECT = 'id, first_name, last_name, company_name, email, phone, city, state, status, terms, is_active, tags, created_at'
 const PAGE_SIZE = CUSTOMERS_PAGE_SIZE
+
+type StatusTab = 'all' | 'enabled' | 'disabled'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +125,33 @@ export default function CustomersListClient({
     deleteView,
   } = useSavedView({ tableKey: 'customers', orgId, userId, userRole })
 
+  // Status quick-filter tab, independent of the URL-based status/type/tag
+  // dropdown filters above (those page-reload; this stays live like the
+  // saved-view Filters panel). Tab acts as an override: strips any is_active
+  // rules from the saved-view filterRules and injects the tab's constraint.
+  const [tab, setTab] = useState<StatusTab>('all')
+  const [tabCounts, setTabCounts] = useState({ all: initialTotalCount, enabled: 0, disabled: 0 })
+
+  useEffect(() => {
+    let cancelled = false
+    const client = createClient()
+    Promise.all([
+      client.from('customers').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+      client.from('customers').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('is_active', true),
+      client.from('customers').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('is_active', false),
+    ]).then(([all, enabled, disabled]) => {
+      if (cancelled) return
+      setTabCounts({ all: all.count ?? 0, enabled: enabled.count ?? 0, disabled: disabled.count ?? 0 })
+    })
+    return () => { cancelled = true }
+  }, [orgId])
+
+  const effectiveFilterRules = useMemo((): FilterRule[] => {
+    const base = filterRules.filter((r) => r.column !== 'is_active')
+    if (tab === 'all') return base
+    return [...base, { id: '__status_tab__', column: 'is_active', operator: 'equals' as const, value: tab === 'enabled' ? 'true' : 'false' }]
+  }, [filterRules, tab])
+
   // ── Column definitions ───────────────────────────────────────────────────
   const COLUMNS = useMemo((): ColumnDef<CustomerListRow>[] => [
     {
@@ -186,7 +216,7 @@ export default function CustomersListClient({
     tableKey: 'customers',
     orgId,
     select: DB_SELECT,
-    filterRules,
+    filterRules: effectiveFilterRules,
     sortRules,
     search: '',          // search is handled separately via searchCustomers RPC
     page,
@@ -196,7 +226,7 @@ export default function CustomersListClient({
   })
 
   // Reset page when filter/sort rules change
-  useEffect(() => { setPage(1) }, [filterRules, sortRules])
+  useEffect(() => { setPage(1) }, [filterRules, sortRules, tab])
 
   // ── Search (fuzzy RPC — preserves existing searchCustomers behaviour) ────
   function handleSearchChange(value: string) {
@@ -282,6 +312,24 @@ export default function CustomersListClient({
   // ── Main render ───────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+
+      {/* Status tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? 'border-qm-lime text-qm-lime'
+                : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
+          >
+            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
+            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+          </button>
+        ))}
+      </div>
 
       {/* ── Toolbar ── */}
       <div className="mb-4 flex flex-wrap items-center gap-3">

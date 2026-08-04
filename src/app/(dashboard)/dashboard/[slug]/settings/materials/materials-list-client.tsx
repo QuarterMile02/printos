@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 import type { ColumnDef, FilterRule } from '@/components/data-table/types'
 import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
@@ -35,6 +36,8 @@ const PAGE_SIZE = MATERIALS_PAGE_SIZE
 const SEARCH_COLUMNS = ['name', 'external_name', 'part_number', 'sku']
 
 const DEFAULT_SORT = [{ column: 'name', direction: 'asc' as const }]
+
+type StatusTab = 'all' | 'enabled' | 'disabled'
 
 function formatMoney(v: number | null): string {
   if (v == null) return '—'
@@ -73,6 +76,22 @@ export default function MaterialsListClient({
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [tab, setTab] = useState<StatusTab>('all')
+  const [tabCounts, setTabCounts] = useState({ all: initialTotalCount, enabled: 0, disabled: 0 })
+
+  useEffect(() => {
+    let cancelled = false
+    const client = createClient()
+    Promise.all([
+      client.from('materials').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+      client.from('materials').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('active', true),
+      client.from('materials').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('active', false),
+    ]).then(([all, enabled, disabled]) => {
+      if (cancelled) return
+      setTabCounts({ all: all.count ?? 0, enabled: enabled.count ?? 0, disabled: disabled.count ?? 0 })
+    })
+    return () => { cancelled = true }
+  }, [orgId])
 
   const {
     sortRules,
@@ -97,14 +116,20 @@ export default function MaterialsListClient({
 
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
 
-  // The Type dropdown acts as an override: strip any material_type_id
-  // rules from the saved-view filterRules and inject the dropdown's
-  // constraint — same pattern as PO's status tabs.
+  // The Type dropdown and status tab both act as overrides: strip any
+  // material_type_id/active rules from the saved-view filterRules and
+  // inject the dropdown/tab's own constraint — same pattern as PO's status
+  // tabs.
   const effectiveFilterRules = useMemo((): FilterRule[] => {
-    if (typeFilter === 'all') return filterRules
-    const base = filterRules.filter((r) => r.column !== 'material_type_id')
-    return [...base, { id: '__type_filter__', column: 'material_type_id', operator: 'equals' as const, value: typeFilter }]
-  }, [filterRules, typeFilter])
+    let rules = filterRules
+    if (typeFilter !== 'all') {
+      rules = [...rules.filter((r) => r.column !== 'material_type_id'), { id: '__type_filter__', column: 'material_type_id', operator: 'equals' as const, value: typeFilter }]
+    }
+    if (tab !== 'all') {
+      rules = [...rules.filter((r) => r.column !== 'active'), { id: '__status_tab__', column: 'active', operator: 'equals' as const, value: tab === 'enabled' ? 'true' : 'false' }]
+    }
+    return rules
+  }, [filterRules, typeFilter, tab])
 
   const typeMap = useMemo(() => {
     const m: Record<string, string> = {}
@@ -184,7 +209,7 @@ export default function MaterialsListClient({
     initialTotalCount,
   })
 
-  useEffect(() => { setPage(1) }, [filterRules, sortRules, typeFilter])
+  useEffect(() => { setPage(1) }, [filterRules, sortRules, typeFilter, tab])
 
   function SortIcon({ column }: { column: string }) {
     const rule = activeSortRules.find((r) => r.column === column)
@@ -223,6 +248,24 @@ export default function MaterialsListClient({
 
   return (
     <div className="space-y-4">
+      {/* Status tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? 'border-qm-lime text-qm-lime'
+                : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
+          >
+            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
+            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+          </button>
+        ))}
+      </div>
+
       {/* Search + Type filter + Filters/Views toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">

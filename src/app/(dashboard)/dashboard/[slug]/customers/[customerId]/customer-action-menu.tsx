@@ -134,7 +134,14 @@ export default function CustomerActionMenu({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const canDelete = linkedRecords.length === 0
+  // Delete requires BOTH: the record already deactivated, AND zero linked
+  // records. Linked records is checked first since deactivating alone
+  // wouldn't actually unblock delete while records are still linked.
+  const hasLinkedRecords = linkedRecords.length > 0
+  const canDelete = isActive === false && !hasLinkedRecords
+  const deleteBlockedReason = hasLinkedRecords
+    ? `Cannot delete — linked to ${linkedRecords.join(', ')}. Modify those first.`
+    : 'Deactivate this customer first before it can be deleted.'
 
   return (
     <div className="flex items-center gap-2">
@@ -253,7 +260,7 @@ export default function CustomerActionMenu({
                   <button
                     type="button"
                     disabled
-                    title={`Cannot delete — linked to ${linkedRecords.join(', ')}. Deactivate instead.`}
+                    title={deleteBlockedReason}
                     className="w-full text-left px-4 py-2 text-sm text-gray-300 cursor-not-allowed"
                   >
                     Delete Customer

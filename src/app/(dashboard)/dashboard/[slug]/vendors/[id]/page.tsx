@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import VendorDetailClient from './vendor-detail-client'
 import VendorDangerZone from './vendor-danger-zone'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
 type PageProps = { params: Promise<{ slug: string; id: string }> }
@@ -80,6 +80,21 @@ async function VendorDetailPageInner({ params }: PageProps) {
   ) as MaterialVendorRow[] | null
 
   const materials = materialVendorRows ?? []
+
+  // Same check deleteVendor itself enforces server-side (material_vendors is
+  // keyed by vendor name, not id, and counts ALL rows regardless of their
+  // own active flag) -- computed here so the Delete button's enabled state
+  // never lies about whether delete will actually succeed.
+  const linkedMaterialsRes = await supabase
+    .from('material_vendors')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', org.id)
+    .eq('vendor_name', vendor.name)
+  if (linkedMaterialsRes.error) throw new DbError(linkedMaterialsRes.error)
+  const linkedMaterialCount = linkedMaterialsRes.count
+  const linkedRecords: string[] = (linkedMaterialCount ?? 0) > 0
+    ? [`${linkedMaterialCount} material${linkedMaterialCount === 1 ? '' : 's'}`]
+    : []
 
   return (
     <div className="p-8 max-w-4xl">
@@ -217,6 +232,7 @@ async function VendorDetailPageInner({ params }: PageProps) {
         vendorName={vendor.name}
         isActive={vendor.is_active}
         isOwnerOrAdmin={isOwnerOrAdmin}
+        linkedRecords={linkedRecords}
       />
     </div>
   )

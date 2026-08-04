@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useTransition, useCallback } from 'react'
+import { useState, useRef, useTransition, useCallback, useEffect } from 'react'
 import { createVendor, loadMoreVendors, searchVendors, type VendorListRow } from './actions'
+import { createClient } from '@/lib/supabase/client'
 import PhoneInput from '@/components/ui/PhoneInput'
 
 type Props = {
@@ -11,9 +12,17 @@ type Props = {
   orgId: string
 }
 
+type StatusTab = 'all' | 'enabled' | 'disabled'
+
 const ic = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
 
 function Dash() { return <span className="text-gray-300">—</span> }
+
+function tabToActiveOnly(tab: StatusTab): boolean | undefined {
+  if (tab === 'enabled') return true
+  if (tab === 'disabled') return false
+  return undefined
+}
 
 export default function VendorsListClient({ initialRows, totalCount, orgSlug, orgId }: Props) {
   const [rows, setRows] = useState<VendorListRow[]>(initialRows)
@@ -24,6 +33,33 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
   const [loadPending, startLoad] = useTransition()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchSeqRef = useRef(0)
+
+  const [tab, setTab] = useState<StatusTab>('all')
+  const [tabCounts, setTabCounts] = useState({ all: totalCount, enabled: 0, disabled: 0 })
+  const [tabLoading, setTabLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const client = createClient()
+    Promise.all([
+      client.from('vendors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+      client.from('vendors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('is_active', true),
+      client.from('vendors').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('is_active', false),
+    ]).then(([all, enabled, disabled]) => {
+      if (cancelled) return
+      setTabCounts({ all: all.count ?? 0, enabled: enabled.count ?? 0, disabled: disabled.count ?? 0 })
+    })
+    return () => { cancelled = true }
+  }, [orgId])
+
+  function handleTabChange(next: StatusTab) {
+    setTab(next)
+    setTabLoading(true)
+    loadMoreVendors(orgId, '', 0, tabToActiveOnly(next)).then((first) => {
+      setRows(first)
+      setTabLoading(false)
+    })
+  }
 
   function handleSearchChange(value: string) {
     setSearch(value)
@@ -37,7 +73,7 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
     setIsSearching(true)
     const seq = ++searchSeqRef.current
     debounceRef.current = setTimeout(async () => {
-      const results = await searchVendors(orgId, term)
+      const results = await searchVendors(orgId, term, tabToActiveOnly(tab))
       if (searchSeqRef.current === seq) {
         setSearchResults(results)
         setIsSearching(false)
@@ -72,19 +108,38 @@ export default function VendorsListClient({ initialRows, totalCount, orgSlug, or
   const displayed = sortDir === 'desc'
     ? [...rawDisplayed].sort((a, b) => (b.name ?? '').localeCompare(a.name ?? ''))
     : rawDisplayed
-  const hasMore = rows.length < totalCount
+  const tabTotal = tabCounts[tab]
+  const hasMore = rows.length < tabTotal
 
   function handleLoadMore() {
     startLoad(async () => {
-      const more = await loadMoreVendors(orgId, '', rows.length)
+      const more = await loadMoreVendors(orgId, '', rows.length, tabToActiveOnly(tab))
       setRows((prev) => [...prev, ...more])
     })
   }
 
   return (
     <div className="space-y-4">
+      {/* Status tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => handleTabChange(t)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? 'border-qm-lime text-qm-lime'
+                : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
+          >
+            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
+            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+          </button>
+        ))}
+      </div>
+
       {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className={`flex items-center gap-3 flex-wrap ${tabLoading ? 'opacity-60 pointer-events-none' : ''}`}>
         <button
           onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
           className={`inline-flex items-center rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${sortDir === 'asc' ? 'border-qm-lime/40 bg-qm-lime/10 text-green-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50'}`}

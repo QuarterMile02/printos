@@ -27,8 +27,23 @@ type Props = {
   userRole: string
 }
 
+type StatusTab = 'all' | 'enabled' | 'disabled'
+
 export default function MaterialTypesListClient({ types, usageCounts, orgSlug, orgId, userId, userRole }: Props) {
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState<StatusTab>('all')
+
+  const tabCounts = useMemo(() => ({
+    all:      types.length,
+    enabled:  types.filter((t) => t.is_active).length,
+    disabled: types.filter((t) => !t.is_active).length,
+  }), [types])
+
+  const tabbed = useMemo(() => types.filter((t) => {
+    if (tab === 'enabled')  return t.is_active
+    if (tab === 'disabled') return !t.is_active
+    return true
+  }), [types, tab])
 
   const {
     sortRules, filterRules, columnWidths: savedWidths, viewMode,
@@ -53,7 +68,7 @@ export default function MaterialTypesListClient({ types, usageCounts, orgSlug, o
 
   const { widths: colWidths, startResize } = useColumnResize({ defaultWidths, savedWidths, onWidthCommit: setColumnWidth, disabled: isViewReadOnly })
 
-  const filtered = useMemo(() => applyFilterRules(types, filterRules, COLUMNS), [types, filterRules, COLUMNS])
+  const filtered = useMemo(() => applyFilterRules(tabbed, filterRules, COLUMNS), [tabbed, filterRules, COLUMNS])
   const searched = useMemo(() => {
     const term = search.trim().toLowerCase()
     if (!term) return filtered
@@ -72,6 +87,24 @@ export default function MaterialTypesListClient({ types, usageCounts, orgSlug, o
 
   return (
     <div className="space-y-4">
+      {/* Status tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? 'border-qm-lime text-qm-lime'
+                : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
+          >
+            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
+            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
           <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -161,7 +194,16 @@ export default function MaterialTypesListClient({ types, usageCounts, orgSlug, o
                 </tr>
               ) : sorted.map((t) => {
                 const editHref = `/dashboard/${orgSlug}/settings/material-types?edit=${t.id}`
-                const inUse = (usageCounts[t.id] ?? 0) > 0
+                // Delete requires BOTH: already deactivated, AND zero linked
+                // records. Linked records is checked first since
+                // deactivating alone wouldn't unblock delete while records
+                // are still linked.
+                const inUseCount = usageCounts[t.id] ?? 0
+                const inUse = inUseCount > 0
+                const canDelete = !t.is_active && !inUse
+                const deleteBlockedReason = inUse
+                  ? `Cannot delete — used by ${inUseCount} material${inUseCount === 1 ? '' : 's'}. Modify those first.`
+                  : 'Deactivate this material type first before it can be deleted.'
                 return (
                   <tr key={t.id} className="group hover:bg-gray-50">
                     <td className="overflow-hidden px-4 py-3">
@@ -174,14 +216,14 @@ export default function MaterialTypesListClient({ types, usageCounts, orgSlug, o
                     <td className={`px-4 py-3 text-right whitespace-nowrap ${STICKY_ACTIONS_TD}`}>
                       <div className="flex items-center justify-end gap-3">
                         <Link href={editHref} className="text-sm text-qm-lime hover:underline">Edit</Link>
-                        {!inUse ? (
+                        {canDelete ? (
                           <form action={deleteMaterialType} className="inline">
                             <input type="hidden" name="id" value={t.id} />
                             <input type="hidden" name="orgSlug" value={orgSlug} />
                             <button type="submit" className="text-sm text-red-500 hover:underline">Delete</button>
                           </form>
                         ) : (
-                          <span className="text-xs text-gray-400">In use</span>
+                          <span title={deleteBlockedReason} className="text-xs text-gray-400 cursor-not-allowed">Delete</span>
                         )}
                       </div>
                     </td>

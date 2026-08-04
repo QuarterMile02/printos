@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { deleteMaterialCategory } from './actions-sr'
-import type { ColumnDef } from '@/components/data-table/types'
+import type { ColumnDef, FilterRule } from '@/components/data-table/types'
 import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
@@ -32,6 +32,8 @@ const SEARCH_COLUMNS = ['name']
 
 const DEFAULT_SORT = [{ column: 'name', direction: 'asc' as const }]
 
+type StatusTab = 'all' | 'enabled' | 'disabled'
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -57,6 +59,22 @@ export default function MaterialCategoriesListClient({
 }: Props) {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState<StatusTab>('all')
+  const [tabCounts, setTabCounts] = useState({ all: initialTotalCount, enabled: 0, disabled: 0 })
+
+  useEffect(() => {
+    let cancelled = false
+    const client = createClient()
+    Promise.all([
+      client.from('material_categories').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+      client.from('material_categories').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('is_active', true),
+      client.from('material_categories').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('is_active', false),
+    ]).then(([all, enabled, disabled]) => {
+      if (cancelled) return
+      setTabCounts({ all: all.count ?? 0, enabled: enabled.count ?? 0, disabled: disabled.count ?? 0 })
+    })
+    return () => { cancelled = true }
+  }, [orgId])
 
   const {
     sortRules,
@@ -76,6 +94,15 @@ export default function MaterialCategoriesListClient({
     createView,
     deleteView,
   } = useSavedView({ tableKey: 'material_categories', orgId, userId, userRole })
+
+  // Tab acts as an override: strip any is_active rules from the saved-view
+  // filterRules and inject the tab's constraint -- same pattern used for
+  // Materials' Type dropdown and Purchase Orders' status tabs.
+  const effectiveFilterRules = useMemo((): FilterRule[] => {
+    const base = filterRules.filter((r) => r.column !== 'is_active')
+    if (tab === 'all') return base
+    return [...base, { id: '__status_tab__', column: 'is_active', operator: 'equals' as const, value: tab === 'enabled' ? 'true' : 'false' }]
+  }, [filterRules, tab])
 
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
 
@@ -127,7 +154,7 @@ export default function MaterialCategoriesListClient({
     tableKey: 'material_categories',
     orgId,
     select: DB_SELECT,
-    filterRules,
+    filterRules: effectiveFilterRules,
     sortRules: activeSortRules,
     search,
     searchColumns: SEARCH_COLUMNS,
@@ -137,7 +164,7 @@ export default function MaterialCategoriesListClient({
     initialTotalCount,
   })
 
-  useEffect(() => { setPage(1) }, [filterRules, sortRules])
+  useEffect(() => { setPage(1) }, [filterRules, sortRules, tab])
 
   // Usage counts aren't a column on `material_categories` — fetch for the
   // rows currently on screen, same pattern used for Discounts' tier counts.
@@ -198,6 +225,24 @@ export default function MaterialCategoriesListClient({
 
   return (
     <div className="space-y-4">
+      {/* Status tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? 'border-qm-lime text-qm-lime'
+                : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
+          >
+            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
+            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+          </button>
+        ))}
+      </div>
+
       {/* Search + Filters/Views toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
@@ -286,7 +331,16 @@ export default function MaterialCategoriesListClient({
             <tbody className="divide-y divide-gray-100">
               {liveRows.map((c) => {
                 const editHref = `/dashboard/${orgSlug}/settings/material-categories?edit=${c.id}`
-                const inUse = (usageCounts[c.id] ?? 0) > 0
+                // Delete requires BOTH: already deactivated, AND zero linked
+                // records. Linked records is checked first since
+                // deactivating alone wouldn't unblock delete while records
+                // are still linked.
+                const inUseCount = usageCounts[c.id] ?? 0
+                const inUse = inUseCount > 0
+                const canDelete = !c.is_active && !inUse
+                const deleteBlockedReason = inUse
+                  ? `Cannot delete — used by ${inUseCount} material${inUseCount === 1 ? '' : 's'}. Modify those first.`
+                  : 'Deactivate this category first before it can be deleted.'
                 return (
                   <tr key={c.id} className="group hover:bg-gray-50">
                     <td className="overflow-hidden">
@@ -311,7 +365,7 @@ export default function MaterialCategoriesListClient({
                         <Link href={editHref} className="text-sm text-qm-lime hover:underline">
                           Edit
                         </Link>
-                        {!inUse ? (
+                        {canDelete ? (
                           <form action={deleteMaterialCategory} className="inline">
                             <input type="hidden" name="id" value={c.id} />
                             <input type="hidden" name="orgSlug" value={orgSlug} />
@@ -320,7 +374,7 @@ export default function MaterialCategoriesListClient({
                             </button>
                           </form>
                         ) : (
-                          <span className="text-xs text-gray-400">In use</span>
+                          <span title={deleteBlockedReason} className="text-xs text-gray-400 cursor-not-allowed">Delete</span>
                         )}
                       </div>
                     </td>

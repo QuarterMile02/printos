@@ -10,9 +10,13 @@ type Props = {
   vendorName: string
   isActive: boolean | null
   isOwnerOrAdmin: boolean
+  // Materials currently linked to this vendor, as display strings (e.g.
+  // "3 materials") -- same check deleteVendor itself enforces server-side.
+  // Empty array means the vendor isn't linked to anything.
+  linkedRecords: string[]
 }
 
-export default function VendorDangerZone({ vendorId, orgId, orgSlug, vendorName, isActive, isOwnerOrAdmin }: Props) {
+export default function VendorDangerZone({ vendorId, orgId, orgSlug, vendorName, isActive, isOwnerOrAdmin, linkedRecords }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [deactivatePending, startDeactivate] = useTransition()
   const [deletePending, startDelete] = useTransition()
@@ -39,6 +43,15 @@ export default function VendorDangerZone({ vendorId, orgId, orgSlug, vendorName,
 
   if (!isOwnerOrAdmin) return null
 
+  // Delete requires BOTH: already deactivated, AND zero linked records.
+  // Linked records is checked first since deactivating alone wouldn't
+  // actually unblock delete while records are still linked.
+  const hasLinkedRecords = linkedRecords.length > 0
+  const canDelete = isActive === false && !hasLinkedRecords
+  const deleteBlockedReason = hasLinkedRecords
+    ? `Cannot delete — linked to ${linkedRecords.join(', ')}. Modify those first.`
+    : 'Deactivate this vendor first before it can be deleted.'
+
   return (
     <div className="mt-6 rounded-xl border border-red-100 bg-red-50/40 p-6">
       <h2 className="text-sm font-semibold text-red-700 mb-1">Danger Zone</h2>
@@ -58,13 +71,23 @@ export default function VendorDangerZone({ vendorId, orgId, orgSlug, vendorName,
             {deactivatePending ? 'Deactivating…' : 'Deactivate Vendor'}
           </button>
         )}
-        <button
-          onClick={handleDelete}
-          disabled={deletePending}
-          className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-        >
-          {deletePending ? 'Deleting…' : 'Delete Vendor'}
-        </button>
+        {canDelete ? (
+          <button
+            onClick={handleDelete}
+            disabled={deletePending}
+            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {deletePending ? 'Deleting…' : 'Delete Vendor'}
+          </button>
+        ) : (
+          <button
+            disabled
+            title={deleteBlockedReason}
+            className="rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed"
+          >
+            Delete Vendor
+          </button>
+        )}
       </div>
     </div>
   )

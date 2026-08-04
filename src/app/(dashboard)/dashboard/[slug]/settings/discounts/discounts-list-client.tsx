@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import type { ColumnDef } from '@/components/data-table/types'
+import type { ColumnDef, FilterRule } from '@/components/data-table/types'
 import { useSavedView } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
@@ -30,6 +30,8 @@ const SEARCH_COLUMNS = ['name']
 
 const DEFAULT_SORT = [{ column: 'name', direction: 'asc' as const }]
 
+type StatusTab = 'all' | 'enabled' | 'disabled'
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -53,6 +55,22 @@ export default function DiscountsListClient({
 }: Props) {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState<StatusTab>('all')
+  const [tabCounts, setTabCounts] = useState({ all: initialTotalCount, enabled: 0, disabled: 0 })
+
+  useEffect(() => {
+    let cancelled = false
+    const client = createClient()
+    Promise.all([
+      client.from('discounts').select('id', { count: 'exact', head: true }).eq('organization_id', orgId),
+      client.from('discounts').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('active', true),
+      client.from('discounts').select('id', { count: 'exact', head: true }).eq('organization_id', orgId).eq('active', false),
+    ]).then(([all, enabled, disabled]) => {
+      if (cancelled) return
+      setTabCounts({ all: all.count ?? 0, enabled: enabled.count ?? 0, disabled: disabled.count ?? 0 })
+    })
+    return () => { cancelled = true }
+  }, [orgId])
 
   const {
     sortRules,
@@ -74,6 +92,14 @@ export default function DiscountsListClient({
     createView,
     deleteView,
   } = useSavedView({ tableKey: 'discounts', orgId, userId, userRole })
+
+  // Tab acts as an override: strip any active rules from the saved-view
+  // filterRules and inject the tab's constraint.
+  const effectiveFilterRules = useMemo((): FilterRule[] => {
+    const base = filterRules.filter((r) => r.column !== 'active')
+    if (tab === 'all') return base
+    return [...base, { id: '__status_tab__', column: 'active', operator: 'equals' as const, value: tab === 'enabled' ? 'true' : 'false' }]
+  }, [filterRules, tab])
 
   const activeSortRules = sortRules.length > 0 ? sortRules : DEFAULT_SORT
 
@@ -125,7 +151,7 @@ export default function DiscountsListClient({
     tableKey: 'discounts',
     orgId,
     select: DB_SELECT,
-    filterRules,
+    filterRules: effectiveFilterRules,
     sortRules: activeSortRules,
     search,
     searchColumns: SEARCH_COLUMNS,
@@ -135,7 +161,7 @@ export default function DiscountsListClient({
     initialTotalCount,
   })
 
-  useEffect(() => { setPage(1) }, [filterRules, sortRules])
+  useEffect(() => { setPage(1) }, [filterRules, sortRules, tab])
 
   // Tier counts aren't a column on `discounts` — fetch them separately for
   // whichever rows are currently on screen.
@@ -196,6 +222,24 @@ export default function DiscountsListClient({
 
   return (
     <div className="space-y-4">
+      {/* Status tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? 'border-qm-lime text-qm-lime'
+                : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
+          >
+            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
+            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+          </button>
+        ))}
+      </div>
+
       {/* Search + Filters/Views toolbar */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
