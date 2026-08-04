@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, DbError } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,20 +44,23 @@ async function PageInner({ params, searchParams }: PageProps) {
   ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const [rowsRes, countRes] = await Promise.all([
-    supabase
-      .from('email_templates')
-      .select('id, name, subject, trigger_event, is_active')
-      .eq('organization_id', org.id)
-      .order('name', { ascending: !sortDesc })
-      .limit(1000),
+  const [rowsData, countRes] = await Promise.all([
+    dbOrThrow(
+      supabase
+        .from('email_templates')
+        .select('id, name, subject, trigger_event, is_active')
+        .eq('organization_id', org.id)
+        .order('name', { ascending: !sortDesc })
+        .limit(1000)
+    ),
     supabase
       .from('email_templates')
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', org.id),
   ])
+  if (countRes.error) throw new DbError(countRes.error)
   const totalCount = countRes.count ?? 0
-  const templates = (rowsRes.data ?? []) as { id: string; name: string; subject: string; trigger_event: string | null; is_active: boolean | null }[]
+  const templates = (rowsData ?? []) as { id: string; name: string; subject: string; trigger_event: string | null; is_active: boolean | null }[]
 
   return (
     <div className="p-8 max-w-5xl">

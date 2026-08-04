@@ -34,9 +34,10 @@ async function PageInner({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return <div className="p-8 text-red-600">Not authenticated</div>
 
-  const { data: memberRow } = await supabase
-    .from('organization_members').select('role')
-    .eq('organization_id', org.id).eq('user_id', user.id).maybeSingle() as { data: { role: string } | null; error: unknown }
+  const memberRow = await dbOrThrow(
+    supabase.from('organization_members').select('role')
+      .eq('organization_id', org.id).eq('user_id', user.id).maybeSingle()
+  ) as { role: string } | null
 
   const isOwnerOrAdmin = memberRow?.role === 'owner' || memberRow?.role === 'admin'
   if (!isOwnerOrAdmin) {
@@ -50,25 +51,24 @@ async function PageInner({ params }: PageProps) {
     )
   }
 
-  let connections: CarrierConnectionRow[] = []
-  try {
-    const { data } = await supabase
+  const connectionRows = await dbOrThrow(
+    supabase
       .from('carrier_connections')
       .select('carrier, is_connected, credentials, use_test_mode')
       .eq('organization_id', org.id)
-    // Never send decrypted (or even encrypted) credential values to the browser --
-    // only whether each field already has a saved value, so the form can render a
-    // masked placeholder instead of the real secret.
-    connections = ((data ?? []) as { carrier: string; is_connected: boolean; credentials: Record<string, string>; use_test_mode: boolean }[])
-      .map((row) => ({
-        carrier: row.carrier,
-        is_connected: row.is_connected,
-        use_test_mode: row.use_test_mode,
-        savedFields: Object.fromEntries(
-          Object.entries(row.credentials ?? {}).map(([key, value]) => [key, Boolean(value)]),
-        ),
-      }))
-  } catch {}
+  ) ?? []
+  // Never send decrypted (or even encrypted) credential values to the browser --
+  // only whether each field already has a saved value, so the form can render a
+  // masked placeholder instead of the real secret.
+  const connections: CarrierConnectionRow[] = (connectionRows as { carrier: string; is_connected: boolean; credentials: Record<string, string>; use_test_mode: boolean }[])
+    .map((row) => ({
+      carrier: row.carrier,
+      is_connected: row.is_connected,
+      use_test_mode: row.use_test_mode,
+      savedFields: Object.fromEntries(
+        Object.entries(row.credentials ?? {}).map(([key, value]) => [key, Boolean(value)]),
+      ),
+    }))
 
   return (
     <div className="p-8 max-w-3xl">

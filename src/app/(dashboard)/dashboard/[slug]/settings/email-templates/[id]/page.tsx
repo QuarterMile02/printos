@@ -58,7 +58,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   type Tmpl = { id: string; name: string; subject: string; body: string; trigger_event: string | null; is_active: boolean | null }
   let t: Tmpl | null = null
   if (!isNew) {
-    const { data } = await supabase.from('email_templates').select('id, name, subject, body, trigger_event, is_active').eq('id', id).eq('organization_id', org.id).single()
+    const data = await dbOrThrow(supabase.from('email_templates').select('id, name, subject, body, trigger_event, is_active').eq('id', id).eq('organization_id', org.id).maybeSingle())
     t = data as unknown as Tmpl | null
     if (!t) return <div className="p-8 text-red-600">Template not found</div>
   }

@@ -34,16 +34,19 @@ async function PageInner({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return <div className="p-8 text-red-600">Not authenticated</div>
 
-  const { data: memberRow } = await supabase
-    .from('organization_members').select('role')
-    .eq('organization_id', org.id).eq('user_id', user.id).maybeSingle() as { data: { role: string } | null; error: unknown }
+  const memberRow = await dbOrThrow(
+    supabase.from('organization_members').select('role')
+      .eq('organization_id', org.id).eq('user_id', user.id).maybeSingle()
+  ) as { role: string } | null
 
   const isOwnerOrAdmin = memberRow?.role === 'owner' || memberRow?.role === 'admin'
 
-  const { data: settingsRows } = await supabase
-    .from('document_settings')
-    .select('*')
-    .eq('organization_id', org.id)
+  const settingsRows = await dbOrThrow(
+    supabase
+      .from('document_settings')
+      .select('*')
+      .eq('organization_id', org.id)
+  ) ?? []
 
   return (
     <div className="p-8 max-w-3xl">

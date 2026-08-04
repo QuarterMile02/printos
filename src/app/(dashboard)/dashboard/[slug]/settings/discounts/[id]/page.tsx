@@ -42,11 +42,11 @@ async function PageInner({ params, searchParams }: PageProps) {
   let tiers: Tier[] = []
 
   if (!isNew) {
-    const { data: d } = await supabase.from('discounts').select('id, name, discount_type, applies_to, discount_by, active').eq('id', id).eq('organization_id', org.id).single()
+    const d = await dbOrThrow(supabase.from('discounts').select('id, name, discount_type, applies_to, discount_by, active').eq('id', id).eq('organization_id', org.id).maybeSingle())
     discount = d as unknown as Discount | null
     if (!discount) return <div className="p-8 text-red-600">Discount not found</div>
 
-    const { data: t } = await supabase.from('discount_tiers').select('id, min_qty, max_qty, discount_percent, sort_order').eq('discount_id', id).order('sort_order')
+    const t = await dbOrThrow(supabase.from('discount_tiers').select('id, min_qty, max_qty, discount_percent, sort_order').eq('discount_id', id).order('sort_order'))
     tiers = (t ?? []) as Tier[]
   }
 

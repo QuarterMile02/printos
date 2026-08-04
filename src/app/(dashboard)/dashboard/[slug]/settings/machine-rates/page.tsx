@@ -104,10 +104,10 @@ async function PageInner({ params, searchParams }: PageProps) {
   // auth.getUser() + profile round trip, so chaining more awaits after it
   // just stacks additional serial round trips before anything can render.
   type MemberRow = { user_id: string; role: string }
-  const [permResult, userResult, memberRes] = await Promise.all([
+  const [permResult, userResult, memberRowsRaw] = await Promise.all([
     checkPermission(org.id, 'settings.machine_rates'),
     supabase.auth.getUser(),
-    supabase.from('organization_members').select('user_id, role').eq('organization_id', org.id),
+    dbOrThrow(supabase.from('organization_members').select('user_id, role').eq('organization_id', org.id)),
   ])
 
   if (!permResult.allowed) {
@@ -122,7 +122,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   }
 
   const userId = userResult.data.user?.id ?? ''
-  const memberRows = (memberRes.data ?? []) as MemberRow[]
+  const memberRows = (memberRowsRaw ?? []) as MemberRow[]
   const userRole = memberRows.find((m) => m.user_id === userId)?.role ?? 'member'
 
   const [ratesRes, countRes] = await Promise.all([
@@ -140,6 +140,10 @@ async function PageInner({ params, searchParams }: PageProps) {
   if (ratesRes.error) {
     console.error('[machine-rates] machine_rates SELECT failed:', ratesRes.error)
     throw new Error(`machine_rates SELECT failed: ${ratesRes.error.message ?? JSON.stringify(ratesRes.error)}`)
+  }
+  if (countRes.error) {
+    console.error('[machine-rates] machine_rates COUNT failed:', countRes.error)
+    throw new Error(`machine_rates COUNT failed: ${countRes.error.message ?? JSON.stringify(countRes.error)}`)
   }
   const totalCount = countRes.count ?? 0
   const rates = (ratesRes.data ?? []) as Rate[]
@@ -201,12 +205,12 @@ async function PageInner({ params, searchParams }: PageProps) {
   let usedInCount = 0
   let usedInProducts: { id: string; name: string }[] = []
   if (editRate) {
-    const { data: used } = await supabase.from('product_default_items').select('product_id').eq('machine_rate_id', editRate.id)
-    const productIds = [...new Set(((used ?? []) as { product_id: string }[]).map(u => u.product_id))]
+    const used = await dbOrThrow(supabase.from('product_default_items').select('product_id').eq('machine_rate_id', editRate.id)) ?? []
+    const productIds = [...new Set((used as { product_id: string }[]).map(u => u.product_id))]
     usedInCount = productIds.length
     if (productIds.length > 0) {
-      const { data: prods } = await supabase.from('products').select('id, name').in('id', productIds)
-      usedInProducts = (prods ?? []) as { id: string; name: string }[]
+      const prods = await dbOrThrow(supabase.from('products').select('id, name').in('id', productIds)) ?? []
+      usedInProducts = prods as { id: string; name: string }[]
     }
   }
 

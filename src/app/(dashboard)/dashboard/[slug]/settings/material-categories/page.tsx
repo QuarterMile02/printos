@@ -67,19 +67,23 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
   const [typesRes, initialResult] = await Promise.all([
-    supabase
-      .from('material_types')
-      .select('id, name')
-      .eq('organization_id', org.id)
-      .eq('is_active', true)
-      .order('name'),
+    dbOrThrow(
+      supabase
+        .from('material_types')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('name')
+    ),
     fetchDataTablePage<MaterialCategoryListRow>({
       tableKey: 'material_categories',
       orgId: org.id,
@@ -91,16 +95,18 @@ async function PageInner({ params, searchParams }: PageProps) {
     }),
   ])
 
-  const materialTypes = (typesRes.data ?? []) as MaterialTypeOption[]
+  const materialTypes = (typesRes ?? []) as MaterialTypeOption[]
 
   const editId = sp.edit
   const showAdd = sp.add === '1'
   let editCategory: MaterialCategory | null = null
   if (editId) {
-    const { data: found } = await supabase
-      .from('material_categories')
-      .select('id, name, material_type_id, is_active, created_at')
-      .eq('id', editId).eq('organization_id', org.id).single()
+    const found = await dbOrThrow(
+      supabase
+        .from('material_categories')
+        .select('id, name, material_type_id, is_active, created_at')
+        .eq('id', editId).eq('organization_id', org.id).maybeSingle()
+    )
     editCategory = (found as MaterialCategory | null)
   }
   const isPanelOpen = Boolean(editCategory || showAdd)

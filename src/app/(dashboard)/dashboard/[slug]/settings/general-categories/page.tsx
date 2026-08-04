@@ -72,17 +72,21 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const { data: allRes } = await supabase
-    .from('general_categories')
-    .select('id, name, type, sub_type, is_active, created_at')
-    .eq('organization_id', org.id)
-    .order('name', { ascending: true })
+  const allRes = await dbOrThrow(
+    supabase
+      .from('general_categories')
+      .select('id, name, type, sub_type, is_active, created_at')
+      .eq('organization_id', org.id)
+      .order('name', { ascending: true })
+  )
 
   type Category = CategoryRow & { created_at: string }
   const allCategories = (allRes ?? []) as Category[]
@@ -94,12 +98,14 @@ async function PageInner({ params, searchParams }: PageProps) {
   if (editId) {
     editCategory = allCategories.find(c => c.id === editId) ?? null
     if (!editCategory) {
-      const { data: found } = await supabase
-        .from('general_categories')
-        .select('id, name, type, sub_type, is_active, created_at')
-        .eq('id', editId)
-        .eq('organization_id', org.id)
-        .single()
+      const found = await dbOrThrow(
+        supabase
+          .from('general_categories')
+          .select('id, name, type, sub_type, is_active, created_at')
+          .eq('id', editId)
+          .eq('organization_id', org.id)
+          .maybeSingle()
+      )
       editCategory = (found as Category | null)
     }
   }

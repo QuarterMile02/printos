@@ -65,17 +65,21 @@ async function PageInner({ params, searchParams }: PageProps) {
   const userId = user?.id ?? ''
 
   type MemberRow = { user_id: string; role: string }
-  const { data: memberRows } = await supabase
-    .from('organization_members')
-    .select('user_id, role')
-    .eq('organization_id', org.id) as { data: MemberRow[] | null; error: unknown }
+  const memberRows = await dbOrThrow(
+    supabase
+      .from('organization_members')
+      .select('user_id, role')
+      .eq('organization_id', org.id)
+  ) as MemberRow[] | null
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
 
-  const { data: allRes } = await supabase
-    .from('custom_notes')
-    .select('id, title, body, type, is_active, created_at')
-    .eq('organization_id', org.id)
-    .order('title', { ascending: true })
+  const allRes = await dbOrThrow(
+    supabase
+      .from('custom_notes')
+      .select('id, title, body, type, is_active, created_at')
+      .eq('organization_id', org.id)
+      .order('title', { ascending: true })
+  )
 
   type Note = NoteRow & { created_at: string }
   const allNotes = (allRes ?? []) as Note[]
@@ -87,10 +91,12 @@ async function PageInner({ params, searchParams }: PageProps) {
   if (editId) {
     editNote = allNotes.find((n) => n.id === editId) ?? null
     if (!editNote) {
-      const { data: found } = await supabase
-        .from('custom_notes')
-        .select('id, title, body, type, is_active, created_at')
-        .eq('id', editId).eq('organization_id', org.id).single()
+      const found = await dbOrThrow(
+        supabase
+          .from('custom_notes')
+          .select('id, title, body, type, is_active, created_at')
+          .eq('id', editId).eq('organization_id', org.id).maybeSingle()
+      )
       editNote = (found as Note | null)
     }
   }

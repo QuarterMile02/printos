@@ -34,9 +34,10 @@ async function PageInner({ params }: PageProps) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return <div className="p-8 text-red-600">Not authenticated</div>
 
-  const { data: memberRow } = await supabase
-    .from('organization_members').select('role')
-    .eq('organization_id', org.id).eq('user_id', user.id).maybeSingle() as { data: { role: string } | null; error: unknown }
+  const memberRow = await dbOrThrow(
+    supabase.from('organization_members').select('role')
+      .eq('organization_id', org.id).eq('user_id', user.id).maybeSingle()
+  ) as { role: string } | null
 
   const isOwnerOrAdmin = memberRow?.role === 'owner' || memberRow?.role === 'admin'
   if (!isOwnerOrAdmin) {
@@ -50,21 +51,13 @@ async function PageInner({ params }: PageProps) {
     )
   }
 
-  let acctSettingsRow = null
-  let salesTaxes: unknown[] = []
-  let termCodes: unknown[] = []
-  let paymentMethods: unknown[] = []
-  let chartOfAccounts: unknown[] = []
-  let accountMappingRow = null
-  let txNumsRow = null
-
-  try { const { data } = await supabase.from('accounting_settings').select('*').eq('organization_id', org.id).maybeSingle(); acctSettingsRow = data } catch {}
-  try { const { data } = await supabase.from('sales_taxes').select('*').eq('organization_id', org.id).order('sort_order'); salesTaxes = data ?? [] } catch {}
-  try { const { data } = await supabase.from('term_codes').select('*').eq('organization_id', org.id).order('sort_order'); termCodes = data ?? [] } catch {}
-  try { const { data } = await supabase.from('payment_methods').select('*').eq('organization_id', org.id).order('sort_order'); paymentMethods = data ?? [] } catch {}
-  try { const { data } = await supabase.from('chart_of_accounts').select('*').eq('organization_id', org.id).order('sort_order'); chartOfAccounts = data ?? [] } catch {}
-  try { const { data } = await supabase.from('account_mapping').select('*').eq('organization_id', org.id).maybeSingle(); accountMappingRow = data } catch {}
-  try { const { data } = await supabase.from('transaction_numbers').select('*').eq('organization_id', org.id).maybeSingle(); txNumsRow = data } catch {}
+  const acctSettingsRow = await dbOrThrow(supabase.from('accounting_settings').select('*').eq('organization_id', org.id).maybeSingle())
+  const salesTaxes = await dbOrThrow(supabase.from('sales_taxes').select('*').eq('organization_id', org.id).order('sort_order')) ?? []
+  const termCodes = await dbOrThrow(supabase.from('term_codes').select('*').eq('organization_id', org.id).order('sort_order')) ?? []
+  const paymentMethods = await dbOrThrow(supabase.from('payment_methods').select('*').eq('organization_id', org.id).order('sort_order')) ?? []
+  const chartOfAccounts = await dbOrThrow(supabase.from('chart_of_accounts').select('*').eq('organization_id', org.id).order('sort_order')) ?? []
+  const accountMappingRow = await dbOrThrow(supabase.from('account_mapping').select('*').eq('organization_id', org.id).maybeSingle())
+  const txNumsRow = await dbOrThrow(supabase.from('transaction_numbers').select('*').eq('organization_id', org.id).maybeSingle())
 
   return (
     <div className="p-8 max-w-5xl">
