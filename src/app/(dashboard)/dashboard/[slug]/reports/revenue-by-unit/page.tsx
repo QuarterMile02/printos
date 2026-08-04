@@ -1,6 +1,7 @@
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
+import { dbOrThrow } from '@/lib/db'
 import { resolveDateRange, type DateRangePreset } from '@/lib/reports/report-utils'
 import ReportShell from '../report-shell'
 
@@ -29,13 +30,32 @@ type UnitStat = {
   jobCount: number
 }
 
-export default async function RevenueByUnitReport({ params, searchParams }: PageProps) {
+export default async function RevenueByUnitReport(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    unstable_rethrow(err)
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[reports-revenue-by-unit] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (reports-revenue-by-unit)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const supabase = await createClient()
 
-  const { data: org } = await supabase
-    .from('organizations').select('id, name').eq('slug', slug).maybeSingle() as { data: { id: string; name: string } | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) notFound()
 
   const { allowed: canRunReport } = await checkPermission(org.id, 'reports.quotes')

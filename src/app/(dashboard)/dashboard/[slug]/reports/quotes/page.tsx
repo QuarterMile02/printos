@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
+import { dbOrThrow } from '@/lib/db'
 import type { QuoteStatus } from '@/types/database'
 import { resolveDateRange, paginate, PAGE_SIZE } from '@/lib/reports/report-utils'
 import ReportShell from '../report-shell'
@@ -36,13 +37,32 @@ type QuoteJoinRow = {
 
 type SalesRep = { id: string; name: string }
 
-export default async function QuotesReport({ params, searchParams }: PageProps) {
+export default async function QuotesReport(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    unstable_rethrow(err)
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[reports-quotes] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (reports-quotes)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const supabase = await createClient()
 
-  const { data: org } = await supabase
-    .from('organizations').select('id, name').eq('slug', slug).maybeSingle() as { data: { id: string; name: string } | null; error: unknown }
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) notFound()
 
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
