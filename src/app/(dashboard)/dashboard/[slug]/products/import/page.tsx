@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import { dbOrThrow } from '@/lib/db'
 import ImportClient from './import-client'
 
@@ -9,6 +9,7 @@ export default async function ProductsImportPage(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     const stack = err instanceof Error ? err.stack : undefined
     console.error('[products-import] page crash:', err)

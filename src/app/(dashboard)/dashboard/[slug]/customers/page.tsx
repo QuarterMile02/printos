@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import CreateCustomerForm from './create-customer-form'
 import CustomersListClient from './customers-list-client'
@@ -16,6 +16,7 @@ export default async function CustomersPage(props: PageProps) {
   try {
     return await CustomersPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[customers-list] page crash:', err)
     return (

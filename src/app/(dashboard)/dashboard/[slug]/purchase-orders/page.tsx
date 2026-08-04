@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { dbOrThrow } from '@/lib/db'
@@ -19,6 +19,7 @@ export default async function PurchaseOrdersPage(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     const stack = err instanceof Error ? err.stack : undefined
     console.error('[purchase-orders-list] page crash:', err)

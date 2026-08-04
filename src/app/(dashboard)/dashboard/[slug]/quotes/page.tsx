@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
@@ -15,6 +15,7 @@ export default async function QuotesPage(props: PageProps) {
   try {
     return await QuotesPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[quotes-list] page crash:', err)
     return (

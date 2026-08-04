@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
 import AccountingClient from './accounting-client'
@@ -16,6 +16,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[accounting] page crash:', err)
     return (

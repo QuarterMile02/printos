@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import NewQuoteForm from './new-quote-form'
 import { dbOrThrow } from '@/lib/db'
@@ -10,6 +10,7 @@ export default async function NewQuotePage(props: PageProps) {
   try {
     return await NewQuotePageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[quotes-new] page crash:', err)
     return (

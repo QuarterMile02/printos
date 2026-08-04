@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import { hasPermission, type Role, type Tier } from '@/lib/permissions'
 import { checkPermission } from '@/lib/check-permission'
 import { WIDGETS, type WidgetId } from './_widgets/registry'
@@ -52,6 +52,7 @@ export default async function DashboardPage(props: PageProps) {
   try {
     return await DashboardPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[dashboard-overview] page crash:', err)
     return (

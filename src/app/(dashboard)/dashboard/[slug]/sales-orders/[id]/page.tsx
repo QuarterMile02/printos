@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import type { SalesOrderStatus, JobStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
@@ -15,6 +15,7 @@ export default async function SalesOrderDetailPage(props: PageProps) {
   try {
     return await SalesOrderDetailPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[sales-orders-detail] page crash:', err)
     return (

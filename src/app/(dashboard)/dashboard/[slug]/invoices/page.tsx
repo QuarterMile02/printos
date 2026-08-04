@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import { checkPermission } from '@/lib/check-permission'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { INVOICES_PAGE_SIZE } from './constants'
@@ -41,6 +41,7 @@ export default async function InvoicesPage(props: PageProps) {
   try {
     return await InvoicesPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[invoices-list] page crash:', err)
     return (

@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
 import { getCustomerShippingInfo } from '../actions'
@@ -73,6 +73,7 @@ export default async function ShipmentDetailPage(props: PageProps) {
   try {
     return await ShipmentDetailPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[shipping-detail] page crash:', err)
     return (

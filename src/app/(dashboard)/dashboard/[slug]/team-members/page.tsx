@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import type { OrgRole, InviteStatus } from '@/types/database'
 import type { Role, Tier } from '@/lib/permissions'
 import { ROLE_LABELS, TIER_LABELS } from '@/lib/permissions'
@@ -36,6 +36,7 @@ export default async function TeamPage(props: PageProps) {
   try {
     return await TeamPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[team-members] page crash:', err)
     return (

@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import type { QuoteStatus } from '@/types/database'
 import QuoteDetailClient from './quote-detail-client'
@@ -16,6 +16,7 @@ export default async function QuoteDetailPage(props: PageProps) {
   try {
     return await QuoteDetailPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[quotes-detail] page crash:', err)
     return (

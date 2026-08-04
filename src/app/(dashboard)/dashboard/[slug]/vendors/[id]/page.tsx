@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
 import VendorDetailClient from './vendor-detail-client'
 import VendorDangerZone from './vendor-danger-zone'
 import { dbOrThrow } from '@/lib/db'
@@ -10,6 +10,7 @@ export default async function VendorDetailPage(props: PageProps) {
   try {
     return await VendorDetailPageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[vendors-detail] page crash:', err)
     return (
