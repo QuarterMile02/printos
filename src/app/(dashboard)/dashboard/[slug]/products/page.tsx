@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
-import { dbOrThrow } from '@/lib/db'
+import { DbError, dbOrThrow } from '@/lib/db'
 import ProductsListClient, { type ProductRow } from './products-list-client'
 import BulkImportShopvoxButton from './bulk-import-shopvox-button'
 
@@ -76,17 +76,20 @@ async function PageInner({ params }: PageProps) {
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', org.id),
   ])
+  if (countRes.error) throw new DbError(countRes.error)
   const totalCount = countRes.count ?? 0
   if (withCatRes.data && !withCatRes.error) {
     productRows = withCatRes.data as unknown as ProductDbRow[]
   } else {
     // category join failed — fetch without it
-    const { data: noCat } = await supabase
-      .from('products')
-      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, is_enabled, updated_at, migration_status')
-      .eq('organization_id', org.id)
-      .order('name', { ascending: true })
-      .limit(1000)
+    const noCat = await dbOrThrow(
+      supabase
+        .from('products')
+        .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, is_enabled, updated_at, migration_status')
+        .eq('organization_id', org.id)
+        .order('name', { ascending: true })
+        .limit(1000)
+    )
     productRows = (noCat ?? []) as unknown as ProductDbRow[]
   }
 

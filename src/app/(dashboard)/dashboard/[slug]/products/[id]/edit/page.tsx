@@ -42,12 +42,14 @@ async function PageInner({ params }: PageProps) {
 
   if (!org) notFound()
 
-  const { data: productRow } = await supabase
-    .from('products')
-    .select('*')
-    .eq('id', id)
-    .eq('organization_id', org.id)
-    .maybeSingle() as { data: Product | null; error: unknown }
+  const productRow = await dbOrThrow(
+    supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  ) as Product | null
 
   if (!productRow) notFound()
 
@@ -67,30 +69,30 @@ async function PageInner({ params }: PageProps) {
     customFieldsRes,
     secondaryCategoriesRes,
   ] = await Promise.all([
-    supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('product_types').select('id, name, sort_order').eq('organization_id', org.id).eq('is_active', true).order('sort_order', { ascending: true }),
-    supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('labor_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('machine_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name'),
-    supabase.from('product_default_items').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('product_modifiers').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('product_dropdown_menus').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('product_dropdown_items').select('*'),
-    supabase.from('product_custom_fields').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('products').select('secondary_category').eq('organization_id', org.id).not('secondary_category', 'is', null),
+    dbOrThrow(supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name')),
+    dbOrThrow(supabase.from('product_types').select('id, name, sort_order').eq('organization_id', org.id).eq('is_active', true).order('sort_order', { ascending: true })),
+    dbOrThrow(supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name')),
+    dbOrThrow(supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('labor_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('machine_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name')),
+    dbOrThrow(supabase.from('product_default_items').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('product_modifiers').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('product_dropdown_menus').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('product_dropdown_items').select('*')),
+    dbOrThrow(supabase.from('product_custom_fields').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('products').select('secondary_category').eq('organization_id', org.id).not('secondary_category', 'is', null)),
   ])
 
   const secondaryCategoryOptions = Array.from(
-    new Set(((secondaryCategoriesRes.data ?? []) as { secondary_category: string | null }[])
+    new Set(((secondaryCategoriesRes ?? []) as { secondary_category: string | null }[])
       .map((r) => r.secondary_category)
       .filter((v): v is string => Boolean(v && v.trim())))
   ).sort((a, b) => a.localeCompare(b))
 
-  const menus = (dropdownMenusRes.data ?? []) as { id: string; menu_name: string; is_optional: boolean | null }[]
-  const items = (dropdownItemsRes.data ?? []) as {
+  const menus = (dropdownMenusRes ?? []) as { id: string; menu_name: string; is_optional: boolean | null }[]
+  const items = (dropdownItemsRes ?? []) as {
     dropdown_menu_id: string | null
     item_type: 'Material' | 'LaborRate' | 'MachineRate' | null
     material_id: string | null
@@ -124,18 +126,18 @@ async function PageInner({ params }: PageProps) {
         orgId={org.id}
         orgSlug={slug}
         product={productRow}
-        productTypes={(productTypesRes.data ?? []) as { id: string; name: string; sort_order: number }[]}
-        categories={(categoriesRes.data ?? []) as ProductCategory[]}
-        workflows={(workflowsRes.data ?? []) as WorkflowTemplate[]}
-        discounts={(discountsRes.data ?? []) as Discount[]}
-        materials={(materialsRes.data ?? []) as Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>[]}
-        laborRates={(laborRatesRes.data ?? []) as Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
-        machineRates={(machineRatesRes.data ?? []) as Pick<MachineRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
-        modifiersList={(modifiersRes.data ?? []) as Modifier[]}
-        existingDefaultItems={(defaultItemsRes.data ?? []) as ProductDefaultItem[]}
-        existingModifiers={(productModifiersRes.data ?? []) as ProductModifier[]}
+        productTypes={(productTypesRes ?? []) as { id: string; name: string; sort_order: number }[]}
+        categories={(categoriesRes ?? []) as ProductCategory[]}
+        workflows={(workflowsRes ?? []) as WorkflowTemplate[]}
+        discounts={(discountsRes ?? []) as Discount[]}
+        materials={(materialsRes ?? []) as Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>[]}
+        laborRates={(laborRatesRes ?? []) as Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
+        machineRates={(machineRatesRes ?? []) as Pick<MachineRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
+        modifiersList={(modifiersRes ?? []) as Modifier[]}
+        existingDefaultItems={(defaultItemsRes ?? []) as ProductDefaultItem[]}
+        existingModifiers={(productModifiersRes ?? []) as ProductModifier[]}
         existingDropdownMenus={existingDropdownMenus}
-        existingCustomFields={(customFieldsRes.data ?? []) as ProductCustomField[]}
+        existingCustomFields={(customFieldsRes ?? []) as ProductCustomField[]}
         secondaryCategoryOptions={secondaryCategoryOptions}
       />
     </div>

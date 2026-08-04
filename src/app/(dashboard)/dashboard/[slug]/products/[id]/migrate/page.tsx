@@ -42,12 +42,14 @@ async function PageInner({ params }: PageProps) {
   ) as { id: string; name: string; slug: string } | null
   if (!org) notFound()
 
-  const { data: productRow } = await supabase
-    .from('products')
-    .select('*')
-    .eq('id', id)
-    .eq('organization_id', org.id)
-    .maybeSingle() as { data: (Product & { migration_status: string | null; shopvox_data: ShopvoxData | null }) | null; error: unknown }
+  const productRow = await dbOrThrow(
+    supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .eq('organization_id', org.id)
+      .maybeSingle()
+  ) as (Product & { migration_status: string | null; shopvox_data: ShopvoxData | null }) | null
   if (!productRow) notFound()
 
   const [
@@ -65,23 +67,23 @@ async function PageInner({ params }: PageProps) {
     dropdownMenusRes,
     dropdownItemsRes,
   ] = await Promise.all([
-    supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('materials').select('id, name, category_id, multiplier, wastage_markup').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name'),
-    supabase.from('labor_rates').select('id, name, category, cost, markup').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('machine_rates').select('id, name, category, cost, markup').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name'),
-    supabase.from('product_default_items').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('product_option_rates').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('product_modifiers').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('product_dropdown_menus').select('*').eq('product_id', id).order('sort_order'),
-    supabase.from('product_dropdown_items').select('*'),
+    dbOrThrow(supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name')),
+    dbOrThrow(supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name')),
+    dbOrThrow(supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('materials').select('id, name, category_id, multiplier, wastage_markup').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('material_categories').select('id, name').eq('organization_id', org.id).order('name')),
+    dbOrThrow(supabase.from('labor_rates').select('id, name, category, cost, markup').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('machine_rates').select('id, name, category, cost, markup').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name')),
+    dbOrThrow(supabase.from('product_default_items').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('product_option_rates').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('product_modifiers').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('product_dropdown_menus').select('*').eq('product_id', id).order('sort_order')),
+    dbOrThrow(supabase.from('product_dropdown_items').select('*')),
   ])
 
-  const menus = (dropdownMenusRes.data ?? []) as { id: string; menu_name: string; is_optional: boolean | null }[]
-  const items = (dropdownItemsRes.data ?? []) as {
+  const menus = (dropdownMenusRes ?? []) as { id: string; menu_name: string; is_optional: boolean | null }[]
+  const items = (dropdownItemsRes ?? []) as {
     dropdown_menu_id: string | null
     item_type: 'Material' | 'LaborRate' | 'MachineRate' | null
     material_id: string | null
@@ -117,17 +119,17 @@ async function PageInner({ params }: PageProps) {
       product={productRow}
       shopvoxData={productRow.shopvox_data ?? null}
       migrationStatus={productRow.migration_status ?? 'shopvox_reference'}
-      categories={(categoriesRes.data ?? []) as ProductCategory[]}
-      workflows={(workflowsRes.data ?? []) as WorkflowTemplate[]}
-      discounts={(discountsRes.data ?? []) as Discount[]}
-      materials={(materialsRes.data ?? []) as MaterialOption[]}
-      materialCategories={(materialCategoriesRes.data ?? []) as Pick<MaterialCategory, 'id' | 'name'>[]}
-      laborRates={(laborRatesRes.data ?? []) as LaborRateOption[]}
-      machineRates={(machineRatesRes.data ?? []) as MachineRateOption[]}
-      modifiersList={(modifiersRes.data ?? []) as Modifier[]}
-      existingDefaultItems={(defaultItemsRes.data ?? []) as ProductDefaultItem[]}
-      existingOptionRates={(optionRatesRes.data ?? []) as ExistingOptionRate[]}
-      existingModifiers={(productModifiersRes.data ?? []) as ProductModifier[]}
+      categories={(categoriesRes ?? []) as ProductCategory[]}
+      workflows={(workflowsRes ?? []) as WorkflowTemplate[]}
+      discounts={(discountsRes ?? []) as Discount[]}
+      materials={(materialsRes ?? []) as MaterialOption[]}
+      materialCategories={(materialCategoriesRes ?? []) as Pick<MaterialCategory, 'id' | 'name'>[]}
+      laborRates={(laborRatesRes ?? []) as LaborRateOption[]}
+      machineRates={(machineRatesRes ?? []) as MachineRateOption[]}
+      modifiersList={(modifiersRes ?? []) as Modifier[]}
+      existingDefaultItems={(defaultItemsRes ?? []) as ProductDefaultItem[]}
+      existingOptionRates={(optionRatesRes ?? []) as ExistingOptionRate[]}
+      existingModifiers={(productModifiersRes ?? []) as ProductModifier[]}
       existingDropdownMenus={existingDropdownMenus}
     />
   )

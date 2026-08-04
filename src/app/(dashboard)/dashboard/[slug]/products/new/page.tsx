@@ -49,19 +49,19 @@ async function PageInner({ params }: PageProps) {
     modifiersRes,
     secondaryCategoriesRes,
   ] = await Promise.all([
-    supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('product_types').select('id, name, sort_order').eq('organization_id', org.id).eq('is_active', true).order('sort_order', { ascending: true }),
-    supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name'),
-    supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('labor_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('machine_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name'),
-    supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name'),
-    supabase.from('products').select('secondary_category').eq('organization_id', org.id).not('secondary_category', 'is', null),
+    dbOrThrow(supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name')),
+    dbOrThrow(supabase.from('product_types').select('id, name, sort_order').eq('organization_id', org.id).eq('is_active', true).order('sort_order', { ascending: true })),
+    dbOrThrow(supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name')),
+    dbOrThrow(supabase.from('discounts').select('*').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('materials').select('id, name, cost, price, selling_units, material_type_id, category_id, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('labor_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('machine_rates').select('id, name, cost, price, units, formula, active').eq('organization_id', org.id).eq('active', true).order('name')),
+    dbOrThrow(supabase.from('modifiers').select('*').eq('organization_id', org.id).eq('active', true).order('display_name')),
+    dbOrThrow(supabase.from('products').select('secondary_category').eq('organization_id', org.id).not('secondary_category', 'is', null)),
   ])
 
   const secondaryCategoryOptions = Array.from(
-    new Set(((secondaryCategoriesRes.data ?? []) as { secondary_category: string | null }[])
+    new Set(((secondaryCategoriesRes ?? []) as { secondary_category: string | null }[])
       .map((r) => r.secondary_category)
       .filter((v): v is string => Boolean(v && v.trim())))
   ).sort((a, b) => a.localeCompare(b))
@@ -72,14 +72,14 @@ async function PageInner({ params }: PageProps) {
         orgId={org.id}
         orgSlug={slug}
         product={null}
-        productTypes={(productTypesRes.data ?? []) as { id: string; name: string; sort_order: number }[]}
-        categories={(categoriesRes.data ?? []) as ProductCategory[]}
-        workflows={(workflowsRes.data ?? []) as WorkflowTemplate[]}
-        discounts={(discountsRes.data ?? []) as Discount[]}
-        materials={(materialsRes.data ?? []) as Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>[]}
-        laborRates={(laborRatesRes.data ?? []) as Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
-        machineRates={(machineRatesRes.data ?? []) as Pick<MachineRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
-        modifiersList={(modifiersRes.data ?? []) as Modifier[]}
+        productTypes={(productTypesRes ?? []) as { id: string; name: string; sort_order: number }[]}
+        categories={(categoriesRes ?? []) as ProductCategory[]}
+        workflows={(workflowsRes ?? []) as WorkflowTemplate[]}
+        discounts={(discountsRes ?? []) as Discount[]}
+        materials={(materialsRes ?? []) as Pick<Material, 'id' | 'name' | 'cost' | 'price' | 'selling_units' | 'material_type_id' | 'category_id' | 'active'>[]}
+        laborRates={(laborRatesRes ?? []) as Pick<LaborRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
+        machineRates={(machineRatesRes ?? []) as Pick<MachineRate, 'id' | 'name' | 'cost' | 'price' | 'units' | 'formula' | 'active'>[]}
+        modifiersList={(modifiersRes ?? []) as Modifier[]}
         existingDefaultItems={[]}
         existingModifiers={[]}
         existingDropdownMenus={[]}

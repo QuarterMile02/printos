@@ -51,12 +51,13 @@ async function PageInner({ params }: PageProps) {
   ) as { id: string; name: string } | null
 
   // Product
-  const { data: prodRow } = await supabase
-    .from('products')
-    .select('id, name, description, pricing_type, formula, cost, markup, price, status, active, taxable, units, workflow_template_id, category_id, volume_discount_id, range_discount_id')
-    .eq('id', id)
-    .single()
-  const p = prodRow as {
+  const p = await dbOrThrow(
+    supabase
+      .from('products')
+      .select('id, name, description, pricing_type, formula, cost, markup, price, status, active, taxable, units, workflow_template_id, category_id, volume_discount_id, range_discount_id')
+      .eq('id', id)
+      .maybeSingle()
+  ) as {
     id: string; name: string; description: string | null
     pricing_type: string | null; formula: string | null
     cost: number | null; markup: number | null; price: number | null
@@ -79,24 +80,29 @@ async function PageInner({ params }: PageProps) {
   // Category name
   let categoryName: string | null = null
   if (p.category_id) {
-    const { data: catRow } = await supabase.from('product_categories').select('name').eq('id', p.category_id).single()
-    categoryName = (catRow as { name: string } | null)?.name ?? null
+    const catRow = await dbOrThrow(
+      supabase.from('product_categories').select('name').eq('id', p.category_id).maybeSingle()
+    ) as { name: string } | null
+    categoryName = catRow?.name ?? null
   }
 
   // Workflow name
   let workflowName: string | null = null
   if (p.workflow_template_id) {
-    const { data: wfRow } = await supabase.from('workflow_templates').select('name').eq('id', p.workflow_template_id).single()
-    workflowName = (wfRow as { name: string } | null)?.name ?? null
+    const wfRow = await dbOrThrow(
+      supabase.from('workflow_templates').select('name').eq('id', p.workflow_template_id).maybeSingle()
+    ) as { name: string } | null
+    workflowName = wfRow?.name ?? null
   }
 
   // Recipe items
-  const { data: recipeRows } = await supabase
-    .from('product_default_items')
-    .select('id, item_type, material_id, labor_rate_id, machine_rate_id, custom_item_name, system_formula, multiplier, include_in_base_price, charge_per_li_unit')
-    .eq('product_id', id)
-    .order('sort_order')
-  const recipeItems = (recipeRows ?? []) as {
+  const recipeItems = (await dbOrThrow(
+    supabase
+      .from('product_default_items')
+      .select('id, item_type, material_id, labor_rate_id, machine_rate_id, custom_item_name, system_formula, multiplier, include_in_base_price, charge_per_li_unit')
+      .eq('product_id', id)
+      .order('sort_order')
+  ) ?? []) as {
     id: string; item_type: string
     material_id: string | null; labor_rate_id: string | null; machine_rate_id: string | null
     custom_item_name: string | null; system_formula: string | null
@@ -104,13 +110,14 @@ async function PageInner({ params }: PageProps) {
   }[]
 
   // Load all discounts for dropdowns
-  const { data: allDiscounts } = await supabase
-    .from('discounts')
-    .select('id, name, discount_type')
-    .eq('organization_id', org!.id)
-    .eq('active', true)
-    .order('name')
-  const discounts = (allDiscounts ?? []) as { id: string; name: string; discount_type: string }[]
+  const discounts = (await dbOrThrow(
+    supabase
+      .from('discounts')
+      .select('id, name, discount_type')
+      .eq('organization_id', org!.id)
+      .eq('active', true)
+      .order('name')
+  ) ?? []) as { id: string; name: string; discount_type: string }[]
   const volumeDiscounts = discounts.filter(d => d.discount_type === 'Volume')
   const rangeDiscounts = discounts.filter(d => d.discount_type === 'Range')
 
@@ -122,15 +129,15 @@ async function PageInner({ params }: PageProps) {
   const nameMap = new Map<string, string>()
 
   if (matIds.length > 0) {
-    const { data } = await supabase.from('materials').select('id, name').in('id', matIds)
+    const data = await dbOrThrow(supabase.from('materials').select('id, name').in('id', matIds))
     for (const m of (data ?? []) as { id: string; name: string }[]) nameMap.set(m.id, m.name)
   }
   if (laborIds.length > 0) {
-    const { data } = await supabase.from('labor_rates').select('id, name').in('id', laborIds)
+    const data = await dbOrThrow(supabase.from('labor_rates').select('id, name').in('id', laborIds))
     for (const l of (data ?? []) as { id: string; name: string }[]) nameMap.set(l.id, l.name)
   }
   if (machineIds.length > 0) {
-    const { data } = await supabase.from('machine_rates').select('id, name').in('id', machineIds)
+    const data = await dbOrThrow(supabase.from('machine_rates').select('id, name').in('id', machineIds))
     for (const m of (data ?? []) as { id: string; name: string }[]) nameMap.set(m.id, m.name)
   }
 
