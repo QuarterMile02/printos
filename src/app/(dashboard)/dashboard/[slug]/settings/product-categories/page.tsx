@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { saveProductCategory } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
+import { dbOrThrow } from '@/lib/db'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { PRODUCT_CATEGORIES_PAGE_SIZE } from './constants'
 import ProductCategoriesListClient, { type ProductCategoryListRow, type ProductTypeOption } from './product-categories-list-client'
@@ -45,8 +46,9 @@ async function PageInner({ params, searchParams }: PageProps) {
   const sp = await searchParams
   const supabase = await createClient()
 
-  const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
   const { allowed } = await checkPermission(org.id, 'settings.product_categories')

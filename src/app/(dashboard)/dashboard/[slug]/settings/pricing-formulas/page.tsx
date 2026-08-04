@@ -1,6 +1,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, unstable_rethrow } from 'next/navigation'
+import { dbOrThrow } from '@/lib/db'
 import PricingFormulasClient, { type PricingFormula } from './pricing-formulas-client'
 
 export const dynamic = 'force-dynamic'
@@ -11,6 +12,7 @@ export default async function Page(props: PageProps) {
   try {
     return await PageInner(props)
   } catch (err) {
+    unstable_rethrow(err)
     const message = err instanceof Error ? err.message : String(err)
     console.error('[pricing-formulas] page crash:', err)
     return (
@@ -36,12 +38,13 @@ async function PageInner({ params }: PageProps) {
   const supabase = await createClient()
   const service = createServiceClient()
 
-  const { data: orgRow } = await supabase
-    .from('organizations')
-    .select('id, name')
-    .eq('slug', slug)
-    .single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase
+      .from('organizations')
+      .select('id, name')
+      .eq('slug', slug)
+      .maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) notFound()
 
   const {

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
+import { dbOrThrow } from '@/lib/db'
 import { MATERIALS_PAGE_SIZE } from './constants'
 import MaterialsListClient, { type MaterialListRow, type MaterialTypeOption, type MaterialCategoryOption } from './materials-list-client'
 
@@ -8,13 +9,33 @@ export const dynamic = 'force-dynamic'
 
 const DB_SELECT = 'id, name, external_name, cost, price, selling_units, material_type_id, category_id, active'
 
-export default async function Page({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ error?: string }> }) {
+type PageProps = { params: Promise<{ slug: string }>; searchParams: Promise<{ error?: string }> }
+
+export default async function Page(props: PageProps) {
+  try {
+    return await PageInner(props)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[materials] page crash:', err)
+    return (
+      <div style={{ padding: '2rem', color: '#b91c1c', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>PAGE ERROR (materials)</h1>
+        <div><strong>Message:</strong> {message}</div>
+        {stack && <pre style={{ fontSize: '0.75rem', overflowX: 'auto', marginTop: '1rem' }}>{stack}</pre>}
+      </div>
+    )
+  }
+}
+
+async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
   const sp = await searchParams
   const supabase = await createClient()
 
-  const { data: orgRow } = await supabase.from('organizations').select('id, name').eq('slug', slug).single()
-  const org = orgRow as { id: string; name: string } | null
+  const org = await dbOrThrow(
+    supabase.from('organizations').select('id, name').eq('slug', slug).maybeSingle()
+  ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
   const { data: { user } } = await supabase.auth.getUser()
