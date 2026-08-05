@@ -34,22 +34,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  // Returns the first non-empty string among candidates. Used instead of
+  // trusting a single object (e.g. payload.contact) for every field --
+  // confirmed via a real captured payload (Pipeline Stage Changed trigger)
+  // that payload.contact is NOT always contact data: for that trigger type
+  // it holds GHL's attribution/UTM tracking object instead (no name/email/
+  // phone fields at all), while the real values sit at the top level of
+  // payload and are duplicated in payload.customData. Checking all three
+  // per-field, in priority order, works for that shape and remains
+  // backward compatible with a Contact-based trigger where payload.contact
+  // genuinely does hold the contact fields.
+  function firstNonEmpty(...values: unknown[]): string {
+    for (const v of values) {
+      if (typeof v === 'string' && v.trim()) return v.trim()
+    }
+    return ''
+  }
+
   // ── Stage detection ────────────────────────────────────────────────────────
-  const stageName: string =
-    payload?.pipeline_stage?.name ??
-    payload?.stage?.name ??
-    payload?.stageName ??
-    payload?.pipelineStage ??
-    ''
+  // GHL sends this trigger type's stage under "pipleline_stage" (their own
+  // typo -- transposed letters, confirmed against a real captured payload),
+  // as a plain string, not nested under .name like the other candidates.
+  const stageName = firstNonEmpty(
+    payload?.pipeline_stage?.name,
+    payload?.pipeline_stage,
+    payload?.pipleline_stage,
+    payload?.stage?.name,
+    payload?.stageName,
+    payload?.pipelineStage,
+  )
   const isQuotingStage = stageName.toLowerCase().includes('quot')
 
   // ── Extract contact fields ─────────────────────────────────────────────────
-  const contact = payload?.contact ?? payload
-  const firstName   = ((contact?.firstName   ?? contact?.first_name   ?? '') as string).trim()
-  const lastName    = ((contact?.lastName    ?? contact?.last_name    ?? '') as string).trim()
-  const email       = ((contact?.email       ?? '') as string).trim().toLowerCase()
-  const phone       = ((contact?.phone       ?? contact?.phone_number ?? '') as string).trim()
-  const companyName = ((contact?.company     ?? contact?.companyName  ?? contact?.company_name ?? '') as string).trim()
+  const contactObj = payload?.contact ?? {}
+  const customData = payload?.customData ?? {}
+
+  const firstName = firstNonEmpty(contactObj.firstName, contactObj.first_name, payload.firstName, payload.first_name, customData.firstName, customData.first_name)
+  const lastName  = firstNonEmpty(contactObj.lastName, contactObj.last_name, payload.lastName, payload.last_name, customData.lastName, customData.last_name)
+  const email     = firstNonEmpty(contactObj.email, payload.email, customData.email).toLowerCase()
+  const phone     = firstNonEmpty(contactObj.phone, contactObj.phone_number, payload.phone, payload.phone_number, customData.phone, customData.phone_number)
+  const companyName = firstNonEmpty(contactObj.company, contactObj.companyName, contactObj.company_name, payload.company, payload.companyName, payload.company_name, customData.company, customData.companyName, customData.company_name)
 
   if (!firstName && !lastName && !email && !phone) {
     return NextResponse.json({ error: 'Missing required contact fields' }, { status: 400 })
