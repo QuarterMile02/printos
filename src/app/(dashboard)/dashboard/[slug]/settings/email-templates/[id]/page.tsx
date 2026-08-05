@@ -73,7 +73,7 @@ async function PageInner({ params, searchParams }: PageProps) {
               {decodeURIComponent(sp.error)}
             </div>
           )}
-          <form action={saveEmailTemplate} className="space-y-4">
+          <form id="email-template-form" action={saveEmailTemplate} className="space-y-4">
             {!isNew && <input type="hidden" name="id" value={t!.id} />}
             <input type="hidden" name="orgId" value={org.id} />
             <input type="hidden" name="orgSlug" value={slug} />
@@ -111,18 +111,18 @@ async function PageInner({ params, searchParams }: PageProps) {
               Active
             </label>
 
-            <div className="flex gap-3 pt-2">
-              <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">Save</button>
-              <Link href={isNew ? `/dashboard/${slug}/settings/email-templates` : `/dashboard/${slug}/settings/email-templates/${id}`} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</Link>
-              {!isNew && (
-                <form action={deleteEmailTemplate} className="inline ml-auto">
-                  <input type="hidden" name="id" value={t!.id} />
-                  <input type="hidden" name="orgSlug" value={slug} />
-                  <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete</button>
-                </form>
-              )}
-            </div>
           </form>
+          <div className="flex gap-3 pt-2">
+            <button type="submit" form="email-template-form" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">Save</button>
+            <Link href={isNew ? `/dashboard/${slug}/settings/email-templates` : `/dashboard/${slug}/settings/email-templates/${id}`} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</Link>
+            {!isNew && (
+              <form action={deleteEmailTemplate} className="inline ml-auto">
+                <input type="hidden" name="id" value={t!.id} />
+                <input type="hidden" name="orgSlug" value={slug} />
+                <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete</button>
+              </form>
+            )}
+          </div>
         </div>
       ) : (
         <>
