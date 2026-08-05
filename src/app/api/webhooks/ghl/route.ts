@@ -173,8 +173,6 @@ export async function POST(req: NextRequest) {
     customer_id: customerId,
     title: `GHL Lead — ${[firstName, lastName].filter(Boolean).join(' ')}`,
     status: 'draft',
-    needs_pricing_approval: false,
-    needs_rescue: false,
   }
   if (assignedTo) quoteInsert.sales_rep_id = assignedTo
 
