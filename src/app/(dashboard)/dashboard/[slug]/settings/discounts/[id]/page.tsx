@@ -98,7 +98,7 @@ async function PageInner({ params, searchParams }: PageProps) {
           </div>
         )}
 
-        <form action={saveDiscount} className="space-y-6">
+        <form id="discount-form" action={saveDiscount} className="space-y-6">
           {!isNew && <input type="hidden" name="id" value={discount!.id} />}
           <input type="hidden" name="orgId" value={org.id} />
           <input type="hidden" name="orgSlug" value={slug} />
@@ -171,22 +171,22 @@ async function PageInner({ params, searchParams }: PageProps) {
             <p className="mt-2 text-xs text-gray-400">To add or remove tiers, save and return to this page. Tiers are saved in order shown.</p>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">Save</button>
-            <Link href={`/dashboard/${slug}/settings/discounts`} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</Link>
-            {!isNew && (
-              canDelete ? (
-                <form action={deleteDiscount} className="inline ml-auto">
-                  <input type="hidden" name="id" value={discount!.id} />
-                  <input type="hidden" name="orgSlug" value={slug} />
-                  <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete</button>
-                </form>
-              ) : (
-                <span title={deleteBlockedReason} className="ml-auto rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-400 cursor-not-allowed">Delete</span>
-              )
-            )}
-          </div>
         </form>
+        <div className="flex gap-3 pt-2">
+          <button type="submit" form="discount-form" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">Save</button>
+          <Link href={`/dashboard/${slug}/settings/discounts`} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</Link>
+          {!isNew && (
+            canDelete ? (
+              <form action={deleteDiscount} className="inline ml-auto">
+                <input type="hidden" name="id" value={discount!.id} />
+                <input type="hidden" name="orgSlug" value={slug} />
+                <button type="submit" className="rounded-md border border-red-300 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50">Delete</button>
+              </form>
+            ) : (
+              <span title={deleteBlockedReason} className="ml-auto rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-400 cursor-not-allowed">Delete</span>
+            )
+          )}
+        </div>
       </div>
     </div>
   )
