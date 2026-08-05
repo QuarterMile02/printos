@@ -9,6 +9,7 @@ import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { calculateProofDueDate } from '@/lib/date-utils'
 import { fetchAssetsAsAttachments, type EmailAttachment } from '@/lib/assets'
+import { getUserSenderIdentity, SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 
 function toE164(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -512,6 +513,12 @@ export async function sendQuoteToCustomer(
         console.log('[sendQuoteToCustomer] SIG RESULT:', sigHtml.length)
         const finalHtml = emailHtml + sigHtml
 
+        // Sent as the staff member themselves -- this is triggered by a
+        // person clicking "Send", not an automated notification.
+        const fromHeader = user.email
+          ? await getUserSenderIdentity(service, user.id, user.email)
+          : SYSTEM_FROM_EMAIL
+
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -519,7 +526,7 @@ export async function sendQuoteToCustomer(
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
+            from: fromHeader,
             to: [customerEmail],
             subject: emailSubject,
             html: finalHtml,
@@ -1077,8 +1084,16 @@ export async function sendQuoteEmailCustom(
   }
 
   try {
+    // Sent as the staff member themselves, not a shared system address --
+    // this is a person composing and sending an email, not an automated
+    // notification. See src/lib/email-sender.ts for why this is safe
+    // without per-address Resend setup.
+    const fromHeader = ctx.user.email
+      ? await getUserSenderIdentity(ctx.service, ctx.user.id, ctx.user.email)
+      : SYSTEM_FROM_EMAIL
+
     const emailPayload: Record<string, unknown> = {
-      from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
+      from: fromHeader,
       to: toList,
       subject: payload.subject,
       html: emailHtml,

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 
 // EasyPost tracker status → our shipment status
 const STATUS_MAP: Record<string, string> = {
@@ -44,7 +45,6 @@ async function sendSms(to: string, body: string) {
 
 async function sendEmail(to: string, subject: string, html: string) {
   const key = process.env.RESEND_API_KEY
-  const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'noreply@quartermileinc.com'
   if (!key) return
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -52,7 +52,8 @@ async function sendEmail(to: string, subject: string, html: string) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${key}`,
     },
-    body: JSON.stringify({ from: fromEmail, to, subject, html }),
+    // Automated webhook notification, not a person -- system address.
+    body: JSON.stringify({ from: SYSTEM_FROM_EMAIL, to, subject, html }),
   })
 }
 

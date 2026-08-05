@@ -8,6 +8,7 @@ import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { createInvoiceFromSO } from '@/app/(dashboard)/dashboard/[slug]/invoices/actions'
 import { dbOrThrow } from '@/lib/db'
+import { SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 
 function toE164(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -251,7 +252,10 @@ export async function updateJobStatus(
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
+                // System-triggered notification (status change), not a
+                // person composing an email -- system address, not the
+                // acting user's identity.
+                from: SYSTEM_FROM_EMAIL,
                 to: [customer.email],
                 subject: emailSubject,
                 html: finalHtml,
