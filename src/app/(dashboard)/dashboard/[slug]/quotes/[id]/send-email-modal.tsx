@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { renderTemplate } from '@/app/actions/get-email-template'
 import type { EmailTemplate } from '../actions'
 import { sendQuoteEmailCustom } from '../actions'
+import AttachFromLibraryModal, { type LibraryAttachment } from '@/components/assets/attach-from-library-modal'
 
 type Quote = {
   id: string
@@ -55,6 +56,10 @@ export default function SendEmailModal({
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [manualFiles, setManualFiles] = useState<File[]>([])
+  const [libraryAttachments, setLibraryAttachments] = useState<LibraryAttachment[]>([])
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Template variables for rendering
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
@@ -75,6 +80,8 @@ export default function SendEmailModal({
     setError(null)
     setShowPreview(false)
     setIsSending(false)
+    setManualFiles([])
+    setLibraryAttachments([])
 
     // Auto-select the first quote_sent template
     const defaultTemplate = quoteTemplates.find((t) => t.trigger_event === 'quote_sent')
@@ -123,6 +130,8 @@ export default function SendEmailModal({
         subject,
         body,
         templateName,
+        libraryAssetIds: libraryAttachments.map((a) => a.assetId),
+        manualFiles,
       })
       if (result.error) {
         setError(result.error)
@@ -256,6 +265,66 @@ export default function SendEmailModal({
               />
             )}
           </div>
+
+          {/* Attachments */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Attachments</label>
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Attach File
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowLibraryPicker(true)}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Attach from Library
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,image/*,.doc,.docx"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) setManualFiles((prev) => [...prev, file])
+                  e.target.value = ''
+                }}
+              />
+            </div>
+            {(manualFiles.length > 0 || libraryAttachments.length > 0) && (
+              <ul className="mt-2 space-y-1">
+                {manualFiles.map((file, i) => (
+                  <li key={`manual-${i}`} className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-1.5 text-xs text-gray-700">
+                    <span className="truncate">📎 {file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setManualFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="ml-2 shrink-0 text-gray-400 hover:text-red-600"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+                {libraryAttachments.map((att) => (
+                  <li key={att.assetId} className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-1.5 text-xs text-gray-700">
+                    <span className="truncate">📎 {att.fileName}</span>
+                    <button
+                      type="button"
+                      onClick={() => setLibraryAttachments((prev) => prev.filter((a) => a.assetId !== att.assetId))}
+                      className="ml-2 shrink-0 text-gray-400 hover:text-red-600"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         {/* Actions */}
@@ -278,6 +347,14 @@ export default function SendEmailModal({
           </button>
         </div>
       </div>
+
+      <AttachFromLibraryModal
+        open={showLibraryPicker}
+        onClose={() => setShowLibraryPicker(false)}
+        onAttach={(selected) => setLibraryAttachments((prev) => [...prev, ...selected])}
+        orgId={orgId}
+        alreadyAttachedIds={libraryAttachments.map((a) => a.assetId)}
+      />
     </div>
   )
 }

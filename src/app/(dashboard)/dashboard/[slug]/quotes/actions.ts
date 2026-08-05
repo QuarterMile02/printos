@@ -8,6 +8,7 @@ import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-templa
 import { getSignatureHtml } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { calculateProofDueDate } from '@/lib/date-utils'
+import { fetchAssetsAsAttachments, type EmailAttachment } from '@/lib/assets'
 
 function toE164(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -1016,6 +1017,8 @@ export async function sendQuoteEmailCustom(
     subject: string
     body: string
     templateName: string
+    libraryAssetIds?: string[]
+    manualFiles?: File[]
   },
 ): Promise<{ error?: string }> {
   if (!payload.to.trim()) return { error: 'Recipient email is required.' }
@@ -1054,6 +1057,25 @@ export async function sendQuoteEmailCustom(
     ? payload.cc.split(',').map((e) => e.trim()).filter(Boolean)
     : []
 
+  // Build attachments -- library files are fetched from Storage and
+  // base64-encoded server-side; manually-uploaded files arrive here as
+  // real File objects (Next.js server actions serialize File/Blob
+  // arguments directly) and are encoded the same way. Resend's API takes
+  // attachment content as base64, not a URL, so both paths converge here.
+  const attachments: EmailAttachment[] = []
+  if (payload.libraryAssetIds && payload.libraryAssetIds.length > 0) {
+    const libResult = await fetchAssetsAsAttachments(payload.libraryAssetIds, orgId)
+    if (libResult.error) return { error: libResult.error }
+    attachments.push(...libResult.attachments)
+  }
+  if (payload.manualFiles && payload.manualFiles.length > 0) {
+    for (const file of payload.manualFiles) {
+      if (file.size === 0) continue
+      const buffer = Buffer.from(await file.arrayBuffer())
+      attachments.push({ filename: file.name, content: buffer.toString('base64') })
+    }
+  }
+
   try {
     const emailPayload: Record<string, unknown> = {
       from: process.env.RESEND_FROM_EMAIL ?? 'PrintOS <noreply@printos.app>',
@@ -1062,6 +1084,7 @@ export async function sendQuoteEmailCustom(
       html: emailHtml,
     }
     if (ccList.length > 0) emailPayload.cc = ccList
+    if (attachments.length > 0) emailPayload.attachments = attachments
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
