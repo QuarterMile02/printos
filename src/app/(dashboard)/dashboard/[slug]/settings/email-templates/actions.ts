@@ -12,7 +12,7 @@ export async function saveEmailTemplate(formData: FormData) {
     name: formData.get('name') as string,
     subject: formData.get('subject') as string,
     body: formData.get('body') as string,
-    trigger_event: (formData.get('trigger_event') as string) || null,
+    trigger_event: (formData.get('trigger_event') as string) || 'manual',
     is_active: formData.get('is_active') === 'on',
     updated_at: new Date().toISOString(),
   }

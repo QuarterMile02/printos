@@ -85,8 +85,8 @@ async function PageInner({ params, searchParams }: PageProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700">Trigger Event</label>
-              <select name="trigger_event" defaultValue={t?.trigger_event ?? ''} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
-                <option value="">— None (manual only) —</option>
+              <select name="trigger_event" defaultValue={t?.trigger_event ?? 'manual'} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
+                <option value="manual">— None (manual only) —</option>
                 {TRIGGER_EVENTS.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
               </select>
             </div>
