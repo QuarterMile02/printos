@@ -40,17 +40,28 @@ export function buildSignatureHtml(fields: SignatureFields): string {
     return cell + (i < SERVICES.length - 1 ? dot : '')
   }).join('\n            ')
 
-  return `<style>
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&display=swap');
-</style>
-<table cellpadding="0" cellspacing="0" border="0" width="400" style="width:400px;border-collapse:collapse;">
+  // No <style>/@import block: Gmail (web and especially the mobile apps)
+  // and Outlook mobile handle a bare <style> tag sitting outside <head>
+  // inconsistently -- some load the Montserrat @import, some don't, and
+  // that divergence tracked with two real production symptoms: the
+  // header/footer bars centering correctly in a plain browser render but
+  // not in Gmail/Outlook-mobile, and the logo looking oversized relative
+  // to the contact text (confirmed by rendering both states headlessly:
+  // the fallback system font renders ~3% more compact than Montserrat,
+  // making the fixed 88x88 logo read larger by comparison). Every inline
+  // style already lists sans-serif as the fallback, so dropping the web
+  // font import makes every client consistent instead of guessing right
+  // on some and wrong on others; Outlook desktop never loaded the web
+  // font anyway (Word's renderer doesn't support @import), so this is a
+  // no-op there.
+  return `<table cellpadding="0" cellspacing="0" border="0" width="400" style="width:400px;border-collapse:collapse;">
 <tr><td style="padding:8px 0;">
 <table cellpadding="0" cellspacing="0" border="0" width="400" style="width:400px;background:#fff;border:.5px solid #ddd;border-radius:8px;border-collapse:collapse;">
 <tr><td style="border-radius:8px;overflow:hidden;">
 
   <table cellpadding="0" cellspacing="0" border="0" width="400" style="width:400px;border-collapse:collapse;">
     <tr><td style="background:#000;padding:9px 16px;text-align:center;">
-      <p style="font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;color:#93ca3b;letter-spacing:.1em;text-transform:uppercase;margin:0;">Brand Visibility Solutions</p>
+      <p style="font-family:'Montserrat',sans-serif;font-size:10px;font-weight:700;color:#93ca3b;letter-spacing:.1em;text-transform:uppercase;margin:0;text-align:center;">Brand Visibility Solutions</p>
     </td></tr>
   </table>
 
@@ -72,8 +83,8 @@ export function buildSignatureHtml(fields: SignatureFields): string {
 
   <table cellpadding="0" cellspacing="0" border="0" width="400" style="width:400px;border-collapse:collapse;background:#f5f5f5;border-top:2px solid #93ca3b;">
     <tr>
-      <td style="padding:7px 16px 7px 24px;">
-        <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <td style="padding:7px 16px 7px 24px;text-align:center;">
+        <table cellpadding="0" cellspacing="0" border="0" align="center" style="border-collapse:collapse;margin:0 auto;">
           <tr>
             ${footerRow}
           </tr>
