@@ -1,163 +1,43 @@
 'use server'
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
+import { buildSignatureHtml } from '@/lib/email-signature-template'
 
-export type SignatureFields = {
-  sig_full_name: string
-  sig_title: string
-  sig_phone: string
-  sig_mobile: string
-  sig_address: string
-}
-
-export type SignatureRow = SignatureFields & {
-  body: string
-  is_html: boolean
-}
-
-export async function getEmailSignature(
-  orgId: string,
-): Promise<SignatureRow | null> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  const service = createServiceClient()
-  const { data } = await service
-    .from('email_signatures')
-    .select('body, is_html, sig_full_name, sig_title, sig_phone, sig_mobile, sig_address')
-    .eq('user_id', user.id)
-    .eq('organization_id', orgId)
-    .maybeSingle()
-
-  if (!data) return null
-  return data as SignatureRow
-}
-
-// Regenerate the contact info section in the locked v32 signature HTML.
-// Replaces the content inside <div style="flex:1;">...</div> — everything
-// after the logo <img> and before the services footer <div class="sf">.
-function regenerateContactHtml(
-  existingBody: string,
-  fields: SignatureFields,
-): string {
-  // Build the new contact block
-  const phoneLine = [
-    fields.sig_phone ? `P: ${fields.sig_phone}` : '',
-    fields.sig_mobile ? `M: ${fields.sig_mobile}` : '',
-  ].filter(Boolean).join(' &nbsp;·&nbsp; ')
-
-  const contactBlock = `<div style="flex:1;">
-      <p class="sn">${escapeHtml(fields.sig_full_name)}</p>
-      <p class="st">${escapeHtml(fields.sig_title)}</p>
-      <div class="sd"></div>
-      ${phoneLine ? `<p class="sc">${phoneLine}</p>` : ''}
-      ${fields.sig_address ? `<p class="sc">${escapeHtml(fields.sig_address)}</p>` : ''}
-      <p class="sc"><a href="https://www.QuarterMileInc.com">www.QuarterMileInc.com</a></p>
-    </div>`
-
-  // Replace the existing contact block, bounded by explicit HTML comment
-  // markers (<!--CONTACT_START-->...<!--CONTACT_END-->) rather than
-  // matching nested tag structure -- the signature's contact cell has
-  // several self-closing/short elements (e.g. the divider <div class="sd">)
-  // that a nested-tag regex can terminate on prematurely. Comment markers
-  // are unambiguous regardless of what's inside them.
-  const regex = /<!--CONTACT_START-->[\s\S]*?<!--CONTACT_END-->/
-  if (regex.test(existingBody)) {
-    return existingBody.replace(regex, `<!--CONTACT_START-->${contactBlock}<!--CONTACT_END-->`)
-  }
-
-  // Fallback: if regex doesn't match, return existing body unchanged
-  return existingBody
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
-export async function saveEmailSignatureFields(
-  orgId: string,
-  fields: SignatureFields,
-): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated.' }
-
-  const service = createServiceClient()
-
-  // Fetch existing row to get the current body HTML (with logo)
-  const { data: existing } = await service
-    .from('email_signatures')
-    .select('body')
-    .eq('user_id', user.id)
-    .eq('organization_id', orgId)
-    .maybeSingle() as { data: { body: string } | null; error: unknown }
-
-  if (!existing) {
-    return { error: 'No signature found. Please contact your administrator to set up your signature.' }
-  }
-
-  // Regenerate the body HTML with the new contact info
-  const newBody = regenerateContactHtml(existing.body, fields)
-
-  const { error } = await service
-    .from('email_signatures')
-    .update({
-      body: newBody,
-      sig_full_name: fields.sig_full_name,
-      sig_title: fields.sig_title,
-      sig_phone: fields.sig_phone,
-      sig_mobile: fields.sig_mobile,
-      sig_address: fields.sig_address,
-    })
-    .eq('user_id', user.id)
-    .eq('organization_id', orgId)
-
-  if (error) return { error: error.message }
-  return {}
-}
-
-// Helper for send actions — fetches signature and returns HTML snippet
-// to append. Returns empty string if no signature exists or table is
-// missing. Caller already has userId from their own auth check.
-export async function getSignatureHtml(
+// Builds the signature for outgoing emails from the sending user's own
+// profile fields (name/title/phone/mobile), live at send time. The visual
+// template itself is locked/shared — see src/lib/email-signature-template.ts.
+export async function getSignatureHtmlForUser(
   userId: string,
   orgId: string,
 ): Promise<string> {
   try {
-    console.log('[getSignatureHtml] lookup:', { userId, orgId })
     const service = createServiceClient()
     const { data, error } = await service
-      .from('email_signatures')
-      .select('body, is_html')
-      .eq('user_id', userId)
+      .from('profiles')
+      .select('full_name, title, phone, mobile')
+      .eq('id', userId)
       .eq('organization_id', orgId)
       .maybeSingle()
 
     if (error) {
-      console.error('[getSignatureHtml] query error:', error.message)
+      console.error('[getSignatureHtmlForUser] query error:', error.message)
       return ''
     }
     if (!data) {
-      console.log('[getSignatureHtml] no signature found')
-      return ''
-    }
-    const row = data as { body: string; is_html: boolean }
-    if (!row.body.trim()) {
-      console.log('[getSignatureHtml] signature body is empty')
+      console.log('[getSignatureHtmlForUser] no profile found')
       return ''
     }
 
-    console.log('[getSignatureHtml] found signature, length:', row.body.length, 'is_html:', row.is_html)
-
-    if (row.is_html) {
-      return `<br><br>--<br>${row.body}`
-    }
-    // Plain text signature — wrap in pre-wrap div
-    const escaped = row.body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
-    return `<br><br>--<br><div style="white-space:pre-wrap;">${escaped}</div>`
+    const row = data as { full_name: string; title: string | null; phone: string | null; mobile: string | null }
+    const sigHtml = buildSignatureHtml({
+      fullName: row.full_name,
+      title: row.title,
+      phone: row.phone,
+      mobile: row.mobile,
+    })
+    return `<br><br>--<br>${sigHtml}`
   } catch (err) {
-    console.error('[getSignatureHtml] caught exception:', err instanceof Error ? err.message : String(err))
+    console.error('[getSignatureHtmlForUser] caught exception:', err instanceof Error ? err.message : String(err))
     return ''
   }
 }

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { ALL_ROLES, ALL_TIERS } from '@/lib/permissions';
 import type { Role, Tier } from '@/lib/permissions';
+import { createServiceClient } from '@/lib/supabase/server';
 
 async function getClient() {
   const cookieStore = await cookies();
@@ -38,6 +39,7 @@ export async function PATCH(
     departments?: string[];
     title?: string;
     phone?: string;
+    mobile?: string;
     is_active?: boolean;
   };
 
@@ -47,7 +49,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Only owners can change tiers.' }, { status: 403 });
   if (body.departments !== undefined && !isOwner && !isManager)
     return NextResponse.json({ error: 'Only owners and managers can assign departments.' }, { status: 403 });
-  if ((body.title !== undefined || body.phone !== undefined || body.is_active !== undefined) && !isOwner && !isManager)
+  if ((body.title !== undefined || body.phone !== undefined || body.mobile !== undefined || body.is_active !== undefined) && !isOwner && !isManager)
     return NextResponse.json({ error: 'Only owners and managers can edit profiles.' }, { status: 403 });
 
   if (body.role && !ALL_ROLES.includes(body.role as Role))
@@ -55,8 +57,12 @@ export async function PATCH(
   if (body.tier && !ALL_TIERS.includes(body.tier as Tier))
     return NextResponse.json({ error: 'Invalid tier.' }, { status: 400 });
 
-  // Ensure target is in same org
-  const { data: targetProfile } = await supabase
+  // Ensure target is in same org. Uses the service client -- the only
+  // SELECT policy on profiles (migration 001) is `auth.uid() = id`, so the
+  // anon/session client can never see another user's row, which made this
+  // lookup (and the update below) fail for every cross-user edit.
+  const service = createServiceClient();
+  const { data: targetProfile } = await service
     .from('profiles')
     .select('organization_id')
     .eq('id', targetId)
@@ -70,11 +76,12 @@ export async function PATCH(
   if (body.departments !== undefined) update.departments = body.departments;
   if (body.title !== undefined) update.title = body.title || null;
   if (body.phone !== undefined) update.phone = body.phone || null;
+  if (body.mobile !== undefined) update.mobile = body.mobile || null;
   if (body.is_active !== undefined) update.is_active = body.is_active;
 
   if (Object.keys(update).length === 0) return NextResponse.json({});
 
-  const { error } = await supabase
+  const { error } = await service
     .from('profiles')
     .update(update)
     .eq('id', targetId);

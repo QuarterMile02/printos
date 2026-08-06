@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import type { OrgRole, QuoteStatus } from '@/types/database'
 import { TAX_RATE } from './format'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
-import { getSignatureHtml } from '@/app/actions/email-signature'
+import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { calculateProofDueDate } from '@/lib/date-utils'
 import { fetchAssetsAsAttachments, type EmailAttachment } from '@/lib/assets'
@@ -509,7 +509,7 @@ export async function sendQuoteToCustomer(
 
         // Append sender's email signature
         console.log('[sendQuoteToCustomer] SIG LOOKUP:', user.id, orgId)
-        const sigHtml = await getSignatureHtml(user.id, orgId)
+        const sigHtml = await getSignatureHtmlForUser(user.id, orgId)
         console.log('[sendQuoteToCustomer] SIG RESULT:', sigHtml.length)
         const finalHtml = emailHtml + sigHtml
 
@@ -1054,7 +1054,7 @@ export async function sendQuoteEmailCustom(
     payload.body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
   }</div>`
   console.log('[sendQuoteEmailCustom] SIG LOOKUP:', ctx.user.id, orgId)
-  const sigHtml = await getSignatureHtml(ctx.user.id, orgId)
+  const sigHtml = await getSignatureHtmlForUser(ctx.user.id, orgId)
   console.log('[sendQuoteEmailCustom] SIG RESULT:', sigHtml.length)
   const emailHtml = bodyHtml + sigHtml
 

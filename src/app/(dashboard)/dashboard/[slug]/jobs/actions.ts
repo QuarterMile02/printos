@@ -4,7 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { JobStatus, JobFlag, OrgRole } from '@/types/database'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
-import { getSignatureHtml } from '@/app/actions/email-signature'
+import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { createInvoiceFromSO } from '@/app/(dashboard)/dashboard/[slug]/invoices/actions'
 import { dbOrThrow } from '@/lib/db'
@@ -242,7 +242,7 @@ export async function updateJobStatus(
                 `
 
             // Append sender's email signature
-            const sigHtml = await getSignatureHtml(user.id, orgId)
+            const sigHtml = await getSignatureHtmlForUser(user.id, orgId)
             const finalHtml = emailHtml + sigHtml
 
             const res = await fetch('https://api.resend.com/emails', {

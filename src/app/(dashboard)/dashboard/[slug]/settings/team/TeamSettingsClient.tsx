@@ -1,19 +1,35 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import InviteMemberForm from './invite-member-form';
 
 type Role = 'owner' | 'sales' | 'designer' | 'production' | 'installer' | 'digital' | 'accounting';
 type Tier = 'staff' | 'lead' | 'manager';
+type OrgRole = 'owner' | 'admin' | 'designer' | 'accountant' | 'member' | 'viewer';
+type InviteStatus = 'pending' | 'accepted' | 'expired';
 
 interface TeamMember {
   id: string;
   full_name: string;
   title: string | null;
   phone: string | null;
+  mobile: string | null;
   role: Role;
   tier: Tier;
   departments: string[] | null;
   is_active: boolean;
+  email: string | null;
+  org_role: OrgRole | null;
+  joined_at: string | null;
+}
+
+interface PendingInvite {
+  id: string;
+  email: string;
+  role: OrgRole;
+  status: InviteStatus;
+  created_at: string;
+  expires_at: string;
 }
 
 interface PermissionOverride {
@@ -24,9 +40,13 @@ interface PermissionOverride {
 
 interface Props {
   slug: string;
+  orgId: string;
+  orgSlug: string;
   currentUserId: string;
   currentUserRole: string;
   currentUserTier: string;
+  canInvite: boolean;
+  pendingInvites: PendingInvite[];
 }
 
 const ROLES: Role[] = ['owner', 'sales', 'designer', 'production', 'installer', 'digital', 'accounting'];
@@ -37,7 +57,22 @@ const ROLE_LABELS: Record<Role, string> = {
   production: 'Production', installer: 'Installer', digital: 'Digital', accounting: 'Accounting',
 };
 
+const ORG_ROLE_LABELS: Record<OrgRole, string> = {
+  owner: 'Owner', admin: 'Admin', designer: 'Designer',
+  accountant: 'Accountant', member: 'Member', viewer: 'Viewer',
+};
+
 const TIER_LABELS: Record<Tier, string> = { staff: 'Staff', lead: 'Lead', manager: 'Manager' };
+
+const INVITE_STATUS_STYLES: Record<InviteStatus, string> = {
+  pending: 'bg-amber-50 text-amber-700',
+  accepted: 'bg-green-50 text-green-700',
+  expired: 'bg-gray-100 text-gray-500',
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 const DEPARTMENTS = [
   { value: 'sales', label: 'Sales' },
@@ -168,11 +203,16 @@ const ROLE_PERMISSION_DEFAULTS: Record<Role, Record<PermissionKey, boolean>> = {
 
 const PRICING_ROLES: Role[] = ['owner', 'sales', 'accounting'];
 
-export default function TeamSettingsClient({ currentUserId, currentUserRole, currentUserTier }: Props) {
+type StatusTab = 'all' | 'enabled' | 'disabled';
+
+export default function TeamSettingsClient({
+  orgId, orgSlug, currentUserId, currentUserRole, currentUserTier, canInvite, pendingInvites,
+}: Props) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TeamMember | null>(null);
   const [activeTab, setActiveTab] = useState<'profile' | 'permissions'>('profile');
+  const [statusTab, setStatusTab] = useState<StatusTab>('enabled');
   const [overrides, setOverrides] = useState<PermissionOverride[]>([]);
   const [overridesLoading, setOverridesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -180,6 +220,7 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
 
   const [editTitle, setEditTitle] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editMobile, setEditMobile] = useState('');
   const [editRole, setEditRole] = useState<Role>('sales');
   const [editTier, setEditTier] = useState<Tier>('staff');
   const [editDepts, setEditDepts] = useState<string[]>([]);
@@ -197,11 +238,24 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
 
   useEffect(() => { fetchMembers(); }, []);
 
+  const tabCounts = useMemo(() => ({
+    all: members.length,
+    enabled: members.filter(m => m.is_active).length,
+    disabled: members.filter(m => !m.is_active).length,
+  }), [members]);
+
+  const visibleMembers = useMemo(() => {
+    if (statusTab === 'all') return members;
+    if (statusTab === 'enabled') return members.filter(m => m.is_active);
+    return members.filter(m => !m.is_active);
+  }, [members, statusTab]);
+
   const openMember = useCallback((m: TeamMember) => {
     setSelected(m);
     setActiveTab('profile');
     setEditTitle(m.title ?? '');
     setEditPhone(m.phone ?? '');
+    setEditMobile(m.mobile ?? '');
     setEditRole(m.role);
     setEditTier(m.tier);
     setEditDepts(m.departments ?? []);
@@ -230,6 +284,7 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
     const body: Record<string, unknown> = {
       title: editTitle,
       phone: editPhone,
+      mobile: editMobile,
       departments: editDepts,
       is_active: editActive,
     };
@@ -254,6 +309,7 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
               ...prev,
               title: editTitle || null,
               phone: editPhone || null,
+              mobile: editMobile || null,
               role: editRole,
               tier: editTier,
               departments: editDepts,
@@ -306,11 +362,72 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
     <div className="flex min-h-screen">
       {/* Main table */}
       <div className="flex-1 min-w-0 p-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-extrabold text-gray-900">Team</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage roles, tiers, departments, and permission overrides.
-          </p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-extrabold text-gray-900">Team Members</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Manage roles, tiers, departments, and permission overrides.
+            </p>
+          </div>
+          {canInvite && <InviteMemberForm orgId={orgId} orgSlug={orgSlug} />}
+        </div>
+
+        {pendingInvites.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-gray-900 mb-2">
+              Pending Invites <span className="font-normal text-gray-400">({pendingInvites.length})</span>
+            </h2>
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Email</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Role</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Invited</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Expires</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pendingInvites.map((invite) => (
+                    <tr key={invite.id} className="hover:bg-gray-50">
+                      <td className="whitespace-nowrap px-4 py-2 text-sm text-gray-900">{invite.email}</td>
+                      <td className="whitespace-nowrap px-4 py-2">
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium capitalize text-gray-700">
+                          {invite.role}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${INVITE_STATUS_STYLES[invite.status]}`}>
+                          {invite.status}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-sm text-gray-500">{formatDate(invite.created_at)}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-sm text-gray-500">{formatDate(invite.expires_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Status tabs */}
+        <div className="mb-4 flex items-center gap-2">
+          {(['all', 'enabled', 'disabled'] as StatusTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setStatusTab(t)}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                statusTab === t
+                  ? 'bg-qm-lime-light text-qm-lime'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
+              <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
+            </button>
+          ))}
         </div>
 
         {loading ? (
@@ -321,20 +438,22 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Email</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Title</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Role</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Tier</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Joined</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {members.map(m => (
+                {visibleMembers.map(m => (
                   <tr
                     key={m.id}
                     onClick={() => openMember(m)}
                     className={`cursor-pointer transition-colors ${
                       selected?.id === m.id ? 'bg-qm-lime-light' : 'hover:bg-gray-50'
-                    }`}
+                    } ${!m.is_active ? 'opacity-50' : ''}`}
                   >
                     <td className="px-4 py-3 font-medium text-gray-900">
                       <div className="flex items-center gap-2">
@@ -347,6 +466,7 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
                         )}
                       </div>
                     </td>
+                    <td className="px-4 py-3 text-gray-500">{m.email ?? <span className="text-gray-300">&mdash;</span>}</td>
                     <td className="px-4 py-3 text-gray-500">{m.title ?? '—'}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
@@ -354,6 +474,7 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 capitalize">{m.tier}</td>
+                    <td className="px-4 py-3 text-gray-500">{m.joined_at ? formatDate(m.joined_at) : <span className="text-gray-300">&mdash;</span>}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -365,6 +486,13 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
                     </td>
                   </tr>
                 ))}
+                {visibleMembers.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">
+                      No {statusTab === 'all' ? '' : statusTab} members.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -380,6 +508,7 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
               <p className="text-base font-bold text-gray-900">{selected.full_name}</p>
               <p className="text-xs text-gray-400">
                 {ROLE_LABELS[selected.role] ?? selected.role} · {TIER_LABELS[selected.tier] ?? selected.tier}
+                {selected.org_role && <> · <span title="Organization-level access role">{ORG_ROLE_LABELS[selected.org_role] ?? selected.org_role}</span></>}
               </p>
             </div>
             <button
@@ -427,6 +556,19 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
                 </div>
 
                 <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Email</label>
+                  <p className="text-sm text-gray-600">{selected.email ?? '—'}</p>
+                </div>
+
+                {selected.org_role && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Organization Access Role</label>
+                    <p className="text-sm text-gray-600">{ORG_ROLE_LABELS[selected.org_role] ?? selected.org_role}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Controls invite/admin permissions. Set when the member joined.</p>
+                  </div>
+                )}
+
+                <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">Title</label>
                   <input
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
@@ -443,6 +585,17 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
                     value={editPhone}
                     onChange={e => setEditPhone(e.target.value)}
+                    placeholder="e.g. (555) 000-0000"
+                    disabled={!canManagePerms}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Mobile</label>
+                  <input
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
+                    value={editMobile}
+                    onChange={e => setEditMobile(e.target.value)}
                     placeholder="e.g. (555) 000-0000"
                     disabled={!canManagePerms}
                   />
@@ -513,12 +666,14 @@ export default function TeamSettingsClient({ currentUserId, currentUserRole, cur
                 <div className="flex items-center justify-between py-1">
                   <div>
                     <p className="text-sm font-semibold text-gray-700">Active</p>
-                    <p className="text-xs text-gray-400">Inactive members cannot sign in.</p>
+                    <p className="text-xs text-gray-400">
+                      Deactivate a departed employee instead of deleting them — their jobs, quotes, and activity history stay intact.
+                    </p>
                   </div>
                   <button
                     onClick={() => { if (canManagePerms) setEditActive(prev => !prev); }}
                     disabled={!canManagePerms}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ml-4 ${
                       editActive ? 'bg-qm-lime' : 'bg-gray-300'
                     } disabled:opacity-50`}
                   >
