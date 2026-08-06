@@ -7,12 +7,17 @@ import type { QuoteStatus, SalesOrderStatus } from '@/types/database'
 // the row's created_at year + zero-padded number.
 
 export function formatQuoteNumber(num: number, createdAtIso: string): string {
-  const year = new Date(createdAtIso).getFullYear()
+  // getUTCFullYear (not getFullYear) — matches the timeZone: 'UTC' fix used
+  // everywhere else this codebase renders created_at. Same underlying risk:
+  // the ambient local timezone can put a timestamp near a year boundary on
+  // a different calendar year on server (UTC) vs client, causing a
+  // hydration mismatch (React error #418).
+  const year = new Date(createdAtIso).getUTCFullYear()
   return `Q-${year}-${String(num).padStart(4, '0')}`
 }
 
 export function formatSoNumber(num: number, createdAtIso: string): string {
-  const year = new Date(createdAtIso).getFullYear()
+  const year = new Date(createdAtIso).getUTCFullYear()
   return `SO-${year}-${String(num).padStart(4, '0')}`
 }
 

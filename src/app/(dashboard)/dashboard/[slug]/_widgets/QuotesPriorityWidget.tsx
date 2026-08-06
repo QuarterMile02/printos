@@ -5,7 +5,10 @@ import type { createServiceClient } from '@/lib/supabase/server'
 type ServiceClient = ReturnType<typeof createServiceClient>
 type Props = { service: ServiceClient; orgId: string; orgSlug: string }
 
-const EXCLUDED = ['ordered', 'void', 'expired', 'lost', 'no_charge']
+// Note: 'void' is a Sales Order status, not a Quote status — it isn't a
+// member of the quote_status enum, so including it here made Postgres
+// reject the whole query ("invalid input value for enum quote_status").
+const EXCLUDED = ['ordered', 'expired', 'lost', 'no_charge']
 
 const STATUS_STYLES: Record<string, string> = {
   draft:                'bg-gray-100 text-gray-600',

@@ -728,7 +728,7 @@ export default function QuoteDetailClient({
               {QUOTE_STATUS_LABELS[status]}
             </span>
             <p className="mt-2 text-xs text-gray-500">
-              Created {new Date(quote.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              Created {new Date(quote.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
             </p>
           </div>
         </div>

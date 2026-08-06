@@ -9,7 +9,15 @@ export type Json =
 export type OrgRole = 'owner' | 'admin' | 'designer' | 'accountant' | 'member' | 'viewer'
 export type OrgPlan = 'free' | 'pro' | 'enterprise'
 export type InviteStatus = 'pending' | 'accepted' | 'expired'
-export type JobStatus = 'new' | 'in_progress' | 'proof_review' | 'ready_for_pickup' | 'completed'
+export type JobStatus =
+  | 'new'
+  | 'in_progress'
+  | 'proof_review'
+  | 'ready_for_pickup'
+  | 'completed'
+  // Added by migration 114 — must be applied in Supabase before use.
+  | 'on_hold'
+  | 'pending_approval'
 export type JobFlag = 'file_error' | 'help_needed'
 // Phase 8 statuses. 'sent' and 'declined' are legacy values that remain
 // in the enum (Postgres can't drop enum members) but are remapped to

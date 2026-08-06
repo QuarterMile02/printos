@@ -50,7 +50,7 @@ const DEFAULT_SORT = [{ column: 'quote_number', direction: 'desc' as const }]
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 function Dash() {

@@ -232,7 +232,7 @@ export default function SoDetailClient({
               {SO_STATUS_LABELS[status]}
             </span>
             <p className="mt-2 text-xs text-gray-500">
-              Created {new Date(salesOrder.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              Created {new Date(salesOrder.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
             </p>
           </div>
         </div>
@@ -463,7 +463,7 @@ export default function SoDetailClient({
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
                       {job.due_date
-                        ? new Date(job.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        ? new Date(job.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                         : <span className="text-gray-300">&mdash;</span>}
                     </td>
                   </tr>
