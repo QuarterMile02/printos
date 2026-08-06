@@ -58,9 +58,11 @@ export default function EmailSignatureEditor({ orgId, initialFields, initialBody
       <p class="sc"><a href="https://www.QuarterMileInc.com">www.QuarterMileInc.com</a></p>
     </div>`
 
-    const regex = /<div style="flex:1;">[\s\S]*?<\/div>\s*<\/div>\s*<div class="sf">/
+    // See regenerateContactHtml() in src/app/actions/email-signature.ts for
+    // why this matches on explicit comment markers rather than nested tags.
+    const regex = /<!--CONTACT_START-->[\s\S]*?<!--CONTACT_END-->/
     if (regex.test(initialBody)) {
-      return initialBody.replace(regex, `${contactBlock}\n  </div>\n  <div class="sf">`)
+      return initialBody.replace(regex, `<!--CONTACT_START-->${contactBlock}<!--CONTACT_END-->`)
     }
     return initialBody
   }

@@ -56,11 +56,15 @@ function regenerateContactHtml(
       <p class="sc"><a href="https://www.QuarterMileInc.com">www.QuarterMileInc.com</a></p>
     </div>`
 
-  // Replace the existing contact block (between the logo img closing tag and the services footer)
-  // Pattern: <div style="flex:1;">...anything...</div>\n  </div>\n  <div class="sf">
-  const regex = /<div style="flex:1;">[\s\S]*?<\/div>\s*<\/div>\s*<div class="sf">/
+  // Replace the existing contact block, bounded by explicit HTML comment
+  // markers (<!--CONTACT_START-->...<!--CONTACT_END-->) rather than
+  // matching nested tag structure -- the signature's contact cell has
+  // several self-closing/short elements (e.g. the divider <div class="sd">)
+  // that a nested-tag regex can terminate on prematurely. Comment markers
+  // are unambiguous regardless of what's inside them.
+  const regex = /<!--CONTACT_START-->[\s\S]*?<!--CONTACT_END-->/
   if (regex.test(existingBody)) {
-    return existingBody.replace(regex, `${contactBlock}\n  </div>\n  <div class="sf">`)
+    return existingBody.replace(regex, `<!--CONTACT_START-->${contactBlock}<!--CONTACT_END-->`)
   }
 
   // Fallback: if regex doesn't match, return existing body unchanged
