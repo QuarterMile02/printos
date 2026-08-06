@@ -20,6 +20,9 @@ const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   proof_review: 'Proof Review',
   ready_for_pickup: 'Ready for Pickup',
   completed: 'Completed',
+  // Added by migration 114.
+  on_hold: 'On Hold',
+  pending_approval: 'Pending Approval',
 }
 
 const JOB_STATUS_STYLES: Record<JobStatus, string> = {
@@ -28,6 +31,10 @@ const JOB_STATUS_STYLES: Record<JobStatus, string> = {
   proof_review: 'bg-amber-50 text-amber-700',
   ready_for_pickup: 'bg-teal-50 text-teal-700',
   completed: 'bg-green-50 text-green-700',
+  // Added by migration 114. Matches the 'on_hold' tone already used for
+  // this status on the Department Board display (bg-gray-600).
+  on_hold: 'bg-gray-200 text-gray-700',
+  pending_approval: 'bg-amber-50 text-amber-700',
 }
 
 type SalesOrder = {
