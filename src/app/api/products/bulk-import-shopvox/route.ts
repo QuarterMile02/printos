@@ -70,44 +70,94 @@ export async function POST(request: NextRequest) {
 
     const service = createServiceClient()
 
+    // An unbounded .select() with no .range() is silently capped at
+    // PostgREST's default page size (1000 rows). materials has grown past
+    // that (1,764 rows as of Aug 2026) -- confirmed live: an unbounded
+    // materials query here was only returning the first 1000, so ~43% of
+    // materials were invisible to the name-matching below on every run,
+    // which is why so many product_default_items rows never got a
+    // material_id despite a valid exact-name match existing. products/
+    // modifiers/labor_rates/machine_rates are all under 1000 rows today
+    // but would hit the exact same silent-truncation wall as the catalog
+    // grows, so every query below is paginated uniformly rather than
+    // patching materials alone. Deterministic order (`id` ascending) is
+    // required for pagination correctness -- without an explicit order,
+    // Postgres doesn't guarantee stable row order across separate page
+    // requests, which could skip or duplicate rows across pages.
+    const PAGE_SIZE = 1000
+    async function fetchAllRows<T>(
+      build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+    ): Promise<T[]> {
+      const all: T[] = []
+      let from = 0
+      for (;;) {
+        const { data, error } = await build(from, from + PAGE_SIZE - 1)
+        if (error) throw new Error(error.message)
+        const rows = data ?? []
+        all.push(...rows)
+        if (rows.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+      return all
+    }
+
     // Pull eligible products — has shopvox_data, not already printos_ready.
-    const { data: productRows, error: prodErr } = await service
-      .from('products')
-      .select('id, name, shopvox_data, migration_status')
-      .eq('organization_id', orgId)
-      .not('shopvox_data', 'is', null)
-      .neq('migration_status', 'printos_ready')
-    if (prodErr) throw new Error(`products: ${prodErr.message}`)
-    const products = (productRows ?? []) as ProductRow[]
+    let products: ProductRow[]
+    try {
+      products = await fetchAllRows<ProductRow>((from, to) =>
+        service
+          .from('products')
+          .select('id, name, shopvox_data, migration_status')
+          .eq('organization_id', orgId)
+          .not('shopvox_data', 'is', null)
+          .neq('migration_status', 'printos_ready')
+          .order('id', { ascending: true })
+          .range(from, to)
+      )
+    } catch (err) {
+      throw new Error(`products: ${err instanceof Error ? err.message : String(err)}`)
+    }
 
     // Load name catalogs for the org — build lowercase-name lookups.
-    const [modsRes, matsRes, laborRes, machineRes] = await Promise.all([
-      service.from('modifiers').select('id, display_name, system_lookup_name, name').eq('organization_id', orgId),
-      service.from('materials').select('id, name, category_id, multiplier').eq('organization_id', orgId),
-      service.from('labor_rates').select('id, name, category').eq('organization_id', orgId),
-      service.from('machine_rates').select('id, name, category').eq('organization_id', orgId),
-    ])
-    if (modsRes.error) throw new Error(`modifiers: ${modsRes.error.message}`)
-    if (matsRes.error) throw new Error(`materials: ${matsRes.error.message}`)
-    if (laborRes.error) throw new Error(`labor_rates: ${laborRes.error.message}`)
-    if (machineRes.error) throw new Error(`machine_rates: ${machineRes.error.message}`)
+    type ModRow = { id: string; display_name: string | null; system_lookup_name: string | null; name: string | null }
+    type MatRow = { id: string; name: string; category_id: string | null; multiplier: number | null }
+    type RateRow = { id: string; name: string; category: string | null }
+    let modsData: ModRow[], matsData: MatRow[], laborData: RateRow[], machineData: RateRow[]
+    try {
+      ;[modsData, matsData, laborData, machineData] = await Promise.all([
+        fetchAllRows<ModRow>((from, to) =>
+          service.from('modifiers').select('id, display_name, system_lookup_name, name').eq('organization_id', orgId).order('id', { ascending: true }).range(from, to)
+        ),
+        fetchAllRows<MatRow>((from, to) =>
+          service.from('materials').select('id, name, category_id, multiplier').eq('organization_id', orgId).order('id', { ascending: true }).range(from, to)
+        ),
+        fetchAllRows<RateRow>((from, to) =>
+          service.from('labor_rates').select('id, name, category').eq('organization_id', orgId).order('id', { ascending: true }).range(from, to)
+        ),
+        fetchAllRows<RateRow>((from, to) =>
+          service.from('machine_rates').select('id, name, category').eq('organization_id', orgId).order('id', { ascending: true }).range(from, to)
+        ),
+      ])
+    } catch (err) {
+      throw new Error(`catalog lookup: ${err instanceof Error ? err.message : String(err)}`)
+    }
 
     const lc = (s: string | null | undefined) => (s ?? '').toLowerCase().trim()
     const modifierByName = new Map<string, { id: string }>()
-    for (const m of ((modsRes.data ?? []) as { id: string; display_name: string | null; system_lookup_name: string | null; name: string | null }[])) {
+    for (const m of modsData) {
       const keys = [m.system_lookup_name, m.display_name, m.name].filter(Boolean).map((s) => lc(s))
       for (const k of keys) if (!modifierByName.has(k)) modifierByName.set(k, { id: m.id })
     }
     const materialByName = new Map<string, { id: string; category_id: string | null; multiplier: number | null }>()
-    for (const m of ((matsRes.data ?? []) as { id: string; name: string; category_id: string | null; multiplier: number | null }[])) {
+    for (const m of matsData) {
       materialByName.set(lc(m.name), { id: m.id, category_id: m.category_id, multiplier: m.multiplier })
     }
     const laborByName = new Map<string, { id: string; category: string | null }>()
-    for (const l of ((laborRes.data ?? []) as { id: string; name: string; category: string | null }[])) {
+    for (const l of laborData) {
       laborByName.set(lc(l.name), { id: l.id, category: l.category })
     }
     const machineByName = new Map<string, { id: string; category: string | null }>()
-    for (const m of ((machineRes.data ?? []) as { id: string; name: string; category: string | null }[])) {
+    for (const m of machineData) {
       machineByName.set(lc(m.name), { id: m.id, category: m.category })
     }
 
