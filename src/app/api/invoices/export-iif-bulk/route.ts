@@ -167,11 +167,14 @@ export async function POST(request: NextRequest) {
     const lines: string[] = []
 
     // ONE !INVITEM block (all unique items, deduplicated)
+    // Note: "Sales Tax" is intentionally NOT declared here. QuickBooks IIF
+    // does not support creating tax items via import (TAX is not a valid
+    // INVITEMTYPE) — the "Sales Tax" item must already exist in QuickBooks,
+    // and is referenced by name only on the SPL line below.
     lines.push('!INVITEM\tNAME\tINVITEMTYPE\tACCNT\tPRICE\tCOST\tDESC')
     for (const name of allServiceItemNames) {
-      lines.push(`INVITEM\t${name}\tSERV\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
+      lines.push(`INVITEM\t${name}\tSERVICE\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
     }
-    lines.push(`INVITEM\tSales Tax\tTAX\t${TAX_PAYABLE_ACCOUNT}\t0\t0\tSales Tax`)
 
     // ONE header block
     lines.push('!TRNS\tTRNSID\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO')
