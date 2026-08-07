@@ -8,7 +8,9 @@ export async function saveEmailTemplate(formData: FormData) {
   const orgId = formData.get('orgId') as string
   const orgSlug = formData.get('orgSlug') as string
 
-  const department = (formData.get('department') as string) || null
+  // department is a multi-select checkbox group — same `name="department"`
+  // on every checkbox, so getAll collects every checked value.
+  const department = formData.getAll('department') as string[]
 
   const fields: Record<string, unknown> = {
     name: formData.get('name') as string,

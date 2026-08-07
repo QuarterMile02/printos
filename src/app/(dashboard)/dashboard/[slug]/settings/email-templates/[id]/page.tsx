@@ -53,7 +53,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   // the job/product-category `departments` table.
   const departments = STAFF_DEPARTMENTS
 
-  type Tmpl = { id: string; name: string; subject: string; body: string; trigger_event: string | null; is_active: boolean | null; department: string | null; ai_personalize: boolean | null }
+  type Tmpl = { id: string; name: string; subject: string; body: string; trigger_event: string | null; is_active: boolean | null; department: string[] | null; ai_personalize: boolean | null }
   let t: Tmpl | null = null
   if (!isNew) {
     const data = await dbOrThrow(supabase.from('email_templates').select('id, name, subject, body, trigger_event, is_active, department, ai_personalize').eq('id', id).eq('organization_id', org.id).maybeSingle())
@@ -98,12 +98,25 @@ async function PageInner({ params, searchParams }: PageProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Department</label>
-              <select name="department" defaultValue={t?.department ?? ''} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
-                <option value="">— Unassigned (visible to everyone) —</option>
-                {departments.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
-              <p className="mt-1 text-xs text-gray-400">Controls which department sees this in the Send Email template picker. Owner/Admin always see every template.</p>
+              <label className="block text-sm font-medium text-gray-700">Department(s)</label>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                {departments.map(d => (
+                  <label
+                    key={d.value}
+                    className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-2 text-xs font-medium text-gray-600 has-[:checked]:border-qm-lime has-[:checked]:bg-qm-lime-light has-[:checked]:text-qm-lime cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      name="department"
+                      value={d.value}
+                      defaultChecked={(t?.department ?? []).includes(d.value)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 accent-qm-lime"
+                    />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-gray-400">Leave all unchecked for "Unassigned" (visible to everyone). Check more than one to share across departments — a template shows for a user if ANY of its departments match theirs. Owner/Admin always see every template.</p>
             </div>
 
             <div>
@@ -156,9 +169,15 @@ async function PageInner({ params, searchParams }: PageProps) {
                     {TRIGGER_EVENTS.find(e => e.value === t!.trigger_event)?.label ?? t!.trigger_event}
                   </span>
                 )}
-                <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                  {t!.department ? (departments.find(d => d.value === t!.department)?.label ?? t!.department) : 'Unassigned'}
-                </span>
+                {(t!.department ?? []).length === 0 ? (
+                  <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Unassigned</span>
+                ) : (
+                  (t!.department ?? []).map(dept => (
+                    <span key={dept} className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                      {departments.find(d => d.value === dept)?.label ?? dept}
+                    </span>
+                  ))
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">

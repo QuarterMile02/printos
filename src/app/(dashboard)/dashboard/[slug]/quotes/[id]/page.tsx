@@ -340,7 +340,12 @@ async function QuoteDetailPageInner({ params }: PageProps) {
       supabase.from('profiles').select('departments').eq('id', currentUserId).maybeSingle()
     ) as { departments: string[] | null } | null
     const userDepartments = profileRow?.departments ?? []
-    emailTemplates = emailTemplates.filter(t => !t.department || userDepartments.includes(t.department))
+    // department is an array — a template shows if it has no department
+    // assigned (general/unassigned) OR overlaps with ANY of the user's
+    // assigned department(s), not an exact single match.
+    emailTemplates = emailTemplates.filter(t =>
+      t.department.length === 0 || t.department.some(d => userDepartments.includes(d))
+    )
   }
 
   // Fetch contact_id (column added in migration 058 — may not exist yet)

@@ -990,7 +990,7 @@ export type EmailTemplate = {
   subject: string
   body: string
   trigger_event: string
-  department: string | null
+  department: string[]
   ai_personalize: boolean
 }
 
