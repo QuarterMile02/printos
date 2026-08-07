@@ -251,14 +251,41 @@ async function PageInner({ params }: PageProps) {
   const proofRows = await dbOrThrow(
     supabase
       .from('proof_versions')
-      .select('id, file_url, file_name, version_number, status, created_at')
+      .select('id, file_url, file_name, version_number, status, created_at, quote_line_item_id, customer_feedback, customer_responded_at')
       .eq('job_id', jobId)
       .order('version_number', { ascending: false })
   )
   const proofs = (proofRows ?? []) as {
     id: string; file_url: string; file_name: string; version_number: number
     status: string; created_at: string
+    quote_line_item_id: string | null; customer_feedback: string | null; customer_responded_at: string | null
   }[]
+
+  // Line items available to tag a proof against (migration 119's
+  // proof_versions.quote_line_item_id — the SO detail page's bulk "Send
+  // Proofs" feature uses this tag to know which line item a given ready
+  // proof belongs to). Fetched independently of material_selection's
+  // jsonb (used above for Production Setup) since not every job has had
+  // the material engine run, and every job with a source quote should
+  // still be able to tag a proof to one of its line items.
+  type ProofLineItemOption = { id: string; description: string | null; width: number | null; height: number | null; quantity: number | null }
+  let proofLineItemOptions: ProofLineItemOption[] = []
+  if (job.source_quote_id) {
+    const liOptRows = await dbOrThrow(
+      supabase
+        .from('quote_line_items')
+        .select('id, description, width, height, quantity')
+        .eq('quote_id', job.source_quote_id)
+        .order('sort_order')
+    ) as ProofLineItemOption[] | null
+    proofLineItemOptions = liOptRows ?? []
+  }
+  function proofLineItemLabel(li: ProofLineItemOption): string {
+    const dims = li.width != null && li.height != null ? ` ${li.width}″×${li.height}″` : ''
+    const qty = li.quantity != null && li.quantity !== 1 ? ` × ${li.quantity}` : ''
+    return `${li.description ?? 'Line item'}${dims}${qty}`
+  }
+  const proofLineItemLabelById = new Map(proofLineItemOptions.map((li) => [li.id, proofLineItemLabel(li)]))
 
   const proofStatusStyles: Record<string, string> = {
     pending: 'bg-amber-50 text-amber-700',
@@ -566,6 +593,22 @@ async function PageInner({ params }: PageProps) {
             <input type="hidden" name="jobId" value={jobId} />
             <input type="hidden" name="orgId" value={org.id} />
             <input type="hidden" name="orgSlug" value={slug} />
+            {proofLineItemOptions.length > 0 && (
+              <div className="mb-3">
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Line Item</label>
+                <select
+                  name="quoteLineItemId"
+                  defaultValue={proofLineItemOptions.length === 1 ? proofLineItemOptions[0].id : ''}
+                  className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                >
+                  <option value="">— Not tied to a specific line item —</option>
+                  {proofLineItemOptions.map((li) => (
+                    <option key={li.id} value={li.id}>{proofLineItemLabel(li)}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-400">Tag which line item this proof is for so it can be bulk-sent for customer review from the Sales Order page.</p>
+              </div>
+            )}
             <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center">
               <svg className="mx-auto h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
@@ -602,7 +645,18 @@ async function PageInner({ params }: PageProps) {
                       <p className="text-sm font-medium text-gray-900">{proof.file_name}</p>
                       <p className="text-xs text-gray-500">
                         {new Date(proof.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        {proof.quote_line_item_id && (
+                          <span className="ml-2 text-gray-400">· {proofLineItemLabelById.get(proof.quote_line_item_id) ?? 'Line item'}</span>
+                        )}
                       </p>
+                      {proof.customer_feedback && (
+                        <p className="mt-1 max-w-md text-xs italic text-gray-600">
+                          “{proof.customer_feedback}”
+                          {proof.customer_responded_at && (
+                            <span className="not-italic text-gray-400"> — customer, {new Date(proof.customer_responded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

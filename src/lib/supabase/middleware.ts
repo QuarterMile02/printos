@@ -36,7 +36,15 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/signup')
   const isPasswordRoute = pathname.startsWith('/forgot-password') || pathname.startsWith('/reset-password')
   const isApiRoute = pathname.startsWith('/api')
-  const isPublicRoute = pathname === '/' || isAuthRoute || isPasswordRoute || isApiRoute
+  // Public, token-authenticated customer proof-review page (migration
+  // 119) -- no Supabase session exists for a customer following this
+  // link, and it shouldn't: proof_sends.token is its own, separate
+  // security boundary, validated server-side per-request in
+  // respond-to-proof-core.ts. See that file for the actual access
+  // control; this just stops the redirect-to-/login that would otherwise
+  // block every anonymous visit before the page even runs.
+  const isProofReviewRoute = pathname.startsWith('/proofs/')
+  const isPublicRoute = pathname === '/' || isAuthRoute || isPasswordRoute || isApiRoute || isProofReviewRoute
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()

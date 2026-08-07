@@ -13,6 +13,7 @@ import {
 } from '../format'
 import SoCustomerPicker from './so-customer-picker'
 import { deleteShipment } from '../../shipping/actions'
+import { sendProofsBundle } from './proof-actions'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New',
@@ -72,6 +73,7 @@ type Shipment   = {
   quoted_rate: number | null; actual_cost: number | null; label_url: string | null
 }
 type ShippingMethod  = { id: string; name: string; carrier: string | null; is_active: boolean }
+type ReadyProof      = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }
 
 const SHIP_STATUS_STYLES: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700', shipped: 'bg-blue-50 text-blue-700',
@@ -125,6 +127,18 @@ type Props = {
   shipmentError?: string
   warning?: string
   shippingMethods: ShippingMethod[]
+  readyProofs: ReadyProof[]
+}
+
+function fmtSentAt(iso: string): string {
+  const d = new Date(iso)
+  const diffMs = Date.now() - d.getTime()
+  const diffHrs = diffMs / 3_600_000
+  if (diffHrs < 1) return 'just now'
+  if (diffHrs < 24) return `${Math.round(diffHrs)}h ago`
+  const diffDays = Math.round(diffHrs / 24)
+  if (diffDays < 14) return `${diffDays}d ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 const MANUAL_STATUSES: { value: SalesOrderStatus; label: string }[] = [
@@ -143,7 +157,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, lineItems, canSeePricing, canExportPdf,
   initialContactId, initialContactName, initialContactEmail, initialContactPhone, canReassignCustomer,
-  shipments, shipmentSaved, shipmentError, warning, shippingMethods,
+  shipments, shipmentSaved, shipmentError, warning, shippingMethods, readyProofs,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -151,6 +165,8 @@ export default function SoDetailClient({
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [creatingInvoice, setCreatingInvoice] = useState(false)
   const [invoiceError, setInvoiceError] = useState<string | null>(null)
+  const [selectedProofIds, setSelectedProofIds] = useState<Set<string>>(new Set())
+  const [sendingProofs, setSendingProofs] = useState(false)
 
   useEffect(() => {
     if (shipmentError) flash(shipmentError, 'error')
@@ -187,6 +203,31 @@ export default function SoDetailClient({
       if (res.error) { setStatus(prev); flash(res.error, 'error') }
       else flash(`Status updated to ${SO_STATUS_LABELS[next]}`)
     })
+  }
+
+  function toggleProof(id: string) {
+    setSelectedProofIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  async function handleSendProofs() {
+    if (selectedProofIds.size === 0) return
+    setSendingProofs(true)
+    try {
+      const res = await sendProofsBundle(salesOrder.id, orgId, orgSlug, Array.from(selectedProofIds))
+      if (!res.success) {
+        flash(res.error ?? 'Failed to send proofs.', 'error')
+      } else {
+        flash(`Sent ${res.sentCount} proof${res.sentCount === 1 ? '' : 's'} for review.`)
+        setSelectedProofIds(new Set())
+        router.refresh()
+      }
+    } finally {
+      setSendingProofs(false)
+    }
   }
 
   const customerName = salesOrder.customer ? `${salesOrder.customer.first_name} ${salesOrder.customer.last_name}` : null
@@ -343,6 +384,50 @@ export default function SoDetailClient({
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── Proofs Ready for Review ──────────────────────────────────────── */}
+      {readyProofs.length > 0 && (
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              Proofs Ready for Review
+              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">{readyProofs.length}</span>
+            </h2>
+            <button
+              type="button"
+              onClick={handleSendProofs}
+              disabled={selectedProofIds.size === 0 || sendingProofs}
+              className="rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+            >
+              {sendingProofs ? 'Sending…' : `Send Proofs${selectedProofIds.size ? ` (${selectedProofIds.size})` : ''}`}
+            </button>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {readyProofs.map((p) => {
+              const li = lineItems.find((l) => l.id === p.quoteLineItemId)
+              return (
+                <label key={p.id} className="flex items-center gap-3 px-6 py-3 hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedProofIds.has(p.id)}
+                    onChange={() => toggleProof(p.id)}
+                    className="h-4 w-4 rounded border-gray-300 text-qm-lime focus:ring-qm-lime"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{li?.description ?? 'Line item'}</p>
+                    <p className="text-xs text-gray-500 truncate">{p.fileName} · v{p.versionNumber}</p>
+                  </div>
+                  {p.lastSentAt && (
+                    <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                      Sent {fmtSentAt(p.lastSentAt)} — resend?
+                    </span>
+                  )}
+                </label>
+              )
+            })}
+          </div>
         </div>
       )}
 

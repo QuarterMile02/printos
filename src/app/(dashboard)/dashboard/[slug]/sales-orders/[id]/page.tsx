@@ -196,6 +196,64 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     shippingMethods = (mData ?? []) as ShipMethodRow[]
   } catch { /* table not yet applied */ }
 
+  // Proofs ready to bulk-send for customer review: pending, tagged-to-a-
+  // line-item proof_versions belonging to this SO's jobs (migration 119).
+  // Only the highest version_number per line item is offered — an older
+  // superseded version isn't something anyone should be sending out.
+  type ReadyProofRow = {
+    id: string; quote_line_item_id: string | null; file_name: string
+    version_number: number; created_at: string
+  }
+  let readyProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }[] = []
+  if ((jobs ?? []).length > 0) {
+    const jobIds = (jobs ?? []).map((j) => j.id)
+    const proofRows = await dbOrThrow(
+      supabase
+        .from('proof_versions')
+        .select('id, quote_line_item_id, file_name, version_number, created_at')
+        .in('job_id', jobIds)
+        .eq('status', 'pending')
+        .not('quote_line_item_id', 'is', null)
+        .order('version_number', { ascending: false })
+    ) as ReadyProofRow[] | null
+
+    const byLineItem = new Map<string, ReadyProofRow>()
+    for (const p of proofRows ?? []) {
+      if (!p.quote_line_item_id) continue
+      // Descending version order above means the first row seen per line
+      // item is already its highest version.
+      if (!byLineItem.has(p.quote_line_item_id)) byLineItem.set(p.quote_line_item_id, p)
+    }
+
+    const candidateIds = Array.from(byLineItem.values()).map((p) => p.id)
+    const lastSentByProof = new Map<string, string>()
+    if (candidateIds.length > 0) {
+      try {
+        const { data: sendItemRows } = await supabase
+          .from('proof_send_items')
+          .select('proof_version_id, proof_sends(sent_at)')
+          .in('proof_version_id', candidateIds) as {
+            data: { proof_version_id: string; proof_sends: { sent_at: string } | { sent_at: string }[] | null }[] | null
+          }
+        for (const row of sendItemRows ?? []) {
+          const sendRel = Array.isArray(row.proof_sends) ? row.proof_sends[0] : row.proof_sends
+          const sentAt = sendRel?.sent_at
+          if (!sentAt) continue
+          const prev = lastSentByProof.get(row.proof_version_id)
+          if (!prev || sentAt > prev) lastSentByProof.set(row.proof_version_id, sentAt)
+        }
+      } catch { /* migration 119 not yet applied */ }
+    }
+
+    readyProofs = Array.from(byLineItem.values()).map((p) => ({
+      id: p.id,
+      quoteLineItemId: p.quote_line_item_id as string,
+      fileName: p.file_name,
+      versionNumber: p.version_number,
+      lastSentAt: lastSentByProof.get(p.id) ?? null,
+    }))
+  }
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -242,6 +300,7 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
         shipmentError={shipmentError}
         warning={warning}
         shippingMethods={shippingMethods}
+        readyProofs={readyProofs}
       />
     </div>
   )

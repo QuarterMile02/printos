@@ -2,7 +2,12 @@ import { createServiceClient } from '@/lib/supabase/server'
 
 export interface LogActivityParams {
   org_id: string
-  user_id: string
+  // Nullable for the one legitimate "no staff user" case: a customer
+  // acting on their own emailed proof-review link (respond-to-proof-core.ts)
+  // has no auth.users id at all. activity_log.user_id is already a
+  // nullable FK — every existing staff-initiated call site still passes a
+  // real id, this only widens the type to let that one caller pass null.
+  user_id: string | null
   entity_type: 'quote' | 'sales_order' | 'job' | 'invoice' | 'proof' | 'customer' | 'qr_scan'
   entity_id: string
   action: string

@@ -10,6 +10,12 @@ export async function uploadProof(formData: FormData) {
   const orgId = formData.get('orgId') as string
   const orgSlug = formData.get('orgSlug') as string
   const file = formData.get('file') as File | null
+  // Which quote line item this proof belongs to (migration 119) — optional,
+  // the upload form's dropdown allows leaving it unset for older-style
+  // single-item jobs. Source of truth for "which line items have a ready
+  // proof" on the SO detail page's bulk Send Proofs UI.
+  const rawLineItemId = formData.get('quoteLineItemId') as string | null
+  const quoteLineItemId = rawLineItemId && rawLineItemId.trim() ? rawLineItemId.trim() : null
 
   if (!file || file.size === 0) throw new Error('No file selected')
   if (file.size > 10 * 1024 * 1024) throw new Error('File must be under 10MB')
@@ -20,11 +26,18 @@ export async function uploadProof(formData: FormData) {
 
   const service = createServiceClient()
 
-  // Ensure bucket exists
+  // Ensure bucket exists. public: true (was false) -- fixed as part of
+  // building the public /proofs/[token] customer review page: this file's
+  // own getPublicUrl() call below only actually resolves to something
+  // viewable if the bucket is public. It defaulted to private before,
+  // which would have made both the existing staff-facing "Download" link
+  // AND the new customer link 403 once a real proof got uploaded — no
+  // proof has ever been uploaded in production yet (confirmed against the
+  // live DB), so this had gone unnoticed.
   const { data: buckets } = await service.storage.listBuckets()
   const exists = (buckets ?? []).some(b => b.name === 'proofs')
   if (!exists) {
-    await service.storage.createBucket('proofs', { public: false })
+    await service.storage.createBucket('proofs', { public: true })
   }
 
   // Get next version number
@@ -62,6 +75,7 @@ export async function uploadProof(formData: FormData) {
     version_number: nextVersion,
     uploaded_by: user.id,
     status: 'pending',
+    quote_line_item_id: quoteLineItemId,
   }).select('id').single() as { data: { id: string } | null; error: { message: string } | null }
 
   if (dbErr) {
