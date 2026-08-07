@@ -88,6 +88,7 @@ const s = StyleSheet.create({
   qMeta:     { fontSize: 8, color: GRAY, marginTop: 2 },
 
   divider:   { borderBottomWidth: 1, borderBottomColor: LGRAY, marginBottom: 14 },
+  docTitle:  { fontSize: 16, fontFamily: 'Helvetica-Bold', color: BLACK, marginBottom: 14 },
 
   // Customer block
   section:   { marginBottom: 14 },
@@ -169,7 +170,7 @@ export default function QuoteDocument({
   documentNumber?: string
   options?: QuoteDocumentOptions
 }) {
-  const { quoteNumber, date, expiresAt, customer, lineItems, discountPercent, terms, notes, modifierLabels, org, depositPercent, depositAmount, amountPaid, balanceDue } = data
+  const { quoteNumber, date, expiresAt, title, customer, lineItems, discountPercent, terms, notes, modifierLabels, org, depositPercent, depositAmount, amountPaid, balanceDue } = data
   const displayNumber = documentNumber ?? quoteNumber
 
   const showSignatureLine = options.showSignatureLine !== false
@@ -229,6 +230,9 @@ export default function QuoteDocument({
         </View>
 
         <View style={s.divider} />
+
+        {/* ── TITLE ── */}
+        {title ? <Text style={s.docTitle}>{title}</Text> : null}
 
         {/* ── CUSTOMER BLOCK ── */}
         <View style={s.twoCol}>
