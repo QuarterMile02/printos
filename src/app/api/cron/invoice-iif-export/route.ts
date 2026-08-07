@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { buildInvoicesIif } from '@/lib/iif/build-invoices-iif'
+import { buildInvoicesIif, markInvoicesIifExported } from '@/lib/iif/build-invoices-iif'
 import { SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 
 export const dynamic = 'force-dynamic'
@@ -102,17 +102,32 @@ export async function GET(request: NextRequest) {
         const built = await buildInvoicesIif(service, org.id, invoiceIds)
         if (built.error || !built.result) throw new Error(built.error ?? 'IIF generation failed')
 
-        const { iifBody, filename, invoiceCount, invoiceNumbers } = built.result
-        const listPreview = invoiceNumbers.slice(0, 25).join(', ') + (invoiceNumbers.length > 25 ? `, +${invoiceNumbers.length - 25} more` : '')
+        const { iifBody, filename, invoiceCount, invoiceIds: builtInvoiceIds, newInvoiceNumbers, repeatInvoiceNumbers } = built.result
+        const previewList = (nums: string[]) => nums.slice(0, 25).join(', ') + (nums.length > 25 ? `, +${nums.length - 25} more` : '')
+        // Repeat-send safeguard (migration 120): an invoice re-appears here
+        // whenever it wasn't promptly marked posted after a prior day's
+        // export, since posting stays a manual step and this job just
+        // re-queries "still unposted" every run. Split so whoever's
+        // importing can tell at a glance which invoices they've already
+        // seen before -- QuickBooks Desktop's IIF import won't catch a
+        // re-import itself (see migration 120's header comment).
+        const newSection = newInvoiceNumbers.length > 0 ? `
+            <p style="margin:12px 0 4px;"><strong>New (${newInvoiceNumbers.length}):</strong></p>
+            <p style="color:#555;font-size:13px;">${previewList(newInvoiceNumbers)}</p>` : ''
+        const repeatSection = repeatInvoiceNumbers.length > 0 ? `
+            <p style="margin:12px 0 4px;color:#b45309;"><strong>⚠ Repeat — confirm not already imported (${repeatInvoiceNumbers.length}):</strong></p>
+            <p style="color:#b45309;font-size:13px;">${previewList(repeatInvoiceNumbers)}</p>` : ''
         const html = `
           <div style="font-family: sans-serif; max-width: 600px;">
             <p>Attached is today's automated QuickBooks IIF export for <strong>${org.name}</strong> —
             <strong>${invoiceCount}</strong> unposted invoice${invoiceCount === 1 ? '' : 's'}.</p>
-            <p style="color:#555;font-size:13px;">${listPreview}</p>
+            ${newSection}
+            ${repeatSection}
             <p>Import this file into QuickBooks Desktop (File → Utilities → Import → IIF Files), then mark
             these invoices posted in PrintOS under Settings → Post to Accounting once confirmed.</p>
             <p style="color:#888;font-size:12px;">This is an automated message from PrintOS — the export
-            was not marked posted automatically; posting is still a manual step.</p>
+            was not marked posted automatically; posting is still a manual step. Repeat invoices above are
+            marked "[REPEAT EXPORT]" in the IIF file's memo field too.</p>
           </div>
         `.trim()
 
@@ -141,6 +156,12 @@ export async function GET(request: NextRequest) {
           .from('accounting_settings')
           .update({ iif_export_last_sent_at: new Date().toISOString() })
           .eq('organization_id', org.id)
+
+        // Only mark exported after Resend has actually confirmed the send
+        // (this line is unreachable otherwise — the throw above on a
+        // non-ok response exits the try block first) — a failed send must
+        // not get falsely counted as a repeat-flaggable prior export.
+        await markInvoicesIifExported(service, builtInvoiceIds)
 
         results.push({ orgId: org.id, orgSlug: org.slug, sent: true, invoiceCount })
       } catch (err) {

@@ -24,6 +24,11 @@ type InvoiceRow = {
   sales_order_id: string | null
   customer_id: string | null
   created_at: string
+  // migration 120 — repeat-send safeguard. NOT NULL DEFAULT 0 in the DB
+  // (always a real number once 120 is applied); typed nullable here and
+  // read with ?? 0 below only as normal TS defensiveness, not because the
+  // column itself is optional.
+  iif_export_count: number | null
   customers: {
     first_name: string | null
     last_name: string | null
@@ -67,7 +72,20 @@ export type BuiltInvoicesIif = {
   iifBody: string
   filename: string
   invoiceCount: number
+  // The invoices actually resolved and included (validated against
+  // organizationId, unlike the raw invoiceIds argument callers pass in) —
+  // this is what markInvoicesIifExported below should be called with, not
+  // the caller's original input list.
+  invoiceIds: string[]
   invoiceNumbers: string[]
+  // Split by whether each invoice had already been included in a prior
+  // successful export (iif_export_count > 0 as of this build, i.e.
+  // migration 120's repeat-send safeguard) — same info that's baked into
+  // the IIF body itself as the "[REPEAT EXPORT]" MEMO marker below, surfaced
+  // separately here so callers building an email (invoice-iif-export/route.ts)
+  // can show a New vs Repeat split without re-deriving it.
+  newInvoiceNumbers: string[]
+  repeatInvoiceNumbers: string[]
 }
 
 export async function buildInvoicesIif(
@@ -80,7 +98,7 @@ export async function buildInvoicesIif(
   // 1. Fetch all invoices (validate they belong to the org)
   const { data: invRows, error: invErr } = await service
     .from('invoices')
-    .select('id, organization_id, invoice_number, total, tax_total, subtotal, notes, due_date, sales_order_id, customer_id, created_at, customers(first_name, last_name, company_name)')
+    .select('id, organization_id, invoice_number, total, tax_total, subtotal, notes, due_date, sales_order_id, customer_id, created_at, iif_export_count, customers(first_name, last_name, company_name)')
     .eq('organization_id', organizationId)
     .in('id', invoiceIds)
   if (invErr) return { result: null, error: `invoice fetch: ${invErr.message}` }
@@ -188,13 +206,25 @@ export async function buildInvoicesIif(
   // Each invoice = TRNS + SPL rows + ENDTRNS
   const TRNSTYPE = 'INVOICE'
   const invoiceNumbers: string[] = []
+  const newInvoiceNumbers: string[] = []
+  const repeatInvoiceNumbers: string[] = []
   for (const inv of invoices) {
     const cust = customerName(inv.customers)
     const dateStr = formatDate(inv.created_at)
     const invNumStr = `INV-${String(inv.invoice_number).padStart(4, '0')}`
     invoiceNumbers.push(invNumStr)
-    const memo = inv.notes ?? ''
     const totalDollars = (inv.total / 100).toFixed(2)
+
+    // Repeat-send safeguard (migration 120): QuickBooks Desktop's IIF
+    // import has no native duplicate protection (confirmed — see
+    // migration 120's header comment), so an invoice that's shown up in a
+    // prior successful export gets a visible marker here rather than
+    // silently going out again indistinguishable from a first-time send.
+    const isRepeat = (inv.iif_export_count ?? 0) > 0
+    if (isRepeat) repeatInvoiceNumbers.push(invNumStr)
+    else newInvoiceNumbers.push(invNumStr)
+    const baseMemo = inv.notes ?? ''
+    const memo = isRepeat ? (baseMemo ? `${baseMemo} [REPEAT EXPORT]` : '[REPEAT EXPORT]') : baseMemo
 
     // Get line items for this invoice
     const quoteId = inv.sales_order_id ? soToQuote.get(inv.sales_order_id) : undefined
@@ -235,5 +265,65 @@ export async function buildInvoicesIif(
   const dateTag = `${today.getFullYear()}-${mm}-${dd}`
   const filename = `QMI-BULK-INV-${dateTag}-${invoices.length}invoices.iif`
 
-  return { result: { iifBody, filename, invoiceCount: invoices.length, invoiceNumbers }, error: null }
+  return {
+    result: {
+      iifBody,
+      filename,
+      invoiceCount: invoices.length,
+      invoiceIds: invoices.map((inv) => inv.id),
+      invoiceNumbers,
+      newInvoiceNumbers,
+      repeatInvoiceNumbers,
+    },
+    error: null,
+  }
+}
+
+// Called by both export routes (export-iif-bulk/route.ts's manual bulk
+// download, invoice-iif-export/route.ts's scheduled cron send) right
+// after their own definition of "this export actually went out" —
+// manual: once the file body is generated, since the download response
+// *is* the delivery; cron: only after Resend confirms the email sent, not
+// before, so a failed send doesn't get falsely marked as exported. Takes
+// BuiltInvoicesIif's own invoiceIds (the resolved, org-validated list),
+// not whatever the caller originally passed to buildInvoicesIif.
+//
+// Not done as a single atomic UPDATE ... SET iif_export_count =
+// iif_export_count + 1 because the Supabase JS client can't express a
+// column-referencing SET expression without a Postgres function (a bigger
+// change than this safeguard warranted) -- read-then-write per invoice
+// instead. A race between two overlapping exports of the exact same
+// invoice at the exact same moment is the only way this could under-count
+// by one; given exports are at most once/day (cron) or human-triggered
+// (manual), and this count only ever feeds a "you've seen this before"
+// warning rather than anything relied on for correctness, that's an
+// acceptable tradeoff over adding a migration + DB function for it.
+export async function markInvoicesIifExported(service: ServiceClient, invoiceIds: string[]): Promise<void> {
+  if (invoiceIds.length === 0) return
+
+  const { data: rows, error } = await service
+    .from('invoices')
+    .select('id, iif_export_count, iif_first_exported_at')
+    .in('id', invoiceIds)
+  if (error || !rows) {
+    console.error('[markInvoicesIifExported] fetch failed:', error?.message)
+    return
+  }
+
+  const nowIso = new Date().toISOString()
+  const results = await Promise.all(
+    (rows as { id: string; iif_export_count: number | null; iif_first_exported_at: string | null }[]).map((r) =>
+      service
+        .from('invoices')
+        .update({
+          iif_export_count: (r.iif_export_count ?? 0) + 1,
+          iif_last_exported_at: nowIso,
+          iif_first_exported_at: r.iif_first_exported_at ?? nowIso,
+        })
+        .eq('id', r.id),
+    ),
+  )
+  for (const res of results) {
+    if (res.error) console.error('[markInvoicesIifExported] update failed:', res.error.message)
+  }
 }

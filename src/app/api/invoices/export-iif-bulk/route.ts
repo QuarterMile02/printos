@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { buildInvoicesIif } from '@/lib/iif/build-invoices-iif'
+import { buildInvoicesIif, markInvoicesIifExported } from '@/lib/iif/build-invoices-iif'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +21,16 @@ export async function POST(request: NextRequest) {
     if (built.error || !built.result) {
       const status = built.error === 'No matching invoices found' ? 404 : 500
       return NextResponse.json({ error: built.error ?? 'IIF generation failed' }, { status })
+    }
+
+    // The download response below *is* the delivery for this manual path
+    // (unlike the cron route, there's no further async step that could
+    // still fail) -- mark exported now, but don't let a marking failure
+    // block the file the user is actually waiting on.
+    try {
+      await markInvoicesIifExported(service, built.result.invoiceIds)
+    } catch (err) {
+      console.error('[/api/invoices/export-iif-bulk] markInvoicesIifExported failed:', err)
     }
 
     return new NextResponse(built.result.iifBody, {
