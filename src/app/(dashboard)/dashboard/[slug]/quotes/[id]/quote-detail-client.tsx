@@ -901,6 +901,26 @@ export default function QuoteDetailClient({
           >
             {suggestingTitle && pendingAction === 'send' ? 'Checking title…' : 'Send Email'}
           </button>
+          <button
+            type="button"
+            onClick={handleSendSms}
+            disabled={isSendingSms || !quote.customer?.phone}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+          >
+            {isSendingSms ? 'Sending...' : 'Send SMS'}
+          </button>
+          {canExportPdf && (
+            <a
+              href={`/api/quotes/${quote.id}/pdf`}
+              download
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download PDF
+            </a>
+          )}
           {readyToSend ? (
             // Edit is always available while locked, regardless of item
             // count — Done requires items.length > 0 to trigger, but Edit
@@ -922,26 +942,6 @@ export default function QuoteDetailClient({
                 {suggestingTitle && pendingAction === 'done' ? 'Checking title…' : 'Done'}
               </button>
             )}
-          <button
-            type="button"
-            onClick={handleSendSms}
-            disabled={isSendingSms || !quote.customer?.phone}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-          >
-            {isSendingSms ? 'Sending...' : 'Send SMS'}
-          </button>
-          {canExportPdf && (
-            <a
-              href={`/api/quotes/${quote.id}/pdf`}
-              download
-              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              Download PDF
-            </a>
-          )}
         </div>
 
         {convertedSo && (
