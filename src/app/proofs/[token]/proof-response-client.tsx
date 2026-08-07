@@ -136,7 +136,7 @@ export default function ProofResponseClient({ token, orgName, soLabel, initialIt
         <div className="mb-6 text-center">
           <h1 className="text-xl font-bold text-gray-900">Proof Review{soLabel ? ` — ${soLabel}` : ''}</h1>
           <p className="mt-1 text-sm text-gray-500">
-            From {orgName}. {pendingCount > 0 ? `${pendingCount} of ${items.length} still need your review.` : 'All proofs have been reviewed — thank you!'}
+            From {orgName} — {pendingCount > 0 ? `${pendingCount} of ${items.length} still need your review.` : 'all proofs have been reviewed — thank you!'}
           </p>
         </div>
         <div className="space-y-4">
