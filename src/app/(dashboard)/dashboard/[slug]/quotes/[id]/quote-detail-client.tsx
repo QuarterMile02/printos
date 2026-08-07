@@ -649,8 +649,18 @@ export default function QuoteDetailClient({
     // content edit, so awaiting here avoids a race where that clear could
     // land after markReady's `true` write and silently undo it.
     if (newTitle && newTitle !== title) {
+      const res = await updateQuoteFields(quote.id, orgId, orgSlug, { title: newTitle })
+      if (res.error) {
+        // Previously silent: the return value wasn't checked at all, so a
+        // failed title save here (for any reason) would proceed straight
+        // to markReady(true) as if nothing had gone wrong — the quote
+        // would lock with the OLD title still in the DB and no visible
+        // error. Surface it and bail out instead of marking ready on top
+        // of an edit that didn't actually persist.
+        flash(`Failed to save title: ${res.error}`, 'error')
+        return
+      }
       setTitle(newTitle)
-      await updateQuoteFields(quote.id, orgId, orgSlug, { title: newTitle })
     }
     await markReady(true)
   }
