@@ -990,6 +990,8 @@ export type EmailTemplate = {
   subject: string
   body: string
   trigger_event: string
+  department: string | null
+  ai_personalize: boolean
 }
 
 export async function getOrgEmailTemplates(
@@ -1001,7 +1003,7 @@ export async function getOrgEmailTemplates(
 
   const { data, error } = await supabase
     .from('email_templates')
-    .select('id, name, subject, body, trigger_event')
+    .select('id, name, subject, body, trigger_event, department, ai_personalize')
     .eq('organization_id', orgId)
     .eq('is_active', true)
     .order('name', { ascending: true }) as {

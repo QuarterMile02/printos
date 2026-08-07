@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { saveEmailTemplate, deleteEmailTemplate } from '../actions'
+import { saveEmailTemplate, deleteEmailTemplate, cloneEmailTemplate } from '../actions'
 import ImproveButton from './improve-button'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
@@ -47,10 +47,20 @@ async function PageInner({ params, searchParams }: PageProps) {
   ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  type Tmpl = { id: string; name: string; subject: string; body: string; trigger_event: string | null; is_active: boolean | null }
+  const deptRows = await dbOrThrow(
+    supabase
+      .from('departments')
+      .select('code, name, sort_order')
+      .eq('organization_id', org.id)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+  ) as { code: string | null; name: string }[] | null
+  const departments = (deptRows ?? []).filter(d => d.code)
+
+  type Tmpl = { id: string; name: string; subject: string; body: string; trigger_event: string | null; is_active: boolean | null; department: string | null; ai_personalize: boolean | null }
   let t: Tmpl | null = null
   if (!isNew) {
-    const data = await dbOrThrow(supabase.from('email_templates').select('id, name, subject, body, trigger_event, is_active').eq('id', id).eq('organization_id', org.id).maybeSingle())
+    const data = await dbOrThrow(supabase.from('email_templates').select('id, name, subject, body, trigger_event, is_active, department, ai_personalize').eq('id', id).eq('organization_id', org.id).maybeSingle())
     t = data as unknown as Tmpl | null
     if (!t) return <div className="p-8 text-red-600">Template not found</div>
   }
@@ -92,6 +102,15 @@ async function PageInner({ params, searchParams }: PageProps) {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-gray-700">Department</label>
+              <select name="department" defaultValue={t?.department ?? ''} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
+                <option value="">— Unassigned (visible to everyone) —</option>
+                {departments.map(d => <option key={d.code} value={d.code ?? ''}>{d.name}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-gray-400">Controls which department sees this in the Send Email template picker. Owner/Admin always see every template.</p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700">Subject *</label>
               <input type="text" name="subject" required defaultValue={t?.subject ?? ''} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
               <p className="mt-1 text-xs text-gray-400">Variables: {VARIABLES.join(', ')}</p>
@@ -109,6 +128,12 @@ async function PageInner({ params, searchParams }: PageProps) {
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" name="is_active" defaultChecked={t?.is_active !== false} className="h-4 w-4 rounded border-gray-300 accent-qm-lime" />
               Active
+            </label>
+
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" name="ai_personalize" defaultChecked={t?.ai_personalize === true} className="h-4 w-4 rounded border-gray-300 accent-purple-600" />
+              AI-personalize per order
+              <span className="text-xs text-gray-400">— tailors the body to the specific order/customer at send time</span>
             </label>
 
           </form>
@@ -129,16 +154,29 @@ async function PageInner({ params, searchParams }: PageProps) {
           <div className="flex items-start justify-between mb-6">
             <div>
               <h1 className="text-2xl font-extrabold text-gray-900">{t!.name}</h1>
-              {t!.trigger_event && (
-                <span className="mt-1 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                  {TRIGGER_EVENTS.find(e => e.value === t!.trigger_event)?.label ?? t!.trigger_event}
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {t!.trigger_event && (
+                  <span className="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                    {TRIGGER_EVENTS.find(e => e.value === t!.trigger_event)?.label ?? t!.trigger_event}
+                  </span>
+                )}
+                <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                  {t!.department ? (departments.find(d => d.code === t!.department)?.name ?? t!.department) : 'Unassigned'}
                 </span>
-              )}
+              </div>
             </div>
             <div className="flex items-center gap-3">
+              {t!.ai_personalize && (
+                <span className="inline-block rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">AI-personalize</span>
+              )}
               <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${t!.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                 {t!.is_active ? 'Active' : 'Inactive'}
               </span>
+              <form action={cloneEmailTemplate}>
+                <input type="hidden" name="id" value={t!.id} />
+                <input type="hidden" name="orgSlug" value={slug} />
+                <button type="submit" className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Clone</button>
+              </form>
               <Link href={`/dashboard/${slug}/settings/email-templates/${id}?edit=1`} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Edit</Link>
             </div>
           </div>

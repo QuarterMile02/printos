@@ -14,6 +14,7 @@ import type { EmailTemplate } from '../actions'
 import SendEmailModal from './send-email-modal'
 import type { EasypostRate } from '@/lib/easypost'
 import QuoteCustomerPicker from './quote-customer-picker'
+import { suggestQuoteTitle } from '@/app/actions/ai-assist'
 
 type ModifierDef = {
   id: string
@@ -132,6 +133,17 @@ type Props = {
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
   return Math.round(qty * unitPriceCents * (1 - discountPct / 100))
+}
+
+// Short, customer-facing (non-pricing) summary of line items — used both
+// as the AI title-suggestion prompt input and as order context for
+// per-template AI-personalize at send time.
+function summarizeLineItems(items: LineItem[]): string {
+  return items.map(li => {
+    const dims = li.width && li.height ? ` ${li.width}x${li.height}in` : ''
+    const mat = li.material_name ? ` (${li.material_name})` : ''
+    return `${li.quantity}x ${li.description}${dims}${mat}`
+  }).join('\n')
 }
 
 function dollarsToCents(s: string): number {
@@ -532,6 +544,49 @@ export default function QuoteDetailClient({
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [isSendingSms, setIsSendingSms] = useState(false)
 
+  // ── AI title suggestion (surfaced just before Send Email opens) ────
+  const [showTitleSuggestion, setShowTitleSuggestion] = useState(false)
+  const [titleSuggestionDraft, setTitleSuggestionDraft] = useState('')
+  const [suggestingTitle, setSuggestingTitle] = useState(false)
+
+  async function handleSendEmailClick() {
+    // Nothing to summarize yet — just open the modal like before.
+    if (items.length === 0) { setShowEmailModal(true); return }
+    setSuggestingTitle(true)
+    try {
+      const { suggested, error } = await suggestQuoteTitle(summarizeLineItems(items))
+      if (!error && suggested) {
+        setTitleSuggestionDraft(suggested)
+        setShowTitleSuggestion(true)
+      } else {
+        // AI failed — never block sending on it, just proceed as before.
+        setShowEmailModal(true)
+      }
+    } catch {
+      setShowEmailModal(true)
+    } finally {
+      setSuggestingTitle(false)
+    }
+  }
+
+  // Covers both "Accept" (used unedited) and "Edit" (used after tweaking
+  // the draft) — either way this is an explicit rep action, never automatic.
+  function useTitleSuggestion() {
+    const newTitle = titleSuggestionDraft.trim()
+    if (newTitle && newTitle !== title) {
+      setTitle(newTitle)
+      saveFields({ title: newTitle })
+    }
+    setShowTitleSuggestion(false)
+    setShowEmailModal(true)
+  }
+
+  // "Decline" — keeps the rep's original manual title untouched.
+  function declineTitleSuggestion() {
+    setShowTitleSuggestion(false)
+    setShowEmailModal(true)
+  }
+
   async function handleSendSms() {
     setIsSendingSms(true)
     try {
@@ -755,10 +810,11 @@ export default function QuoteDetailClient({
         <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setShowEmailModal(true)}
-            className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+            onClick={handleSendEmailClick}
+            disabled={suggestingTitle}
+            className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
           >
-            Send Email
+            {suggestingTitle ? 'Checking title…' : 'Send Email'}
           </button>
           <button
             type="button"
@@ -1594,6 +1650,40 @@ export default function QuoteDetailClient({
         </div>
       )}
 
+      {showTitleSuggestion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={declineTitleSuggestion} />
+          <div className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">AI-suggested title</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Based on this quote's line items. Edit it below, or keep your original title — nothing is saved until you choose.
+            </p>
+            <p className="mt-3 text-xs font-medium uppercase tracking-wide text-gray-400">Your current title</p>
+            <p className="text-sm text-gray-700">{title}</p>
+            <label className="mt-4 block text-xs font-medium uppercase tracking-wide text-gray-400">Suggested title</label>
+            <input
+              type="text"
+              value={titleSuggestionDraft}
+              onChange={(e) => setTitleSuggestionDraft(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            />
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" onClick={declineTitleSuggestion} className="rounded-md px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100">
+                Keep my title
+              </button>
+              <button
+                type="button"
+                onClick={useTitleSuggestion}
+                disabled={!titleSuggestionDraft.trim()}
+                className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+              >
+                Use this title
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <SendEmailModal
         open={showEmailModal}
         onClose={() => setShowEmailModal(false)}
@@ -1608,11 +1698,12 @@ export default function QuoteDetailClient({
         quote={{
           id: quote.id,
           quote_number: quote.quote_number,
-          title: quote.title,
+          title,
           total: grandTotal,
           customer: quote.customer,
         }}
         templates={emailTemplates}
+        lineItemsSummary={summarizeLineItems(items)}
       />
     </>
   )

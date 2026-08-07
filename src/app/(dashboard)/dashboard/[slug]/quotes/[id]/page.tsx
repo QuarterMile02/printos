@@ -285,7 +285,7 @@ async function QuoteDetailPageInner({ params }: PageProps) {
   try {
     const { data: tplRows } = await supabase
       .from('email_templates')
-      .select('id, name, subject, body, trigger_event')
+      .select('id, name, subject, body, trigger_event, department, ai_personalize')
       .eq('organization_id', org.id)
       .eq('is_active', true)
       .order('name', { ascending: true }) as {
@@ -320,14 +320,28 @@ async function QuoteDetailPageInner({ params }: PageProps) {
   const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
   // Resolve org role for owner/admin gating
+  const currentUserId = (await supabase.auth.getUser()).data.user?.id ?? ''
   const membershipRow = await dbOrThrow(
     supabase
       .from('organization_members').select('role')
       .eq('organization_id', org.id)
-      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .eq('user_id', currentUserId)
       .maybeSingle()
   ) as { role: string } | null
   const isOwnerOrAdmin = membershipRow?.role === 'owner' || membershipRow?.role === 'admin'
+
+  // Default-filter the Send Email template picker to the current user's
+  // own department(s). Owner/Admin see every template regardless of
+  // department (per product decision). Templates with no department set
+  // (department = NULL) are "general" and stay visible to everyone so
+  // existing untagged templates don't disappear for non-owner/admin users.
+  if (!isOwnerOrAdmin) {
+    const profileRow = await dbOrThrow(
+      supabase.from('profiles').select('departments').eq('id', currentUserId).maybeSingle()
+    ) as { departments: string[] | null } | null
+    const userDepartments = profileRow?.departments ?? []
+    emailTemplates = emailTemplates.filter(t => !t.department || userDepartments.includes(t.department))
+  }
 
   // Fetch contact_id (column added in migration 058 — may not exist yet)
   let quoteContactId: string | null = null

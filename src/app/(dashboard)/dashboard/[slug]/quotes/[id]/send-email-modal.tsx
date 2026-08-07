@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { renderTemplate } from '@/app/actions/get-email-template'
 import type { EmailTemplate } from '../actions'
 import { sendQuoteEmailCustom } from '../actions'
+import { personalizeEmailForOrder } from '@/app/actions/ai-assist'
 import AttachFromLibraryModal, { type LibraryAttachment } from '@/components/assets/attach-from-library-modal'
 
 type Quote = {
@@ -27,6 +28,9 @@ type Props = {
   orgSlug: string
   quote: Quote
   templates: EmailTemplate[]
+  // Short customer-facing summary of line items (no pricing) — used as
+  // order context for templates with "AI-personalize per order" on.
+  lineItemsSummary?: string
 }
 
 const PDF_TYPE_OPTIONS = [
@@ -35,7 +39,7 @@ const PDF_TYPE_OPTIONS = [
 ]
 
 export default function SendEmailModal({
-  open, onClose, onSent, orgId, orgSlug, quote, templates,
+  open, onClose, onSent, orgId, orgSlug, quote, templates, lineItemsSummary,
 }: Props) {
   const customerEmail = quote.customer?.email ?? ''
   const customerName = quote.customer
@@ -59,6 +63,7 @@ export default function SendEmailModal({
   const [manualFiles, setManualFiles] = useState<File[]>([])
   const [libraryAttachments, setLibraryAttachments] = useState<LibraryAttachment[]>([])
   const [showLibraryPicker, setShowLibraryPicker] = useState(false)
+  const [isPersonalizing, setIsPersonalizing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Template variables for rendering
@@ -101,9 +106,26 @@ export default function SendEmailModal({
 
   async function applyTemplate(template: EmailTemplate) {
     const renderedSubject = await renderTemplate(template.subject, templateVars)
-    const renderedBody = await renderTemplate(template.body, templateVars)
+    let renderedBody = await renderTemplate(template.body, templateVars)
     setSubject(renderedSubject)
     setBody(renderedBody)
+
+    if (template.ai_personalize) {
+      setIsPersonalizing(true)
+      try {
+        const orderContext = [
+          `Customer: ${customerName || 'N/A'}`,
+          `Quote: ${templateVars.txn_number} — ${quote.title}`,
+          `Total: ${templateVars.total}`,
+          lineItemsSummary ? `Line items:\n${lineItemsSummary}` : null,
+        ].filter(Boolean).join('\n')
+        const { personalized } = await personalizeEmailForOrder(renderedBody, orderContext)
+        renderedBody = personalized
+        setBody(renderedBody)
+      } finally {
+        setIsPersonalizing(false)
+      }
+    }
   }
 
   async function handleTemplateChange(templateId: string) {
@@ -242,13 +264,24 @@ export default function SendEmailModal({
           <div>
             <div className="flex items-center justify-between">
               <label className="block text-sm font-medium text-gray-700">Body</label>
-              <button
-                type="button"
-                onClick={() => setShowPreview((p) => !p)}
-                className="text-xs font-medium text-qm-fuchsia hover:underline"
-              >
-                {showPreview ? 'Edit' : 'Preview'}
-              </button>
+              <div className="flex items-center gap-2">
+                {isPersonalizing && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-purple-600">
+                    <svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    AI-personalizing…
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPreview((p) => !p)}
+                  className="text-xs font-medium text-qm-fuchsia hover:underline"
+                >
+                  {showPreview ? 'Edit' : 'Preview'}
+                </button>
+              </div>
             </div>
             {showPreview ? (
               <div
@@ -340,7 +373,7 @@ export default function SendEmailModal({
           <button
             type="button"
             onClick={handleSend}
-            disabled={isSending || !to.trim()}
+            disabled={isSending || isPersonalizing || !to.trim()}
             className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
           >
             {isSending ? 'Sending...' : 'Send'}
