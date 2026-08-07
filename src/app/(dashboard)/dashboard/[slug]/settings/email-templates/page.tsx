@@ -43,7 +43,7 @@ async function PageInner({ params }: PageProps) {
         .eq('organization_id', org.id)
         .order('name', { ascending: true })
         .limit(1000)
-    ) as Promise<EmailTemplateRow[] | null>,
+    ) as Promise<(Omit<EmailTemplateRow, 'department'> & { department: string[] | null })[] | null>,
     supabase
       .from('email_templates')
       .select('id', { count: 'exact', head: true })
@@ -53,6 +53,16 @@ async function PageInner({ params }: PageProps) {
   const userId = userResult.data.user?.id ?? ''
   const userRole = (memberRows ?? []).find((m) => m.user_id === userId)?.role ?? 'member'
   const totalCount = countRes.count ?? 0
+
+  // department is text[] NOT NULL DEFAULT '{}' per migration 116, but that
+  // migration hasn't run in production yet (as of this writing the live
+  // column is still the scalar `text` migration 115 shipped) — normalize
+  // defensively rather than assuming the migration has landed; this is a
+  // harmless no-op once it has.
+  const templates: EmailTemplateRow[] = (rowsData ?? []).map(t => ({
+    ...t,
+    department: Array.isArray(t.department) ? t.department : t.department ? [t.department] : [],
+  }))
 
   return (
     <div className="p-8 max-w-6xl">
@@ -73,7 +83,7 @@ async function PageInner({ params }: PageProps) {
         orgSlug={slug}
         userId={userId}
         userRole={userRole}
-        initialTemplates={rowsData ?? []}
+        initialTemplates={templates}
       />
     </div>
   )

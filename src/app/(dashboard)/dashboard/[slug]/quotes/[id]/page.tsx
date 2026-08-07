@@ -289,10 +289,19 @@ async function QuoteDetailPageInner({ params }: PageProps) {
       .eq('organization_id', org.id)
       .eq('is_active', true)
       .order('name', { ascending: true }) as {
-        data: EmailTemplate[] | null
+        data: (Omit<EmailTemplate, 'department'> & { department: string[] | null })[] | null
         error: unknown
       }
-    emailTemplates = tplRows ?? []
+    // department is text[] NOT NULL DEFAULT '{}' per migration 116, but
+    // that migration hasn't run in production yet (as of this writing the
+    // live column is still the scalar `text` migration 115 shipped) — so
+    // this can genuinely still come back as null or a single string on
+    // existing rows right now. Normalize defensively rather than assuming
+    // the migration has landed; harmless no-op once it has.
+    emailTemplates = (tplRows ?? []).map(t => ({
+      ...t,
+      department: Array.isArray(t.department) ? t.department : t.department ? [t.department] : [],
+    }))
   } catch {
     // email_templates table may not exist yet — skip
   }
