@@ -550,14 +550,26 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
       return []
     }
 
-    // Step 3: Before touching "Show Only Selected", load all items.
-    // Click "Load X Remaining" if present and wait up to 30s for it to disappear.
-    const loadRemainingBtn = page.locator('button').filter({ hasText: /load.*remaining/i }).first()
-    if ((await loadRemainingBtn.count()) > 0) {
+    // Step 3: Before touching "Show Only Selected", load all items. Some
+    // pickers paginate — one click can load a batch and then present a
+    // NEW "Load N Remaining" for the next batch, so this loops (capped at
+    // 10 iterations, matching the retry/load-more loop from the original
+    // June 3 implementation of this function that a later DOM-contamination
+    // rewrite dropped) rather than assuming a single click always loads
+    // everything. Each iteration waits for THIS click's button to clear
+    // (up to 10s, not 30s) before checking whether a new one appeared —
+    // capped lower than the original per-click wait so a button that
+    // changes text instead of disappearing can't stall up to 10x30s.
+    let prevLoadText = null
+    for (let loadIter = 0; loadIter < 10; loadIter++) {
+      const loadRemainingBtn = page.locator('button').filter({ hasText: /load.*remaining/i }).first()
+      if ((await loadRemainingBtn.count()) === 0) break
       const loadText = (await loadRemainingBtn.innerText().catch(() => '')).trim()
-      console.log(`    [DD ${rowIndex}] clicking "${loadText}"…`)
+      if (loadText === prevLoadText) break // same button, didn't advance — stop instead of spinning
+      prevLoadText = loadText
+      console.log(`    [DD ${rowIndex}] load-more ${loadIter + 1}/10: clicking "${loadText}"…`)
       await loadRemainingBtn.click({ timeout: 5000, force: true }).catch(() => {})
-      const deadline = Date.now() + 30_000
+      const deadline = Date.now() + 10_000
       while (Date.now() < deadline) {
         await sleep(500)
         if ((await page.locator('button').filter({ hasText: /load.*remaining/i }).count()) === 0) break
@@ -599,8 +611,21 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
 
     // Read all name cells and take the last selectedCount — in a fresh picker
     // the only cells present are from this dropdown, so slice(-N) is reliable.
-    const allCells = await page.locator('[class*="_contentCell_"][header="Name"]').allInnerTexts()
-    const items = allCells.map(t => t.trim()).filter(t => t.length > 0).slice(-selectedCount)
+    // Retry up to 3x if the read comes back short of the expected count (the
+    // filtered list may not have finished rendering yet) — restores the
+    // retry-on-mismatch behavior from the original June 3 implementation of
+    // this function, which a later DOM-contamination rewrite dropped in
+    // favor of a single read with no retry.
+    let items = []
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        console.log(`    [DD ${rowIndex}] retry ${attempt}/2: got ${items.length}, expected ${selectedCount} — re-reading after delay`)
+        await sleep(800)
+      }
+      const allCells = await page.locator('[class*="_contentCell_"][header="Name"]').allInnerTexts()
+      items = allCells.map(t => t.trim()).filter(t => t.length > 0).slice(-selectedCount)
+      if (items.length >= selectedCount) break
+    }
     console.log(`    [DD ${rowIndex}] selected items: ${items.length} (expected ${selectedCount})`)
 
     // Close the picker.
