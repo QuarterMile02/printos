@@ -46,10 +46,14 @@ export default function SendEmailModal({
     ? `${quote.customer.first_name} ${quote.customer.last_name}`
     : ''
 
-  // Filter templates relevant to quotes (quote_sent, quote_revised, manual, etc.)
-  const quoteTemplates = templates.filter((t) =>
-    ['quote_sent', 'quote_revised', 'quote_reminder', 'manual'].includes(t.trigger_event),
-  )
+  // Every template passed in here is already active and department-
+  // appropriate (filtered upstream in quotes/[id]/page.tsx). Do NOT also
+  // filter by trigger_event -- trigger_event only controls automated
+  // firing (e.g. auto-sending on a proof_sent event elsewhere in the app);
+  // it must never gate whether a rep can manually pick a template here. A
+  // template like "Proof Ready" (trigger_event: 'proof_sent') should still
+  // be pickable when someone is manually sending a quote email.
+  const quoteTemplates = templates
 
   const [to, setTo] = useState(customerEmail)
   const [cc, setCc] = useState('')

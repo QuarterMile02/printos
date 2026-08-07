@@ -131,10 +131,7 @@ export default function EmailTemplatesListClient({ orgId, orgSlug, userId, userR
       {/* Header */}
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-extrabold text-qm-black">Email Templates</h1>
-          <span className="inline-flex items-center rounded-full bg-qm-lime-light px-2.5 py-0.5 text-xs font-semibold text-qm-lime-dark">
-            {templates.length}
-          </span>
+          <h1 className="text-2xl font-extrabold text-qm-black">Email Templates <span className="text-sm font-normal text-gray-400">({templates.length})</span></h1>
         </div>
         <Link href={`/dashboard/${orgSlug}/settings/email-templates/new`} className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
