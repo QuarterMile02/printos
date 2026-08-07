@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { dbOrThrow, DbError } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import { cloneEmailTemplate } from './actions'
+import { STAFF_DEPARTMENTS } from '@/lib/staff-departments'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,7 @@ async function PageInner({ params, searchParams }: PageProps) {
   ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const [rowsData, countRes, deptRows] = await Promise.all([
+  const [rowsData, countRes] = await Promise.all([
     dbOrThrow(
       supabase
         .from('email_templates')
@@ -51,28 +52,25 @@ async function PageInner({ params, searchParams }: PageProps) {
       .from('email_templates')
       .select('id', { count: 'exact', head: true })
       .eq('organization_id', org.id),
-    dbOrThrow(
-      supabase
-        .from('departments')
-        .select('code, name, sort_order')
-        .eq('organization_id', org.id)
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true })
-    ),
   ])
   if (countRes.error) throw new DbError(countRes.error)
   const totalCount = countRes.count ?? 0
   type Row = { id: string; name: string; subject: string; trigger_event: string | null; is_active: boolean | null; department: string | null; ai_personalize: boolean | null }
   const allTemplates = (rowsData ?? []) as Row[]
-  const departments = (deptRows ?? []) as { code: string | null; name: string; sort_order: number | null }[]
-  const deptLabelByCode = new Map(departments.filter(d => d.code).map(d => [d.code as string, d.name]))
+  // Staff functional departments (Sales, Design, Production, ...) — the
+  // same taxonomy stored in profiles.departments via Settings > Team, NOT
+  // the job/product-category `departments` table. Must match exactly, or
+  // department-based filtering (here and in the Send Email modal) never
+  // matches anything for non-owner/admin users.
+  const departments = STAFF_DEPARTMENTS
+  const deptLabelByCode = new Map(departments.map(d => [d.value as string, d.label]))
 
   const tabCounts = {
     all: allTemplates.length,
     unassigned: allTemplates.filter(t => !t.department).length,
   } as Record<string, number>
   for (const d of departments) {
-    if (d.code) tabCounts[d.code] = allTemplates.filter(t => t.department === d.code).length
+    tabCounts[d.value] = allTemplates.filter(t => t.department === d.value).length
   }
 
   const templates = deptFilter === 'all'
@@ -140,15 +138,15 @@ async function PageInner({ params, searchParams }: PageProps) {
         >
           Unassigned <span className="ml-1.5 text-xs text-qm-gray">({tabCounts.unassigned})</span>
         </Link>
-        {departments.filter(d => d.code).map(d => (
+        {departments.map(d => (
           <Link
-            key={d.code}
-            href={tabHref(d.code as string)}
+            key={d.value}
+            href={tabHref(d.value)}
             className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-              deptFilter === d.code ? 'bg-qm-lime-light text-qm-lime' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              deptFilter === d.value ? 'bg-qm-lime-light text-qm-lime' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}
           >
-            {d.name} <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[d.code as string] ?? 0})</span>
+            {d.label} <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[d.value] ?? 0})</span>
           </Link>
         ))}
       </div>

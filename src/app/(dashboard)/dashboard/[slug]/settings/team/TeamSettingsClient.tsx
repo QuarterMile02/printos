@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import InviteMemberForm from './invite-member-form';
+import { STAFF_DEPARTMENTS } from '@/lib/staff-departments';
 
 type Role = 'owner' | 'sales' | 'designer' | 'production' | 'installer' | 'digital' | 'accounting';
 type Tier = 'staff' | 'lead' | 'manager';
@@ -74,17 +75,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-const DEPARTMENTS = [
-  { value: 'sales', label: 'Sales' },
-  { value: 'design', label: 'Design' },
-  { value: 'production', label: 'Production' },
-  { value: 'installation', label: 'Installation' },
-  { value: 'digital', label: 'Digital' },
-  { value: 'accounting', label: 'Accounting' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'csr', label: 'Customer Service' },
-  { value: 'warehouse', label: 'Warehouse' },
-];
+const DEPARTMENTS = STAFF_DEPARTMENTS;
 
 type PermissionKey =
   | 'see_pricing' | 'apply_discount' | 'approve_exception'

@@ -4,6 +4,7 @@ import { saveEmailTemplate, deleteEmailTemplate, cloneEmailTemplate } from '../a
 import ImproveButton from './improve-button'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import { STAFF_DEPARTMENTS } from '@/lib/staff-departments'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,15 +48,10 @@ async function PageInner({ params, searchParams }: PageProps) {
   ) as { id: string; name: string } | null
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
-  const deptRows = await dbOrThrow(
-    supabase
-      .from('departments')
-      .select('code, name, sort_order')
-      .eq('organization_id', org.id)
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true })
-  ) as { code: string | null; name: string }[] | null
-  const departments = (deptRows ?? []).filter(d => d.code)
+  // Staff functional departments (Sales, Design, Production, ...) — the
+  // same taxonomy stored in profiles.departments via Settings > Team, NOT
+  // the job/product-category `departments` table.
+  const departments = STAFF_DEPARTMENTS
 
   type Tmpl = { id: string; name: string; subject: string; body: string; trigger_event: string | null; is_active: boolean | null; department: string | null; ai_personalize: boolean | null }
   let t: Tmpl | null = null
@@ -105,7 +101,7 @@ async function PageInner({ params, searchParams }: PageProps) {
               <label className="block text-sm font-medium text-gray-700">Department</label>
               <select name="department" defaultValue={t?.department ?? ''} className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime">
                 <option value="">— Unassigned (visible to everyone) —</option>
-                {departments.map(d => <option key={d.code} value={d.code ?? ''}>{d.name}</option>)}
+                {departments.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
               <p className="mt-1 text-xs text-gray-400">Controls which department sees this in the Send Email template picker. Owner/Admin always see every template.</p>
             </div>
@@ -161,7 +157,7 @@ async function PageInner({ params, searchParams }: PageProps) {
                   </span>
                 )}
                 <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                  {t!.department ? (departments.find(d => d.code === t!.department)?.name ?? t!.department) : 'Unassigned'}
+                  {t!.department ? (departments.find(d => d.value === t!.department)?.label ?? t!.department) : 'Unassigned'}
                 </span>
               </div>
             </div>
