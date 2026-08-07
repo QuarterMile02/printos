@@ -18,6 +18,8 @@ export async function upsertAccountingSettings(
     program_fee_debit_card: number
     program_fee_taxable: boolean
     program_fee_show_disclosure: boolean
+    iif_export_enabled: boolean
+    iif_export_recipient_email: string
   }>,
 ): Promise<{ error?: string }> {
   const svc = createServiceClient()

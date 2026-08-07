@@ -20,6 +20,9 @@ type AcctSettings = {
   program_fee_debit_card: number
   program_fee_taxable: boolean
   program_fee_show_disclosure: boolean
+  iif_export_enabled: boolean
+  iif_export_recipient_email: string
+  iif_export_last_sent_at: string | null
 }
 
 type SalesTax = {
@@ -108,6 +111,9 @@ const ACCT_SETTINGS_DEFAULTS: AcctSettings = {
   program_fee_debit_card: 0,
   program_fee_taxable: false,
   program_fee_show_disclosure: false,
+  iif_export_enabled: false,
+  iif_export_recipient_email: '',
+  iif_export_last_sent_at: null,
 }
 
 const TX_NUMS_DEFAULTS: TxNums = {
@@ -481,6 +487,47 @@ export default function AccountingClient({
             <option>Cash</option>
             <option>Accrual</option>
           </select>
+        </div>
+      </SectionCard>
+
+      {/* ── SCHEDULED INVOICE EXPORT ─────────────────────────────────────── */}
+      <SectionCard title="Scheduled Invoice Export">
+        <p className="py-2 text-xs text-gray-500">
+          Automatically emails the same IIF export produced by the manual "Post to Accounting" bulk
+          export — every currently-unposted invoice, once a day — instead of someone having to log in
+          and download it. This only delivers the file; invoices are <strong>not</strong> automatically
+          marked posted. Review the file, import it into QuickBooks Desktop, then mark those invoices
+          posted yourself under Post to Accounting, same as today.
+        </p>
+        <Toggle
+          on={acct.iif_export_enabled}
+          onChange={(v) => saveAcct({ iif_export_enabled: v })}
+          label="Send scheduled export"
+        />
+        <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
+          <span className="text-sm text-gray-700">Recipient Email</span>
+          <input
+            type="email"
+            value={acct.iif_export_recipient_email}
+            onChange={(e) => setAcct((prev) => ({ ...prev, iif_export_recipient_email: e.target.value }))}
+            onBlur={(e) => saveAcct({ iif_export_recipient_email: e.target.value.trim() })}
+            placeholder="accounting@quartermileinc.com"
+            className="w-64 rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+          />
+        </div>
+        <div className="py-2.5 border-t border-gray-50 text-xs text-gray-400">
+          <p>
+            Runs once daily at a fixed time (~7am Central / 12:00 UTC), platform-wide — not yet
+            configurable per organization. This is a Vercel plan limitation (Hobby-tier Cron only
+            supports daily-granularity schedules); a real per-organization time picker needs a Pro+
+            plan and can be added then.
+          </p>
+          <p className="mt-1">
+            Last sent:{' '}
+            {acct.iif_export_last_sent_at
+              ? new Date(acct.iif_export_last_sent_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+              : 'never'}
+          </p>
         </div>
       </SectionCard>
 
