@@ -377,6 +377,22 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     }
   } catch { /* migration 058 not yet applied — skip */ }
 
+  // Fetch ready_to_send (column added in migration 117 — may not exist
+  // yet). Fetched separately, same pattern as contact_id above, rather
+  // than folded into the main select: if it were merged in and the
+  // migration hasn't run, the WHOLE main query would fail and silently
+  // drop back to the minimal fallback further up (losing due_date, terms,
+  // notes, sales rep, etc. for every quote) just because of this one new
+  // column. Defaults to false (unlocked) when missing, matching today's
+  // behavior exactly until the migration lands.
+  let quoteReadyToSend = false
+  try {
+    const { data: rRow } = await supabase
+      .from('quotes').select('ready_to_send')
+      .eq('id', quote.id).maybeSingle() as { data: { ready_to_send?: boolean | null } | null; error: unknown }
+    quoteReadyToSend = rRow?.ready_to_send ?? false
+  } catch { /* migration 117 not yet applied — skip */ }
+
   // Fetch shipping data for the quote
   type ShipAddrRow = { id: string; label: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; country: string; is_default: boolean }
   type ShipProfileRow = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
@@ -444,6 +460,7 @@ async function QuoteDetailPageInner({ params }: PageProps) {
           po_number: quote.po_number,
           install_address: quote.install_address,
           production_notes: quote.production_notes,
+          ready_to_send: quoteReadyToSend,
           customer: quote.customers
             ? {
                 first_name: quote.customers.first_name,

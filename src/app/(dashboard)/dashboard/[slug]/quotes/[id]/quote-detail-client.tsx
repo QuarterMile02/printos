@@ -9,6 +9,7 @@ import {
   updateQuoteLineItem,
   deleteQuoteLineItem,
   sendQuoteSmsAndDeliver,
+  setQuoteReadyToSend,
 } from '../actions'
 import type { EmailTemplate } from '../actions'
 import SendEmailModal from './send-email-modal'
@@ -59,6 +60,7 @@ type Quote = {
   po_number: string | null
   install_address: string | null
   production_notes: string | null
+  ready_to_send: boolean
   customer: {
     first_name: string
     last_name: string
@@ -146,6 +148,17 @@ function summarizeLineItems(items: LineItem[]): string {
   }).join('\n')
 }
 
+// Label + static value pair for the read-only Quote Details view (shown
+// once a quote is marked ready_to_send / locked via Done).
+function ReadOnlyField({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div>
+      <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">{label}</span>
+      <span className="text-sm text-gray-900">{value ?? <span className="text-gray-300">—</span>}</span>
+    </div>
+  )
+}
+
 function dollarsToCents(s: string): number {
   const n = parseFloat(s.replace(/[^0-9.\-]/g, ''))
   if (!Number.isFinite(n) || n < 0) return 0
@@ -177,7 +190,13 @@ export default function QuoteDetailClient({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
-  const [isEditing] = useState(true)
+  // "Done" locks the Quote Details section + line items to read-only and
+  // marks the quote ready_to_send; "Edit" unlocks it again. Any content
+  // edit also clears ready_to_send server-side (updateQuoteFields /
+  // recalcQuoteTotals), so isEditing derived from it stays in sync with
+  // the DB's source of truth rather than being a separate local toggle.
+  const [readyToSend, setReadyToSendState] = useState(quote.ready_to_send)
+  const isEditing = !readyToSend
   const [showAddForm, setShowAddForm] = useState(false)
   const [isSavingItem, setIsSavingItem] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
@@ -544,47 +563,103 @@ export default function QuoteDetailClient({
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [isSendingSms, setIsSendingSms] = useState(false)
 
-  // ── AI title suggestion (surfaced just before Send Email opens) ────
+  // ── AI title suggestion — now surfaced by "Done", not "Send Email" ──
+  // (Send Email only falls back to it for quotes that were never marked
+  // Done — see handleSendEmailClick below.)
   const [showTitleSuggestion, setShowTitleSuggestion] = useState(false)
   const [titleSuggestionDraft, setTitleSuggestionDraft] = useState('')
   const [suggestingTitle, setSuggestingTitle] = useState(false)
+  // Which button triggered the currently-open (or in-flight) suggestion
+  // flow — drives per-button loading state and what happens once the
+  // modal resolves (open Send Email, vs. mark the quote ready).
+  const [pendingAction, setPendingAction] = useState<'send' | 'done'>('send')
 
-  async function handleSendEmailClick() {
-    // Nothing to summarize yet — just open the modal like before.
-    if (items.length === 0) { setShowEmailModal(true); return }
+  async function markReady(ready: boolean) {
+    const prev = readyToSend
+    setReadyToSendState(ready)
+    const res = await setQuoteReadyToSend(quote.id, orgId, orgSlug, ready)
+    if (res.error) {
+      flash(res.error, 'error')
+      setReadyToSendState(prev) // revert optimistic update on failure
+    } else {
+      router.refresh()
+    }
+  }
+
+  // Shared by both "Done" and the Send Email fallback — runs the AI
+  // suggestion and shows the Accept/Edit/Decline modal, then does
+  // whatever `action` calls for once it resolves.
+  async function runTitleSuggestion(action: 'send' | 'done') {
+    if (items.length === 0) {
+      // Nothing to summarize — just do the end action directly.
+      if (action === 'send') setShowEmailModal(true)
+      else await markReady(true)
+      return
+    }
     setSuggestingTitle(true)
+    setPendingAction(action)
     try {
       const { suggested, error } = await suggestQuoteTitle(summarizeLineItems(items))
       if (!error && suggested) {
         setTitleSuggestionDraft(suggested)
         setShowTitleSuggestion(true)
       } else {
-        // AI failed — never block sending on it, just proceed as before.
-        setShowEmailModal(true)
+        // AI failed — never block on it, just proceed as before.
+        if (action === 'send') setShowEmailModal(true)
+        else await markReady(true)
       }
     } catch {
-      setShowEmailModal(true)
+      if (action === 'send') setShowEmailModal(true)
+      else await markReady(true)
     } finally {
       setSuggestingTitle(false)
     }
   }
 
+  function handleSendEmailClick() {
+    // Already marked ready via Done — trust that the title was already
+    // handled, skip straight to the modal.
+    if (readyToSend) { setShowEmailModal(true); return }
+    runTitleSuggestion('send')
+  }
+
+  function handleDoneClick() {
+    runTitleSuggestion('done')
+  }
+
+  function handleEditClick() {
+    markReady(false)
+  }
+
   // Covers both "Accept" (used unedited) and "Edit" (used after tweaking
   // the draft) — either way this is an explicit rep action, never automatic.
-  function useTitleSuggestion() {
+  async function useTitleSuggestion() {
     const newTitle = titleSuggestionDraft.trim()
+    setShowTitleSuggestion(false)
+    if (pendingAction === 'send') {
+      if (newTitle && newTitle !== title) {
+        setTitle(newTitle)
+        saveFields({ title: newTitle })
+      }
+      setShowEmailModal(true)
+      return
+    }
+    // 'done' path: await the title save (if any) before marking ready --
+    // updateQuoteFields also clears ready_to_send as a side effect of any
+    // content edit, so awaiting here avoids a race where that clear could
+    // land after markReady's `true` write and silently undo it.
     if (newTitle && newTitle !== title) {
       setTitle(newTitle)
-      saveFields({ title: newTitle })
+      await updateQuoteFields(quote.id, orgId, orgSlug, { title: newTitle })
     }
-    setShowTitleSuggestion(false)
-    setShowEmailModal(true)
+    await markReady(true)
   }
 
   // "Decline" — keeps the rep's original manual title untouched.
-  function declineTitleSuggestion() {
+  async function declineTitleSuggestion() {
     setShowTitleSuggestion(false)
-    setShowEmailModal(true)
+    if (pendingAction === 'send') { setShowEmailModal(true); return }
+    await markReady(true)
   }
 
   async function handleSendSms() {
@@ -811,11 +886,32 @@ export default function QuoteDetailClient({
           <button
             type="button"
             onClick={handleSendEmailClick}
-            disabled={suggestingTitle}
+            disabled={suggestingTitle && pendingAction === 'send'}
             className="rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
           >
-            {suggestingTitle ? 'Checking title…' : 'Send Email'}
+            {suggestingTitle && pendingAction === 'send' ? 'Checking title…' : 'Send Email'}
           </button>
+          {readyToSend ? (
+            // Edit is always available while locked, regardless of item
+            // count — Done requires items.length > 0 to trigger, but Edit
+            // just needs to unlock whatever's already ready.
+            <button
+              type="button"
+              onClick={handleEditClick}
+              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Edit
+            </button>
+          ) : items.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDoneClick}
+                disabled={suggestingTitle && pendingAction === 'done'}
+                className="rounded-md border border-qm-lime bg-qm-lime-light px-4 py-2 text-sm font-semibold text-qm-lime-dark hover:brightness-95 disabled:opacity-50"
+              >
+                {suggestingTitle && pendingAction === 'done' ? 'Checking title…' : 'Done'}
+              </button>
+            )}
           <button
             type="button"
             onClick={handleSendSms}
@@ -846,7 +942,7 @@ export default function QuoteDetailClient({
       </div>
 
       {/* ── Edit-mode metadata fields ──────────────────────────────── */}
-      {isEditing && (
+      {isEditing ? (
         <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-base font-bold text-gray-900">Quote Details</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -954,6 +1050,47 @@ export default function QuoteDetailClient({
               />
             </div>
           </div>
+        </div>
+      ) : (
+        /* ── Read-only Quote Details (quote marked ready_to_send) ──── */
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-bold text-gray-900">Quote Details</h2>
+            <span className="text-xs font-medium text-gray-400">Locked — click Edit to make changes</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <ReadOnlyField label="Title" value={title} />
+            <ReadOnlyField
+              label="Due Date"
+              value={dueDate ? new Date(dueDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null}
+            />
+            <ReadOnlyField label="Sales Rep" value={salesRepName ?? (salesRepId ? null : 'Unassigned')} />
+            <ReadOnlyField label="PO Number" value={poNumber || null} />
+            <ReadOnlyField
+              label="Expires"
+              value={expiresAt ? new Date(expiresAt + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null}
+            />
+            <ReadOnlyField label="Terms" value={terms || null} />
+            <div className="md:col-span-2">
+              <ReadOnlyField label="Install Address" value={installAddress || null} />
+            </div>
+          </div>
+          {(notes || productionNotes) && (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {notes && (
+                <div>
+                  <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Internal Notes</span>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-gray-900">{notes}</p>
+                </div>
+              )}
+              {productionNotes && (
+                <div>
+                  <span className="block text-xs font-bold uppercase tracking-wider text-gray-500">Production Notes</span>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-gray-900">{productionNotes}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

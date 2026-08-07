@@ -142,7 +142,7 @@ async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promi
 
   await service
     .from('quotes')
-    .update({ subtotal, tax_total: tax, total })
+    .update({ subtotal, tax_total: tax, total, ready_to_send: false })
     .eq('id', quoteId)
 }
 
@@ -662,9 +662,43 @@ export async function updateQuoteFields(
   if (fields.production_notes !== undefined) update.production_notes = fields.production_notes
   if (Object.keys(update).length === 0) return {}
 
+  // A real content edit -- if this quote was marked ready_to_send (via the
+  // Done button), clear it. Defense-in-depth backstop alongside the Edit
+  // button's own explicit clear (setQuoteReadyToSend below); keeps the
+  // server the source of truth regardless of which UI path triggered the
+  // write.
+  update.ready_to_send = false
+
   const { error } = await ctx.service
     .from('quotes')
     .update(update)
+    .eq('id', quoteId)
+    .eq('organization_id', orgId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
+  return {}
+}
+
+// Explicit toggle for the Done/Edit workflow -- Done sets ready=true
+// (after the title-suggestion modal resolves), Edit sets ready=false to
+// unlock the Quote Details section and line items again. Kept separate
+// from updateQuoteFields (which always clears ready_to_send as a side
+// effect of any content edit) so this can deliberately SET it true
+// without immediately un-setting itself.
+export async function setQuoteReadyToSend(
+  quoteId: string,
+  orgId: string,
+  orgSlug: string,
+  ready: boolean,
+): Promise<{ error?: string }> {
+  const ctx = await getServiceWithMembership(orgId)
+  if ('error' in ctx) return { error: ctx.error }
+
+  const { error } = await ctx.service
+    .from('quotes')
+    .update({ ready_to_send: ready })
     .eq('id', quoteId)
     .eq('organization_id', orgId)
 
