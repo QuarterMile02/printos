@@ -61,12 +61,24 @@ export async function convertToSalesOrder(formData: FormData) {
     console.error('[convertToSalesOrder] resolveJobDepartments failed:', err)
   }
 
-  // Create job linked to this SO
+  // Create job linked to this SO. Sets BOTH sales_order_id and
+  // source_quote_id -- found live via an end-to-end proof-send test that
+  // this insert only ever set sales_order_id, while every read site
+  // (jobs/[jobId]/page.tsx's SO/quote breadcrumb lookup, this SO page's
+  // own Jobs section below, and the new proof-send "ready proofs" query)
+  // looks jobs up by source_quote_id. Result: the Jobs section on every
+  // SO's detail page has been showing "No jobs created yet" for every SO
+  // ever created through this flow -- confirmed against production, all
+  // 6 existing jobs have source_quote_id = null. Setting both here is the
+  // minimal fix: it satisfies the existing source_quote_id convention
+  // without having to touch every read site, and doesn't require a
+  // backfill for this fix to take effect for new jobs going forward.
   const { data: newJob, error: jobErr } = await service
     .from('jobs')
     .insert({
       organization_id: orgId,
       sales_order_id: soId,
+      source_quote_id: quoteId,
       customer_id: (quote as Record<string, unknown>).customer_id as string | null,
       title: `Job for SO-${String(soNumber).padStart(4, '0')}`,
       status: 'new',
