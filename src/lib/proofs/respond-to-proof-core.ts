@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logActivity } from '@/lib/logActivity'
+import { UUID_RE, verifyProofSendMembership } from './verify-proof-send-membership'
 
 // The single, shared implementation of "a customer clicked Approve/Reject
 // on one specific proof inside their emailed proof-review link." The
@@ -15,12 +16,11 @@ import { logActivity } from '@/lib/logActivity'
 // client. The unguessable `token` column on proof_sends (a separate
 // random uuid, distinct from that row's own id — see migration 119) is
 // the ONLY thing standing between an anonymous caller and writing to
-// proof_versions.status for an arbitrary row. Every check below exists
-// because of that; each one maps to a specific way an anonymous, possibly
-// adversarial caller could otherwise abuse this. Do not simplify this
-// function without re-deriving why each step is here.
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// proof_versions.status for an arbitrary row. The actual token -> send ->
+// send_item -> proof resolution lives in verifyProofSendMembership
+// (shared with uploadProofMarkup and the print view) — see that file's
+// header for the full walkthrough of why each of its steps exists. Do not
+// simplify this function without re-deriving why each step is here.
 
 export type RespondResult = { ok: true } | { ok: false; error: string }
 
@@ -49,10 +49,13 @@ export async function respondToProofCore(
   markupFileUrl: string | null = null,
 ): Promise<RespondResult> {
   // 1. Reject malformed input before it ever reaches a query. Neither
-  // value's shape can be trusted from an unauthenticated POST body, and a
-  // non-uuid string passed to .eq() on a uuid column raises a Postgres
-  // "invalid input syntax" error — without this check that surfaces as an
-  // ugly 500 instead of a clean "invalid link" response.
+  // value's shape can be trusted from an unauthenticated POST body,
+  // Checked explicitly here (ahead of the decision/acknowledgedChecks
+  // checks below) rather than left to verifyProofSendMembership's own
+  // internal copy of this same check, so a malformed link is still
+  // reported as "Invalid link." even when the decision/acknowledgedChecks
+  // fields are ALSO malformed — preserves this function's original check
+  // ordering from before the shared-membership extraction.
   if (!UUID_RE.test(token) || !UUID_RE.test(proofVersionId)) {
     return { ok: false, error: 'Invalid link.' }
   }
@@ -63,66 +66,19 @@ export async function respondToProofCore(
     return { ok: false, error: 'Please check all required boxes before approving.' }
   }
 
-  // 2. Resolve the token to its proof_sends row. This is the only lookup
-  // that trusts the token; every check after this point scopes to *this
-  // specific send*, never to the proof_version_id in isolation.
-  const { data: send, error: sendErr } = await service
-    .from('proof_sends')
-    .select('id, organization_id, sales_order_id')
-    .eq('token', token)
-    .maybeSingle() as {
-      data: { id: string; organization_id: string; sales_order_id: string } | null
-      error: unknown
-    }
-  if (sendErr) return { ok: false, error: 'Lookup failed. Please try again.' }
-  if (!send) return { ok: false, error: 'Invalid or expired link.' }
-
-  // 3. THE critical ownership check. A token only proves "you were sent
-  // *some* bundle" — on its own it says nothing about which proofs are in
-  // it. Without this membership check, anyone holding any one valid token
-  // (e.g. from their own, unrelated proof email) could POST an arbitrary
-  // proofVersionId — guessed, enumerated, or seen elsewhere — and flip
-  // that unrelated proof's status, across sales orders or even across
-  // organizations. Requiring a matching row in proof_send_items, scoped
-  // to *this* send.id, is what makes the token a capability over one
-  // specific bundle rather than a bearer key over the whole
-  // proof_versions table.
-  const { data: sendItem, error: itemErr } = await service
-    .from('proof_send_items')
-    .select('id, organization_id')
-    .eq('proof_send_id', send.id)
-    .eq('proof_version_id', proofVersionId)
-    .maybeSingle() as { data: { id: string; organization_id: string } | null; error: unknown }
-  if (itemErr) return { ok: false, error: 'Lookup failed. Please try again.' }
-  if (!sendItem) return { ok: false, error: 'This proof is not part of this link.' }
-
-  // 4. Defense in depth: every row this touches should agree on
-  // organization_id. This is already structurally guaranteed by how rows
-  // get here — proof_send_items is only ever inserted by sendProofsBundle
-  // (sales-orders/[id]/proof-actions.ts), which stamps organization_id
-  // from the same org as the send and validates each proof belongs to
-  // that org before insert — but re-checking here is nearly free and
-  // turns any future bug that breaks that guarantee into a hard failure
-  // instead of a silent cross-org write.
-  if (sendItem.organization_id !== send.organization_id) {
-    return { ok: false, error: 'This proof is not part of this link.' }
-  }
+  // 2-4. Token -> proof_sends -> proof_send_items -> proof_versions
+  // ownership resolution — see verify-proof-send-membership.ts for the
+  // full walkthrough of why each step exists. Shared with uploadProofMarkup
+  // (actions.ts) and the print view (print/[proofId]/page.tsx).
+  const result = await verifyProofSendMembership(service, token, proofVersionId)
+  if (!result.ok) return { ok: false, error: result.error }
+  const { membership } = result
 
   // 5. Status-based lock — the agreed access model (no time expiry, but
   // once a proof has been responded to it's locked from further action on
-  // this link). Re-fetch the live status rather than trusting anything
-  // the client claims about it.
-  const { data: proof, error: proofErr } = await service
-    .from('proof_versions')
-    .select('id, organization_id, status')
-    .eq('id', proofVersionId)
-    .maybeSingle() as { data: { id: string; organization_id: string; status: string } | null; error: unknown }
-  if (proofErr) return { ok: false, error: 'Lookup failed. Please try again.' }
-  if (!proof) return { ok: false, error: 'Proof not found.' }
-  if (proof.organization_id !== send.organization_id) {
-    return { ok: false, error: 'This proof is not part of this link.' }
-  }
-  if (proof.status !== 'pending') {
+  // this link). verifyProofSendMembership re-fetches the live status on
+  // every call rather than trusting anything the client claims about it.
+  if (membership.status !== 'pending') {
     return { ok: false, error: 'This proof has already been responded to.' }
   }
 
@@ -175,15 +131,15 @@ export async function respondToProofCore(
   // customer can approve/reject each proof independently."
 
   await logActivity({
-    org_id: send.organization_id,
+    org_id: membership.organizationId,
     user_id: null, // customer action — no staff auth.users id to attribute this to
     entity_type: 'proof',
     entity_id: proofVersionId,
     action: decision === 'approved' ? 'proof_approved' : 'proof_rejected',
     metadata: {
       source: 'customer_proof_link',
-      proof_send_id: send.id,
-      sales_order_id: send.sales_order_id,
+      proof_send_id: membership.sendId,
+      sales_order_id: membership.salesOrderId,
       // Deliberately not logging the raw token here — activity_log is
       // read by staff-facing UI (recent-activity.tsx); no reason for a
       // live bearer credential to sit in an audit table.

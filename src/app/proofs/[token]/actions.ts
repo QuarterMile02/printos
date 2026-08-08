@@ -2,6 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { respondToProofCore, type RespondResult } from '@/lib/proofs/respond-to-proof-core'
+import { UUID_RE, verifyProofSendMembership } from '@/lib/proofs/verify-proof-send-membership'
 
 // Thin wrapper so the public page's client component has a server action
 // to call. All actual validation/security logic lives in
@@ -20,8 +21,6 @@ export async function respondToProof(
   return respondToProofCore(service, token, proofVersionId, decision, feedback, acknowledgedChecks, markupFileUrl)
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 export type UploadMarkupResult = { ok: true; url: string } | { ok: false; error: string }
 
 // Item 4b — customer-side markup-file upload, part of Request Changes.
@@ -32,19 +31,22 @@ export type UploadMarkupResult = { ok: true; url: string } | { ok: false; error:
 // whole response, not two independent ones that could disagree if either
 // half failed.
 //
-// This re-derives its own independent copy of the same
-// token -> proof_sends -> proof_send_items membership check that
-// respond-to-proof-core.ts uses for its write path (see that file's header
-// for the full security model), rather than refactoring that
-// already-verified file to share this logic — the two paths' failure modes
-// differ enough (this one uploads a file and returns a URL; that one flips
-// a status) that keeping them independent was judged safer than coupling
-// an already-tested security boundary to a brand-new code path.
+// Token -> proof_sends -> proof_send_items membership resolution is shared
+// with respondToProofCore and the print view via verifyProofSendMembership
+// (see that file's header for the full security model) — this used to be
+// an independent copy of that same check, consolidated to avoid the two
+// drifting apart.
 export async function uploadProofMarkup(
   token: string,
   proofVersionId: string,
   file: File,
 ): Promise<UploadMarkupResult> {
+  // Checked explicitly here (ahead of the file-size/presence checks below)
+  // rather than left to verifyProofSendMembership's own internal copy of
+  // this same check, so a malformed link is still reported as
+  // "Invalid link." even when the file field is ALSO invalid — preserves
+  // this function's original check ordering from before the
+  // shared-membership extraction.
   if (!UUID_RE.test(token) || !UUID_RE.test(proofVersionId)) {
     return { ok: false, error: 'Invalid link.' }
   }
@@ -53,35 +55,11 @@ export async function uploadProofMarkup(
 
   const service = createServiceClient()
 
-  const { data: send, error: sendErr } = await service
-    .from('proof_sends')
-    .select('id, organization_id')
-    .eq('token', token)
-    .maybeSingle() as { data: { id: string; organization_id: string } | null; error: unknown }
-  if (sendErr) return { ok: false, error: 'Lookup failed. Please try again.' }
-  if (!send) return { ok: false, error: 'Invalid or expired link.' }
+  const result = await verifyProofSendMembership(service, token, proofVersionId)
+  if (!result.ok) return { ok: false, error: result.error }
+  const { membership } = result
 
-  const { data: sendItem, error: itemErr } = await service
-    .from('proof_send_items')
-    .select('id, organization_id')
-    .eq('proof_send_id', send.id)
-    .eq('proof_version_id', proofVersionId)
-    .maybeSingle() as { data: { id: string; organization_id: string } | null; error: unknown }
-  if (itemErr) return { ok: false, error: 'Lookup failed. Please try again.' }
-  if (!sendItem || sendItem.organization_id !== send.organization_id) {
-    return { ok: false, error: 'This proof is not part of this link.' }
-  }
-
-  const { data: proof, error: proofErr } = await service
-    .from('proof_versions')
-    .select('id, organization_id, status')
-    .eq('id', proofVersionId)
-    .maybeSingle() as { data: { id: string; organization_id: string; status: string } | null; error: unknown }
-  if (proofErr) return { ok: false, error: 'Lookup failed. Please try again.' }
-  if (!proof || proof.organization_id !== send.organization_id) {
-    return { ok: false, error: 'This proof is not part of this link.' }
-  }
-  if (proof.status !== 'pending') {
+  if (membership.status !== 'pending') {
     return { ok: false, error: 'This proof has already been responded to.' }
   }
 
@@ -96,7 +74,7 @@ export async function uploadProofMarkup(
   }
 
   const ext = file.name.split('.').pop() || 'bin'
-  const storagePath = `${send.organization_id}/${proofVersionId}/markup-${Date.now()}.${ext}`
+  const storagePath = `${membership.organizationId}/${proofVersionId}/markup-${Date.now()}.${ext}`
 
   const { error: uploadErr } = await service.storage
     .from('proof-markups')
