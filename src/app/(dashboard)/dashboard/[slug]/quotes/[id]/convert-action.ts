@@ -50,53 +50,83 @@ export async function convertToSalesOrder(formData: FormData) {
   // Update quote status to ordered and link SO
   const soId = (so as Record<string, unknown>).id as string
   const soNumber = (so as Record<string, unknown>).so_number as number
+  const soLabel = `SO-${String(soNumber).padStart(4, '0')}`
 
-  // Resolve departments from quote products (non-fatal)
-  let upcomingDepartments: string[] = []
-  let primaryDepartment: string | null = null
-  try {
-    upcomingDepartments = await resolveJobDepartments(quoteId, orgId, service)
-    if (upcomingDepartments.length === 1) primaryDepartment = upcomingDepartments[0]
-  } catch (err) {
-    console.error('[convertToSalesOrder] resolveJobDepartments failed:', err)
+  // One job PER LINE ITEM (migration 121) -- matches ShopVOX's own
+  // behavior and this project's own documented target grain (see
+  // Docs/PrintOS_Project_Status_v17.py / Blueprint_Internal_Spec_v25.py's
+  // "ShopVOX Jobs-Family Research" tables: "1 job (= 1 line item off a
+  // Sales Order)"). Previously this inserted exactly one job for the
+  // whole SO; every read site that cares about a job's specific product
+  // (workflow steps, the job board's per-card product lookup, the proof
+  // upload line-item tag) already assumed or degraded toward per-line-item
+  // data, so this brings the write side in line with what the read side
+  // was already built for.
+  type QuoteLineItemRow = {
+    id: string
+    description: string | null
+    product_name: string | null
+  }
+  const { data: lineItems, error: liErr } = await service
+    .from('quote_line_items')
+    .select('id, description, product_name')
+    .eq('quote_id', quoteId)
+    .order('sort_order') as { data: QuoteLineItemRow[] | null; error: unknown }
+
+  if (liErr) {
+    console.error('[convertToSalesOrder] quote_line_items fetch failed:', liErr)
   }
 
-  // Create job linked to this SO. Sets BOTH sales_order_id and
-  // source_quote_id -- found live via an end-to-end proof-send test that
-  // this insert only ever set sales_order_id, while every read site
-  // (jobs/[jobId]/page.tsx's SO/quote breadcrumb lookup, this SO page's
-  // own Jobs section below, and the new proof-send "ready proofs" query)
-  // looks jobs up by source_quote_id. Result: the Jobs section on every
-  // SO's detail page has been showing "No jobs created yet" for every SO
-  // ever created through this flow -- confirmed against production, all
-  // 6 existing jobs have source_quote_id = null. Setting both here is the
-  // minimal fix: it satisfies the existing source_quote_id convention
-  // without having to touch every read site, and doesn't require a
-  // backfill for this fix to take effect for new jobs going forward.
-  const { data: newJob, error: jobErr } = await service
-    .from('jobs')
-    .insert({
-      organization_id: orgId,
-      sales_order_id: soId,
-      source_quote_id: quoteId,
-      customer_id: (quote as Record<string, unknown>).customer_id as string | null,
-      title: `Job for SO-${String(soNumber).padStart(4, '0')}`,
-      status: 'new',
-      proof_status: 'not_started',
-      proof_due_date: calculateProofDueDate(new Date()).toISOString(),
-      upcoming_departments: upcomingDepartments,
-      department: primaryDepartment,
-    })
-    .select('id, job_number')
-    .single()
+  const createdJobs: { id: string; job_number: number }[] = []
+  for (const li of lineItems ?? []) {
+    // Resolve departments from THIS line item's own product (non-fatal —
+    // a job with no resolvable department still gets created, same as
+    // before; department assignment can happen manually).
+    let upcomingDepartments: string[] = []
+    let primaryDepartment: string | null = null
+    try {
+      upcomingDepartments = await resolveJobDepartments(quoteId, orgId, service, li.id)
+      if (upcomingDepartments.length === 1) primaryDepartment = upcomingDepartments[0]
+    } catch (err) {
+      console.error('[convertToSalesOrder] resolveJobDepartments failed:', err)
+    }
 
-  if (jobErr) {
-    console.error('[convertToSalesOrder] Job insert failed:', jobErr.message)
-  } else {
-    console.log('[convertToSalesOrder] Created Job:', (newJob as Record<string, unknown>).id)
+    const itemLabel = (li.product_name?.trim() || li.description?.trim() || 'Line Item')
+
+    // Sets BOTH sales_order_id and source_quote_id -- found live via an
+    // end-to-end proof-send test that this insert only ever set
+    // sales_order_id, while every read site (jobs/[jobId]/page.tsx's
+    // SO/quote breadcrumb lookup, the SO page's own Jobs section, and the
+    // proof-send "ready proofs" query) looks jobs up by source_quote_id.
+    // Setting both here satisfies that existing convention without
+    // touching every read site.
+    const { data: newJob, error: jobErr } = await service
+      .from('jobs')
+      .insert({
+        organization_id: orgId,
+        sales_order_id: soId,
+        source_quote_id: quoteId,
+        quote_line_item_id: li.id,
+        customer_id: (quote as Record<string, unknown>).customer_id as string | null,
+        title: `${itemLabel} — ${soLabel}`,
+        status: 'new',
+        proof_status: 'not_started',
+        proof_due_date: calculateProofDueDate(new Date()).toISOString(),
+        upcoming_departments: upcomingDepartments,
+        department: primaryDepartment,
+      })
+      .select('id, job_number')
+      .single()
+
+    if (jobErr || !newJob) {
+      console.error(`[convertToSalesOrder] Job insert failed for line item ${li.id}:`, jobErr?.message)
+      continue
+    }
+    console.log('[convertToSalesOrder] Created Job:', newJob.id, 'for line item', li.id)
+    createdJobs.push(newJob as { id: string; job_number: number })
   }
 
-  // Activity log: SO created + quote converted + job created
+  // Activity log: SO created + quote converted + one entry per job created
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -115,19 +145,17 @@ export async function convertToSalesOrder(formData: FormData) {
         entity_type: 'quote',
         entity_id: quoteId,
         action: 'converted_to_so',
-        to_value: `SO-${String(soNumber).padStart(4, '0')}`,
+        to_value: soLabel,
         metadata: { sales_order_id: soId },
       })
-      if (!jobErr && newJob) {
-        const jobId = (newJob as Record<string, unknown>).id as string
-        const jobNumber = (newJob as Record<string, unknown>).job_number as number
+      for (const job of createdJobs) {
         await logActivity({
           org_id: orgId,
           user_id: user.id,
           entity_type: 'job',
-          entity_id: jobId,
+          entity_id: job.id,
           action: 'created',
-          metadata: { job_number: jobNumber, sales_order_id: soId },
+          metadata: { job_number: job.job_number, sales_order_id: soId },
         })
       }
     }

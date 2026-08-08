@@ -7,7 +7,6 @@ import { TAX_RATE } from './format'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
-import { calculateProofDueDate } from '@/lib/date-utils'
 import { fetchAssetsAsAttachments, type EmailAttachment } from '@/lib/assets'
 import { getUserSenderIdentity, SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 
@@ -20,7 +19,6 @@ function toE164(phone: string | null | undefined): string | null {
   if (digits.length === 12 && digits.startsWith('52')) return `+${digits}`
   return `+${digits}`
 }
-import { resolveJobDepartments } from '@/lib/jobs/resolve-departments'
 import {
   selectMaterial,
   isBannerProduct,
@@ -1177,173 +1175,12 @@ export async function sendQuoteEmailCustom(
   return {}
 }
 
-// Convert quote → sales order. Creates a sales_orders row (so_number
-// assigned by trigger), links it back via quotes.converted_to_so_id,
-// and flips the quote status to 'ordered'.
-export async function convertQuoteToSalesOrder(
-  quoteId: string,
-  orgId: string,
-  orgSlug: string,
-): Promise<{ error?: string; soNumber?: number; soId?: string; createdAt?: string }> {
-  console.log('[convertQuoteToSalesOrder] Starting conversion', { quoteId, orgId, orgSlug })
-  try {
-    const ctx = await getServiceWithMembership(orgId)
-    if ('error' in ctx) {
-      console.error('[convertQuoteToSalesOrder] Auth error:', ctx.error)
-      return { error: ctx.error }
-    }
-
-    // Make sure we don't double-convert.
-    // Try full column set first; fall back if Phase 8 columns are missing.
-    type ExistingQuote = { id: string; title: string; customer_id: string | null; converted_to_so_id: string | null; status: QuoteStatus; total: number | null }
-    let existing: ExistingQuote | null = null
-
-    const { data: eq1, error: eqErr1 } = await ctx.service
-      .from('quotes')
-      .select('id, title, customer_id, converted_to_so_id, status, total')
-      .eq('id', quoteId)
-      .eq('organization_id', orgId)
-      .maybeSingle()
-
-    if (eq1) {
-      existing = eq1 as unknown as ExistingQuote
-    } else if (eqErr1?.message?.includes('does not exist')) {
-      const { data: eq2 } = await ctx.service
-        .from('quotes')
-        .select('id, title, customer_id, status')
-        .eq('id', quoteId)
-        .eq('organization_id', orgId)
-        .maybeSingle()
-      if (eq2) {
-        const q = eq2 as unknown as { id: string; title: string; customer_id: string | null; status: QuoteStatus }
-        existing = { ...q, converted_to_so_id: null, total: null }
-      }
-    } else if (eqErr1) {
-      return { error: `Quote lookup failed: ${eqErr1.message}` }
-    }
-
-    if (!existing) {
-      console.error('[convertQuoteToSalesOrder] Quote not found')
-      return { error: 'Quote not found.' }
-    }
-    console.log('[convertQuoteToSalesOrder] Found quote:', existing.id, existing.title)
-    if (existing.converted_to_so_id) return { error: 'This quote already has a sales order.' }
-
-    // Insert into sales_orders — do NOT use `as` cast so we see real errors.
-    const soResult = await ctx.service
-      .from('sales_orders')
-      .insert({
-        organization_id: orgId,
-        quote_id: quoteId,
-        customer_id: existing.customer_id,
-        title: existing.title,
-        total: existing.total ?? 0,
-        status: 'new',
-        created_by: ctx.user.id,
-      })
-      .select('id, so_number, created_at')
-      .single()
-
-    if (soResult.error) {
-      console.error('[convertQuoteToSalesOrder] Insert error:', soResult.error.message)
-      return { error: `Failed to create sales order: ${soResult.error.message}` }
-    }
-    const so = soResult.data as unknown as { id: string; so_number: number; created_at: string }
-    if (!so?.id) {
-      console.error('[convertQuoteToSalesOrder] Insert returned no data')
-      return { error: 'Sales order insert returned no data. The sales_orders table may not exist — run migration 020_sales_orders_ensure.sql in the Supabase SQL Editor.' }
-    }
-    console.log('[convertQuoteToSalesOrder] Created SO:', so.id, 'so_number:', so.so_number)
-
-    // Resolve departments from quote products (non-fatal)
-    let upcomingDepartments: string[] = []
-    let primaryDepartment: string | null = null
-    try {
-      upcomingDepartments = await resolveJobDepartments(quoteId, orgId, ctx.service)
-      if (upcomingDepartments.length === 1) primaryDepartment = upcomingDepartments[0]
-    } catch (err) {
-      console.error('[convertQuoteToSalesOrder] resolveJobDepartments failed:', err)
-    }
-
-    // Create job linked to this SO
-    const { data: newJob, error: jobErr } = await ctx.service
-      .from('jobs')
-      .insert({
-        organization_id: orgId,
-        sales_order_id: so.id,
-        customer_id: existing.customer_id,
-        title: `Job for SO-${String(so.so_number).padStart(4, '0')}`,
-        status: 'new',
-        proof_status: 'not_started',
-        proof_due_date: calculateProofDueDate(new Date()).toISOString(),
-        upcoming_departments: upcomingDepartments,
-        department: primaryDepartment,
-      })
-      .select('id, job_number')
-      .single()
-
-    if (jobErr) {
-      console.error('[convertQuoteToSalesOrder] Job insert failed:', jobErr.message)
-    } else {
-      console.log('[convertQuoteToSalesOrder] Created Job:', newJob?.id, 'job_number:', (newJob as unknown as { job_number: number })?.job_number)
-    }
-
-    // Link quote to SO and set status. If converted_to_so_id column is
-    // missing, fall back to updating status only.
-    const linkResult = await ctx.service
-      .from('quotes')
-      .update({ converted_to_so_id: so.id, status: 'ordered' as QuoteStatus })
-      .eq('id', quoteId)
-      .eq('organization_id', orgId)
-
-    if (linkResult.error?.message?.includes('does not exist')) {
-      await ctx.service
-        .from('quotes')
-        .update({ status: 'ordered' as QuoteStatus })
-        .eq('id', quoteId)
-        .eq('organization_id', orgId)
-    } else if (linkResult.error) {
-      return { error: `Failed to link quote: ${linkResult.error.message}` }
-    }
-
-    // Activity log: SO created + quote converted
-    await logActivity({
-      org_id: orgId,
-      user_id: ctx.user.id,
-      entity_type: 'sales_order',
-      entity_id: so.id,
-      action: 'created',
-      metadata: { so_number: so.so_number, quote_id: quoteId },
-    })
-    await logActivity({
-      org_id: orgId,
-      user_id: ctx.user.id,
-      entity_type: 'quote',
-      entity_id: quoteId,
-      action: 'converted_to_so',
-      to_value: `SO-${String(so.so_number).padStart(4, '0')}`,
-      metadata: { sales_order_id: so.id },
-    })
-    if (!jobErr && newJob) {
-      const jobId = (newJob as unknown as { id: string }).id
-      const jobNumber = (newJob as unknown as { job_number: number }).job_number
-      await logActivity({
-        org_id: orgId,
-        user_id: ctx.user.id,
-        entity_type: 'job',
-        entity_id: jobId,
-        action: 'created',
-        metadata: { job_number: jobNumber, sales_order_id: so.id },
-      })
-    }
-
-    revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
-    revalidatePath(`/dashboard/${orgSlug}/quotes`)
-    revalidatePath(`/dashboard/${orgSlug}/sales-orders`)
-    revalidatePath(`/dashboard/${orgSlug}/jobs`)
-    return { soNumber: so.so_number, soId: so.id, createdAt: so.created_at }
-  } catch (err) {
-    console.error('[convertQuoteToSalesOrder] Unexpected error:', err)
-    return { error: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` }
-  }
-}
+// convertQuoteToSalesOrder (a near-duplicate of quotes/[id]/convert-action.ts's
+// convertToSalesOrder) was removed here -- confirmed unused anywhere in the
+// app (grepped every call site, found none; only the live convert-action.ts
+// path is wired to the "Convert to Sales Order" button). It had also
+// silently drifted from convert-action.ts: it never set jobs.source_quote_id
+// (only sales_order_id), the exact bug convert-action.ts's own header
+// comment documents fixing. Removed as part of the job-per-line-item grain
+// change (migration 121) rather than updating a second, disconnected copy
+// of the same logic in lockstep going forward.

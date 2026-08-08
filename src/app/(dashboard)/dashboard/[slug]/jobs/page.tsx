@@ -97,13 +97,14 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
     due_date: string | null
     customer_id: string | null
     source_quote_id: string | null
+    quote_line_item_id: string | null
     assigned_to: string | null
     department: string | null
   }
 
   let jobQuery = service
     .from('jobs')
-    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to, department')
+    .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, quote_line_item_id, assigned_to, department')
     .eq('organization_id', org.id)
 
   let countQuery = service
@@ -124,7 +125,7 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
     const [fallback, countFb] = await Promise.all([
       service
         .from('jobs')
-        .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, assigned_to')
+        .select('id, job_number, title, status, flag, due_date, customer_id, source_quote_id, quote_line_item_id, assigned_to')
         .eq('organization_id', org.id)
         .order('job_number', { ascending: false })
         .limit(1000),
@@ -159,15 +160,39 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
     }
   }
 
-  // Fetch first line item per quote for product/dimension info
-  const quoteIds = [...new Set(allJobs.map(j => j.source_quote_id).filter(Boolean) as string[])]
-  const lineItemMap = new Map<string, { description: string; width: number | null; height: number | null; quantity: number }>()
-  if (quoteIds.length > 0) {
+  // Line item for product/dimension info. Jobs created since migration 121
+  // (job-per-line-item grain) have their own quote_line_item_id and look
+  // themselves up directly — each card now correctly shows its own
+  // product instead of whichever line item happened to sort first on the
+  // quote. Older jobs (quote_line_item_id null, created before 121, back
+  // when one job represented the whole SO) keep the old "first line item
+  // on the quote" approximation, since there's no way to know which of
+  // the quote's several line items that job was "really" for.
+  type LineItemInfo = { description: string; width: number | null; height: number | null; quantity: number }
+  const lineItemIds = [...new Set(allJobs.map(j => j.quote_line_item_id).filter(Boolean) as string[])]
+  const lineItemById = new Map<string, LineItemInfo>()
+  if (lineItemIds.length > 0) {
+    const liByIdRows = await dbOrThrow(
+      supabase
+        .from('quote_line_items')
+        .select('id, description, width, height, quantity')
+        .in('id', lineItemIds)
+    )
+    for (const li of (liByIdRows ?? []) as { id: string; description: string; width: number | null; height: number | null; quantity: number }[]) {
+      lineItemById.set(li.id, li)
+    }
+  }
+
+  const quoteIdsNeedingFallback = [...new Set(
+    allJobs.filter(j => !j.quote_line_item_id).map(j => j.source_quote_id).filter(Boolean) as string[]
+  )]
+  const lineItemMap = new Map<string, LineItemInfo>()
+  if (quoteIdsNeedingFallback.length > 0) {
     const liRows = await dbOrThrow(
       supabase
         .from('quote_line_items')
         .select('quote_id, description, width, height, quantity')
-        .in('quote_id', quoteIds)
+        .in('quote_id', quoteIdsNeedingFallback)
         .order('sort_order', { ascending: true })
     )
     for (const li of (liRows ?? []) as { quote_id: string; description: string; width: number | null; height: number | null; quantity: number }[]) {
@@ -190,7 +215,9 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
   }
 
   const jobs: JobCard[] = allJobs.map((r) => {
-    const li = r.source_quote_id ? lineItemMap.get(r.source_quote_id) : undefined
+    const li = r.quote_line_item_id
+      ? lineItemById.get(r.quote_line_item_id)
+      : (r.source_quote_id ? lineItemMap.get(r.source_quote_id) : undefined)
     return {
       id: r.id,
       job_number: r.job_number,

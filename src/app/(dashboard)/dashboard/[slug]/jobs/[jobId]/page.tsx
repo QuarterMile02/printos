@@ -72,7 +72,7 @@ async function PageInner({ params }: PageProps) {
   type JobShape = {
     id: string; job_number: number; title: string; description: string | null
     status: string; flag: string | null; due_date: string | null
-    source_quote_id: string | null; assigned_to: string | null
+    source_quote_id: string | null; quote_line_item_id: string | null; assigned_to: string | null
     created_at: string; updated_at: string; customer_id: string | null
     customers: { first_name: string; last_name: string; company_name: string | null; email: string | null; phone: string | null } | null
     material_selection: { line_items?: MaterialLine[]; computed_at?: string } | null
@@ -85,7 +85,7 @@ async function PageInner({ params }: PageProps) {
   }
 
   let job: JobShape | null = null
-  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, label_printed_at, department, production_due_date, fabrication_due_date, installation_due_date, customers(first_name, last_name, company_name, email, phone)'
+  const fullSelect = 'id, job_number, title, description, status, flag, due_date, source_quote_id, quote_line_item_id, assigned_to, created_at, updated_at, customer_id, material_selection, assigned_printer, label_printed_at, department, production_due_date, fabrication_due_date, installation_due_date, customers(first_name, last_name, company_name, email, phone)'
   const { data: jobRow1, error: jobErr1 } = await supabase
     .from('jobs')
     .select(fullSelect)
@@ -95,13 +95,16 @@ async function PageInner({ params }: PageProps) {
   if (jobRow1) {
     job = jobRow1 as unknown as JobShape
   } else if (jobErr1?.message?.includes('does not exist')) {
+    // Older-schema fallback (pre migration 121 too) — degrades
+    // quote_line_item_id to null the same way it already degrades
+    // material_selection/assigned_printer/etc below.
     const { data: jobRow2 } = await supabase
       .from('jobs')
       .select('id, job_number, title, description, status, flag, due_date, source_quote_id, assigned_to, created_at, updated_at, customer_id, customers(first_name, last_name, company_name, email, phone)')
       .eq('id', jobId)
       .eq('organization_id', org.id)
       .single()
-    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'material_selection' | 'assigned_printer' | 'label_printed_at' | 'department' | 'production_due_date' | 'fabrication_due_date' | 'installation_due_date'>), material_selection: null, assigned_printer: null, label_printed_at: null, department: null, production_due_date: null, fabrication_due_date: null, installation_due_date: null }
+    if (jobRow2) job = { ...(jobRow2 as unknown as Omit<JobShape, 'quote_line_item_id' | 'material_selection' | 'assigned_printer' | 'label_printed_at' | 'department' | 'production_due_date' | 'fabrication_due_date' | 'installation_due_date'>), quote_line_item_id: null, material_selection: null, assigned_printer: null, label_printed_at: null, department: null, production_due_date: null, fabrication_due_date: null, installation_due_date: null }
   } else if (jobErr1 && jobErr1.code !== 'PGRST116') {
     // Genuine error (bad UUID, RLS, network, etc.) — not the "0 or >1 rows"
     // shape .single() uses to signal a real not-found. Surface it instead of
@@ -147,15 +150,21 @@ async function PageInner({ params }: PageProps) {
   const workflowProgress: WorkflowProgress[] = []
 
   if (job.source_quote_id) {
-    // 1. Get product_ids from quote line items
+    // 1. Get product_ids from quote line items — scoped to just this
+    // job's own line item when it has one (migration 121's job-per-line-
+    // item grain), so a job only shows workflow steps for its own
+    // product. Falls back to every line item on the whole quote for jobs
+    // created before 121 (quote_line_item_id null), which is the exact
+    // old (pre-121) behavior — those jobs still represent a whole SO's
+    // worth of line items, so the old aggregate is still correct for them.
     type LiProd = { product_id: string | null }
-    const liRows = await dbOrThrow(
-      service
-        .from('quote_line_items')
-        .select('product_id')
-        .eq('quote_id', job.source_quote_id)
-        .not('product_id', 'is', null)
-    ) as LiProd[] | null
+    let liQuery = service
+      .from('quote_line_items')
+      .select('product_id')
+      .eq('quote_id', job.source_quote_id)
+      .not('product_id', 'is', null)
+    if (job.quote_line_item_id) liQuery = liQuery.eq('id', job.quote_line_item_id)
+    const liRows = await dbOrThrow(liQuery) as LiProd[] | null
 
     const productIds = [...new Set((liRows ?? []).map((r) => r.product_id).filter(Boolean) as string[])]
 
@@ -271,13 +280,18 @@ async function PageInner({ params }: PageProps) {
   type ProofLineItemOption = { id: string; description: string | null; width: number | null; height: number | null; quantity: number | null }
   let proofLineItemOptions: ProofLineItemOption[] = []
   if (job.source_quote_id) {
-    const liOptRows = await dbOrThrow(
-      supabase
-        .from('quote_line_items')
-        .select('id, description, width, height, quantity')
-        .eq('quote_id', job.source_quote_id)
-        .order('sort_order')
-    ) as ProofLineItemOption[] | null
+    // Narrowed to just this job's own line item once it has one
+    // (migration 121) — no more picking from a dropdown of every line
+    // item on the SO, since the job now unambiguously belongs to one.
+    // Pre-121 jobs (quote_line_item_id null) keep the old whole-quote
+    // dropdown, same reasoning as the workflow-steps query above.
+    let liOptQuery = supabase
+      .from('quote_line_items')
+      .select('id, description, width, height, quantity')
+      .eq('quote_id', job.source_quote_id)
+      .order('sort_order')
+    if (job.quote_line_item_id) liOptQuery = liOptQuery.eq('id', job.quote_line_item_id)
+    const liOptRows = await dbOrThrow(liOptQuery) as ProofLineItemOption[] | null
     proofLineItemOptions = liOptRows ?? []
   }
   function proofLineItemLabel(li: ProofLineItemOption): string {

@@ -5,14 +5,24 @@ type ServiceClient = ReturnType<typeof createServiceClient>
 export async function resolveJobDepartments(
   quoteId: string,
   orgId: string,
-  service: ServiceClient
+  service: ServiceClient,
+  // Scopes step 1 to one line item (migration 121's job-per-line-item
+  // grain: each job now wants its own line item's department, not the
+  // whole quote's aggregate). Omit to keep the old whole-quote behavior --
+  // no live caller needs that anymore (convert-action.ts always passes
+  // one now), kept optional only so this isn't a breaking signature change
+  // for any future caller that legitimately wants the SO-wide aggregate
+  // (e.g. a future "Order Board" summary).
+  lineItemId?: string,
 ): Promise<string[]> {
   // Step 1 — line items with a product
-  const { data: liRows, error: liErr } = await service
+  let liQuery = service
     .from('quote_line_items')
     .select('product_id')
     .eq('quote_id', quoteId)
     .not('product_id', 'is', null)
+  if (lineItemId) liQuery = liQuery.eq('id', lineItemId)
+  const { data: liRows, error: liErr } = await liQuery
 
   if (liErr || !liRows?.length) return []
 
