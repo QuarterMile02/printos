@@ -13,7 +13,8 @@ export async function respondToProof(
   proofVersionId: string,
   decision: 'approved' | 'rejected',
   feedback: string | null,
+  acknowledgedChecks: boolean,
 ): Promise<RespondResult> {
   const service = createServiceClient()
-  return respondToProofCore(service, token, proofVersionId, decision, feedback)
+  return respondToProofCore(service, token, proofVersionId, decision, feedback, acknowledgedChecks)
 }

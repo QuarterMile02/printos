@@ -30,6 +30,15 @@ export async function respondToProofCore(
   proofVersionId: string,
   decision: 'approved' | 'rejected',
   feedback: string | null,
+  // Item 3 — the required review checkboxes (Colors/Text/Spelling/Logos/
+  // Finishes/color-variance disclaimer). This is the REAL gate: the
+  // public page's Approve button is disabled client-side until all 6 are
+  // checked, but a disabled attribute is only ever a UX nicety, not a
+  // security boundary -- a scripted caller can POST decision:'approved'
+  // directly regardless of what the button showed. This boolean is
+  // re-derived and re-checked here, server-side, before any approval is
+  // ever written.
+  acknowledgedChecks: boolean,
 ): Promise<RespondResult> {
   // 1. Reject malformed input before it ever reaches a query. Neither
   // value's shape can be trusted from an unauthenticated POST body, and a
@@ -41,6 +50,9 @@ export async function respondToProofCore(
   }
   if (decision !== 'approved' && decision !== 'rejected') {
     return { ok: false, error: 'Invalid decision.' }
+  }
+  if (decision === 'approved' && !acknowledgedChecks) {
+    return { ok: false, error: 'Please check all required boxes before approving.' }
   }
 
   // 2. Resolve the token to its proof_sends row. This is the only lookup
@@ -112,12 +124,26 @@ export async function respondToProofCore(
   // whichever UPDATE actually matches a row wins; the other gets 0 rows
   // back below and is treated as "already responded" instead of silently
   // overwriting the first response.
+  //
+  // customer_checks_acknowledged_at (migration 122) is set ONLY for a
+  // verified-acknowledged approval — never for a rejection, and never
+  // just because the client claimed acknowledgedChecks was true (step 1
+  // above already rejected that combination before reaching here, but
+  // this stays decision-gated too rather than trusting the boolean
+  // directly, so a future edit to the check above can't silently start
+  // writing a false acknowledgment timestamp). Given the checkbox text is
+  // explicit liability language, this timestamp is meant to be a durable
+  // record that the gate was actually enforced for THIS approval,
+  // independent of whether the enforcement logic itself is ever changed
+  // or has a bug later.
+  const nowIso = new Date().toISOString()
   const { data: updated, error: updateErr } = await service
     .from('proof_versions')
     .update({
       status: decision,
       customer_feedback: feedback?.trim() || null,
-      customer_responded_at: new Date().toISOString(),
+      customer_responded_at: nowIso,
+      customer_checks_acknowledged_at: decision === 'approved' ? nowIso : null,
     })
     .eq('id', proofVersionId)
     .eq('status', 'pending')
