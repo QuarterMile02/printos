@@ -9,28 +9,10 @@ import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { DataTableError } from '@/components/data-table/data-table-error'
+import { JOBS_DB_SELECT, JOBS_PAGE_SIZE, type JobListRow } from './jobs-list-constants'
 
-// ── Row type ──────────────────────────────────────────────────────────────────
-// Deliberately scalar-only, same "avoid PostgREST join fragility" reasoning
-// jobs/page.tsx's kanban fetch already documents — Customer / Sales Order # /
-// Invoice # / Deposit % are all resolved via separate follow-up queries for
-// whichever rows are on the current page (see the effect below), not via
-// embedded relationship syntax in DB_SELECT.
+export type { JobListRow }
 
-export type JobListRow = {
-  id: string
-  job_number: number
-  title: string
-  due_date: string | null
-  department: string | null
-  flag: string | null
-  customer_id: string | null
-  sales_order_id: string | null
-  invoice_id: string | null
-}
-
-export const JOBS_DB_SELECT = 'id, job_number, title, due_date, department, flag, customer_id, sales_order_id, invoice_id'
-export const JOBS_PAGE_SIZE = 50
 const SEARCH_COLUMNS = ['title']
 const DEFAULT_SORT = [{ column: 'job_number', direction: 'desc' as const }]
 
