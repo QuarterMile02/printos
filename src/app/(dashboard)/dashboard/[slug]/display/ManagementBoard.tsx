@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getOrgId, getDisplayStats, getDepartmentSummaries, CREW_BOARDS, MANAGEMENT_UNITS } from './actions'
+import { getOrgId, getDisplayStats, getDepartmentSummaries } from './actions'
 import type { DisplayStats, CrewBoardSummary, ManagementUnitSummary } from './actions'
+import { CREW_BOARDS, MANAGEMENT_UNITS } from './board-config'
 
 const EMPTY_STATS: DisplayStats = {
   total_jobs: 0,

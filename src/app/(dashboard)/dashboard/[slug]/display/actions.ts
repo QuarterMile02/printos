@@ -1,6 +1,7 @@
 'use server'
 
 import { createServiceClient } from '@/lib/supabase/server'
+import { CREW_BOARDS, MANAGEMENT_UNITS } from './board-config'
 
 const orgIdCache = new Map<string, string>()
 
@@ -21,44 +22,15 @@ export async function getOrgId(slug: string): Promise<string | null> {
   return null
 }
 
-export const CREW_BOARDS = {
-  design: {
-    label: 'DESIGN',
-    codes: ['design', 'branding'],
-    urlParam: 'design',
-  },
-  large_format: {
-    label: 'LARGE FORMAT',
-    codes: ['large_format'],
-    urlParam: 'large_format',
-  },
-  commercial: {
-    label: 'COMMERCIAL',
-    codes: ['commercial_print', 'direct_mail'],
-    urlParam: 'commercial',
-  },
-  installation: {
-    label: 'INSTALLATION',
-    codes: ['installation', 'vehicle_wrap', 'service_repair', 'channel_letters', 'fabrication'],
-    urlParam: 'installation',
-  },
-  digital: {
-    label: 'DIGITAL',
-    codes: ['digital_marketing', 'digital_screens'],
-    urlParam: 'digital',
-  },
-} as const
-
-export const MANAGEMENT_UNITS = [
-  { label: 'LARGE FORMAT',      codes: ['large_format'],                               color: '#93ca3b' },
-  { label: 'ILLUMINATED SIGNS', codes: ['channel_letters', 'fabrication'],             color: '#F59E0B' },
-  { label: 'COMMERCIAL',        codes: ['commercial_print', 'direct_mail'],            color: '#3B82F6' },
-  { label: 'VEHICLE WRAPS',     codes: ['vehicle_wrap'],                               color: '#8B5CF6' },
-  { label: 'BRANDING',          codes: ['branding', 'design'],                         color: '#EC4899' },
-  { label: 'DIGITAL',           codes: ['digital_marketing', 'digital_screens'],       color: '#06B6D4' },
-  { label: 'PROMOTIONAL',       codes: ['promotional'],                                color: '#F97316' },
-  { label: 'APPAREL',           codes: ['apparel'],                                    color: '#EF4444' },
-] as const
+// CREW_BOARDS / MANAGEMENT_UNITS moved to ./board-config.ts -- this file
+// has 'use server' at the top, which means every export here must be an
+// async Server Function; the two were plain constants and broke the
+// client bundle that imported them (see board-config.ts's header comment
+// for the full story). Deliberately NOT re-exported from here even as a
+// pass-through -- a 'use server' file's export list applies to re-exports
+// too, so that would just reintroduce the same crash. Import them from
+// './board-config' directly (ManagementBoard.tsx, DepartmentBoard.tsx
+// already do).
 
 export type DisplayJob = {
   id: string

@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { getOrgId, getDisplayJobs, getDisplayStats, CREW_BOARDS } from './actions'
+import { getOrgId, getDisplayJobs, getDisplayStats } from './actions'
 import type { DisplayJob, DisplayStats } from './actions'
+import { CREW_BOARDS } from './board-config'
 
 const DEPT_LABELS: Record<string, string> = {
   large_format:      'Large Format',
