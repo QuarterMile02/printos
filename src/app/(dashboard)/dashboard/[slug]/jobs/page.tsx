@@ -2,7 +2,10 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import type { JobStatus, JobFlag } from '@/types/database'
 import type { Role, Tier } from '@/lib/permissions'
-import KanbanBoard, { type JobCard } from './kanban-board'
+import type { JobCard } from './kanban-board'
+import JobsViewToggle from './jobs-view-toggle'
+import { JOBS_DB_SELECT, JOBS_PAGE_SIZE, type JobListRow } from './jobs-list-client'
+import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
@@ -46,6 +49,17 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
           .maybeSingle()
       ) as ProfileRow | null
     : null
+
+  // Org-membership role (owner/admin/member/viewer) -- a different concept
+  // from profile.role above (sales/designer/production/etc, used for
+  // department scoping). The List view's saved-views system (useSavedView)
+  // needs this one, same as every other data-table page (see
+  // settings/discounts/page.tsx for the identical lookup).
+  type MemberRow = { user_id: string; role: string }
+  const memberRows = await dbOrThrow(
+    supabase.from('organization_members').select('user_id, role').eq('organization_id', org.id)
+  ) as MemberRow[] | null
+  const userRole = (memberRows ?? []).find((m) => m.user_id === (user?.id ?? ''))?.role ?? 'member'
 
   // Load departments for this org (for dropdown options)
   type DeptRow = { code: string; name: string }
@@ -237,6 +251,19 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
 
   const total = jobs.length
 
+  // Initial page for the List view (JobsListClient takes over client-side
+  // pagination/sort/filter/search from here — same SSR-hydration pattern
+  // as settings/discounts/page.tsx).
+  const listInitial = await fetchDataTablePage<JobListRow>({
+    tableKey: 'jobs',
+    orgId: org.id,
+    select: JOBS_DB_SELECT,
+    filterRules: [],
+    sortRules: [{ column: 'job_number', direction: 'desc' }],
+    page: 1,
+    pageSize: JOBS_PAGE_SIZE,
+  })
+
   return (
     <div className="flex h-full flex-col p-8">
       {/* Header */}
@@ -276,15 +303,25 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
           </div>
         </div>
       ) : (
-        <KanbanBoard
-          jobs={jobs}
-          orgId={org.id}
-          orgSlug={org.slug}
-          allDepartments={allDepartments}
-          activeDepartments={activeDepartments}
-          canChangeFilter={canChangeFilter}
-          canSeeAllDepartments={canSeeAllDepartments}
-          currentFilter={departmentParam ?? (canSeeAllDepartments ? 'all' : '')}
+        <JobsViewToggle
+          kanbanProps={{
+            jobs,
+            orgId: org.id,
+            orgSlug: org.slug,
+            allDepartments,
+            activeDepartments,
+            canChangeFilter,
+            canSeeAllDepartments,
+            currentFilter: departmentParam ?? (canSeeAllDepartments ? 'all' : ''),
+          }}
+          listProps={{
+            initialRows: listInitial.error ? [] : listInitial.rows,
+            initialTotalCount: listInitial.error ? 0 : listInitial.totalCount,
+            orgSlug: org.slug,
+            orgId: org.id,
+            userId: user?.id ?? '',
+            userRole,
+          }}
         />
       )}
     </div>
