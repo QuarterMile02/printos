@@ -9,7 +9,8 @@ export const SYSTEM_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'PrintOS <nore
 
 // Resolves the Resend "from" header for an email a staff member is
 // personally sending, to their own real identity -- their login email
-// with their profile display name (e.g. "Ruben Reyes <ruben@quartermileinc.com>").
+// with their profile display name AND their org's name (e.g.
+// "Ruben Reyes - Quarter Mile Inc <ruben@quartermileinc.com>").
 //
 // Safe without any extra Resend-side setup: once a domain is verified in
 // Resend (SPF/DKIM), any address at that domain can send with no
@@ -18,20 +19,25 @@ export const SYSTEM_FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'PrintOS <nore
 // verified quartermileinc.com domain (checked directly against
 // organization_members/auth.users), so this always resolves to a
 // sendable address today. Falls back to the email's local part if the
-// user has no profile display name set, and to the bare email if even
-// that lookup fails -- never falls back to the system address, since
-// that would silently misattribute a personal send.
+// user has no profile display name set, and drops the " - Org" suffix
+// entirely if the org name lookup comes back empty -- never falls back to
+// the system address, since that would silently misattribute a personal
+// send.
 export async function getUserSenderIdentity(
   service: SupabaseClient,
   userId: string,
   userEmail: string,
+  orgId: string,
 ): Promise<string> {
-  const { data } = await service
-    .from('profiles')
-    .select('full_name')
-    .eq('id', userId)
-    .maybeSingle() as { data: { full_name: string | null } | null }
+  const [profileRes, orgRes] = await Promise.all([
+    service.from('profiles').select('full_name').eq('id', userId).maybeSingle(),
+    service.from('organizations').select('name').eq('id', orgId).maybeSingle(),
+  ])
+  const profile = profileRes.data as { full_name: string | null } | null
+  const org = orgRes.data as { name: string | null } | null
 
-  const displayName = data?.full_name?.trim() || userEmail.split('@')[0]
-  return `${displayName} <${userEmail}>`
+  const displayName = profile?.full_name?.trim() || userEmail.split('@')[0]
+  const orgName = org?.name?.trim()
+  const identity = orgName ? `${displayName} - ${orgName}` : displayName
+  return `${identity} <${userEmail}>`
 }

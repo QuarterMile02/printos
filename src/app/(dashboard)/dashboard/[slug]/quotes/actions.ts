@@ -514,7 +514,7 @@ export async function sendQuoteToCustomer(
         // Sent as the staff member themselves -- this is triggered by a
         // person clicking "Send", not an automated notification.
         const fromHeader = user.email
-          ? await getUserSenderIdentity(service, user.id, user.email)
+          ? await getUserSenderIdentity(service, user.id, user.email, orgId)
           : SYSTEM_FROM_EMAIL
 
         const res = await fetch('https://api.resend.com/emails', {
@@ -1123,7 +1123,7 @@ export async function sendQuoteEmailCustom(
     // notification. See src/lib/email-sender.ts for why this is safe
     // without per-address Resend setup.
     const fromHeader = ctx.user.email
-      ? await getUserSenderIdentity(ctx.service, ctx.user.id, ctx.user.email)
+      ? await getUserSenderIdentity(ctx.service, ctx.user.id, ctx.user.email, orgId)
       : SYSTEM_FROM_EMAIL
 
     const emailPayload: Record<string, unknown> = {

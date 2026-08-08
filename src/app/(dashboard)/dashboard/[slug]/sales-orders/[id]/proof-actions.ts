@@ -141,7 +141,7 @@ export async function sendProofsBundle(
     </div>
   `.trim()
 
-  const fromHeader = user.email ? await getUserSenderIdentity(service, user.id, user.email) : SYSTEM_FROM_EMAIL
+  const fromHeader = user.email ? await getUserSenderIdentity(service, user.id, user.email, orgId) : SYSTEM_FROM_EMAIL
   let sigHtml = ''
   try { sigHtml = await getSignatureHtmlForUser(user.id, orgId) } catch { /* signature optional */ }
 
