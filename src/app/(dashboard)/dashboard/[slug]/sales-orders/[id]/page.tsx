@@ -207,43 +207,50 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     shippingMethods = (mData ?? []) as ShipMethodRow[]
   } catch { /* table not yet applied */ }
 
-  // Proofs ready to bulk-send for customer review: pending, tagged-to-a-
-  // line-item proof_versions belonging to this SO's jobs (migration 119).
-  // Only the highest version_number per line item is offered — an older
-  // superseded version isn't something anyone should be sending out.
-  type ReadyProofRow = {
+  // Each line item's MOST RECENT tagged proof_version, regardless of
+  // status — bucketed afterward into "ready to send" (pending) vs
+  // "already responded" (approved/rejected). Fetching all statuses (not
+  // just pending, like before) is what backs the 4th state Ruben flagged:
+  // without it, a line item whose latest proof was approved/rejected fell
+  // straight through to "no ready proof" and looked identical to a line
+  // item nothing had ever been uploaded for, so staff had no visibility
+  // from this page into what the customer actually said.
+  type ProofRow = {
     id: string; quote_line_item_id: string | null; file_name: string
-    version_number: number; created_at: string
+    version_number: number; created_at: string; status: string
+    customer_feedback: string | null
   }
   let readyProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }[] = []
+  let respondedProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null }[] = []
   if ((jobs ?? []).length > 0) {
     const jobIds = (jobs ?? []).map((j) => j.id)
     const proofRows = await dbOrThrow(
       supabase
         .from('proof_versions')
-        .select('id, quote_line_item_id, file_name, version_number, created_at')
+        .select('id, quote_line_item_id, file_name, version_number, created_at, status, customer_feedback')
         .in('job_id', jobIds)
-        .eq('status', 'pending')
         .not('quote_line_item_id', 'is', null)
         .order('version_number', { ascending: false })
-    ) as ReadyProofRow[] | null
+    ) as ProofRow[] | null
 
-    const byLineItem = new Map<string, ReadyProofRow>()
+    const latestByLineItem = new Map<string, ProofRow>()
     for (const p of proofRows ?? []) {
       if (!p.quote_line_item_id) continue
       // Descending version order above means the first row seen per line
-      // item is already its highest version.
-      if (!byLineItem.has(p.quote_line_item_id)) byLineItem.set(p.quote_line_item_id, p)
+      // item is already its highest version, whatever its status.
+      if (!latestByLineItem.has(p.quote_line_item_id)) latestByLineItem.set(p.quote_line_item_id, p)
     }
 
-    const candidateIds = Array.from(byLineItem.values()).map((p) => p.id)
+    const pending = Array.from(latestByLineItem.values()).filter((p) => p.status === 'pending')
+    const responded = Array.from(latestByLineItem.values()).filter((p) => p.status === 'approved' || p.status === 'rejected')
+
     const lastSentByProof = new Map<string, string>()
-    if (candidateIds.length > 0) {
+    if (pending.length > 0) {
       try {
         const { data: sendItemRows } = await supabase
           .from('proof_send_items')
           .select('proof_version_id, proof_sends(sent_at)')
-          .in('proof_version_id', candidateIds) as {
+          .in('proof_version_id', pending.map((p) => p.id)) as {
             data: { proof_version_id: string; proof_sends: { sent_at: string } | { sent_at: string }[] | null }[] | null
           }
         for (const row of sendItemRows ?? []) {
@@ -256,12 +263,21 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
       } catch { /* migration 119 not yet applied */ }
     }
 
-    readyProofs = Array.from(byLineItem.values()).map((p) => ({
+    readyProofs = pending.map((p) => ({
       id: p.id,
       quoteLineItemId: p.quote_line_item_id as string,
       fileName: p.file_name,
       versionNumber: p.version_number,
       lastSentAt: lastSentByProof.get(p.id) ?? null,
+    }))
+
+    respondedProofs = responded.map((p) => ({
+      id: p.id,
+      quoteLineItemId: p.quote_line_item_id as string,
+      fileName: p.file_name,
+      versionNumber: p.version_number,
+      status: p.status as 'approved' | 'rejected',
+      customerFeedback: p.customer_feedback,
     }))
   }
 
@@ -312,6 +328,7 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
         warning={warning}
         shippingMethods={shippingMethods}
         readyProofs={readyProofs}
+        respondedProofs={respondedProofs}
         lineItemJobIds={lineItemJobIds}
       />
     </div>

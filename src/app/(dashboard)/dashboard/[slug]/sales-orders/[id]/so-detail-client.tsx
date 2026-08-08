@@ -14,7 +14,7 @@ import {
 import SoCustomerPicker from './so-customer-picker'
 import { deleteShipment } from '../../shipping/actions'
 import { sendProofsBundle } from './proof-actions'
-import ProofUploadRow from './proof-upload-row'
+import ProofUploadRow, { UploadProofButton } from './proof-upload-row'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New',
@@ -75,6 +75,7 @@ type Shipment   = {
 }
 type ShippingMethod  = { id: string; name: string; carrier: string | null; is_active: boolean }
 type ReadyProof      = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }
+type RespondedProof  = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null }
 
 const SHIP_STATUS_STYLES: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700', shipped: 'bg-blue-50 text-blue-700',
@@ -129,6 +130,7 @@ type Props = {
   warning?: string
   shippingMethods: ShippingMethod[]
   readyProofs: ReadyProof[]
+  respondedProofs: RespondedProof[]
   lineItemJobIds: Record<string, string>
 }
 
@@ -159,7 +161,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, lineItems, canSeePricing, canExportPdf,
   initialContactId, initialContactName, initialContactEmail, initialContactPhone, canReassignCustomer,
-  shipments, shipmentSaved, shipmentError, warning, shippingMethods, readyProofs, lineItemJobIds,
+  shipments, shipmentSaved, shipmentError, warning, shippingMethods, readyProofs, respondedProofs, lineItemJobIds,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -441,6 +443,38 @@ export default function SoDetailClient({
                       </span>
                     )}
                   </label>
+                )
+              }
+              // 4th state (found live while verifying Item 3): the line
+              // item's most recent proof was already approved/rejected —
+              // don't fall through to looking like nothing was ever sent.
+              // Show the outcome + customer feedback, and still allow a
+              // corrected re-upload rather than blocking it outright.
+              const responded = respondedProofs.find((p) => p.quoteLineItemId === li.id)
+              if (responded) {
+                return (
+                  <div key={li.id} className="flex items-center justify-between gap-3 px-6 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-gray-900 truncate">{li.description}</p>
+                        <span className={`inline-block shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${responded.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                          {responded.status === 'approved' ? 'Approved' : 'Rejected'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 truncate">{responded.fileName} · v{responded.versionNumber}</p>
+                      {responded.customerFeedback && (
+                        <p className="mt-1 text-xs italic text-gray-600">&ldquo;{responded.customerFeedback}&rdquo;</p>
+                      )}
+                    </div>
+                    <UploadProofButton
+                      soId={salesOrder.id}
+                      orgId={orgId}
+                      orgSlug={orgSlug}
+                      lineItemId={li.id}
+                      buttonLabel="Upload New Version"
+                      onUploaded={() => { flash('New version uploaded.'); router.refresh() }}
+                    />
+                  </div>
                 )
               }
               const jobId = lineItemJobIds[li.id]
