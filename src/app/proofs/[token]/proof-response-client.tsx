@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { respondToProof } from './actions'
+import { useRef, useState, useTransition } from 'react'
+import { respondToProof, uploadProofMarkup } from './actions'
 
 export type ProofItem = {
   id: string
@@ -12,6 +12,7 @@ export type ProofItem = {
   status: 'pending' | 'approved' | 'rejected'
   customerFeedback: string | null
   customerRespondedAt: string | null
+  customerMarkupFileUrl: string | null
 }
 
 type Props = {
@@ -52,11 +53,13 @@ function isPdf(fileName: string): boolean {
   return fileName.toLowerCase().endsWith('.pdf')
 }
 
-function ProofCard({ item, token, onResolved }: { item: ProofItem; token: string; onResolved: (id: string, status: 'approved' | 'rejected', feedback: string | null) => void }) {
+function ProofCard({ item, token, onResolved }: { item: ProofItem; token: string; onResolved: (id: string, status: 'approved' | 'rejected', feedback: string | null, markupFileUrl: string | null) => void }) {
   const [feedback, setFeedback] = useState('')
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [showRejectBox, setShowRejectBox] = useState(false)
+  const [markupFile, setMarkupFile] = useState<File | null>(null)
+  const markupInputRef = useRef<HTMLInputElement>(null)
   const [checks, setChecks] = useState<Record<CheckKey, boolean>>({
     colors: false, text: false, spelling: false, logos: false, finishes: false, colorVariance: false,
   })
@@ -69,11 +72,26 @@ function ProofCard({ item, token, onResolved }: { item: ProofItem; token: string
   function submit(decision: 'approved' | 'rejected') {
     setError(null)
     startTransition(async () => {
-      const res = await respondToProof(token, item.id, decision, feedback.trim() || null, decision === 'approved' && allChecked)
+      // Item 4b — if the customer attached a marked-up file as part of
+      // Request Changes, upload it first so its URL can ride along in the
+      // same status-changing write below. An upload failure blocks the
+      // whole submit (rather than silently dropping the file) so the
+      // customer isn't left thinking their markup was received when it
+      // wasn't.
+      let markupFileUrl: string | null = null
+      if (decision === 'rejected' && markupFile) {
+        const uploadRes = await uploadProofMarkup(token, item.id, markupFile)
+        if (!uploadRes.ok) {
+          setError(uploadRes.error)
+          return
+        }
+        markupFileUrl = uploadRes.url
+      }
+      const res = await respondToProof(token, item.id, decision, feedback.trim() || null, decision === 'approved' && allChecked, markupFileUrl)
       if (!res.ok) {
         setError(res.error)
       } else {
-        onResolved(item.id, decision, feedback.trim() || null)
+        onResolved(item.id, decision, feedback.trim() || null, markupFileUrl)
       }
     })
   }
@@ -92,17 +110,21 @@ function ProofCard({ item, token, onResolved }: { item: ProofItem; token: string
 
       <div className="bg-gray-50 p-4">
         {isPdf(item.fileName) ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
-              Open PDF
-            </a>
-          </div>
+          <iframe src={item.fileUrl} className="h-[420px] w-full rounded-md border border-gray-200 bg-white" title={item.label} />
         ) : (
-          <a href={item.fileUrl} target="_blank" rel="noopener noreferrer">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={item.fileUrl} alt={item.label} className="mx-auto max-h-[480px] w-auto rounded-md border border-gray-200 object-contain" />
-          </a>
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.fileUrl} alt={item.label} className="mx-auto max-h-[480px] w-auto rounded-md border border-gray-200 object-contain" />
         )}
+        <div className="mt-3 flex justify-center">
+          <a
+            href={`/proofs/${token}/print/${item.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+          >
+            🖨️ Print
+          </a>
+        </div>
       </div>
 
       {item.status === 'pending' ? (
@@ -130,13 +152,28 @@ function ProofCard({ item, token, onResolved }: { item: ProofItem; token: string
           </div>
 
           {showRejectBox && (
-            <textarea
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              placeholder="What needs to change? (optional, but helpful)"
-              rows={3}
-              className="mb-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-            />
+            <div className="mb-3 space-y-2">
+              <textarea
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                placeholder="What needs to change? (optional, but helpful)"
+                rows={3}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+              />
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Upload a marked-up file (optional) — e.g. a photo of a printed proof with your notes
+                </label>
+                <input
+                  ref={markupInputRef}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  onChange={() => setMarkupFile(markupInputRef.current?.files?.[0] ?? null)}
+                  className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-gray-700 hover:file:bg-gray-50"
+                />
+                {markupFile && <p className="mt-1 text-xs text-gray-500">Selected: {markupFile.name}</p>}
+              </div>
+            </div>
           )}
           {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
@@ -162,6 +199,13 @@ function ProofCard({ item, token, onResolved }: { item: ProofItem; token: string
       ) : (
         <div className="p-4 text-sm text-gray-600">
           {item.customerFeedback && <p className="italic">“{item.customerFeedback}”</p>}
+          {item.customerMarkupFileUrl && (
+            <p className="mt-1">
+              <a href={item.customerMarkupFileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-qm-lime underline">
+                View your uploaded marked-up file
+              </a>
+            </p>
+          )}
           {item.customerRespondedAt && (
             <p className="mt-1 text-xs text-gray-400">
               Responded {new Date(item.customerRespondedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -176,8 +220,8 @@ function ProofCard({ item, token, onResolved }: { item: ProofItem; token: string
 export default function ProofResponseClient({ token, orgName, soLabel, initialItems }: Props) {
   const [items, setItems] = useState(initialItems)
 
-  function handleResolved(id: string, status: 'approved' | 'rejected', feedback: string | null) {
-    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, status, customerFeedback: feedback, customerRespondedAt: new Date().toISOString() } : it)))
+  function handleResolved(id: string, status: 'approved' | 'rejected', feedback: string | null, markupFileUrl: string | null) {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, status, customerFeedback: feedback, customerRespondedAt: new Date().toISOString(), customerMarkupFileUrl: markupFileUrl } : it)))
   }
 
   const pendingCount = items.filter((i) => i.status === 'pending').length

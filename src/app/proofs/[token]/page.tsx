@@ -56,11 +56,12 @@ export default async function ProofLinkPage({ params }: PageProps) {
 
   const { data: proofRows } = await service
     .from('proof_versions')
-    .select('id, quote_line_item_id, file_url, file_name, version_number, status, customer_feedback, customer_responded_at')
+    .select('id, quote_line_item_id, file_url, file_name, version_number, status, customer_feedback, customer_responded_at, customer_markup_file_url')
     .in('id', proofVersionIds) as {
       data: {
         id: string; quote_line_item_id: string | null; file_url: string; file_name: string
         version_number: number; status: string; customer_feedback: string | null; customer_responded_at: string | null
+        customer_markup_file_url: string | null
       }[] | null
     }
 
@@ -86,6 +87,7 @@ export default async function ProofLinkPage({ params }: PageProps) {
     status: (p.status === 'approved' || p.status === 'rejected' ? p.status : 'pending'),
     customerFeedback: p.customer_feedback,
     customerRespondedAt: p.customer_responded_at,
+    customerMarkupFileUrl: p.customer_markup_file_url,
   }))
 
   return (

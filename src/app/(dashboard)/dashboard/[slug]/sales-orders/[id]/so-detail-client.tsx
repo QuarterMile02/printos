@@ -75,7 +75,7 @@ type Shipment   = {
 }
 type ShippingMethod  = { id: string; name: string; carrier: string | null; is_active: boolean }
 type ReadyProof      = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }
-type RespondedProof  = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null }
+type RespondedProof  = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null; customerMarkupFileUrl: string | null }
 
 const SHIP_STATUS_STYLES: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700', shipped: 'bg-blue-50 text-blue-700',
@@ -464,6 +464,16 @@ export default function SoDetailClient({
                       <p className="text-xs text-gray-500 truncate">{responded.fileName} · v{responded.versionNumber}</p>
                       {responded.customerFeedback && (
                         <p className="mt-1 text-xs italic text-gray-600">&ldquo;{responded.customerFeedback}&rdquo;</p>
+                      )}
+                      {responded.customerMarkupFileUrl && (
+                        <a
+                          href={responded.customerMarkupFileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 inline-block text-xs font-semibold text-qm-lime underline"
+                        >
+                          View customer&apos;s marked-up file
+                        </a>
                       )}
                     </div>
                     <UploadProofButton

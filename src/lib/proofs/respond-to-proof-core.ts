@@ -39,6 +39,14 @@ export async function respondToProofCore(
   // re-derived and re-checked here, server-side, before any approval is
   // ever written.
   acknowledgedChecks: boolean,
+  // Item 4b — optional customer-uploaded markup file URL, already uploaded
+  // to the separate `proof-markups` bucket by uploadProofMarkup (actions.ts)
+  // *before* this function is called. Purely additive: just one more field
+  // on the same status-changing UPDATE below, so the whole response (status
+  // + feedback + markup) still lands atomically in one write. Deliberately
+  // NOT resolving/uploading anything here — this function's job stays "flip
+  // status," not "handle file I/O."
+  markupFileUrl: string | null = null,
 ): Promise<RespondResult> {
   // 1. Reject malformed input before it ever reaches a query. Neither
   // value's shape can be trusted from an unauthenticated POST body, and a
@@ -144,6 +152,11 @@ export async function respondToProofCore(
       customer_feedback: feedback?.trim() || null,
       customer_responded_at: nowIso,
       customer_checks_acknowledged_at: decision === 'approved' ? nowIso : null,
+      // Only meaningful for a rejection (the UI only offers the markup
+      // upload as part of Request Changes) — written whenever the caller
+      // provided one, regardless of decision, since a null value here is
+      // always a safe no-op.
+      customer_markup_file_url: markupFileUrl,
     })
     .eq('id', proofVersionId)
     .eq('status', 'pending')

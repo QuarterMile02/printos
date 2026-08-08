@@ -218,16 +218,16 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
   type ProofRow = {
     id: string; quote_line_item_id: string | null; file_name: string
     version_number: number; created_at: string; status: string
-    customer_feedback: string | null
+    customer_feedback: string | null; customer_markup_file_url: string | null
   }
   let readyProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }[] = []
-  let respondedProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null }[] = []
+  let respondedProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null; customerMarkupFileUrl: string | null }[] = []
   if ((jobs ?? []).length > 0) {
     const jobIds = (jobs ?? []).map((j) => j.id)
     const proofRows = await dbOrThrow(
       supabase
         .from('proof_versions')
-        .select('id, quote_line_item_id, file_name, version_number, created_at, status, customer_feedback')
+        .select('id, quote_line_item_id, file_name, version_number, created_at, status, customer_feedback, customer_markup_file_url')
         .in('job_id', jobIds)
         .not('quote_line_item_id', 'is', null)
         .order('version_number', { ascending: false })
@@ -278,6 +278,7 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
       versionNumber: p.version_number,
       status: p.status as 'approved' | 'rejected',
       customerFeedback: p.customer_feedback,
+      customerMarkupFileUrl: p.customer_markup_file_url,
     }))
   }
 
