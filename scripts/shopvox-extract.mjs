@@ -647,6 +647,45 @@ async function scrapeDropdownSelectedItems(page, rowLoc, rowIndex) {
   }
 }
 
+// Read grid rows structurally via ShopVOX's own field naming
+// (rows[N].xValue, rows[N].items[M].priceInDollars) instead of guessing
+// at "reasonable" run-size values or filtering out literal "$0" text —
+// both of those heuristics silently dropped real rows (custom run/qty
+// sizes like 50 or 3000 that aren't in a hardcoded list, and rows whose
+// price genuinely is $0). Only inputs matching this name pattern are
+// ever considered, so boilerplate checkboxes/toggles elsewhere on the
+// page can't leak in — no value-content filtering needed at all.
+async function scrapeGridRowsStructural(page) {
+  return page.evaluate(() => {
+    const rowRe = /^rows\[(\d+)\]\.xValue$/
+    const itemRe = /^rows\[(\d+)\]\.items\[(\d+)\]\.priceInDollars$/
+    const rowsByIndex = new Map()
+
+    for (const input of document.querySelectorAll('input[name^="rows["]')) {
+      const rowMatch = input.name.match(rowRe)
+      if (rowMatch) {
+        const idx = Number(rowMatch[1])
+        const row = rowsByIndex.get(idx) ?? { xValue: null, items: [] }
+        row.xValue = input.value.trim()
+        rowsByIndex.set(idx, row)
+        continue
+      }
+      const itemMatch = input.name.match(itemRe)
+      if (itemMatch) {
+        const idx = Number(itemMatch[1])
+        const itemIdx = Number(itemMatch[2])
+        const row = rowsByIndex.get(idx) ?? { xValue: null, items: [] }
+        row.items[itemIdx] = input.value.trim()
+        rowsByIndex.set(idx, row)
+      }
+    }
+
+    return Array.from(rowsByIndex.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, row]) => [row.xValue, ...row.items])
+  })
+}
+
 // ── Grid pricing scraper ──────────────────────────────────────────────
 // SAFETY: only clicks "Show Cost columns" checkbox and finish tab buttons.
 // Never touches Grid Type, Fixed Ordering, Export/Import Grid, Add/Delete buttons.
@@ -695,26 +734,7 @@ async function scrapeGridPricing(page) {
     });
     await page.waitForTimeout(1000);
 
-    const attrRows = await page.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll('input'));
-      const values = inputs.map(i => i.value.trim()).filter(v => v && !['false', 'true', 'grid', 'standard', '$0'].includes(v.toLowerCase()));
-      const rows = [];
-      for (let i = 0; i < values.length; i++) {
-        const isPriceOrCost = values[i].startsWith('$')
-        if (!isPriceOrCost && values[i].length > 0) {
-          const rowData = [values[i]];
-          let j = i + 1;
-          while (j < values.length && j < i + 5) {
-            if (values[j].startsWith('$') || !isNaN(parseFloat(values[j].replace(/[$,]/g, '')))) {
-              rowData.push(values[j]);
-            }
-            j++;
-          }
-          if (rowData.length > 1) rows.push(rowData);
-        }
-      }
-      return rows;
-    });
+    const attrRows = await scrapeGridRowsStructural(page);
 
     console.log(`  Grid: attribute rows = ${attrRows.length}`)
     return { grid_pricing: { type: 'attribute', rows: attrRows } };
@@ -741,36 +761,8 @@ async function scrapeGridPricing(page) {
     }, finishName);
     await page.waitForTimeout(1500);
 
-    // Read grid data: find run size inputs then collect trailing price/cost values
-    const gridRows = await page.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll('input'));
-      const values = inputs.map(i => i.value.trim()).filter(v => v.length > 0);
-
-      const runSizes = [100, 200, 300, 400, 500, 1000, 2000, 5000];
-      const rows = [];
-
-      // Skip everything before the first valid run size — avoids $0 minimum price fields
-      const firstRunSizeIdx = values.findIndex(v => runSizes.includes(parseFloat(v.replace(/[$,]/g, ''))));
-      if (firstRunSizeIdx === -1) return [];
-
-      for (let i = firstRunSizeIdx; i < values.length; i++) {
-        const num = parseFloat(values[i].replace(/[$,]/g, ''));
-        if (runSizes.includes(num)) {
-          const rowData = [values[i]];
-          let j = i + 1;
-          while (j < values.length && j < i + 5) {
-            const nextNum = parseFloat(values[j].replace(/[$,]/g, ''));
-            if (runSizes.includes(nextNum)) break;
-            if (!isNaN(nextNum) && nextNum >= 0) {
-              rowData.push(values[j]);
-            }
-            j++;
-          }
-          rows.push(rowData);
-        }
-      }
-      return rows;
-    });
+    // Read grid data structurally (rows[N].xValue / rows[N].items[M].priceInDollars)
+    const gridRows = await scrapeGridRowsStructural(page);
 
     finishes[finishName] = gridRows
     console.log(`  Grid: finish "${finishName}" → ${gridRows.length} rows`)
