@@ -14,6 +14,7 @@ import {
 import SoCustomerPicker from './so-customer-picker'
 import { deleteShipment } from '../../shipping/actions'
 import { sendProofsBundle } from './proof-actions'
+import ProofUploadRow from './proof-upload-row'
 
 const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   new: 'New',
@@ -128,6 +129,7 @@ type Props = {
   warning?: string
   shippingMethods: ShippingMethod[]
   readyProofs: ReadyProof[]
+  lineItemJobIds: Record<string, string>
 }
 
 function fmtSentAt(iso: string): string {
@@ -157,7 +159,7 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 export default function SoDetailClient({
   orgId, orgSlug, salesOrder, parentQuote, jobs, lineItems, canSeePricing, canExportPdf,
   initialContactId, initialContactName, initialContactEmail, initialContactPhone, canReassignCustomer,
-  shipments, shipmentSaved, shipmentError, warning, shippingMethods, readyProofs,
+  shipments, shipmentSaved, shipmentError, warning, shippingMethods, readyProofs, lineItemJobIds,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -387,44 +389,79 @@ export default function SoDetailClient({
         </div>
       )}
 
-      {/* ── Proofs Ready for Review ──────────────────────────────────────── */}
-      {readyProofs.length > 0 && (
+      {/* ── Proofs ────────────────────────────────────────────────────────
+          Item 2: the SO page is now the primary surface for proofs across
+          every line item, not just whichever ones already happen to have
+          a ready proof — staff can upload directly here per line item
+          (ProofUploadRow, resolving to that line item's own job
+          server-side) without navigating into the job page first. Always
+          shown once at least one job exists under this SO; each row is
+          one of three states per line item: ready-to-send (checkbox, old
+          behavior), needs-upload (inline upload control), or no job yet
+          (pre-121 SOs / an edge case, informational only). */}
+      {jobs.length > 0 && (
         <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
             <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-              Proofs Ready for Review
-              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">{readyProofs.length}</span>
+              Proofs
+              {readyProofs.length > 0 && (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">{readyProofs.length} ready</span>
+              )}
             </h2>
-            <button
-              type="button"
-              onClick={handleSendProofs}
-              disabled={selectedProofIds.size === 0 || sendingProofs}
-              className="rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-            >
-              {sendingProofs ? 'Sending…' : `Send Proofs${selectedProofIds.size ? ` (${selectedProofIds.size})` : ''}`}
-            </button>
+            {readyProofs.length > 0 && (
+              <button
+                type="button"
+                onClick={handleSendProofs}
+                disabled={selectedProofIds.size === 0 || sendingProofs}
+                className="rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
+              >
+                {sendingProofs ? 'Sending…' : `Send Proofs${selectedProofIds.size ? ` (${selectedProofIds.size})` : ''}`}
+              </button>
+            )}
           </div>
           <div className="divide-y divide-gray-100">
-            {readyProofs.map((p) => {
-              const li = lineItems.find((l) => l.id === p.quoteLineItemId)
-              return (
-                <label key={p.id} className="flex items-center gap-3 px-6 py-3 hover:bg-gray-50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedProofIds.has(p.id)}
-                    onChange={() => toggleProof(p.id)}
-                    className="h-4 w-4 rounded border-gray-300 text-qm-lime focus:ring-qm-lime"
+            {lineItems.map((li) => {
+              const ready = readyProofs.find((p) => p.quoteLineItemId === li.id)
+              if (ready) {
+                return (
+                  <label key={li.id} className="flex items-center gap-3 px-6 py-3 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedProofIds.has(ready.id)}
+                      onChange={() => toggleProof(ready.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-qm-lime focus:ring-qm-lime"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{li.description}</p>
+                      <p className="text-xs text-gray-500 truncate">{ready.fileName} · v{ready.versionNumber}</p>
+                    </div>
+                    {ready.lastSentAt && (
+                      <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                        Sent {fmtSentAt(ready.lastSentAt)} — resend?
+                      </span>
+                    )}
+                  </label>
+                )
+              }
+              const jobId = lineItemJobIds[li.id]
+              if (jobId) {
+                return (
+                  <ProofUploadRow
+                    key={li.id}
+                    soId={salesOrder.id}
+                    orgId={orgId}
+                    orgSlug={orgSlug}
+                    lineItemId={li.id}
+                    lineItemLabel={li.description}
+                    onUploaded={() => { flash('Proof uploaded.'); router.refresh() }}
                   />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{li?.description ?? 'Line item'}</p>
-                    <p className="text-xs text-gray-500 truncate">{p.fileName} · v{p.versionNumber}</p>
-                  </div>
-                  {p.lastSentAt && (
-                    <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                      Sent {fmtSentAt(p.lastSentAt)} — resend?
-                    </span>
-                  )}
-                </label>
+                )
+              }
+              return (
+                <div key={li.id} className="flex items-center gap-3 px-6 py-3">
+                  <span className="flex-1 min-w-0 truncate text-sm text-gray-400">{li.description}</span>
+                  <span className="shrink-0 text-xs text-gray-300">No job yet</span>
+                </div>
               )
             })}
           </div>

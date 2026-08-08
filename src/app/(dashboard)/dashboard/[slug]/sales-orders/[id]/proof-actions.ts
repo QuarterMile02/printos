@@ -4,8 +4,72 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getUserSenderIdentity, SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
+import { uploadProofCore } from '@/lib/proofs/upload-proof-core'
 
 type SendProofsResult = { success: boolean; error?: string; sentCount?: number }
+type UploadProofResult = { success: boolean; error?: string }
+
+// Item 2 — upload a proof for one specific line item directly from the SO
+// page, without navigating into the job page. Only possible cleanly since
+// migration 121's job-per-line-item grain: resolving "the job for this
+// line item under this SO" is now unambiguous (at most one match), where
+// before one job could hold every line item on the SO and there'd be no
+// single right answer. Reuses the exact same upload logic
+// (uploadProofCore) as the job page's own upload form -- this is the
+// second caller that extraction was for.
+export async function uploadProofForLineItem(
+  soId: string,
+  orgId: string,
+  orgSlug: string,
+  lineItemId: string,
+  file: File,
+): Promise<UploadProofResult> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { success: false, error: 'Not authenticated' }
+
+  const service = createServiceClient()
+
+  // Defense in depth beyond RLS, same reasoning as sendProofsBundle below
+  // -- this whole action runs on the service-role client.
+  const { data: member } = await service
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .maybeSingle() as { data: { role: string } | null }
+  if (!member || member.role === 'viewer') {
+    return { success: false, error: 'Not permitted to upload proofs.' }
+  }
+
+  // Resolve the one job for this line item under this SO. Never trust a
+  // client-supplied jobId (there isn't one in this signature at all, by
+  // design) -- always re-derive it server-side from (soId, lineItemId).
+  const { data: job } = await service
+    .from('jobs')
+    .select('id')
+    .eq('organization_id', orgId)
+    .eq('sales_order_id', soId)
+    .eq('quote_line_item_id', lineItemId)
+    .maybeSingle() as { data: { id: string } | null }
+  if (!job) {
+    return { success: false, error: 'No job found for this line item yet — it may predate the per-line-item job change.' }
+  }
+
+  const result = await uploadProofCore({ service, orgId, jobId: job.id, quoteLineItemId: lineItemId, uploadedBy: user.id, file })
+  if (!result.ok) return { success: false, error: result.error }
+
+  await logActivity({
+    org_id: orgId,
+    user_id: user.id,
+    entity_type: 'proof',
+    entity_id: result.proofId,
+    action: 'proof_sent',
+    metadata: { job_id: job.id, sales_order_id: soId, quote_line_item_id: lineItemId, version: result.versionNumber, file_name: result.fileName },
+  })
+
+  return { success: true }
+}
 
 // Bulk "Send Proofs" action for the Sales Order detail page: staff check
 // off one or more line items with a ready (pending, tagged) proof and

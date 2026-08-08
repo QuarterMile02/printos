@@ -147,15 +147,26 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     title: string
     status: JobStatus
     due_date: string | null
+    quote_line_item_id: string | null
   }
   const jobs = await dbOrThrow(
     supabase
       .from('jobs')
-      .select('id, job_number, title, status, due_date')
+      .select('id, job_number, title, status, due_date, quote_line_item_id')
       .eq('source_quote_id', so.quote_id ?? '')
       .eq('organization_id', org.id)
       .order('job_number', { ascending: true })
   ) as JobRow[] | null
+
+  // Line item -> its own job (migration 121's job-per-line-item grain).
+  // Lets the client offer an "Upload Proof" control directly per line
+  // item without needing the staff member to navigate into the job page
+  // first -- only possible now that this mapping is 1:1 instead of one
+  // job potentially covering every line item on the SO.
+  const lineItemJobIds: Record<string, string> = {}
+  for (const j of jobs ?? []) {
+    if (j.quote_line_item_id) lineItemJobIds[j.quote_line_item_id] = j.id
+  }
 
   // Fetch shipments for this SO
   type ShipmentRow = {
@@ -301,6 +312,7 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
         warning={warning}
         shippingMethods={shippingMethods}
         readyProofs={readyProofs}
+        lineItemJobIds={lineItemJobIds}
       />
     </div>
   )

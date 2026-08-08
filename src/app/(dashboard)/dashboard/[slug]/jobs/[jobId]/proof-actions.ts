@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { logActivity } from '@/lib/logActivity'
 import { dbOrThrow } from '@/lib/db'
+import { uploadProofCore } from '@/lib/proofs/upload-proof-core'
 
 export async function uploadProof(formData: FormData) {
   const jobId = formData.get('jobId') as string
@@ -17,82 +18,23 @@ export async function uploadProof(formData: FormData) {
   const rawLineItemId = formData.get('quoteLineItemId') as string | null
   const quoteLineItemId = rawLineItemId && rawLineItemId.trim() ? rawLineItemId.trim() : null
 
-  if (!file || file.size === 0) throw new Error('No file selected')
-  if (file.size > 10 * 1024 * 1024) throw new Error('File must be under 10MB')
-
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
   const service = createServiceClient()
 
-  // Ensure bucket exists. public: true (was false) -- fixed as part of
-  // building the public /proofs/[token] customer review page: this file's
-  // own getPublicUrl() call below only actually resolves to something
-  // viewable if the bucket is public. It defaulted to private before,
-  // which would have made both the existing staff-facing "Download" link
-  // AND the new customer link 403 once a real proof got uploaded — no
-  // proof has ever been uploaded in production yet (confirmed against the
-  // live DB), so this had gone unnoticed.
-  const { data: buckets } = await service.storage.listBuckets()
-  const exists = (buckets ?? []).some(b => b.name === 'proofs')
-  if (!exists) {
-    await service.storage.createBucket('proofs', { public: true })
-  }
+  const result = await uploadProofCore({ service, orgId, jobId, quoteLineItemId, uploadedBy: user.id, file })
+  if (!result.ok) throw new Error(result.error)
 
-  // Get next version number
-  const { data: existing } = await service
-    .from('proof_versions')
-    .select('version_number')
-    .eq('job_id', jobId)
-    .order('version_number', { ascending: false })
-    .limit(1)
-  const nextVersion = ((existing as { version_number: number }[] | null)?.[0]?.version_number ?? 0) + 1
-
-  // Upload file
-  const ext = file.name.split('.').pop() ?? 'bin'
-  const storagePath = `${orgId}/${jobId}/v${nextVersion}.${ext}`
-
-  const { error: uploadErr } = await service.storage
-    .from('proofs')
-    .upload(storagePath, file, { contentType: file.type, upsert: true })
-
-  if (uploadErr) {
-    console.error('[uploadProof] Storage error:', uploadErr.message)
-    throw new Error(`Upload failed: ${uploadErr.message}`)
-  }
-
-  // Get public URL
-  const { data: urlData } = service.storage.from('proofs').getPublicUrl(storagePath)
-  const fileUrl = urlData.publicUrl
-
-  // Insert record
-  const { data: proofRow, error: dbErr } = await service.from('proof_versions').insert({
-    job_id: jobId,
-    organization_id: orgId,
-    file_url: fileUrl,
-    file_name: file.name,
-    version_number: nextVersion,
-    uploaded_by: user.id,
-    status: 'pending',
-    quote_line_item_id: quoteLineItemId,
-  }).select('id').single() as { data: { id: string } | null; error: { message: string } | null }
-
-  if (dbErr) {
-    console.error('[uploadProof] DB error:', dbErr.message)
-    throw new Error(`Save failed: ${dbErr.message}`)
-  }
-
-  if (proofRow?.id) {
-    await logActivity({
-      org_id: orgId,
-      user_id: user.id,
-      entity_type: 'proof',
-      entity_id: proofRow.id,
-      action: 'proof_sent',
-      metadata: { job_id: jobId, version: nextVersion, file_name: file.name },
-    })
-  }
+  await logActivity({
+    org_id: orgId,
+    user_id: user.id,
+    entity_type: 'proof',
+    entity_id: result.proofId,
+    action: 'proof_sent',
+    metadata: { job_id: jobId, version: result.versionNumber, file_name: result.fileName },
+  })
 
   redirect(`/dashboard/${orgSlug}/jobs/${jobId}`)
 }
