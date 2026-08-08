@@ -288,8 +288,16 @@ async function JobsPageInner({ params, searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Board */}
-      {total === 0 ? (
+      {/* Board — gated on the org-wide totalCount, not the
+          department-filtered `total`. A department filter that happens to
+          match zero jobs is not the same thing as the org having no jobs
+          at all: showing this big "Jobs are created automatically..."
+          empty state in that case is misleading (pre-existing on Kanban;
+          made more visible once the List view landed alongside it, since
+          the List view isn't department-filtered and has jobs to show
+          even when Kanban's current filter doesn't). KanbanBoard already
+          renders its own per-column "No jobs" for an empty filtered set. */}
+      {totalCount === 0 ? (
         <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-white py-20">
           <div className="text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-qm-lime-light text-qm-lime-dark">
