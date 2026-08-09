@@ -10,6 +10,7 @@ import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { DataTableError } from '@/components/data-table/data-table-error'
 import { JOBS_DB_SELECT, JOBS_PAGE_SIZE, type JobListRow } from './jobs-list-constants'
+import { computeProofStatus, formatElapsedDays, PROOF_STATUS_STYLES, type ProofStatusResult } from '@/lib/proofs/proof-status'
 
 export type { JobListRow }
 
@@ -97,6 +98,11 @@ export default function JobsListClient({
       getValue: (j) => j.due_date,
     },
     { key: 'days_left', label: 'Days Left', defaultWidth: 100, sortable: false, filterable: false },
+    // Not a real jobs column -- resolved per-page from the job's one line
+    // item (migration 121 grain), same "joined per current page" pattern
+    // as Customer/SO#/Invoice#/Deposit% below. Not sortable/filterable
+    // for the same reason those aren't.
+    { key: 'proof_status', label: 'Proof Status', defaultWidth: 150, sortable: false, filterable: false },
     { key: 'tags', label: 'Tags', defaultWidth: 160, sortable: false, filterable: false },
     {
       key: 'job_number', label: 'Job #', defaultWidth: 90,
@@ -143,6 +149,9 @@ export default function JobsListClient({
     depositPct: number | null
     soNumber: number | null
     invoiceNumber: number | null
+    // null = legacy job (no quote_line_item_id) -- can't resolve to one
+    // specific line item's proof status, shown as "—" rather than guessed.
+    proofStatus: ProofStatusResult | null
   }
   const [joined, setJoined] = useState<Record<string, JoinedInfo>>({})
   useEffect(() => {
@@ -153,6 +162,9 @@ export default function JobsListClient({
     const customerIds = [...new Set(liveRows.map((r) => r.customer_id).filter(Boolean) as string[])]
     const soIds = [...new Set(liveRows.map((r) => r.sales_order_id).filter(Boolean) as string[])]
     const invoiceIds = [...new Set(liveRows.map((r) => r.invoice_id).filter(Boolean) as string[])]
+    const lineItemIds = [...new Set(liveRows.map((r) => r.quote_line_item_id).filter(Boolean) as string[])]
+
+    type ProofRow = { id: string; quote_line_item_id: string | null; status: string; version_number: number; customer_responded_at: string | null }
 
     Promise.all([
       customerIds.length > 0
@@ -164,7 +176,14 @@ export default function JobsListClient({
       invoiceIds.length > 0
         ? client.from('invoices').select('id, invoice_number').in('id', invoiceIds)
         : Promise.resolve({ data: [] as { id: string; invoice_number: number }[] }),
-    ]).then(async ([custRes, soRes, invRes]) => {
+      // Same classification inputs as the Sales Order page (see
+      // computeProofStatus's own header comment) -- only the "is this
+      // pending proof already sent" join needs a follow-up query below,
+      // since it depends on which proofs came back pending here.
+      lineItemIds.length > 0
+        ? client.from('proof_versions').select('id, quote_line_item_id, status, version_number, customer_responded_at').in('quote_line_item_id', lineItemIds).order('version_number', { ascending: false })
+        : Promise.resolve({ data: [] as ProofRow[] }),
+    ]).then(async ([custRes, soRes, invRes, proofRes]) => {
       if (cancelled) return
       const customers = custRes.data ?? []
       const soMap = new Map((soRes.data ?? []).map((s) => [s.id, s.so_number]))
@@ -185,14 +204,55 @@ export default function JobsListClient({
       }
       const customerById = new Map(customers.map((c) => [c.id, c]))
 
+      // Latest proof_version per line item — descending version_number
+      // above means the first row seen per line item is already its
+      // highest version, same pattern as sales-orders/[id]/page.tsx.
+      const proofRows = (proofRes.data ?? []) as ProofRow[]
+      const latestByLineItem = new Map<string, ProofRow>()
+      for (const p of proofRows) {
+        if (!p.quote_line_item_id) continue
+        if (!latestByLineItem.has(p.quote_line_item_id)) latestByLineItem.set(p.quote_line_item_id, p)
+      }
+
+      // "Has this pending proof already been sent" -- only needed for the
+      // pending ones, same proof_send_items -> proof_sends(sent_at) join
+      // the SO page uses for readyProofs' lastSentAt.
+      const pendingIds = Array.from(latestByLineItem.values()).filter((p) => p.status === 'pending').map((p) => p.id)
+      const lastSentByProof = new Map<string, string>()
+      if (pendingIds.length > 0) {
+        try {
+          const { data: sendItemRows } = await client
+            .from('proof_send_items')
+            .select('proof_version_id, proof_sends(sent_at)')
+            .in('proof_version_id', pendingIds) as {
+              data: { proof_version_id: string; proof_sends: { sent_at: string } | { sent_at: string }[] | null }[] | null
+            }
+          for (const row of sendItemRows ?? []) {
+            const sendRel = Array.isArray(row.proof_sends) ? row.proof_sends[0] : row.proof_sends
+            const sentAt = sendRel?.sent_at
+            if (!sentAt) continue
+            const prev = lastSentByProof.get(row.proof_version_id)
+            if (!prev || sentAt > prev) lastSentByProof.set(row.proof_version_id, sentAt)
+          }
+        } catch { /* migration 119 not yet applied */ }
+      }
+
       const next: Record<string, JoinedInfo> = {}
       for (const r of liveRows) {
         const cust = r.customer_id ? customerById.get(r.customer_id) : undefined
+        const proof = r.quote_line_item_id ? latestByLineItem.get(r.quote_line_item_id) : undefined
         next[r.id] = {
           customerName: cust ? (cust.company_name?.trim() || `${cust.first_name} ${cust.last_name}`.trim()) : null,
           depositPct: cust?.terms ? (termMap.get(cust.terms) ?? null) : null,
           soNumber: r.sales_order_id ? soMap.get(r.sales_order_id) ?? null : null,
           invoiceNumber: r.invoice_id ? invMap.get(r.invoice_id) ?? null : null,
+          proofStatus: r.quote_line_item_id
+            ? computeProofStatus({
+                proofStatus: (proof?.status as 'pending' | 'approved' | 'rejected' | undefined) ?? null,
+                sentAt: proof && proof.status === 'pending' ? (lastSentByProof.get(proof.id) ?? null) : null,
+                respondedAt: proof?.customer_responded_at ?? null,
+              })
+            : null,
         }
       }
       if (!cancelled) setJoined(next)
@@ -342,6 +402,18 @@ export default function JobsListClient({
                     </td>
                     <td className="whitespace-nowrap overflow-hidden">
                       <Link href={href} className={`block px-4 py-3 text-sm ${dl.className}`}>{dl.text}</Link>
+                    </td>
+                    <td className="whitespace-nowrap overflow-hidden">
+                      <Link href={href} className="block px-4 py-3">
+                        {info?.proofStatus ? (
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${PROOF_STATUS_STYLES[info.proofStatus.key]}`}>
+                            {info.proofStatus.label}
+                            {formatElapsedDays(info.proofStatus.elapsedDays) ? ` · ${formatElapsedDays(info.proofStatus.elapsedDays)}` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-300">—</span>
+                        )}
+                      </Link>
                     </td>
                     <td className="whitespace-nowrap overflow-hidden">
                       <Link href={href} className="block px-4 py-3">

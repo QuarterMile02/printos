@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { formatCents } from '../format'
 import ProofUploadRow, { UploadProofButton } from './proof-upload-row'
+import { computeProofStatus, formatElapsedDays, PROOF_STATUS_LABELS, PROOF_STATUS_STYLES, type ProofStatusKey } from '@/lib/proofs/proof-status'
 
 const JOB_STATUS_LABELS: Record<string, string> = {
   new: 'New',
@@ -53,7 +54,7 @@ export type LineItem = {
 
 export type JobSummary = { id: string; job_number: number; title: string; status: string; due_date: string | null }
 export type ReadyProof     = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }
-export type RespondedProof = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null; customerMarkupFileUrl: string | null }
+export type RespondedProof = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null; customerMarkupFileUrl: string | null; customerRespondedAt: string | null }
 
 type Props = {
   soId: string
@@ -98,25 +99,68 @@ export default function UnifiedLineItems({
     })
   }
 
+  // Per-line-item proof status (Not Started / Ready to Send / In Review /
+  // Approved / Redesign), computed once and reused for both the row-level
+  // pills and the header's aggregate counts, so the two can't disagree.
+  // Deliberately excludes line items with no job at all ("No job yet") --
+  // that's a distinct, structural gap (nothing to even track a proof
+  // status against), not a proof-workflow state, so it's kept out of both
+  // the 5-state count and the row pill; those rows keep their existing
+  // plain "No job yet" text.
+  const statusByLineItemId = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeProofStatus>>()
+    for (const li of lineItems) {
+      if (!jobByLineItemId[li.id]) continue
+      const ready = readyProofs.find((p) => p.quoteLineItemId === li.id)
+      const responded = respondedProofs.find((p) => p.quoteLineItemId === li.id)
+      map.set(li.id, computeProofStatus({
+        proofStatus: responded ? responded.status : (ready ? 'pending' : null),
+        sentAt: ready ? ready.lastSentAt : null,
+        respondedAt: responded ? responded.customerRespondedAt : null,
+      }))
+    }
+    return map
+  }, [lineItems, jobByLineItemId, readyProofs, respondedProofs])
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<ProofStatusKey, number> = { not_started: 0, ready_to_send: 0, in_review: 0, approved: 0, redesign: 0 }
+    for (const s of statusByLineItemId.values()) counts[s.key]++
+    return counts
+  }, [statusByLineItemId])
+
   if (lineItems.length === 0) return null
 
   return (
     <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2">
+      <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2 flex-wrap">
           Line Items
-          {readyCount > 0 && (
-            <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 normal-case tracking-normal">{readyCount} proof{readyCount === 1 ? '' : 's'} ready</span>
-          )}
+          {(Object.keys(PROOF_STATUS_LABELS) as ProofStatusKey[]).map((key) => {
+            const count = statusCounts[key]
+            if (count === 0) return null
+            return (
+              <span key={key} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold normal-case tracking-normal ${PROOF_STATUS_STYLES[key]}`}>
+                {count} {PROOF_STATUS_LABELS[key]}
+              </span>
+            )
+          })}
         </h2>
+        {/* Item: Send Proofs button fix — enabled whenever a ready proof
+            exists, regardless of checkbox state (was previously disabled
+            until something was checked, which was wrong: the original
+            spec is "select checkboxes... and click to send all selected
+            or just send proofs and all proofs that are uploaded will be
+            sent"). Nothing checked -> sends every ready proof; checking
+            specific boxes narrows the send to just those (see
+            handleSendProofs in so-detail-client.tsx). */}
         {readyCount > 0 && (
           <button
             type="button"
             onClick={onSendProofs}
-            disabled={selectedProofIds.size === 0 || sendingProofs}
+            disabled={sendingProofs}
             className="rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
           >
-            {sendingProofs ? 'Sending…' : `Send Proofs${selectedProofIds.size ? ` (${selectedProofIds.size})` : ''}`}
+            {sendingProofs ? 'Sending…' : `Send Proofs (${selectedProofIds.size || readyCount})`}
           </button>
         )}
       </div>
@@ -132,7 +176,7 @@ export default function UnifiedLineItems({
             <span className="w-24 shrink-0 text-right">Total</span>
           </>
         )}
-        <span className="w-40 shrink-0 text-right">Status</span>
+        <span className="w-56 shrink-0 text-right">Status</span>
         <span className="w-28 shrink-0 text-right">Due Date</span>
       </div>
 
@@ -192,19 +236,23 @@ export default function UnifiedLineItems({
                   </>
                 )}
 
-                <div className="w-40 shrink-0 flex items-center justify-end gap-2">
-                  {ready && (
-                    <span className="inline-block rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Ready</span>
-                  )}
-                  {responded && (
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${responded.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                      {responded.status === 'approved' ? 'Approved' : 'Rejected'}
-                    </span>
-                  )}
+                <div className="w-56 shrink-0 flex flex-wrap items-center justify-end gap-1.5">
                   {job ? (
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${JOB_STATUS_STYLES[job.status] ?? 'bg-gray-100 text-gray-700'}`}>
-                      {JOB_STATUS_LABELS[job.status] ?? job.status}
-                    </span>
+                    <>
+                      {(() => {
+                        const proofStatus = statusByLineItemId.get(li.id)
+                        if (!proofStatus) return null
+                        const days = formatElapsedDays(proofStatus.elapsedDays)
+                        return (
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${PROOF_STATUS_STYLES[proofStatus.key]}`}>
+                            {proofStatus.label}{days ? ` · ${days}` : ''}
+                          </span>
+                        )
+                      })()}
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${JOB_STATUS_STYLES[job.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                        {JOB_STATUS_LABELS[job.status] ?? job.status}
+                      </span>
+                    </>
                   ) : (
                     <span className="text-xs text-gray-300">No job yet</span>
                   )}

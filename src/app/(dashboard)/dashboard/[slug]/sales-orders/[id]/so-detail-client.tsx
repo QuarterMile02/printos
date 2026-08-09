@@ -170,10 +170,17 @@ export default function SoDetailClient({
   }
 
   async function handleSendProofs() {
-    if (selectedProofIds.size === 0) return
+    // Fix: the button is enabled whenever any ready proof exists (see
+    // unified-line-items.tsx), not just once something's checked --
+    // matches the original spec ("select checkboxes... and click to send
+    // all selected or just send proofs and all proofs that are uploaded
+    // will be sent"). Nothing checked -> send every ready proof; specific
+    // boxes checked -> narrow to just those.
+    const idsToSend = selectedProofIds.size > 0 ? Array.from(selectedProofIds) : readyProofs.map((p) => p.id)
+    if (idsToSend.length === 0) return
     setSendingProofs(true)
     try {
-      const res = await sendProofsBundle(salesOrder.id, orgId, orgSlug, Array.from(selectedProofIds))
+      const res = await sendProofsBundle(salesOrder.id, orgId, orgSlug, idsToSend)
       if (!res.success) {
         flash(res.error ?? 'Failed to send proofs.', 'error')
       } else {

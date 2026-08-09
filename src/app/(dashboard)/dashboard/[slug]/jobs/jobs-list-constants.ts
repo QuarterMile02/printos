@@ -21,7 +21,12 @@ export type JobListRow = {
   customer_id: string | null
   sales_order_id: string | null
   invoice_id: string | null
+  // Migration 121's job-per-line-item grain. Null for jobs that predate
+  // it (a job covering every line item on its SO at once) -- those can't
+  // resolve to one specific line item's proof status, so the Proof
+  // Status column shows "—" for them rather than guessing.
+  quote_line_item_id: string | null
 }
 
-export const JOBS_DB_SELECT = 'id, job_number, title, due_date, department, flag, customer_id, sales_order_id, invoice_id'
+export const JOBS_DB_SELECT = 'id, job_number, title, due_date, department, flag, customer_id, sales_order_id, invoice_id, quote_line_item_id'
 export const JOBS_PAGE_SIZE = 50
