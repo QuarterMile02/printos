@@ -20,6 +20,15 @@
 //   node scripts/shopvox-extract.mjs --debug         # screenshot every step
 //   node scripts/shopvox-extract.mjs --inspect       # pause after search for manual inspection
 //   node scripts/shopvox-extract.mjs --cdp=http://localhost:9222  # attach to existing Chrome
+//   node scripts/shopvox-extract.mjs --dom-scrape    # collect URLs by scraping the list page
+//                                                     # instead of the ShopVOX API (fallback —
+//                                                     # requires manually clicking "Load All")
+//
+// Product discovery defaults to querying the ShopVOX product API directly
+// (api.shopvox.com/edge/products) using the browser's authenticated session,
+// so no manual "Load All" click is needed — just log in when prompted and
+// press ENTER. Pass --dom-scrape to fall back to the old DOM-scraping path
+// if the API ever changes shape.
 //
 // ────────────────────────────────────────────────────────────────────────
 // ⚠ SELECTORS ARE GUESSES. First run will almost certainly fail on selectors.
@@ -52,6 +61,7 @@ const RESUME = !hasFlag('--no-resume')           // resume is the default
 const DEBUG = hasFlag('--debug')
 const INSPECT = hasFlag('--inspect')
 const CDP_URL = getFlag('--cdp')
+const DOM_SCRAPE = hasFlag('--dom-scrape')       // fall back to manual "Load All" DOM scraping
 
 // Diagnostic snapshot is taken only on the first product we extract.
 let firstProduct = true
@@ -211,7 +221,49 @@ async function switchToView(page, currentView, targetView) {
   await option.click({ timeout: 5000 })
 }
 
-async function collectAllProductUrls(page) {
+// Fetch the full product list directly from ShopVOX's own API instead of
+// scraping the rendered (virtualized) list page. Discovered by intercepting
+// the request the products page itself makes: it needs the browser's
+// session cookies (credentials: 'include') PLUS an 'x-shopvox-client: web'
+// header — cookies alone get a 403. Active and inactive products are
+// separate filtered queries (an unfiltered request silently excludes
+// disabled products), so both are fetched and merged by id.
+async function fetchAllProductsViaApi(page) {
+  const HEADERS = { 'x-shopvox-client': 'web', 'accept': 'application/json, text/plain, */*' }
+  async function fetchByActive(activeValue) {
+    const sorts = encodeURIComponent(JSON.stringify({ by: 'name', direction: 'asc' }))
+    const filter = encodeURIComponent(JSON.stringify({ by: 'active', rule: 'equal', value: activeValue }))
+    const url = `https://api.shopvox.com/edge/products?page=1&sorts[]=${sorts}&perPage=2000&filters[]=${filter}`
+    const result = await page.evaluate(async ({ u, headers }) => {
+      const res = await fetch(u, { credentials: 'include', headers })
+      const text = await res.text()
+      let body
+      try { body = JSON.parse(text) } catch { body = null }
+      return { status: res.status, body }
+    }, { u: url, headers: HEADERS })
+    if (result.status !== 200 || !result.body?.products) {
+      throw new Error(`ShopVOX product API fetch failed (active=${activeValue}): status ${result.status}`)
+    }
+    return result.body.products
+  }
+
+  const [active, inactive] = await Promise.all([fetchByActive(true), fetchByActive(false)])
+  const byId = new Map()
+  for (const p of [...active, ...inactive]) byId.set(p.id, p)
+  console.log(`  API discovery: ${active.length} active + ${inactive.length} inactive = ${byId.size} unique products`)
+
+  return [...byId.values()].map((p) => ({
+    url: `${URLS.base}/settings/products/${p.id}`,
+    name: p.name,
+    shopvoxId: p.id,
+  }))
+}
+
+// Fallback: scrape product URLs from the rendered list page — requires the
+// user to have already clicked "Load All" (My View) before pressing ENTER
+// in ensureLoggedIn. Kept for the rare case the ShopVOX API above changes
+// shape; use --dom-scrape to select it.
+async function collectAllProductUrlsViaDom(page) {
   const byHref = new Map()
 
   // Wait for the list to stabilize after ENTER. Take an initial count after
@@ -1193,8 +1245,10 @@ async function ensureLoggedIn(page) {
   console.log('  MANUAL STEP — in the open Chromium window:')
   console.log('    1. Log into ShopVOX if not already logged in')
   console.log(`    2. Navigate to ${URLS.products}`)
-  console.log('    3. Click "Load All" so every product row is visible')
-  console.log('    4. Confirm the product list is fully rendered')
+  if (DOM_SCRAPE) {
+    console.log('    3. Click "Load All" so every product row is visible')
+    console.log('    4. Confirm the product list is fully rendered')
+  }
   console.log('  Then press ENTER here to continue.')
   console.log('  (No timeout — the script will wait as long as you need.')
   console.log('   The browser will stay open until you press ENTER.)')
@@ -1260,11 +1314,17 @@ async function main() {
     const TEST_UUID = 'a2adac04-caa0-40f3-a57e-a9c2e412a580'
     console.log(`DEBUG MODE: Using hardcoded test URL: ${TEST_NAME}`)
     shopvoxProducts = [{ url: TEST_URL, name: TEST_NAME, shopvoxId: TEST_UUID }]
-  } else {
-    console.log('Collecting ShopVOX product URLs from list page…')
-    shopvoxProducts = await collectAllProductUrls(page)
+  } else if (DOM_SCRAPE) {
+    console.log('Collecting ShopVOX product URLs from list page (--dom-scrape)…')
+    shopvoxProducts = await collectAllProductUrlsViaDom(page)
     if (shopvoxProducts.length === 0) {
       throw new Error('Collected 0 product URLs — check SELECTORS.productListLink.')
+    }
+  } else {
+    console.log('Discovering ShopVOX products via API…')
+    shopvoxProducts = await fetchAllProductsViaApi(page)
+    if (shopvoxProducts.length === 0) {
+      throw new Error('Collected 0 product URLs from ShopVOX API.')
     }
   }
 
