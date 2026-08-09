@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 export const dynamic = 'force-dynamic'
 
 type ShopvoxModifier = { name: string; type: string; default?: unknown }
-type ShopvoxDropdown = { name: string; kind?: string; category?: string | null; optional?: boolean | null }
+type ShopvoxDropdown = { menu_name: string; kind?: string; category?: string | null; optional?: boolean | null }
 // The browser extractor writes `item_type`; the older Playwright
 // extractor wrote `kind`. Accept both; we normalize to one local var
 // at the top of the loop.
@@ -318,10 +318,10 @@ export async function POST(request: NextRequest) {
         //    from the explicit flag OR the "(Optional)" substring.
         const dropdownMenus: Array<{ menu_name: string; is_optional: boolean }> = []
         for (const m of (sv.dropdown_menus ?? [])) {
-          if (!m.name || !m.name.trim()) continue
+          if (!m.menu_name || !m.menu_name.trim()) continue
           dropdownMenus.push({
-            menu_name: m.name.trim(),
-            is_optional: !!m.optional || /\(optional\)/i.test(m.name),
+            menu_name: m.menu_name.trim(),
+            is_optional: !!m.optional || /\(optional\)/i.test(m.menu_name),
           })
         }
 
