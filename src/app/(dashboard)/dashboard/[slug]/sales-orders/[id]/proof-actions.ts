@@ -5,6 +5,7 @@ import { getUserSenderIdentity, SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { uploadProofCore } from '@/lib/proofs/upload-proof-core'
+import { resolveJobsForLineItems } from '@/lib/jobs/resolve-jobs-for-line-items'
 
 type SendProofsResult = { success: boolean; error?: string; sentCount?: number }
 type UploadProofResult = { success: boolean; error?: string }
@@ -45,15 +46,13 @@ export async function uploadProofForLineItem(
   // Resolve the one job for this line item under this SO. Never trust a
   // client-supplied jobId (there isn't one in this signature at all, by
   // design) -- always re-derive it server-side from (soId, lineItemId).
-  const { data: job } = await service
-    .from('jobs')
-    .select('id')
-    .eq('organization_id', orgId)
-    .eq('sales_order_id', soId)
-    .eq('quote_line_item_id', lineItemId)
-    .maybeSingle() as { data: { id: string } | null }
+  // Falls back to the SO's one legacy (pre-121) job when this line item
+  // predates the job-per-line-item grain change — see
+  // resolveJobsForLineItems for why that fallback exists.
+  const jobMap = await resolveJobsForLineItems(service, orgId, soId, [lineItemId])
+  const job = jobMap[lineItemId]
   if (!job) {
-    return { success: false, error: 'No job found for this line item yet — it may predate the per-line-item job change.' }
+    return { success: false, error: 'No job found for this line item yet.' }
   }
 
   const result = await uploadProofCore({ service, orgId, jobId: job.id, quoteLineItemId: lineItemId, uploadedBy: user.id, file })

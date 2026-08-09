@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import type { SalesOrderStatus, JobStatus } from '@/types/database'
+import type { SalesOrderStatus } from '@/types/database'
 import { updateSalesOrderStatus } from '../actions'
 import {
   formatSoNumber,
@@ -14,30 +14,7 @@ import {
 import SoCustomerPicker from './so-customer-picker'
 import { deleteShipment } from '../../shipping/actions'
 import { sendProofsBundle } from './proof-actions'
-import ProofUploadRow, { UploadProofButton } from './proof-upload-row'
-
-const JOB_STATUS_LABELS: Record<JobStatus, string> = {
-  new: 'New',
-  in_progress: 'In Progress',
-  proof_review: 'Proof Review',
-  ready_for_pickup: 'Ready for Pickup',
-  completed: 'Completed',
-  // Added by migration 114.
-  on_hold: 'On Hold',
-  pending_approval: 'Pending Approval',
-}
-
-const JOB_STATUS_STYLES: Record<JobStatus, string> = {
-  new: 'bg-gray-100 text-gray-700',
-  in_progress: 'bg-blue-50 text-blue-700',
-  proof_review: 'bg-amber-50 text-amber-700',
-  ready_for_pickup: 'bg-teal-50 text-teal-700',
-  completed: 'bg-green-50 text-green-700',
-  // Added by migration 114. Matches the 'on_hold' tone already used for
-  // this status on the Department Board display (bg-gray-600).
-  on_hold: 'bg-gray-200 text-gray-700',
-  pending_approval: 'bg-amber-50 text-amber-700',
-}
+import UnifiedLineItems, { type LineItem as SoLineItem, type JobSummary, type ReadyProof, type RespondedProof } from './unified-line-items'
 
 type SalesOrder = {
   id: string
@@ -64,7 +41,6 @@ type SalesOrder = {
 }
 
 type QuoteRef   = { id: string; quote_number: number; title: string; created_at: string }
-type Job        = { id: string; job_number: number; title: string; status: JobStatus; due_date: string | null }
 type Shipment   = {
   id: string; carrier: string | null; tracking_number: string | null
   shipped_date: string | null; estimated_delivery: string | null; notes: string | null
@@ -74,8 +50,6 @@ type Shipment   = {
   quoted_rate: number | null; actual_cost: number | null; label_url: string | null
 }
 type ShippingMethod  = { id: string; name: string; carrier: string | null; is_active: boolean }
-type ReadyProof      = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }
-type RespondedProof  = { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null; customerMarkupFileUrl: string | null }
 
 const SHIP_STATUS_STYLES: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700', shipped: 'bg-blue-50 text-blue-700',
@@ -99,24 +73,14 @@ function fmtDate(iso: string | null) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-type SoLineItem = {
-  id: string
-  description: string
-  quantity: number
-  unit_price: number
-  total_price: number
-  discount_percent: number | null
-  taxable: boolean | null
-  sort_order: number | null
-}
-
 type Props = {
   orgId: string
   orgSlug: string
   salesOrder: SalesOrder
   parentQuote: QuoteRef | null
-  jobs: Job[]
   lineItems: SoLineItem[]
+  jobByLineItemId: Record<string, JobSummary>
+  jobPanelsByJobId: Record<string, ReactNode>
   canSeePricing: boolean
   canExportPdf: boolean
   initialContactId: string | null
@@ -131,18 +95,6 @@ type Props = {
   shippingMethods: ShippingMethod[]
   readyProofs: ReadyProof[]
   respondedProofs: RespondedProof[]
-  lineItemJobIds: Record<string, string>
-}
-
-function fmtSentAt(iso: string): string {
-  const d = new Date(iso)
-  const diffMs = Date.now() - d.getTime()
-  const diffHrs = diffMs / 3_600_000
-  if (diffHrs < 1) return 'just now'
-  if (diffHrs < 24) return `${Math.round(diffHrs)}h ago`
-  const diffDays = Math.round(diffHrs / 24)
-  if (diffDays < 14) return `${diffDays}d ago`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 const MANUAL_STATUSES: { value: SalesOrderStatus; label: string }[] = [
@@ -159,9 +111,9 @@ function formatQuoteNumber(num: number, createdAtIso: string): string {
 }
 
 export default function SoDetailClient({
-  orgId, orgSlug, salesOrder, parentQuote, jobs, lineItems, canSeePricing, canExportPdf,
+  orgId, orgSlug, salesOrder, parentQuote, lineItems, jobByLineItemId, jobPanelsByJobId, canSeePricing, canExportPdf,
   initialContactId, initialContactName, initialContactEmail, initialContactPhone, canReassignCustomer,
-  shipments, shipmentSaved, shipmentError, warning, shippingMethods, readyProofs, respondedProofs, lineItemJobIds,
+  shipments, shipmentSaved, shipmentError, warning, shippingMethods, readyProofs, respondedProofs,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -348,169 +300,31 @@ export default function SoDetailClient({
         )}
       </div>
 
-      {/* ── Line Items ────────────────────────────────────────────────────── */}
-      {lineItems.length > 0 && (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 px-6 py-4">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Line Items</h2>
-          </div>
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 w-10">#</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Product / Description</th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-16">Qty</th>
-                {canSeePricing && (
-                  <>
-                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-28">Unit Price</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-20">Disc%</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 w-28">Total</th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {lineItems.map((li, i) => (
-                <tr key={li.id} className={i % 2 === 1 ? 'bg-gray-50' : ''}>
-                  <td className="px-4 py-3 text-sm text-gray-500 tabular-nums">{i + 1}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{li.description}</td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">{li.quantity}</td>
-                  {canSeePricing && (
-                    <>
-                      <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(li.unit_price)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-500 text-right tabular-nums">
-                        {li.discount_percent ? `${li.discount_percent}%` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(li.total_price)}</td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ── Proofs ────────────────────────────────────────────────────────
-          Item 2: the SO page is now the primary surface for proofs across
-          every line item, not just whichever ones already happen to have
-          a ready proof — staff can upload directly here per line item
-          (ProofUploadRow, resolving to that line item's own job
-          server-side) without navigating into the job page first. Always
-          shown once at least one job exists under this SO; each row is
-          one of three states per line item: ready-to-send (checkbox, old
-          behavior), needs-upload (inline upload control), or no job yet
-          (pre-121 SOs / an edge case, informational only). */}
-      {jobs.length > 0 && (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-              Proofs
-              {readyProofs.length > 0 && (
-                <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">{readyProofs.length} ready</span>
-              )}
-            </h2>
-            {readyProofs.length > 0 && (
-              <button
-                type="button"
-                onClick={handleSendProofs}
-                disabled={selectedProofIds.size === 0 || sendingProofs}
-                className="rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50"
-              >
-                {sendingProofs ? 'Sending…' : `Send Proofs${selectedProofIds.size ? ` (${selectedProofIds.size})` : ''}`}
-              </button>
-            )}
-          </div>
-          <div className="divide-y divide-gray-100">
-            {lineItems.map((li) => {
-              const ready = readyProofs.find((p) => p.quoteLineItemId === li.id)
-              if (ready) {
-                return (
-                  <label key={li.id} className="flex items-center gap-3 px-6 py-3 hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedProofIds.has(ready.id)}
-                      onChange={() => toggleProof(ready.id)}
-                      className="h-4 w-4 rounded border-gray-300 text-qm-lime focus:ring-qm-lime"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{li.description}</p>
-                      <p className="text-xs text-gray-500 truncate">{ready.fileName} · v{ready.versionNumber}</p>
-                    </div>
-                    {ready.lastSentAt && (
-                      <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                        Sent {fmtSentAt(ready.lastSentAt)} — resend?
-                      </span>
-                    )}
-                  </label>
-                )
-              }
-              // 4th state (found live while verifying Item 3): the line
-              // item's most recent proof was already approved/rejected —
-              // don't fall through to looking like nothing was ever sent.
-              // Show the outcome + customer feedback, and still allow a
-              // corrected re-upload rather than blocking it outright.
-              const responded = respondedProofs.find((p) => p.quoteLineItemId === li.id)
-              if (responded) {
-                return (
-                  <div key={li.id} className="flex items-center justify-between gap-3 px-6 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-900 truncate">{li.description}</p>
-                        <span className={`inline-block shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${responded.status === 'approved' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                          {responded.status === 'approved' ? 'Approved' : 'Rejected'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 truncate">{responded.fileName} · v{responded.versionNumber}</p>
-                      {responded.customerFeedback && (
-                        <p className="mt-1 text-xs italic text-gray-600">&ldquo;{responded.customerFeedback}&rdquo;</p>
-                      )}
-                      {responded.customerMarkupFileUrl && (
-                        <a
-                          href={responded.customerMarkupFileUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1 inline-block text-xs font-semibold text-qm-lime underline"
-                        >
-                          View customer&apos;s marked-up file
-                        </a>
-                      )}
-                    </div>
-                    <UploadProofButton
-                      soId={salesOrder.id}
-                      orgId={orgId}
-                      orgSlug={orgSlug}
-                      lineItemId={li.id}
-                      buttonLabel="Upload New Version"
-                      onUploaded={() => { flash('New version uploaded.'); router.refresh() }}
-                    />
-                  </div>
-                )
-              }
-              const jobId = lineItemJobIds[li.id]
-              if (jobId) {
-                return (
-                  <ProofUploadRow
-                    key={li.id}
-                    soId={salesOrder.id}
-                    orgId={orgId}
-                    orgSlug={orgSlug}
-                    lineItemId={li.id}
-                    lineItemLabel={li.description}
-                    onUploaded={() => { flash('Proof uploaded.'); router.refresh() }}
-                  />
-                )
-              }
-              return (
-                <div key={li.id} className="flex items-center gap-3 px-6 py-3">
-                  <span className="flex-1 min-w-0 truncate text-sm text-gray-400">{li.description}</span>
-                  <span className="shrink-0 text-xs text-gray-300">No job yet</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      {/* ── Line Items (unified with Jobs + Proofs) ──────────────────────────
+          Replaces the old three separate sections (Line Items table,
+          Proofs section, Jobs table). One row per line item — expanding a
+          row reveals the job/work-order detail plus the proof upload
+          control, instead of needing a separate job page or Proofs
+          section to do the same thing. Bulk "Send Proofs" (below) is
+          unaffected — the ready-proof checkbox lives in each row's
+          collapsed state, not behind the expand. */}
+      <UnifiedLineItems
+        soId={salesOrder.id}
+        orgId={orgId}
+        orgSlug={orgSlug}
+        lineItems={lineItems}
+        canSeePricing={canSeePricing}
+        jobByLineItemId={jobByLineItemId}
+        jobPanelsByJobId={jobPanelsByJobId}
+        readyProofs={readyProofs}
+        respondedProofs={respondedProofs}
+        selectedProofIds={selectedProofIds}
+        toggleProof={toggleProof}
+        sendingProofs={sendingProofs}
+        readyCount={readyProofs.length}
+        onSendProofs={handleSendProofs}
+        onProofUploaded={(message) => { flash(message); router.refresh() }}
+      />
 
       {/* ── Shipments ─────────────────────────────────────────────────────── */}
       <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
@@ -601,51 +415,6 @@ export default function SoDetailClient({
         )}
       </div>
 
-      {/* Child jobs */}
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 px-6 py-4">
-          <h2 className="text-base font-bold text-gray-900">Jobs</h2>
-        </div>
-        {jobs.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-500">
-            No jobs created yet. Jobs are created automatically when a quote is approved.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  {['#', 'Title', 'Status', 'Due Date'].map(h => (
-                    <th key={h} className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {jobs.map((job) => (
-                  <tr key={job.id} className="hover:bg-gray-50">
-                    <td className="whitespace-nowrap px-6 py-4 text-sm font-medium">
-                      <Link href={`/dashboard/${orgSlug}/jobs/${job.id}`} className="text-qm-fuchsia hover:underline">
-                        JOB-{String(job.job_number).padStart(4, '0')}
-                      </Link>
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-900">{job.title}</td>
-                    <td className="whitespace-nowrap px-6 py-4">
-                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${JOB_STATUS_STYLES[job.status]}`}>
-                        {JOB_STATUS_LABELS[job.status]}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                      {job.due_date
-                        ? new Date(job.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                        : <span className="text-gray-300">&mdash;</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </>
   )
 }

@@ -1,9 +1,12 @@
+import type { ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
-import type { SalesOrderStatus, JobStatus } from '@/types/database'
+import type { SalesOrderStatus } from '@/types/database'
 import { checkPermission } from '@/lib/check-permission'
 import SoDetailClient from './so-detail-client'
+import JobDetailPanel from './job-detail-panel'
+import { resolveJobsForLineItems } from '@/lib/jobs/resolve-jobs-for-line-items'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
@@ -75,7 +78,13 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
 
   if (!so) notFound()
 
-  const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
+  // Was 'quotes.see_pricing' — wrong key for this page. permissions.ts
+  // defines a dedicated 'sales_orders.see_pricing' for exactly this
+  // purpose; both keys happen to resolve identically for every role today
+  // so this wasn't visibly broken, but it's the correct one to use going
+  // forward (and what "reuse the existing see_pricing permission" means
+  // for a page that's actually a sales order, not a quote).
+  const { allowed: canSeePricing } = await checkPermission(org.id, 'sales_orders.see_pricing')
   const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
   // Owner/admin role
@@ -140,33 +149,34 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     soLineItems = liData ?? []
   }
 
-  // Fetch child jobs
-  type JobRow = {
-    id: string
-    job_number: number
-    title: string
-    status: JobStatus
-    due_date: string | null
-    quote_line_item_id: string | null
-  }
-  const jobs = await dbOrThrow(
-    supabase
-      .from('jobs')
-      .select('id, job_number, title, status, due_date, quote_line_item_id')
-      .eq('source_quote_id', so.quote_id ?? '')
-      .eq('organization_id', org.id)
-      .order('job_number', { ascending: true })
-  ) as JobRow[] | null
+  // Line item -> the job that covers it (migration 121's job-per-line-item
+  // grain, with a fallback to the SO's one legacy job for line items that
+  // predate it — see resolveJobsForLineItems for why that fallback
+  // exists; shared with uploadProofForLineItem so the two can't drift).
+  // Replaces the old separate `jobs` list + `lineItemJobIds` id-only map —
+  // this unified list has no standalone Jobs table anymore, so nothing
+  // else on this page needs the full jobs array.
+  const jobByLineItemId = await resolveJobsForLineItems(supabase, org.id, so.id, soLineItems.map((li) => li.id))
 
-  // Line item -> its own job (migration 121's job-per-line-item grain).
-  // Lets the client offer an "Upload Proof" control directly per line
-  // item without needing the staff member to navigate into the job page
-  // first -- only possible now that this mapping is 1:1 instead of one
-  // job potentially covering every line item on the SO.
-  const lineItemJobIds: Record<string, string> = {}
-  for (const j of jobs ?? []) {
-    if (j.quote_line_item_id) lineItemJobIds[j.quote_line_item_id] = j.id
+  // One pre-rendered JobDetailPanel per UNIQUE job (not per line item) —
+  // a legacy job can be the fallback for several line items at once, and
+  // there's no reason to fetch/render its panel more than once. Each
+  // panel is a Server Component instance; the same rendered element can
+  // be handed to multiple rows in the client tree below without re-running
+  // its data fetch per row.
+  const uniqueJobIds = [...new Set(Object.values(jobByLineItemId).map((j) => j.id))]
+  const jobPanelsByJobId: Record<string, ReactNode> = {}
+  for (const jobId of uniqueJobIds) {
+    jobPanelsByJobId[jobId] = <JobDetailPanel key={jobId} jobId={jobId} orgId={org.id} orgSlug={slug} />
   }
+
+  // jobIds for the proof_versions query below still needs every job
+  // belonging to this SO, not just the ones with a line-item mapping —
+  // kept as its own lightweight id-only query since jobByLineItemId only
+  // carries jobs actually reachable from a line item.
+  const jobIdsForSo = await dbOrThrow(
+    supabase.from('jobs').select('id').eq('sales_order_id', so.id).eq('organization_id', org.id)
+  ) as { id: string }[] | null
 
   // Fetch shipments for this SO
   type ShipmentRow = {
@@ -222,8 +232,8 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
   }
   let readyProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; lastSentAt: string | null }[] = []
   let respondedProofs: { id: string; quoteLineItemId: string; fileName: string; versionNumber: number; status: 'approved' | 'rejected'; customerFeedback: string | null; customerMarkupFileUrl: string | null }[] = []
-  if ((jobs ?? []).length > 0) {
-    const jobIds = (jobs ?? []).map((j) => j.id)
+  if ((jobIdsForSo ?? []).length > 0) {
+    const jobIds = (jobIdsForSo ?? []).map((j) => j.id)
     const proofRows = await dbOrThrow(
       supabase
         .from('proof_versions')
@@ -309,13 +319,8 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
         }}
         parentQuote={parentQuote}
         lineItems={soLineItems}
-        jobs={(jobs ?? []).map((j) => ({
-          id: j.id,
-          job_number: j.job_number,
-          title: j.title,
-          status: j.status,
-          due_date: j.due_date,
-        }))}
+        jobByLineItemId={jobByLineItemId}
+        jobPanelsByJobId={jobPanelsByJobId}
         canSeePricing={canSeePricing}
         canExportPdf={canExportPdf}
         initialContactId={soContactId}
@@ -330,7 +335,6 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
         shippingMethods={shippingMethods}
         readyProofs={readyProofs}
         respondedProofs={respondedProofs}
-        lineItemJobIds={lineItemJobIds}
       />
     </div>
   )
