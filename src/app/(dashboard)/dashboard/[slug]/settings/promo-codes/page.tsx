@@ -5,6 +5,7 @@ import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { PROMO_CODES_PAGE_SIZE } from './constants'
+import { SettingsPageHeader } from '@/components/settings/settings-page-header'
 import PromoCodesListClient, { type PromoCodeListRow } from './promo-codes-list-client'
 
 export const dynamic = 'force-dynamic'
@@ -73,22 +74,12 @@ async function PageInner({ params }: PageProps) {
         <span className="text-gray-700">Promo Codes</span>
       </div>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-extrabold text-qm-black">
-            Promo Codes <span className="text-sm font-normal text-gray-400">({initialResult.totalCount})</span>
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Settings/management only for now — not yet wired into quotes or a customer checkout flow.
-          </p>
-        </div>
-        <Link
-          href={`/dashboard/${slug}/settings/promo-codes/new`}
-          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-        >
-          + New Promo Code
-        </Link>
-      </div>
+      <SettingsPageHeader
+        title="Promo Codes"
+        count={initialResult.totalCount}
+        description="Settings/management only for now — not yet wired into quotes or a customer checkout flow."
+        primaryAction={{ label: 'New Promo Code', href: `/dashboard/${slug}/settings/promo-codes/new` }}
+      />
 
       <PromoCodesListClient
         initialRows={initialResult.rows}

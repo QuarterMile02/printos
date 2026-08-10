@@ -9,6 +9,8 @@ import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { DataTableError } from '@/components/data-table/data-table-error'
+import { SettingsTabs, type SettingsTab } from '@/components/settings/settings-tabs'
+import { SettingsSearchInput } from '@/components/settings/settings-search-input'
 import { MaterialCard } from './material-card'
 import { MATERIALS_PAGE_SIZE } from './constants'
 
@@ -246,47 +248,24 @@ export default function MaterialsListClient({
     )
   }
 
+  const TABS: SettingsTab<StatusTab>[] = [
+    { key: 'all', label: 'All', count: tabCounts.all },
+    { key: 'enabled', label: 'Enabled', count: tabCounts.enabled },
+    { key: 'disabled', label: 'Disabled', count: tabCounts.disabled },
+  ]
+
   return (
     <div className="space-y-4">
-      {/* Status tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? 'border-qm-lime text-qm-lime'
-                : 'border-transparent text-qm-gray hover:text-qm-black'
-            }`}
-          >
-            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
-            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
-          </button>
-        ))}
-      </div>
+      <SettingsTabs tabs={TABS} active={tab} onChange={setTab} />
 
       {/* Search + Type filter + Filters/Views toolbar */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[240px]">
-          {loading && search.length >= 2 ? (
-            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-lime animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-            </svg>
-          ) : (
-            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-            </svg>
-          )}
-          <input
-            type="text"
-            placeholder="Search by name, external name, part number, SKU..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-            className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-          />
-        </div>
+        <SettingsSearchInput
+          value={search}
+          onChange={(v) => { setSearch(v); setPage(1) }}
+          placeholder="Search by name, external name, part number, SKU..."
+          showSpinner={loading && search.length >= 2}
+        />
 
         <select
           value={typeFilter}

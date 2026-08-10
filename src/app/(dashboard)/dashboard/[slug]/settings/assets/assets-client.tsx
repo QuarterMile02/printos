@@ -2,6 +2,8 @@
 
 import { useRef, useState } from 'react'
 import { uploadAsset, deleteAsset, renameAssetCategory, createAssetCategory, getAssetUrl } from './actions'
+import { SettingsTabs } from '@/components/settings/settings-tabs'
+import { SettingsSearchInput } from '@/components/settings/settings-search-input'
 
 export type AssetCategoryRow = { id: string; name: string; sort_order: number }
 export type AssetRow = {
@@ -176,13 +178,12 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
 
       {/* Categories -- unlimited, freely add/rename (see createAssetCategory's
           header comment; migration 112's 3 seeded categories were a
-          starting point, never an enforced cap). Structure matches Email
-          Templates exactly (the confirmed reference, not Material
-          Types/Categories, which have drifted): header has ONE button
-          only, then filled-pill tabs, then search below the tabs. The
+          starting point, never an enforced cap). Tabs/search now come from
+          the shared settings/ components (SettingsTabs = the Quotes/7-page
+          underline convention, confirmed canonical -- NOT the filled-pill
+          style this page briefly used). Header keeps ONE button only; the
           single "Edit" toggle (no per-tab pencil icons -- one entry point
-          for the whole section) lives trailing in the tabs row itself,
-          since the header is reserved for the single add action. */}
+          for the whole section) sits trailing the tabs row instead. */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Categories</h2>
@@ -214,35 +215,23 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
           )}
         </div>
 
-        {/* Category quick-filter tabs -- same filled-pill convention as
-            Email Templates' department tabs (rounded-full, active =
-            bg-qm-lime-light text-qm-lime). Edit trails the pills via
-            ml-auto rather than sitting in the header. */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveCategoryId('all')}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeCategoryId === 'all' ? 'bg-qm-lime-light text-qm-lime' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-          >
-            All <span className="ml-1.5 text-xs text-qm-gray">({assets.length})</span>
-          </button>
-          {visibleCategories.map((cat) => {
-            const count = assets.filter((a) => a.category_id === cat.id).length
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setActiveCategoryId(cat.id)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${activeCategoryId === cat.id ? 'bg-qm-lime-light text-qm-lime' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-              >
-                {cat.name} <span className="ml-1.5 text-xs text-qm-gray">({count})</span>
-              </button>
-            )
-          })}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <SettingsTabs
+            tabs={[
+              { key: 'all', label: 'All', count: assets.length },
+              ...visibleCategories.map((cat) => ({
+                key: cat.id,
+                label: cat.name,
+                count: assets.filter((a) => a.category_id === cat.id).length,
+              })),
+            ]}
+            active={activeCategoryId}
+            onChange={setActiveCategoryId}
+          />
           <button
             type="button"
             onClick={() => setManageOpen((v) => !v)}
-            className={`ml-auto rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
               manageOpen ? 'border-qm-lime text-qm-lime bg-qm-lime/5' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -275,22 +264,16 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
           </div>
         )}
 
-        {/* Search -- below the tabs, matching Email Templates' order
-            exactly (tabs first, search second). Narrows which tabs are
-            shown by name, since Assets has no underlying row-table
+        {/* Search -- below the tabs (kept from the Email Templates order
+            correction; that part was never in dispute). Narrows which tabs
+            are shown by name, since Assets has no underlying row-table
             separate from the categories themselves for it to filter. */}
-        <div className="relative max-w-xs">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-gray" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search categories..."
-            value={categorySearch}
-            onChange={(e) => setCategorySearch(e.target.value)}
-            className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-          />
-        </div>
+        <SettingsSearchInput
+          value={categorySearch}
+          onChange={setCategorySearch}
+          placeholder="Search categories..."
+          className="max-w-xs"
+        />
       </div>
 
       {/* Upload */}

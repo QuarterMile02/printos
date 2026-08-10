@@ -9,6 +9,8 @@ import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
 import { STAFF_DEPARTMENTS } from '@/lib/staff-departments'
 import { cloneEmailTemplate } from './actions'
+import { SettingsTabs } from '@/components/settings/settings-tabs'
+import { SettingsSearchInput } from '@/components/settings/settings-search-input'
 
 export type EmailTemplateRow = {
   id: string
@@ -141,42 +143,25 @@ export default function EmailTemplatesListClient({ orgId, orgSlug, userId, userR
         </Link>
       </div>
 
-      {/* Department quick-filter tabs */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setDeptTab('all')}
-          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${deptTab === 'all' ? 'bg-qm-lime-light text-qm-lime' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-        >
-          All <span className="ml-1.5 text-xs text-qm-gray">({tabCounts.all})</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setDeptTab('unassigned')}
-          className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${deptTab === 'unassigned' ? 'bg-qm-lime-light text-qm-lime' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-        >
-          Unassigned <span className="ml-1.5 text-xs text-qm-gray">({tabCounts.unassigned})</span>
-        </button>
-        {STAFF_DEPARTMENTS.map(d => (
-          <button
-            key={d.value}
-            type="button"
-            onClick={() => setDeptTab(d.value)}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${deptTab === d.value ? 'bg-qm-lime-light text-qm-lime' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-          >
-            {d.label} <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[d.value] ?? 0})</span>
-          </button>
-        ))}
+      {/* Department quick-filter tabs -- shared SettingsTabs (Quotes/7-page
+          underline convention, confirmed canonical). Was briefly a
+          filled-pill style; reverted, since that turned out to be the
+          minority pattern rather than the standard to adopt. */}
+      <div className="mb-4">
+        <SettingsTabs
+          tabs={[
+            { key: 'all', label: 'All', count: tabCounts.all },
+            { key: 'unassigned', label: 'Unassigned', count: tabCounts.unassigned },
+            ...STAFF_DEPARTMENTS.map(d => ({ key: d.value, label: d.label, count: tabCounts[d.value] ?? 0 })),
+          ]}
+          active={deptTab}
+          onChange={setDeptTab}
+        />
       </div>
 
       {/* Search + Filters/Views toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[240px]">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-gray" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or subject..." className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime" />
-        </div>
+        <SettingsSearchInput value={search} onChange={setSearch} placeholder="Search by name or subject..." />
         <div className="ml-auto">
           <DataTableToolbar
             columns={COLUMNS}

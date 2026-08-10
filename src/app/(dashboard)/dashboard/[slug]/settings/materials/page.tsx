@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import { SettingsPageHeader } from '@/components/settings/settings-page-header'
 import { MATERIALS_PAGE_SIZE } from './constants'
 import MaterialsListClient, { type MaterialListRow, type MaterialTypeOption, type MaterialCategoryOption } from './materials-list-client'
 
@@ -87,34 +88,15 @@ async function PageInner({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-extrabold text-qm-black">Materials <span className="text-sm font-normal text-gray-400">({initialResult.totalCount.toLocaleString()})</span></h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={`/api/export/materials?orgId=${org.id}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-qm-black hover:bg-gray-50 transition-colors"
-          >
-            Export CSV
-          </a>
-          <Link
-            href={`/dashboard/${slug}/settings/materials/import`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-qm-black hover:bg-gray-50 transition-colors"
-          >
-            Import CSV
-          </Link>
-          <Link
-            href={`/dashboard/${slug}/settings/materials/new`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            New Material
-          </Link>
-        </div>
-      </div>
+      <SettingsPageHeader
+        title="Materials"
+        count={initialResult.totalCount}
+        primaryAction={{ label: 'New Material', href: `/dashboard/${slug}/settings/materials/new` }}
+        secondaryActions={[
+          { label: 'Export CSV', href: `/api/export/materials?orgId=${org.id}`, external: true },
+          { label: 'Import CSV', href: `/dashboard/${slug}/settings/materials/import` },
+        ]}
+      />
 
       <MaterialsListClient
         initialRows={initialResult.rows}

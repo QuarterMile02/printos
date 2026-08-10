@@ -8,6 +8,8 @@ import { useSavedView, applyFilterRules, applySortRules } from '@/components/dat
 import { useColumnResize } from '@/components/data-table/use-column-resize'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { STICKY_ACTIONS_TH, STICKY_ACTIONS_TD } from '@/components/data-table/sticky-actions'
+import { SettingsTabs, type SettingsTab } from '@/components/settings/settings-tabs'
+import { SettingsSearchInput } from '@/components/settings/settings-search-input'
 import { MaterialTypeCard } from './material-type-card'
 
 export type MaterialTypeRow = {
@@ -85,39 +87,18 @@ export default function MaterialTypesListClient({ types, usageCounts, orgSlug, o
 
   const totalWidth = COLUMNS.reduce((sum, c) => sum + (colWidths[c.key] ?? c.defaultWidth), 0)
 
+  const TABS: SettingsTab<StatusTab>[] = [
+    { key: 'all', label: 'All', count: tabCounts.all },
+    { key: 'enabled', label: 'Enabled', count: tabCounts.enabled },
+    { key: 'disabled', label: 'Disabled', count: tabCounts.disabled },
+  ]
+
   return (
     <div className="space-y-4">
-      {/* Status tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {(['all', 'enabled', 'disabled'] as StatusTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? 'border-qm-lime text-qm-lime'
-                : 'border-transparent text-qm-gray hover:text-qm-black'
-            }`}
-          >
-            {t === 'all' ? 'All' : t === 'enabled' ? 'Enabled' : 'Disabled'}
-            <span className="ml-1.5 text-xs text-qm-gray">({tabCounts[t]})</span>
-          </button>
-        ))}
-      </div>
+      <SettingsTabs tabs={TABS} active={tab} onChange={setTab} />
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[240px]">
-          <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search by name..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-          />
-        </div>
+        <SettingsSearchInput value={search} onChange={setSearch} placeholder="Search by name..." />
         <div className="ml-auto">
           <DataTableToolbar
             columns={COLUMNS}

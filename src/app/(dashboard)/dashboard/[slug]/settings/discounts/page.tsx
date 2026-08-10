@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { fetchDataTablePage } from '@/lib/data-table/fetch'
 import { DISCOUNTS_PAGE_SIZE } from './constants'
 import DiscountsListClient, { type DiscountListRow } from './discounts-list-client'
+import { SettingsPageHeader } from '@/components/settings/settings-page-header'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
@@ -60,12 +61,11 @@ async function PageInner({ params }: PageProps) {
         <span className="text-gray-700">Discounts</span>
       </div>
 
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-extrabold text-qm-black">Discounts <span className="text-sm font-normal text-gray-400">({initialResult.totalCount})</span></h1>
-        <Link href={`/dashboard/${slug}/settings/discounts/new`} className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
-          + New Discount
-        </Link>
-      </div>
+      <SettingsPageHeader
+        title="Discounts"
+        count={initialResult.totalCount}
+        primaryAction={{ label: 'New Discount', href: `/dashboard/${slug}/settings/discounts/new` }}
+      />
 
       <DiscountsListClient
         initialRows={initialResult.rows}

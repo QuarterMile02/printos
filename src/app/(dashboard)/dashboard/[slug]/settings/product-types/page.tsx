@@ -4,6 +4,7 @@ import { saveProductType } from './actions-sr'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import { SettingsPageHeader } from '@/components/settings/settings-page-header'
 import ProductTypesListClient, { type ProductTypeRow } from './product-types-list-client'
 
 export const dynamic = 'force-dynamic'
@@ -96,17 +97,11 @@ async function PageInner({ params, searchParams }: PageProps) {
         <span className="text-gray-700">Product Types</span>
       </div>
 
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-extrabold text-qm-black">
-          Product Types <span className="text-sm font-normal text-gray-400">({types.length})</span>
-        </h1>
-        <Link
-          href={`/dashboard/${slug}/settings/product-types?add=1`}
-          className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-        >
-          + New Type
-        </Link>
-      </div>
+      <SettingsPageHeader
+        title="Product Types"
+        count={types.length}
+        primaryAction={{ label: 'New Type', href: `/dashboard/${slug}/settings/product-types?add=1` }}
+      />
 
       {sp.error && !isPanelOpen && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
