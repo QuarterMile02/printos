@@ -127,6 +127,45 @@ export async function getAssetUrl(orgId: string, assetId: string): Promise<{ url
   return { url }
 }
 
+export async function createAssetCategory(
+  orgId: string,
+  orgSlug: string,
+  name: string,
+): Promise<{ category?: { id: string; name: string; sort_order: number }; error?: string }> {
+  const { user, membership } = await getMembership(orgId)
+  if (!user) return { error: 'Not authenticated.' }
+  if (!membership) return { error: 'You are not a member of this organization.' }
+  if (membership.role === 'viewer') return { error: 'Viewers cannot create categories.' }
+
+  const trimmed = name.trim()
+  if (!trimmed) return { error: 'Category name is required.' }
+
+  const service = createServiceClient()
+
+  // No fixed cap here (migration 112's "3 seeded categories" was a starting
+  // point, not an enforced limit -- RLS already allowed insert/delete, this
+  // was just never wired up to any UI). New category goes to the end of the
+  // existing sort order.
+  const { data: last } = await service
+    .from('asset_categories')
+    .select('sort_order')
+    .eq('organization_id', orgId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle() as { data: { sort_order: number } | null }
+  const nextSortOrder = (last?.sort_order ?? -1) + 1
+
+  const { data, error } = await service
+    .from('asset_categories')
+    .insert({ organization_id: orgId, name: trimmed, sort_order: nextSortOrder })
+    .select('id, name, sort_order')
+    .single() as { data: { id: string; name: string; sort_order: number } | null; error: { message: string } | null }
+  if (error || !data) return { error: error?.message ?? 'Failed to create category.' }
+
+  rev(orgSlug)
+  return { category: data }
+}
+
 export async function renameAssetCategory(
   orgId: string,
   orgSlug: string,

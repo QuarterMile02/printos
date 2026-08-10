@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { uploadAsset, deleteAsset, renameAssetCategory, getAssetUrl } from './actions'
+import { uploadAsset, deleteAsset, renameAssetCategory, createAssetCategory, getAssetUrl } from './actions'
 
 export type AssetCategoryRow = { id: string; name: string; sort_order: number }
 export type AssetRow = {
@@ -39,6 +39,10 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
   const [activeCategoryId, setActiveCategoryId] = useState<string | 'all'>('all')
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
   const [categoryDraft, setCategoryDraft] = useState('')
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [newCategoryDraft, setNewCategoryDraft] = useState('')
+  const [creatingCategory, setCreatingCategory] = useState(false)
+  const addCategorySubmittedRef = useRef(false)
   const [uploadCategoryId, setUploadCategoryId] = useState<string>(categories[0]?.id ?? '')
   const [uploading, setUploading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -111,18 +115,62 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
     showToast('Category renamed')
   }
 
+  function startAddCategory() {
+    setNewCategoryDraft('')
+    addCategorySubmittedRef.current = false
+    setAddingCategory(true)
+  }
+
+  // Guarded with a ref (not state) so the Enter-key submit and the blur
+  // that follows it can't both fire a create -- state wouldn't update in
+  // time to block the second call within the same event tick, and unlike
+  // renaming (idempotent), a duplicate call here means a duplicate category.
+  async function handleAddCategory() {
+    if (addCategorySubmittedRef.current) return
+    addCategorySubmittedRef.current = true
+    const trimmed = newCategoryDraft.trim()
+    setAddingCategory(false)
+    if (!trimmed) return
+    setCreatingCategory(true)
+    const result = await createAssetCategory(orgId, orgSlug, trimmed)
+    setCreatingCategory(false)
+    if (result.error || !result.category) {
+      showToast(`Error: ${result.error ?? 'Failed to create category.'}`)
+      return
+    }
+    setCategories((prev) => [...prev, result.category!])
+    showToast('Category added')
+  }
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ${toast.startsWith('Error') ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
           {toast}
         </div>
       )}
 
-      {/* Categories */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-500">Categories</h2>
-        <div className="flex flex-wrap gap-2">
+      {/* Categories -- unlimited, freely add/rename (see createAssetCategory's
+          header comment; migration 112's 3 seeded categories were a
+          starting point, never an enforced cap). "Add New Category" +
+          per-item "Edit" replace the old pencil-icon-per-chip pattern
+          (ShopVOX's affordance, not PrintOS's -- see Materials' "New
+          Material" / Material Categories' "New Category" buttons). */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Categories</h2>
+          <button
+            type="button"
+            onClick={startAddCategory}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 transition-all"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Add New Category
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setActiveCategoryId('all')}
@@ -133,7 +181,7 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
           {categories.map((cat) => {
             const count = assets.filter((a) => a.category_id === cat.id).length
             return (
-              <div key={cat.id} className="flex items-center gap-1">
+              <div key={cat.id} className="flex items-center gap-1.5">
                 {editingCategoryId === cat.id ? (
                   <input
                     autoFocus
@@ -147,35 +195,48 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
                     className="rounded-full border border-qm-lime px-3 py-1.5 text-sm focus:outline-none"
                   />
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => setActiveCategoryId(cat.id)}
-                    onDoubleClick={() => startRename(cat)}
-                    title="Double-click to rename"
-                    className={`rounded-full px-3 py-1.5 text-sm font-medium ${activeCategoryId === cat.id ? 'bg-qm-lime text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >
-                    {cat.name} ({count})
-                  </button>
-                )}
-                {editingCategoryId !== cat.id && (
-                  <button
-                    type="button"
-                    onClick={() => startRename(cat)}
-                    className="text-xs text-gray-400 hover:text-gray-600"
-                    title="Rename category"
-                  >
-                    ✎
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setActiveCategoryId(cat.id)}
+                      className={`rounded-full px-3 py-1.5 text-sm font-medium ${activeCategoryId === cat.id ? 'bg-qm-lime text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      {cat.name} ({count})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startRename(cat)}
+                      className="text-xs font-medium text-gray-400 hover:text-qm-lime hover:underline underline-offset-2"
+                      title="Edit category name"
+                    >
+                      Edit
+                    </button>
+                  </>
                 )}
               </div>
             )
           })}
+          {addingCategory && (
+            <input
+              autoFocus
+              value={newCategoryDraft}
+              onChange={(e) => setNewCategoryDraft(e.target.value)}
+              onBlur={handleAddCategory}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddCategory()
+                if (e.key === 'Escape') { addCategorySubmittedRef.current = true; setAddingCategory(false) }
+              }}
+              placeholder="Category name"
+              disabled={creatingCategory}
+              className="rounded-full border border-qm-lime px-3 py-1.5 text-sm focus:outline-none disabled:opacity-50"
+            />
+          )}
         </div>
       </div>
 
       {/* Upload */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-500">Upload</h2>
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-500">Upload</h2>
         <div className="flex items-center gap-3">
           <select
             value={uploadCategoryId}
@@ -201,8 +262,8 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
 
       {/* Asset list */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-gray-100">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">Files</h2>
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Files</h2>
         </div>
         {visibleAssets.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-400">No files in this category yet.</div>
@@ -211,7 +272,7 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
             {visibleAssets.map((asset) => {
               const category = categories.find((c) => c.id === asset.category_id)
               return (
-                <li key={asset.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                <li key={asset.id} className="flex items-center justify-between gap-4 px-6 py-3">
                   <button
                     type="button"
                     onClick={() => handlePreview(asset.id)}

@@ -44,8 +44,10 @@ async function PageInner({ params }: PageProps) {
         <span className="text-gray-700">Assets</span>
       </div>
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Assets</h1>
+      <div className="mb-4">
+        <h1 className="text-2xl font-extrabold text-qm-black">
+          Assets <span className="text-sm font-normal text-gray-400">({assets.length})</span>
+        </h1>
         <p className="mt-1 text-sm text-gray-500">
           Upload files once, reuse them anywhere PrintOS sends something to a customer — quote emails,
           proofs, invoices, and more.
