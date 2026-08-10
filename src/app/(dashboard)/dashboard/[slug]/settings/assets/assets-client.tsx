@@ -37,12 +37,20 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
   const [categories, setCategories] = useState(initialCategories)
   const [assets, setAssets] = useState(initialAssets)
   const [activeCategoryId, setActiveCategoryId] = useState<string | 'all'>('all')
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
-  const [categoryDraft, setCategoryDraft] = useState('')
+  const [categorySearch, setCategorySearch] = useState('')
+
+  // Manage mode -- the single Edit affordance for the whole section (per
+  // Ruben's feedback: no per-tab pencil icons). Toggling it reveals an
+  // always-editable rename row per category; renameDrafts holds in-progress
+  // edits keyed by category id until they're saved on blur/Enter.
+  const [manageOpen, setManageOpen] = useState(false)
+  const [renameDrafts, setRenameDrafts] = useState<Record<string, string>>({})
+
   const [addingCategory, setAddingCategory] = useState(false)
   const [newCategoryDraft, setNewCategoryDraft] = useState('')
   const [creatingCategory, setCreatingCategory] = useState(false)
   const addCategorySubmittedRef = useRef(false)
+
   const [uploadCategoryId, setUploadCategoryId] = useState<string>(categories[0]?.id ?? '')
   const [uploading, setUploading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -57,6 +65,14 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
   const visibleAssets = activeCategoryId === 'all'
     ? assets
     : assets.filter((a) => a.category_id === activeCategoryId)
+
+  // Search narrows which tabs are shown -- same role the search box plays
+  // on Material Types/Categories, just applied to tabs since Assets has no
+  // underlying row-table separate from the categories themselves.
+  const searchTerm = categorySearch.trim().toLowerCase()
+  const visibleCategories = searchTerm
+    ? categories.filter((c) => c.name.toLowerCase().includes(searchTerm))
+    : categories
 
   async function handleUpload(file: File | undefined) {
     if (!file) return
@@ -96,22 +112,30 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
     window.open(result.url, '_blank', 'noopener,noreferrer')
   }
 
-  function startRename(cat: AssetCategoryRow) {
-    setEditingCategoryId(cat.id)
-    setCategoryDraft(cat.name)
-  }
-
-  async function saveRename(categoryId: string) {
-    const trimmed = categoryDraft.trim()
-    if (!trimmed) { setEditingCategoryId(null); return }
+  // Fires on blur (and on Enter, via the input's onKeyDown calling
+  // e.currentTarget.blur()). Skips the network round-trip entirely when
+  // nothing actually changed -- every field in the manage panel blurs on
+  // its own, so this runs constantly as you tab/click through the list.
+  async function saveRename(categoryId: string, rawValue: string) {
+    const trimmed = rawValue.trim()
+    const current = categories.find((c) => c.id === categoryId)
+    const clearDraft = () => setRenameDrafts((d) => {
+      const next = { ...d }
+      delete next[categoryId]
+      return next
+    })
+    if (!current || !trimmed || trimmed === current.name) {
+      clearDraft()
+      return
+    }
     const result = await renameAssetCategory(orgId, orgSlug, categoryId, trimmed)
     if (result.error) {
       showToast(`Error: ${result.error}`)
-      setEditingCategoryId(null)
+      clearDraft()
       return
     }
     setCategories((prev) => prev.map((c) => (c.id === categoryId ? { ...c, name: trimmed } : c)))
-    setEditingCategoryId(null)
+    clearDraft()
     showToast('Category renamed')
   }
 
@@ -152,86 +176,117 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
 
       {/* Categories -- unlimited, freely add/rename (see createAssetCategory's
           header comment; migration 112's 3 seeded categories were a
-          starting point, never an enforced cap). "Add New Category" +
-          per-item "Edit" replace the old pencil-icon-per-chip pattern
-          (ShopVOX's affordance, not PrintOS's -- see Materials' "New
-          Material" / Material Categories' "New Category" buttons). */}
+          starting point, never an enforced cap). Tabs + search match the
+          Material Types/Material Categories convention; the single "Edit"
+          next to "Add New Category" replaces the old pencil-icon-per-chip
+          pattern (ShopVOX's affordance, not PrintOS's) with one entry point
+          for the whole section instead of one per item. */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Categories</h2>
-          <button
-            type="button"
-            onClick={startAddCategory}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 transition-all"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Add New Category
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setManageOpen((v) => !v)}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors ${
+                manageOpen ? 'border-qm-lime text-qm-lime bg-qm-lime/5' : 'border-gray-300 text-qm-black hover:bg-gray-50'
+              }`}
+            >
+              {manageOpen ? 'Done' : 'Edit'}
+            </button>
+            {addingCategory ? (
+              <input
+                autoFocus
+                value={newCategoryDraft}
+                onChange={(e) => setNewCategoryDraft(e.target.value)}
+                onBlur={handleAddCategory}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddCategory()
+                  if (e.key === 'Escape') { addCategorySubmittedRef.current = true; setAddingCategory(false) }
+                }}
+                placeholder="Category name"
+                disabled={creatingCategory}
+                className="w-40 rounded-md border border-qm-lime px-3 py-1.5 text-sm focus:outline-none disabled:opacity-50"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={startAddCategory}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110 transition-all"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add New Category
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+
+        <div className="relative mb-3 max-w-xs">
+          <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search categories..."
+            value={categorySearch}
+            onChange={(e) => setCategorySearch(e.target.value)}
+            className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-1 border-b border-gray-200">
           <button
             type="button"
             onClick={() => setActiveCategoryId('all')}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium ${activeCategoryId === 'all' ? 'bg-qm-lime text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+              activeCategoryId === 'all' ? 'border-qm-lime text-qm-lime' : 'border-transparent text-qm-gray hover:text-qm-black'
+            }`}
           >
-            All ({assets.length})
+            All <span className="ml-1.5 text-xs text-qm-gray">({assets.length})</span>
           </button>
-          {categories.map((cat) => {
+          {visibleCategories.map((cat) => {
             const count = assets.filter((a) => a.category_id === cat.id).length
             return (
-              <div key={cat.id} className="flex items-center gap-1.5">
-                {editingCategoryId === cat.id ? (
-                  <input
-                    autoFocus
-                    value={categoryDraft}
-                    onChange={(e) => setCategoryDraft(e.target.value)}
-                    onBlur={() => saveRename(cat.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveRename(cat.id)
-                      if (e.key === 'Escape') setEditingCategoryId(null)
-                    }}
-                    className="rounded-full border border-qm-lime px-3 py-1.5 text-sm focus:outline-none"
-                  />
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setActiveCategoryId(cat.id)}
-                      className={`rounded-full px-3 py-1.5 text-sm font-medium ${activeCategoryId === cat.id ? 'bg-qm-lime text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                    >
-                      {cat.name} ({count})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => startRename(cat)}
-                      className="text-xs font-medium text-gray-400 hover:text-qm-lime hover:underline underline-offset-2"
-                      title="Edit category name"
-                    >
-                      Edit
-                    </button>
-                  </>
-                )}
-              </div>
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCategoryId(cat.id)}
+                className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                  activeCategoryId === cat.id ? 'border-qm-lime text-qm-lime' : 'border-transparent text-qm-gray hover:text-qm-black'
+                }`}
+              >
+                {cat.name} <span className="ml-1.5 text-xs text-qm-gray">({count})</span>
+              </button>
             )
           })}
-          {addingCategory && (
-            <input
-              autoFocus
-              value={newCategoryDraft}
-              onChange={(e) => setNewCategoryDraft(e.target.value)}
-              onBlur={handleAddCategory}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAddCategory()
-                if (e.key === 'Escape') { addCategorySubmittedRef.current = true; setAddingCategory(false) }
-              }}
-              placeholder="Category name"
-              disabled={creatingCategory}
-              className="rounded-full border border-qm-lime px-3 py-1.5 text-sm focus:outline-none disabled:opacity-50"
-            />
-          )}
         </div>
+        {searchTerm && visibleCategories.length === 0 && (
+          <p className="mt-2 text-xs text-gray-400">No categories match &quot;{categorySearch}&quot;</p>
+        )}
+
+        {manageOpen && (
+          <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="mb-2 text-xs text-gray-500">Rename a category below — changes save automatically.</p>
+            {categories.length === 0 ? (
+              <p className="text-xs text-gray-400">No categories yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {categories.map((cat) => (
+                  <input
+                    key={cat.id}
+                    value={renameDrafts[cat.id] ?? cat.name}
+                    onChange={(e) => setRenameDrafts((d) => ({ ...d, [cat.id]: e.target.value }))}
+                    onBlur={(e) => saveRename(cat.id, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                    className="block w-full max-w-xs rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Upload */}
