@@ -10,7 +10,7 @@ import { useDataTableQuery } from '@/components/data-table/use-data-table-query'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { DataTableError } from '@/components/data-table/data-table-error'
 import { JOBS_DB_SELECT, JOBS_PAGE_SIZE, type JobListRow } from './jobs-list-constants'
-import { computeProofStatus, formatElapsedDays, PROOF_STATUS_STYLES, type ProofStatusResult } from '@/lib/proofs/proof-status'
+import { computeProofStatus, formatElapsedDays, PROOF_STATUS_LABELS, PROOF_STATUS_STYLES, type ProofStatusKey, type ProofStatusResult } from '@/lib/proofs/proof-status'
 
 export type { JobListRow }
 
@@ -18,6 +18,14 @@ const SEARCH_COLUMNS = ['title']
 const DEFAULT_SORT = [{ column: 'job_number', direction: 'desc' as const }]
 
 const FLAG_LABELS: Record<string, string> = { file_error: 'File Error', help_needed: 'Help Needed' }
+
+// Priority order for the aggregate summary strip -- deliberately not
+// lifecycle order. Approved (stalled production, needs to ship) and
+// Ready to Send (a finished proof nobody sent, blocking everything
+// downstream) are the two states that need action right now; Redesign
+// needs design time; In Review is just waiting on the customer; Not
+// Started is the normal baseline queue with no particular urgency.
+const PROOF_STATUS_SUMMARY_ORDER: ProofStatusKey[] = ['approved', 'ready_to_send', 'redesign', 'in_review', 'not_started']
 
 function daysLeft(dueDate: string | null): number | null {
   if (!dueDate) return null
@@ -260,6 +268,21 @@ export default function JobsListClient({
     return () => { cancelled = true }
   }, [liveRows, orgId])
 
+  // Aggregate proof-status counts for the summary strip above the table --
+  // a tally of the already-resolved per-row `joined` data for the current
+  // page (the same rows the table below renders), not a new query. Legacy
+  // jobs with no quote_line_item_id have proofStatus: null and are
+  // excluded, same as the per-row column.
+  const proofStatusCounts = useMemo(() => {
+    const counts: Record<ProofStatusKey, number> = { not_started: 0, ready_to_send: 0, in_review: 0, approved: 0, redesign: 0 }
+    for (const r of liveRows) {
+      const status = joined[r.id]?.proofStatus
+      if (status) counts[status.key]++
+    }
+    return counts
+  }, [liveRows, joined])
+  const hasProofStatusCounts = PROOF_STATUS_SUMMARY_ORDER.some((key) => proofStatusCounts[key] > 0)
+
   function SortIcon({ column }: { column: string }) {
     const rule = activeSortRules.find((r) => r.column === column)
     if (rule?.direction === 'asc') {
@@ -288,6 +311,20 @@ export default function JobsListClient({
 
   return (
     <div className="space-y-4">
+      {hasProofStatusCounts && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {PROOF_STATUS_SUMMARY_ORDER.map((key) => {
+            const count = proofStatusCounts[key]
+            if (count === 0) return null
+            return (
+              <span key={key} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${PROOF_STATUS_STYLES[key]}`}>
+                {count} {PROOF_STATUS_LABELS[key]}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
           {loading && search.length >= 2 ? (
