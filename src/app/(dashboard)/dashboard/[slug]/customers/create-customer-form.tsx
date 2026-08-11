@@ -65,6 +65,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
 
   // Address fields (controlled for autocomplete + Places autofill)
   const [addrStreet, setAddrStreet] = useState('')
+  const [addrStreet2, setAddrStreet2] = useState('')
   const [addrCity, setAddrCity] = useState('')
   const [addrState, setAddrState] = useState('')
   const [addrZip, setAddrZip] = useState('')
@@ -129,6 +130,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
     formData.set('sms_consent', smsConsent ? 'true' : 'false')
     // Inject address values
     formData.set('street', addrStreet)
+    formData.set('street2', addrStreet2)
     formData.set('city', addrCity)
     formData.set('state', addrState)
     formData.set('zip', addrZip)
@@ -229,6 +231,10 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                       className={ic}
                       onSelect={(addr) => {
                         setAddrStreet(addr.street)
+                        // Only overwrite Street 2 when the autocomplete
+                        // actually found a suite/unit -- never clobber
+                        // something the user already typed manually.
+                        if (addr.street2) setAddrStreet2(addr.street2)
                         setAddrCity(addr.city)
                         setAddrState(addr.state)
                         setAddrZip(addr.zip)
@@ -240,7 +246,7 @@ export default function CreateCustomerForm({ orgId, orgSlug, salesReps, initialO
                     <input type="hidden" name="street" value={addrStreet} />
                   </div>
 
-                  <div><Lbl>Street 2</Lbl><input name="street2" type="text" placeholder="Suite 100" className={ic} /></div>
+                  <div><Lbl>Apt, Suite, etc.</Lbl><input name="street2" type="text" value={addrStreet2} onChange={(e) => setAddrStreet2(e.target.value)} placeholder="Suite 100" className={ic} /></div>
 
                   <div className="grid grid-cols-3 gap-3">
                     <div className="col-span-1">

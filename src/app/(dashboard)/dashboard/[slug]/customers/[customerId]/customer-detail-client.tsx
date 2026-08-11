@@ -295,6 +295,7 @@ export default function CustomerDetailClient({
                     onSelect={(addr) => setAddrDraft((prev) => ({
                       ...prev,
                       street: addr.street || prev.street,
+                      street2: addr.street2 || prev.street2,
                       city: addr.city || prev.city,
                       state: addr.state || prev.state,
                       zip: addr.zip || prev.zip,
@@ -302,7 +303,7 @@ export default function CustomerDetailClient({
                     }))}
                   />
                 </div>
-                <div><Label>Street 2</Label><input type="text" value={addrDraft.street2 ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, street2: e.target.value || null })} className={ic} placeholder="Suite 100" /></div>
+                <div><Label>Apt, Suite, etc.</Label><input type="text" value={addrDraft.street2 ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, street2: e.target.value || null })} className={ic} placeholder="Suite 100" /></div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1"><Label>City</Label><input type="text" value={addrDraft.city ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, city: e.target.value || null })} className={ic} /></div>
                   <div><Label>State</Label><input type="text" value={addrDraft.state ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, state: e.target.value || null })} className={ic} maxLength={2} placeholder="TX" /></div>
