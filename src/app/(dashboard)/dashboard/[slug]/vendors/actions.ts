@@ -155,31 +155,3 @@ export async function deactivateVendor(
   revalidatePath(`/dashboard/${orgSlug}/vendors`)
   return {}
 }
-
-export async function loadMoreVendors(
-  orgId: string,
-  search: string,
-  offset: number,
-  activeOnly?: boolean,
-): Promise<VendorListRow[]> {
-  const service = createServiceClient()
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = service
-    .from('vendors')
-    .select('id, name, primary_contact, primary_phone, primary_email, city, state, is_active, created_at')
-    .eq('organization_id', orgId)
-    .order('name', { ascending: true })
-
-  if (search.trim()) {
-    const q = search.trim()
-    query = query.or(
-      `name.ilike.%${q}%,primary_contact.ilike.%${q}%,primary_email.ilike.%${q}%,primary_phone.ilike.%${q}%,city.ilike.%${q}%`
-    )
-  }
-  if (activeOnly !== undefined) query = query.eq('is_active', activeOnly)
-
-  query = query.range(offset, offset + 49)
-  const { data } = await query
-  return (data ?? []) as VendorListRow[]
-}

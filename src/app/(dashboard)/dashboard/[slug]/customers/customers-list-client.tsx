@@ -512,17 +512,13 @@ export default function CustomersListClient({
                 return (
                   <tr key={c.id} className={`hover:bg-gray-50 ${isInactive ? 'opacity-60' : ''}`}>
 
-                    {/* Company — bold primary, contact name as subtitle */}
+                    {/* Company — name only. No contact-name subtitle: Primary
+                        Contact has its own adjacent column, so repeating it
+                        here just doubled the same value in one row (same
+                        cleanup applied to Vendors' Company column). */}
                     <td className="overflow-hidden">
-                      <Link href={href} className="block px-4 py-3 min-w-0">
-                        <div className="truncate text-sm font-semibold text-qm-black" title={c.company_name ?? undefined}>
-                          {c.company_name ?? <span className="font-normal text-gray-400">—</span>}
-                        </div>
-                        {(c.first_name || c.last_name) && (
-                          <div className="truncate text-xs text-qm-gray">
-                            {[c.first_name, c.last_name].filter(Boolean).join(' ')}
-                          </div>
-                        )}
+                      <Link href={href} className="block truncate px-4 py-3 text-sm font-semibold text-qm-black" title={c.company_name ?? undefined}>
+                        {c.company_name ?? <span className="font-normal text-gray-400">—</span>}
                       </Link>
                     </td>
 
