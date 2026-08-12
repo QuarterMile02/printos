@@ -502,3 +502,41 @@ export async function updateJobPhaseDates(formData: FormData): Promise<void> {
 
   revalidatePath(`/dashboard/${orgSlug}/jobs/${jobId}`)
 }
+
+export type JobSearchRow = {
+  id: string
+  job_number: number
+  title: string
+  due_date: string | null
+  department: string | null
+  flag: string | null
+  customer_id: string | null
+  sales_order_id: string | null
+  invoice_id: string | null
+  quote_line_item_id: string | null
+}
+
+// Trigram fuzzy search (migration 127's search_jobs_fuzzy) — replaces the
+// plain ILIKE-across-searchColumns path (SEARCH_COLUMNS = ['title']).
+// Scoped to `title` only, matching the existing search exactly — jobs has
+// no denormalized customer-name column to search by (customer_id is a bare
+// FK), so that stays out of scope here, same as before.
+export async function searchJobs(
+  orgId: string,
+  term: string,
+): Promise<JobSearchRow[]> {
+  const cleaned = term.trim()
+  if (cleaned.length < 2) return []
+
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_jobs_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: JobSearchRow[] | null; error: { message: string } | null }
+
+  if (error) {
+    console.error('[searchJobs]', error.message)
+    return []
+  }
+  return data ?? []
+}

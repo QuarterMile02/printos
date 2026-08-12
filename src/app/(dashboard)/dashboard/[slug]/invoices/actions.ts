@@ -16,82 +16,73 @@ export type InvoiceSearchRow = {
   customers: { first_name: string; last_name: string; company_name: string | null } | null
 }
 
-// Search across title, customer name, invoice number, and total (in
-// dollars, typed without a $ sign). fetchDataTablePage's generic
-// ILIKE-across-searchColumns grammar can't express "convert typed dollars
-// to cents and compare", so this runs as a standalone live query via
-// useDataTableQuery's searchFn extension point instead — still a real
-// server-side Supabase query, not client-side filtering, just a different
-// (already-supported) hook path than the plain ILIKE one Quotes/Sales
-// Orders use.
+type InvoiceFuzzyRpcRow = {
+  id: string
+  invoice_number: number
+  title: string | null
+  status: string
+  total: number
+  balance_due: number
+  due_date: string | null
+  created_at: string
+  customer_id: string | null
+  customer_first_name: string | null
+  customer_last_name: string | null
+  customer_company_name: string | null
+}
+
+// Trigram fuzzy search (migration 127's search_invoices_fuzzy) — replaces
+// the previous two-round-trip TypeScript approach (a preliminary
+// ILIKE-only customer lookup feeding a customer_id.in.(...) condition into
+// the main invoices query), which existed only because PostgREST's or()
+// logic-tree parser can't express a nested-column ILIKE or a numeric cast
+// in one call (confirmed via "failed to parse logic tree" errors). A real
+// SQL function can freely JOIN and reference joined columns, so this
+// collapses to one round trip AND upgrades customer-name matching from
+// exact-ILIKE-only to the same 3-strategy fuzziness as title.
 //
-// PostgREST's or() logic-tree parser does NOT accept embedded-resource dot
-// paths (e.g. "customers.first_name.ilike...") or column casts
-// (e.g. "invoice_number::text.ilike...") as condition fragments — both were
-// tried and empirically fail with "failed to parse logic tree" (confirmed
-// against the live dev DB). So customer-name matching runs as a separate
-// preliminary lookup against the customers table (flat ILIKE, no dot path)
-// whose matching ids feed a plain customer_id.in.(...) condition, and
-// invoice-number matching uses an exact integer equality instead of a cast
-// substring search. Title is a flat column on invoices itself (migration
-// 098 — invoices.sales_order_id has no FK to sales_orders, so its title
-// couldn't be embedded; it's copied onto invoices at creation time
-// instead), so it needs no preliminary lookup — a plain ILIKE works.
+// invoices.total is integer CENTS (same convention as quotes.total and
+// sales_orders.total — this pattern was originally built from
+// searchInvoices, which the other three copied), so the numeric
+// exact-match semantics stay unchanged: dollar amount -> *100 -> `total =`
+// equality, bare integer -> `invoice_number =` equality — computed inside
+// the RPC now, same values, same rounding.
 export async function searchInvoices(orgId: string, term: string): Promise<InvoiceSearchRow[]> {
   const cleaned = term.trim()
   if (cleaned.length < 2) return []
 
-  const supabase = await createClient()
-
-  // Strip commas (thousands separators) before checking whether the term is
-  // a bare dollar amount, e.g. "1,234.56" -> "1234.56".
-  const commaless = cleaned.replace(/,/g, '')
-  const isDollarAmount = /^\d+(\.\d+)?$/.test(commaless)
-  const totalCentsMatch = isDollarAmount ? Math.round(parseFloat(commaless) * 100) : null
-  const isPlainInteger = /^\d+$/.test(commaless)
-  const invoiceNumberMatch = isPlainInteger ? parseInt(commaless, 10) : null
-
-  // Strip characters that would break PostgREST's or() filter syntax.
-  const safeTerm = cleaned.replace(/[,()'"]/g, ' ').trim()
-
-  const conditions: string[] = []
-  if (safeTerm.length >= 2) {
-    conditions.push(`title.ilike.%${safeTerm}%`)
-  }
-  if (totalCentsMatch !== null) {
-    conditions.push(`total.eq.${totalCentsMatch}`)
-  }
-  if (invoiceNumberMatch !== null) {
-    conditions.push(`invoice_number.eq.${invoiceNumberMatch}`)
-  }
-  if (safeTerm.length >= 2) {
-    const { data: customerRows } = await supabase
-      .from('customers')
-      .select('id')
-      .eq('organization_id', orgId)
-      .or(`first_name.ilike.%${safeTerm}%,last_name.ilike.%${safeTerm}%,company_name.ilike.%${safeTerm}%`)
-      .limit(50)
-    const customerIds = (customerRows ?? []).map((r) => (r as { id: string }).id)
-    if (customerIds.length > 0) {
-      conditions.push(`customer_id.in.(${customerIds.join(',')})`)
-    }
-  }
-  if (conditions.length === 0) return []
-
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, title, status, total, balance_due, due_date, created_at, customer_id, customers(first_name, last_name, company_name)')
-    .eq('organization_id', orgId)
-    .or(conditions.join(','))
-    .order('invoice_number', { ascending: false })
-    .limit(50)
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_invoices_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: InvoiceFuzzyRpcRow[] | null; error: { message: string } | null }
 
   if (error) {
     console.error('[searchInvoices]', error.message)
     return []
   }
 
-  return (data ?? []) as InvoiceSearchRow[]
+  // Reshape the RPC's flat customer_* columns back into the nested
+  // `customers` object InvoiceSearchRow (and every consumer of it)
+  // expects — keeps invoices-list-client.tsx untouched.
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    invoice_number: r.invoice_number,
+    title: r.title,
+    status: r.status,
+    total: r.total,
+    balance_due: r.balance_due,
+    due_date: r.due_date,
+    created_at: r.created_at,
+    customer_id: r.customer_id,
+    customers: r.customer_id
+      ? {
+          first_name: r.customer_first_name ?? '',
+          last_name: r.customer_last_name ?? '',
+          company_name: r.customer_company_name,
+        }
+      : null,
+  }))
 }
 
 export async function recordPayment(formData: FormData): Promise<void> {

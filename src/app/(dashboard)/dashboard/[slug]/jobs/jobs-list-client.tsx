@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { ColumnDef } from '@/components/data-table/types'
@@ -11,10 +11,10 @@ import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { DataTableError } from '@/components/data-table/data-table-error'
 import { JOBS_DB_SELECT, JOBS_PAGE_SIZE, type JobListRow } from './jobs-list-constants'
 import { computeProofStatus, formatElapsedDays, PROOF_STATUS_LABELS, PROOF_STATUS_STYLES, type ProofStatusKey, type ProofStatusResult } from '@/lib/proofs/proof-status'
+import { searchJobs } from './actions'
 
 export type { JobListRow }
 
-const SEARCH_COLUMNS = ['title']
 const DEFAULT_SORT = [{ column: 'job_number', direction: 'desc' as const }]
 
 const FLAG_LABELS: Record<string, string> = { file_error: 'File Error', help_needed: 'Help Needed' }
@@ -132,6 +132,12 @@ export default function JobsListClient({
     disabled: isViewReadOnly,
   })
 
+  // Trigram fuzzy search (search_jobs_fuzzy, migration 127) — replaces the
+  // plain ILIKE-across-searchColumns path. Scoped to `title` only, matching
+  // the previous SEARCH_COLUMNS = ['title'] exactly (jobs has no
+  // denormalized customer-name column to search by).
+  const boundSearchFn = useCallback((term: string) => searchJobs(orgId, term), [orgId])
+
   const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<JobListRow>({
     tableKey: 'jobs',
     orgId,
@@ -139,7 +145,7 @@ export default function JobsListClient({
     filterRules,
     sortRules: activeSortRules,
     search,
-    searchColumns: SEARCH_COLUMNS,
+    searchFn: boundSearchFn,
     page,
     pageSize: JOBS_PAGE_SIZE,
     initialRows,

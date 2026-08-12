@@ -195,3 +195,40 @@ export async function importMaterialsCsv(formData: FormData): Promise<{ created:
   }
   return { created, updated, errors }
 }
+
+export type MaterialSearchRow = {
+  id: string
+  name: string
+  external_name: string | null
+  cost: number | null
+  price: number | null
+  selling_units: string | null
+  material_type_id: string | null
+  category_id: string | null
+  active: boolean | null
+}
+
+// Trigram fuzzy search (migration 127's search_materials_fuzzy) — replaces
+// the plain ILIKE-across-searchColumns path (SEARCH_COLUMNS =
+// ['name','external_name','part_number','sku']) with the same 3-strategy
+// fuzzy match Customers/Vendors/Products use. Same field scope as before,
+// just tolerant of misspellings now.
+export async function searchMaterials(
+  orgId: string,
+  term: string,
+): Promise<MaterialSearchRow[]> {
+  const cleaned = term.trim()
+  if (cleaned.length < 2) return []
+
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_materials_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: MaterialSearchRow[] | null; error: { message: string } | null }
+
+  if (error) {
+    console.error('[searchMaterials]', error.message)
+    return []
+  }
+  return data ?? []
+}

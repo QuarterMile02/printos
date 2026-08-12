@@ -512,3 +512,46 @@ export async function copyProduct(
   revalidatePath(`/dashboard/${orgSlug}/products`)
   redirect(`/dashboard/${orgSlug}/products/${inserted.id}/edit`)
 }
+
+export type ProductSearchRow = {
+  id: string
+  name: string
+  part_number: string | null
+  category_name: string | null
+  product_type: string | null
+  pricing_type: string | null
+  formula: string | null
+  price: number | null
+  status: string | null
+  active: boolean | null
+  is_enabled: boolean | null
+  updated_at: string | null
+  migration_status: string | null
+}
+
+// Trigram fuzzy search (migration 127's search_products_fuzzy) — replaces
+// the previous fully client-side .includes() filter, which only ever
+// searched whatever subset of up to 1000 preloaded products happened to
+// be in memory and silently missed anything beyond that. Matches the same
+// 4 fields the old client filter used (name/part_number/category_name/
+// product_type), now scanning the whole table server-side with fuzziness
+// added — same pattern as Customers'/Vendors' searchCustomers/searchVendors.
+export async function searchProducts(
+  orgId: string,
+  term: string,
+): Promise<ProductSearchRow[]> {
+  const cleaned = term.trim()
+  if (cleaned.length < 2) return []
+
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_products_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: ProductSearchRow[] | null; error: { message: string } | null }
+
+  if (error) {
+    console.error('[searchProducts]', error.message)
+    return []
+  }
+  return data ?? []
+}

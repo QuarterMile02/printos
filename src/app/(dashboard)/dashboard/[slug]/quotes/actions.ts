@@ -39,73 +39,65 @@ export type QuoteSearchRow = {
   customers: { first_name: string; last_name: string; company_name: string | null } | null
 }
 
-// Search across title, customer name, quote number, and total (typed as a
-// dollar amount). Same proven approach as invoices/actions.ts's
-// searchInvoices — PostgREST's or() logic-tree parser does NOT accept
-// embedded-resource dot paths ("customers.first_name.ilike...") or column
-// casts ("quote_number::text.ilike...") as condition fragments; both were
-// confirmed to fail with "failed to parse logic tree" against the live DB
-// while building the Invoices version of this search. So customer-name
-// matching runs as a separate preliminary lookup against the customers
-// table (flat ILIKE, no dot path) whose matching ids feed a plain
-// customer_id.in.(...) condition, and quote-number matching uses an exact
-// integer equality instead of a cast substring search. Title stays a plain
-// flat ILIKE since it's a real column on quotes itself.
+type QuoteFuzzyRpcRow = {
+  id: string
+  quote_number: number
+  title: string
+  status: QuoteStatus
+  created_at: string
+  total: number | null
+  customer_id: string | null
+  customer_first_name: string | null
+  customer_last_name: string | null
+  customer_company_name: string | null
+}
+
+// Trigram fuzzy search (migration 127's search_quotes_fuzzy) — replaces
+// the previous two-round-trip TypeScript approach (a preliminary ILIKE-only
+// customer lookup feeding a customer_id.in.(...) condition into the main
+// quotes query), which existed only because PostgREST's or() logic-tree
+// parser can't express a nested-column ILIKE or a numeric cast in one call
+// (confirmed via "failed to parse logic tree" errors). A real SQL function
+// can freely JOIN and reference joined columns, so this collapses to one
+// round trip AND upgrades customer-name matching from exact-ILIKE-only to
+// the same 3-strategy fuzziness as title. The numeric exact-match
+// semantics are unchanged: dollar amount -> cents -> `total = ` equality,
+// bare integer -> `quote_number = ` equality — both computed inside the
+// RPC now instead of here, same values, same rounding.
 export async function searchQuotes(orgId: string, term: string): Promise<QuoteSearchRow[]> {
   const cleaned = term.trim()
   if (cleaned.length < 2) return []
 
-  const supabase = await createClient()
-
-  // Strip commas (thousands separators) before checking whether the term is
-  // a bare dollar amount, e.g. "1,234.56" -> "1234.56".
-  const commaless = cleaned.replace(/,/g, '')
-  const isDollarAmount = /^\d+(\.\d+)?$/.test(commaless)
-  const totalCentsMatch = isDollarAmount ? Math.round(parseFloat(commaless) * 100) : null
-  const isPlainInteger = /^\d+$/.test(commaless)
-  const quoteNumberMatch = isPlainInteger ? parseInt(commaless, 10) : null
-
-  // Strip characters that would break PostgREST's or() filter syntax.
-  const safeTerm = cleaned.replace(/[,()'"]/g, ' ').trim()
-
-  const conditions: string[] = []
-  if (safeTerm.length >= 2) {
-    conditions.push(`title.ilike.%${safeTerm}%`)
-  }
-  if (totalCentsMatch !== null) {
-    conditions.push(`total.eq.${totalCentsMatch}`)
-  }
-  if (quoteNumberMatch !== null) {
-    conditions.push(`quote_number.eq.${quoteNumberMatch}`)
-  }
-  if (safeTerm.length >= 2) {
-    const { data: customerRows } = await supabase
-      .from('customers')
-      .select('id')
-      .eq('organization_id', orgId)
-      .or(`first_name.ilike.%${safeTerm}%,last_name.ilike.%${safeTerm}%,company_name.ilike.%${safeTerm}%`)
-      .limit(50)
-    const customerIds = (customerRows ?? []).map((r) => (r as { id: string }).id)
-    if (customerIds.length > 0) {
-      conditions.push(`customer_id.in.(${customerIds.join(',')})`)
-    }
-  }
-  if (conditions.length === 0) return []
-
-  const { data, error } = await supabase
-    .from('quotes')
-    .select('id, quote_number, title, status, created_at, total, customer_id, customers(first_name, last_name, company_name)')
-    .eq('organization_id', orgId)
-    .or(conditions.join(','))
-    .order('quote_number', { ascending: false })
-    .limit(50)
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_quotes_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: QuoteFuzzyRpcRow[] | null; error: { message: string } | null }
 
   if (error) {
     console.error('[searchQuotes]', error.message)
     return []
   }
 
-  return (data ?? []) as QuoteSearchRow[]
+  // Reshape the RPC's flat customer_* columns back into the nested
+  // `customers` object QuoteSearchRow (and every consumer of it) expects —
+  // keeps quotes-list-client.tsx untouched.
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    quote_number: r.quote_number,
+    title: r.title,
+    status: r.status,
+    created_at: r.created_at,
+    total: r.total,
+    customer_id: r.customer_id,
+    customers: r.customer_id
+      ? {
+          first_name: r.customer_first_name ?? '',
+          last_name: r.customer_last_name ?? '',
+          company_name: r.customer_company_name,
+        }
+      : null,
+  }))
 }
 
 // Sums all line items for a quote and writes subtotal/tax_total/total
