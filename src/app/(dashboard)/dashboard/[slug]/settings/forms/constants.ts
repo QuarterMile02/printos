@@ -5,11 +5,20 @@
 // jobs-list-constants.ts/board-config.ts, so this file carries neither
 // 'use client' nor 'use server'.
 //
-// Only customer/material/product have seed data as of migration 125 —
-// the rest render an empty "Not configured yet" state until a later
-// seed pass (see the field-mapping report: Invoice/Purchase Order/Job/
-// Sales Order/Vendor/Quote/Sales Lead all had too little real PrintOS
-// field coverage to seed meaningfully in this batch).
+// Customer/material/product were seeded in migration 125; sales_order/
+// purchase_order/job/vendor/quote/sales_lead were added in migration
+// 126 once their real field counts were re-confirmed against the
+// actual current PrintOS forms (not assumed from the original rough
+// estimate — several came out thinner or richer than expected, see
+// 126's header comment for the per-type breakdown).
+//
+// Invoice is the one form intentionally left unseeded: it has zero
+// genuinely toggleable fields. There is no create/edit form for an
+// invoice at all — it's generated 100% programmatically off a Sales
+// Order, and its only user interaction (Record Payment) is a derived
+// increment, not a settable field. It will correctly show "Not
+// configured yet" indefinitely unless PrintOS ever grows a real
+// invoice edit form.
 
 export type FormTypeKey =
   | 'customer'
