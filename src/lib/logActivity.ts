@@ -23,7 +23,11 @@ export interface LogActivityParams {
 export async function logActivity(params: LogActivityParams): Promise<void> {
   const supabase = createServiceClient()
   const { error } = await supabase.from('activity_log').insert({
-    org_id: params.org_id,
+    // Bug fix (schema-drift-findings.md Section 9): the table's real
+    // column is organization_id, not org_id — every insert here was
+    // silently failing (masked until now by the table itself also being
+    // missing, per the same finding).
+    organization_id: params.org_id,
     user_id: params.user_id,
     entity_type: params.entity_type,
     entity_id: params.entity_id,

@@ -1160,6 +1160,22 @@ export async function sendQuoteEmailCustom(
       .update({ status: 'delivered' as QuoteStatus })
       .eq('id', quoteId)
       .eq('organization_id', orgId)
+
+    // This is the actual UI-wired send path (SendEmailModal → this
+    // function) — sendQuoteEmailAndDeliver, which logs this same
+    // transition, has no callers and was never reached. Log it here
+    // instead of wiring up the dead function (schema-drift-findings.md
+    // Section 9).
+    await logActivity({
+      org_id: orgId,
+      user_id: ctx.user.id,
+      entity_type: 'quote',
+      entity_id: quoteId,
+      action: 'status_changed',
+      from_value: 'draft',
+      to_value: 'delivered',
+      metadata: { via: 'email' },
+    })
   }
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
