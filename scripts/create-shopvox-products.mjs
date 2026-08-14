@@ -83,22 +83,46 @@ async function screenshot(page, label) {
   try { await page.screenshot({ path: resolve(DEBUG_DIR, `${Date.now()}_${safe}.png`), fullPage: true }) } catch {}
 }
 
+// A single unbounded .select() with no .range() is silently capped at
+// PostgREST's default page size (1000 rows) -- the exact bug class found
+// live tonight in materials (1,788 rows, silently truncated to 1000,
+// causing 14 real materials to read as "unmatched" even though every one
+// of them already existed under the exact same name). Every bulk-read
+// query in this script is paginated uniformly with this helper -- not
+// just materials -- so nothing else here quietly hits the same wall as
+// the catalog grows, same reasoning already applied in
+// bulk-import-shopvox/route.ts and scrape-shopvox-material-tiers.js.
+const PAGE_SIZE = 1000
+async function fetchAllRows(build) {
+  const all = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await build(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(error.message)
+    const rows = data ?? []
+    all.push(...rows)
+    if (rows.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return all
+}
+
 // ── Reference caches ─────────────────────────────────────────────────
 const REF = { types: null, categories: null, workflows: null, modifiers: null }
 async function loadRefCaches() {
   if (REF.types) return REF
   const lc = (s) => (s ?? '').toLowerCase().trim()
-  const [{ data: types }, { data: cats }, { data: wfs }, { data: mods }] = await Promise.all([
-    sb.from('product_types').select('id, name').eq('organization_id', ORG_ID),
-    sb.from('product_categories').select('id, name').eq('organization_id', ORG_ID),
-    sb.from('workflow_templates').select('id, name').eq('organization_id', ORG_ID),
-    sb.from('modifiers').select('id, name, display_name, system_lookup_name').eq('organization_id', ORG_ID),
+  const [types, cats, wfs, mods] = await Promise.all([
+    fetchAllRows((from, to) => sb.from('product_types').select('id, name').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)),
+    fetchAllRows((from, to) => sb.from('product_categories').select('id, name').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)),
+    fetchAllRows((from, to) => sb.from('workflow_templates').select('id, name').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)),
+    fetchAllRows((from, to) => sb.from('modifiers').select('id, name, display_name, system_lookup_name').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)),
   ])
-  REF.types = new Map((types ?? []).map((t) => [lc(t.name), t.id]))
-  REF.categories = new Map((cats ?? []).map((c) => [lc(c.name), c.id]))
-  REF.workflows = new Map((wfs ?? []).map((w) => [lc(w.name), w.id]))
+  REF.types = new Map(types.map((t) => [lc(t.name), t.id]))
+  REF.categories = new Map(cats.map((c) => [lc(c.name), c.id]))
+  REF.workflows = new Map(wfs.map((w) => [lc(w.name), w.id]))
   REF.modifiers = new Map()
-  for (const m of mods ?? []) {
+  for (const m of mods) {
     for (const k of [m.system_lookup_name, m.display_name, m.name].filter(Boolean).map(lc)) {
       if (!REF.modifiers.has(k)) REF.modifiers.set(k, m.id)
     }
@@ -633,12 +657,14 @@ async function writeShopvoxData(productId, basic, extracted) {
 async function populateRelationalTables(productId, shopvox_data) {
   const refs = await loadRefCaches()
   const lc = (s) => (s ?? '').toLowerCase().trim()
-  const { data: matsData } = await sb.from('materials').select('id, name, category_id, multiplier').eq('organization_id', ORG_ID)
-  const { data: laborData } = await sb.from('labor_rates').select('id, name, category').eq('organization_id', ORG_ID)
-  const { data: machineData } = await sb.from('machine_rates').select('id, name, category').eq('organization_id', ORG_ID)
-  const materialByName = new Map((matsData ?? []).map((m) => [lc(m.name), m]))
-  const laborByName = new Map((laborData ?? []).map((l) => [lc(l.name), l]))
-  const machineByName = new Map((machineData ?? []).map((m) => [lc(m.name), m]))
+  const [matsData, laborData, machineData] = await Promise.all([
+    fetchAllRows((from, to) => sb.from('materials').select('id, name, category_id, multiplier').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)),
+    fetchAllRows((from, to) => sb.from('labor_rates').select('id, name, category').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)),
+    fetchAllRows((from, to) => sb.from('machine_rates').select('id, name, category').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)),
+  ])
+  const materialByName = new Map(matsData.map((m) => [lc(m.name), m]))
+  const laborByName = new Map(laborData.map((l) => [lc(l.name), l]))
+  const machineByName = new Map(machineData.map((m) => [lc(m.name), m]))
 
   const modifierRows = []
   const seenMods = new Set()
@@ -712,8 +738,27 @@ async function populateRelationalTables(productId, shopvox_data) {
   }
 }
 
+// Loads the existing output file (if any) and returns a Map keyed by
+// shopvoxId, so this run's results MERGE into prior runs' instead of
+// overwriting the whole file -- the bug that silently wiped item #1's
+// entry when a later batch run's writeFileSync replaced the file
+// wholesale. Checkpointed after every item below, same as
+// scrape-shopvox-material-tiers.js's OUTPUT_FILE pattern, so a crash
+// mid-run loses at most the item in flight.
+function loadExistingResults() {
+  try {
+    const prior = JSON.parse(readFileSync(OUTPUT_FILE, 'utf8'))
+    return new Map(prior.map((r) => [r.shopvoxId, r]))
+  } catch {
+    return new Map()
+  }
+}
+
 async function runCreateMode(page) {
+  const resultsByShopvoxId = loadExistingResults()
+  const saveCheckpoint = () => writeFileSync(OUTPUT_FILE, JSON.stringify([...resultsByShopvoxId.values()], null, 2))
   const results = []
+  const record = (r) => { results.push(r); resultsByShopvoxId.set(r.shopvoxId, r); saveCheckpoint() }
   for (const shopvoxId of CREATE_IDS) {
     console.log(`\n${shopvoxId} — navigating to verify + read Basic Settings…`)
     let basic
@@ -721,7 +766,7 @@ async function runCreateMode(page) {
       basic = await readBasicSettings(page, shopvoxId)
       if (!basic.name) throw new Error('no name found')
     } catch (e) {
-      results.push({ shopvoxId, status: 'flagged', reason: `re-verify failed: ${e.message}` })
+      record({ shopvoxId, status: 'flagged', reason: `re-verify failed: ${e.message}` })
       console.log(`  -> flagged: ${e.message}`)
       continue
     }
@@ -733,7 +778,7 @@ async function runCreateMode(page) {
     try {
       extracted = await extractProduct(page, URLS.product(shopvoxId))
     } catch (e) {
-      results.push({ shopvoxId, name: basic.name, status: 'flagged', reason: `recipe extraction failed: ${e.message}` })
+      record({ shopvoxId, name: basic.name, status: 'flagged', reason: `recipe extraction failed: ${e.message}` })
       console.log(`  -> flagged: recipe extraction failed: ${e.message}`)
       await screenshot(page, `extract_fail_${basic.name}`)
       continue
@@ -741,7 +786,7 @@ async function runCreateMode(page) {
 
     const createResult = await createProductRecord(basic, advanced, extracted.pricing, INACTIVE_IDS.has(shopvoxId))
     if (createResult.status !== 'created') {
-      results.push({ shopvoxId, name: basic.name, ...createResult })
+      record({ shopvoxId, name: basic.name, ...createResult })
       console.log(`  -> flagged: ${createResult.reason}`)
       continue
     }
@@ -752,14 +797,14 @@ async function runCreateMode(page) {
     try {
       relResult = await populateRelationalTables(createResult.productId, shopvox_data)
     } catch (e) {
-      results.push({ shopvoxId, name: basic.name, status: 'created_partial', productId: createResult.productId, unresolvedRefs: createResult.unresolvedRefs, error: `relational population failed: ${e.message}` })
+      record({ shopvoxId, name: basic.name, status: 'created_partial', productId: createResult.productId, unresolvedRefs: createResult.unresolvedRefs, error: `relational population failed: ${e.message}` })
       console.log(`  -> created but relational population FAILED: ${e.message}`)
       continue
     }
 
     await sb.from('products').update({ migration_status: 'in_progress', updated_by: CREATOR_ID }).eq('id', createResult.productId)
 
-    results.push({
+    record({
       shopvoxId, name: basic.name, status: 'created', productId: createResult.productId,
       active: !INACTIVE_IDS.has(shopvoxId), unresolvedRefs: createResult.unresolvedRefs,
       pricingType: extracted.pricing.pricing_type, ...relResult,
@@ -768,7 +813,6 @@ async function runCreateMode(page) {
     if (relResult.unmatchedDefaultItems.length) console.log(`  unmatched default items (no catalog match): ${relResult.unmatchedDefaultItems.join(', ')}`)
   }
 
-  writeFileSync(OUTPUT_FILE, JSON.stringify(results, null, 2))
   console.log('\n=========== CREATE RESULT ===========')
   console.log(JSON.stringify(results, null, 2))
   console.log(`\nWritten to ${OUTPUT_FILE}`)

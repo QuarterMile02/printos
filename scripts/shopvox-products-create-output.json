@@ -1,12 +1,27 @@
 [
   {
+    "shopvoxId": "a7d9d1ed-189e-4c61-9b99-ff4dbddfa732",
+    "name": "Acrylic Clear Custom Shape with White Ink 2 Sided (5 Layer)- Direct",
+    "status": "created",
+    "productId": "f758a08e-8d61-42f1-964c-d618c6fc1ae9",
+    "active": true,
+    "unresolvedRefs": [
+      "workflow_template_id"
+    ],
+    "pricingType": "Basic",
+    "modifierCount": 17,
+    "defaultItemCount": 18,
+    "optionRateCount": 14,
+    "dropdownMenuCount": 7,
+    "unmatchedDefaultItems": []
+  },
+  {
     "shopvoxId": "410cbac9-df4e-479e-b9fb-e7ba514d7f28",
     "name": "Feather Angled 1 Sided Flag Only",
     "status": "created",
     "productId": "f06d27a6-265b-47df-9cf0-a8cb24c509d8",
     "active": true,
     "unresolvedRefs": [
-      "product_type_id",
       "workflow_template_id"
     ],
     "pricingType": "Basic",
@@ -22,9 +37,7 @@
     "status": "created",
     "productId": "909c980b-9b51-45a9-8a34-36fd8c68ab14",
     "active": true,
-    "unresolvedRefs": [
-      "product_type_id"
-    ],
+    "unresolvedRefs": [],
     "pricingType": "Basic",
     "modifierCount": 0,
     "defaultItemCount": 0,
@@ -39,7 +52,6 @@
     "productId": "c09019ce-b888-4f02-8453-0682712cd187",
     "active": true,
     "unresolvedRefs": [
-      "product_type_id",
       "workflow_template_id"
     ],
     "pricingType": "Basic",
@@ -55,9 +67,7 @@
     "status": "created",
     "productId": "e95b609c-443c-41b1-8cb4-978bf6adcf4b",
     "active": true,
-    "unresolvedRefs": [
-      "product_type_id"
-    ],
+    "unresolvedRefs": [],
     "pricingType": "Basic",
     "modifierCount": 0,
     "defaultItemCount": 0,
@@ -71,9 +81,7 @@
     "status": "created",
     "productId": "41470093-2d5d-44f0-8b36-d732ff615a9d",
     "active": true,
-    "unresolvedRefs": [
-      "product_type_id"
-    ],
+    "unresolvedRefs": [],
     "pricingType": "Basic",
     "modifierCount": 0,
     "defaultItemCount": 0,
@@ -87,17 +95,13 @@
     "status": "created",
     "productId": "55e73c01-6ff7-40e3-8508-441362b73e73",
     "active": true,
-    "unresolvedRefs": [
-      "product_type_id"
-    ],
+    "unresolvedRefs": [],
     "pricingType": "Formula",
     "modifierCount": 2,
     "defaultItemCount": 12,
     "optionRateCount": 9,
     "dropdownMenuCount": 2,
-    "unmatchedDefaultItems": [
-      "Ink SwissQprint Printing"
-    ]
+    "unmatchedDefaultItems": []
   },
   {
     "shopvoxId": "89758a67-1cce-4291-b18b-c076ae695df7",
@@ -105,17 +109,13 @@
     "status": "created",
     "productId": "057314a6-cea3-4cdf-a99d-36ef614e6876",
     "active": true,
-    "unresolvedRefs": [
-      "product_type_id"
-    ],
+    "unresolvedRefs": [],
     "pricingType": "Basic",
     "modifierCount": 9,
     "defaultItemCount": 13,
     "optionRateCount": 8,
     "dropdownMenuCount": 16,
-    "unmatchedDefaultItems": [
-      "Premask Tape 24in"
-    ]
+    "unmatchedDefaultItems": []
   },
   {
     "shopvoxId": "112c3243-0573-4c1b-9e6a-349e04596c85",
@@ -123,17 +123,13 @@
     "status": "created",
     "productId": "331a1b68-e29e-40db-9b15-8e8ea687fc44",
     "active": true,
-    "unresolvedRefs": [
-      "product_type_id"
-    ],
+    "unresolvedRefs": [],
     "pricingType": "Formula",
     "modifierCount": 4,
     "defaultItemCount": 18,
     "optionRateCount": 13,
     "dropdownMenuCount": 4,
-    "unmatchedDefaultItems": [
-      "Ink Epson GS3 Printing"
-    ]
+    "unmatchedDefaultItems": []
   },
   {
     "shopvoxId": "6b9f7fba-d8bb-4495-ad1e-c2b60080c878",
@@ -149,19 +145,7 @@
     "defaultItemCount": 24,
     "optionRateCount": 9,
     "dropdownMenuCount": 6,
-    "unmatchedDefaultItems": [
-      "Led Wire 2 Wire Paige 250Ft",
-      "Led Wire RGB 4 Wire Paige 250Ft",
-      "Led Wire 2 Wire Paige 250Ft",
-      "Led Wire RGB 4 Wire Paige 250Ft",
-      "Adhesive Lord 7542A/B Plastic to Metal 50ML",
-      "Kraft Paper 60in x 500ft",
-      "Led Controller RGBW",
-      "Aluminum Stud 3/16 - .1875in x 3in",
-      "Mounting Block .5in Diameter x 3/8in H GI-18",
-      "Aluminum Spacer 1in (1/4-20)",
-      "Led Remote RGBW"
-    ]
+    "unmatchedDefaultItems": []
   },
   {
     "shopvoxId": "ea38c797-9ef8-4b40-b54c-0f37aba4f300",
@@ -207,19 +191,7 @@
     "defaultItemCount": 26,
     "optionRateCount": 11,
     "dropdownMenuCount": 3,
-    "unmatchedDefaultItems": [
-      "Led Wire 2 Wire Paige 250Ft",
-      "Led Wire RGB 4 Wire Paige 250Ft",
-      "Led Wire 2 Wire Paige 250Ft",
-      "Led Wire RGB 4 Wire Paige 250Ft",
-      "Adhesive Lord 7542A/B Plastic to Metal 50ML",
-      "Led Controller RGB with RF Remote & Holder",
-      "Kraft Paper 60in x 500ft",
-      "Acrylic Clear .177in - 3/16\"",
-      "Aluminum Stud 3/16 - .1875in x 3in",
-      "Mounting Block .5in Diameter x 3/8in H GI-18",
-      "Aluminum Spacer 1in (1/4-20)"
-    ]
+    "unmatchedDefaultItems": []
   },
   {
     "shopvoxId": "9c8aeedf-d17e-4e74-b4a3-50150e9c11bc",
@@ -227,16 +199,12 @@
     "status": "created",
     "productId": "1b44d2b5-3f00-4ac4-a149-fe50d790bee2",
     "active": false,
-    "unresolvedRefs": [
-      "product_type_id"
-    ],
+    "unresolvedRefs": [],
     "pricingType": "Formula",
     "modifierCount": 9,
     "defaultItemCount": 16,
     "optionRateCount": 14,
     "dropdownMenuCount": 7,
-    "unmatchedDefaultItems": [
-      "Ink Epson GS3 Printing"
-    ]
+    "unmatchedDefaultItems": []
   }
 ]
