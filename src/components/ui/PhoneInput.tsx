@@ -58,12 +58,23 @@ export default function PhoneInput({ value, onChange, placeholder, required, nam
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Sync state when value changes externally
-  useEffect(() => {
+  // Sync state when value changes externally. This used to be a
+  // useEffect keyed on [value], but that meant every controlled
+  // round-trip (type a digit -> onChange -> parent setState -> new
+  // value prop) cost an extra commit+re-render pass just to set the
+  // exact same country/localNum right back. React's own guidance for
+  // "adjusting state when a prop changes" is to do it directly during
+  // render, gated on a comparison against the previous prop value --
+  // React detects the setState call before committing and re-renders
+  // immediately, skipping the extra effect-triggered pass entirely.
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  const [prevValue, setPrevValue] = useState(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
     const det = detectCountry(value)
     setCountry(det)
     setLocalNum(stripDial(value, det.dial))
-  }, [value])
+  }
 
   // Close dropdown on outside click
   useEffect(() => {

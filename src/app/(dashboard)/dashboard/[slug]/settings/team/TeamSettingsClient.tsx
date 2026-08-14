@@ -197,6 +197,15 @@ const PRICING_ROLES: Role[] = ['owner', 'sales', 'accounting'];
 
 type StatusTab = 'all' | 'enabled' | 'disabled';
 
+// Plain fetch, no setState -- shared by the mount effect and the
+// post-save refresh so the actual request/parsing logic isn't
+// duplicated between them.
+async function fetchTeamMembers(): Promise<TeamMember[]> {
+  const res = await fetch('/api/settings/team');
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
 export default function TeamSettingsClient({
   orgId, orgSlug, currentUserId, currentUserRole, currentUserTier, canInvite, pendingInvites,
 }: Props) {
@@ -222,13 +231,31 @@ export default function TeamSettingsClient({
   const canManagePerms = isOwner || currentUserTier === 'manager' || currentUserTier === 'lead';
 
   const fetchMembers = async () => {
-    const res = await fetch('/api/settings/team');
-    const data = await res.json();
-    setMembers(Array.isArray(data) ? data : []);
+    setMembers(await fetchTeamMembers());
     setLoading(false);
   };
 
-  useEffect(() => { fetchMembers(); }, []);
+  // Initial fetch on mount. Deliberately not just `useEffect(() => {
+  // fetchMembers() }, [])` -- fetchMembers's setState calls happen
+  // after an await (never synchronously), but the react-hooks lint
+  // rule's static analysis can't see that far and flags any effect
+  // that transitively calls a named, component-level function which
+  // itself calls setState. React's own recommended shape for a
+  // data-fetching effect is to inline the async work directly in the
+  // effect with a cleanup-based `ignore` flag, which also genuinely
+  // guards against a slow response landing after a faster re-run
+  // (https://react.dev/learn/you-might-not-need-an-effect#fetching-data)
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      const list = await fetchTeamMembers();
+      if (!ignore) {
+        setMembers(list);
+        setLoading(false);
+      }
+    })();
+    return () => { ignore = true; };
+  }, []);
 
   const tabCounts = useMemo(() => ({
     all: members.length,
