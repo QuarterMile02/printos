@@ -209,14 +209,6 @@ async function runMaterialSelectionForJob(
 
 export type DeliveryMethod = 'email' | 'sms' | 'both'
 
-// All non-legacy statuses are valid for direct manual update. The legacy
-// 'sent' and 'declined' values still exist in the enum but Phase 8 code
-// should not write them, so they're excluded here.
-const VALID_STATUSES: QuoteStatus[] = [
-  'draft', 'delivered', 'customer_review', 'approved', 'approve_with_changes',
-  'revise', 'ordered', 'hold', 'expired', 'lost', 'pending', 'no_charge',
-]
-
 type LineItemInput = {
   product_id?: string | null
   description: string
@@ -331,59 +323,12 @@ export async function createQuote(
   return { quoteId: quote.id }
 }
 
-export async function updateQuoteStatus(
-  quoteId: string,
-  orgId: string,
-  orgSlug: string,
-  status: QuoteStatus
-): Promise<{ error?: string }> {
-  if (!VALID_STATUSES.includes(status)) return { error: 'Invalid status.' }
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated.' }
-
-  const { data: membership } = await supabase
-    .from('organization_members')
-    .select('role')
-    .eq('organization_id', orgId)
-    .eq('user_id', user.id)
-    .maybeSingle() as { data: { role: OrgRole } | null; error: unknown }
-
-  if (!membership) return { error: 'You are not a member of this organization.' }
-  if (membership.role === 'viewer') return { error: 'Viewers cannot update quotes.' }
-
-  const service = createServiceClient()
-
-  // Read previous status for activity log
-  const { data: prev } = await service
-    .from('quotes')
-    .select('status')
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-    .maybeSingle() as { data: { status: QuoteStatus } | null; error: unknown }
-
-  const { error: updateError } = await service
-    .from('quotes')
-    .update({ status })
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-
-  if (updateError) return { error: updateError.message }
-
-  await logActivity({
-    org_id: orgId,
-    user_id: user.id,
-    entity_type: 'quote',
-    entity_id: quoteId,
-    action: 'status_changed',
-    from_value: prev?.status,
-    to_value: status,
-  })
-
-  revalidatePath(`/dashboard/${orgSlug}/quotes`)
-  return {}
-}
+// updateQuoteStatus (direct manual status update) removed here --
+// confirmed dead code, zero callers anywhere in the app. Status changes
+// all go through the specific transition functions below
+// (sendQuoteEmailCustom, sendQuoteSmsAndDeliver, sendForReviewAndUpdate,
+// etc.), each with its own guard on the expected from-status; nothing
+// ever called this more generic one. (schema-drift-findings.md Section 8)
 
 export async function sendQuoteToCustomer(
   quoteId: string,
@@ -889,7 +834,6 @@ export async function deleteQuoteLineItem(
 }
 
 // Send the quote SMS AND auto-transition draft → delivered.
-// Mirrors sendQuoteEmailAndDeliver but uses the SMS path.
 export async function sendQuoteSmsAndDeliver(
   quoteId: string,
   orgId: string,
@@ -926,46 +870,14 @@ export async function sendQuoteSmsAndDeliver(
   return {}
 }
 
-// Send the quote email AND auto-transition draft → delivered.
-// Reuses the existing sendQuoteToCustomer (email path) so we don't
-// duplicate the Resend integration.
-export async function sendQuoteEmailAndDeliver(
-  quoteId: string,
-  orgId: string,
-  orgSlug: string,
-): Promise<{ error?: string }> {
-  console.log('[sendQuoteEmailAndDeliver] Starting for quote:', quoteId)
-  const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'email')
-  console.log('[sendQuoteEmailAndDeliver] sendQuoteToCustomer result:', JSON.stringify(result))
-  if (result.error && !result.sent) return { error: result.error }
-
-  const ctx = await getServiceWithMembership(orgId)
-  if ('error' in ctx) return { error: ctx.error }
-
-  const { error } = await ctx.service
-    .from('quotes')
-    .update({ status: 'delivered' as QuoteStatus })
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-    .eq('status', 'draft')
-
-  if (error) return { error: error.message }
-
-  await logActivity({
-    org_id: orgId,
-    user_id: ctx.user.id,
-    entity_type: 'quote',
-    entity_id: quoteId,
-    action: 'status_changed',
-    from_value: 'draft',
-    to_value: 'delivered',
-    metadata: { via: 'email' },
-  })
-
-  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
-  revalidatePath(`/dashboard/${orgSlug}/quotes`)
-  return {}
-}
+// sendQuoteEmailAndDeliver (email version of sendQuoteSmsAndDeliver above)
+// removed here -- confirmed dead code: zero callers anywhere in the app.
+// It was written to wrap sendQuoteToCustomer and log the draft→delivered
+// transition, but the actual "Send Email" button (SendEmailModal →
+// sendQuoteEmailCustom below) never called it; that function has its own
+// separate delivery + status-transition logic, which is where the
+// logActivity call for this transition now actually lives (see the
+// comment on that block). (schema-drift-findings.md Section 9)
 
 // Send "for review" email and auto-transition delivered → customer_review.
 // For now this reuses the same email body — when QMI wants a different
@@ -1162,10 +1074,10 @@ export async function sendQuoteEmailCustom(
       .eq('organization_id', orgId)
 
     // This is the actual UI-wired send path (SendEmailModal → this
-    // function) — sendQuoteEmailAndDeliver, which logs this same
-    // transition, has no callers and was never reached. Log it here
-    // instead of wiring up the dead function (schema-drift-findings.md
-    // Section 9).
+    // function) — sendQuoteEmailAndDeliver, which was written to log
+    // this same transition, had no callers and was never reached, so
+    // it was removed. Log it here instead. (schema-drift-findings.md
+    // Section 9)
     await logActivity({
       org_id: orgId,
       user_id: ctx.user.id,
