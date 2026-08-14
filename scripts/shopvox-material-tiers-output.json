@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T02:45:05.827Z",
+  "generatedAt": "2026-08-14T06:43:02.239Z",
   "tiered": [
     {
       "uuid": "1b2e5863-ba41-406a-8389-9c7cd26f4d91",
@@ -106611,424 +106611,6 @@
       }
     },
     {
-      "uuid": "2ae73c98-e76d-466b-a4fc-dfaf582e152b",
-      "name": "Vinyl Translucent Wave Blue French (626) 2Mil Avery UC900 48in",
-      "scrapedAt": "2026-08-11T02:11:58.778Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Translucent%20Wave%20Blue%20French%20%28626%29%202Mil%20Avery%20UC900%2048in/Screenshot%202026-05-09%20121223.jpg?v=1778346467",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Roll Materials",
-        "category": "Vinyl Kiss Cut- Translucent"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "5cbcc1a2-c123-4887-a0d8-7bef6497f400",
-      "name": "Vinyl Fluorescent Yellow (029) Oracal 7510 30in",
-      "scrapedAt": "2026-08-11T02:12:15.536Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Fluorescent%20Yellow%20%28029%29%20Oracal%207510%2015in%20-%20648/Screenshot%202026-06-09%20183141.png?v=1781047734",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Roll Materials",
-        "category": "Vinyl Kiss Cut- Specialty"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "5f391573-d515-4836-ab35-8c495f042da5",
-      "name": "Polycarbonate Clear .150in - 3/16\" 48in Reel Ln Ft",
-      "scrapedAt": "2026-08-11T02:12:20.764Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Rigid Substrates- Sheets",
-        "category": "Polycarbonate/ Lexan"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "634bb7f0-1b51-45da-b679-0ee2050ffc7d",
-      "name": "Satin Cover White Blazer 100lb 18x12",
-      "scrapedAt": "2026-08-11T02:12:32.178Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Digital Printing",
-        "category": "Cover - Paper"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "691f35c0-2c0c-41d5-8604-628f4553b136",
-      "name": "Xante En/Press Transfer Belt",
-      "scrapedAt": "2026-08-11T02:12:38.042Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Xante%20En/Press%20Drum%20Black/Black%20drum.jpg?v=1782419125",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Commercial Printing",
-        "category": "Toshiba Ink"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "7fdb33d5-15c1-46bc-a091-7d5bcbcdcc2c",
-      "name": "Tag Strap 6in Clear",
-      "scrapedAt": "2026-08-11T02:12:43.858Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Tag%20Strap%206in%20Clear/6in%20Clear%20Tag%20Strape.jpg?v=1784411331",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Accessories",
-        "category": "Hardware"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "8038350c-fe44-4a8a-b0cd-8b06b805b4f4",
-      "name": "65lb Text",
-      "scrapedAt": "2026-08-11T02:12:49.383Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Digital Printing",
-        "category": "Paper - Text"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "82213770-857d-4c12-b13d-773fd1dc6920",
-      "name": "Xante En/Press Waste Toner Bottle",
-      "scrapedAt": "2026-08-11T02:12:54.879Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Consumables",
-        "category": "Equipment Maintenance"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "8a1062b4-085c-4e3b-9db3-5ccd63efe56a",
-      "name": "C2S Tango 16Pt. 18x12",
-      "scrapedAt": "2026-08-11T02:13:00.379Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Commercial Printing",
-        "category": "Paper"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "9b0e69de-bbef-4470-bcd4-70d176450d88",
-      "name": "C1S Tango 10Pt. 19x13",
-      "scrapedAt": "2026-08-11T02:13:11.070Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Commercial Printing",
-        "category": "Paper"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "a69a2ccb-d193-47e7-851b-53c94e2f37ef",
-      "name": "Vinyl Gold Mirror Oracal 352 48in",
-      "scrapedAt": "2026-08-11T02:13:16.481Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Roll Materials",
-        "category": "Vinyl Kiss Cut- Specialty"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "c385a346-e0aa-416f-bb47-f4facff9a224",
-      "name": "Xante En/Press Fuser Unit 110v",
-      "scrapedAt": "2026-08-11T02:13:21.951Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Xante%20En/Press%20Drum%20Black/Black%20drum.jpg?v=1782419270",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Commercial Printing",
-        "category": "Toshiba Ink"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "c5b9cc38-1aba-4c4f-8379-9b23f922a46c",
-      "name": "Vinyl Translucent Real Blue (692) 2Mil Avery UC900 48in",
-      "scrapedAt": "2026-08-11T02:13:27.408Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Translucent%20Real%20Blue%20%28692%29%202Mil%20Avery%20UC900%2048in/Screenshot%202026-05-09%20115811.jpg?v=1778345738",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Roll Materials",
-        "category": "Vinyl Kiss Cut- Translucent"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "cfd78de1-a500-433e-b35f-554907eb08d1",
-      "name": "Vinyl Fluorescent Yellow Green (983) 3M Prismatic Conspicuity Tape 6in",
-      "scrapedAt": "2026-08-11T02:13:32.993Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Fluorescent%20Yellow%20Green%20%28983%29%203M%20Prismatic%20Conspicuity%20Tape%206in/Screenshot%202026-06-09%20182504.png?v=1781040648",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Roll Materials",
-        "category": "Vinyl Kiss Cut- Reflective"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "d88eca2f-bc5e-4c73-8669-620abe3ff4c5",
-      "name": "Pipe Post 2 3/8in Round 24ft Galvanized Pipe 16 Guage",
-      "scrapedAt": "2026-08-11T02:13:38.511Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Pipe%20Post%202%203/8in%20Round%2024ft%20Galvanized%20Pipe%2016%20Guage/ybq9S992QVSMyXiRGYsC_PipePost.jpg?v=1785772217",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Accessories",
-        "category": "Hardware"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "e9699d58-408f-459d-80d1-25f08746296c",
-      "name": "ADA Alternative Brush Black & Gold w/Adh .0625in - 1/8\"",
-      "scrapedAt": "2026-08-11T02:13:49.424Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/ADA%20Alternative%20Brush%20Black%20%26%20Gold%20w/Adh%20.0625in%20-%201/8%22/Screenshot%202026-05-21%20165521.png?v=1779398662",
-        "write_result": "not_matched_by_name"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Rigid Substrates- Sheets",
-        "category": "ADA Signs"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "f26a69b5-0fab-41ce-8b6c-505d40bce8cf",
-      "name": "Gloss Text Paper Blazer 80lb 18x12",
-      "scrapedAt": "2026-08-11T02:13:54.917Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Digital Printing",
-        "category": "Paper - Text"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "fbbe0515-2d46-43ef-be49-e2047d835c18",
-      "name": "Rebar 3 x 20Ft",
-      "scrapedAt": "2026-08-11T02:14:00.244Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Fabrication Materials",
-        "category": "Rebar"
-      },
-      "shopvoxStatus": null
-    },
-    {
-      "uuid": "fc3697a5-8aaa-43ab-b3f5-9ced09722893",
-      "name": "Commercial Laminate 3mil - 27in x 250ft Matte Low Melt Roll",
-      "scrapedAt": "2026-08-11T02:14:05.802Z",
-      "found": true,
-      "flat": true,
-      "tiers": [],
-      "vendor_pricing": {
-        "found": false,
-        "reason": "no_grid_root"
-      },
-      "material_image": {
-        "captured": null,
-        "write_result": "no_image_found"
-      },
-      "field_diff": {
-        "not_matched_by_name": true,
-        "type": "Commercial Printing",
-        "category": "Commercial Laminate"
-      },
-      "shopvoxStatus": null
-    },
-    {
       "uuid": "4db1aea8-b2d8-4ccc-9a7c-b517c707ba2e",
       "name": "Rebar 5 x 20Ft",
       "scrapedAt": "2026-08-11T02:29:54.714Z",
@@ -107238,6 +106820,481 @@
       },
       "field_diff": {
         "materialId": "dc442f33-4b1f-447e-863b-f24d2a549370",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "2ae73c98-e76d-466b-a4fc-dfaf582e152b",
+      "name": "Vinyl Translucent Wave Blue French (626) 2Mil Avery UC900 48in",
+      "scrapedAt": "2026-08-14T06:39:19.412Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Translucent%20Wave%20Blue%20French%20%28626%29%202Mil%20Avery%20UC900%2048in/Screenshot%202026-05-09%20121223.jpg?v=1778346467",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "e1250135-d446-406c-99ed-8dfeee17eff7",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "5cbcc1a2-c123-4887-a0d8-7bef6497f400",
+      "name": "Vinyl Fluorescent Yellow (029) Oracal 7510 30in",
+      "scrapedAt": "2026-08-14T06:40:21.722Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Fluorescent%20Yellow%20%28029%29%20Oracal%207510%2015in%20-%20648/Screenshot%202026-06-09%20183141.png?v=1781047734",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "d78f5cff-84d6-4489-b49e-5f559e90f80d",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "5f391573-d515-4836-ab35-8c495f042da5",
+      "name": "Polycarbonate Clear .150in - 3/16\" 48in Reel Ln Ft",
+      "scrapedAt": "2026-08-14T06:40:30.175Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "79ca310f-fcee-4cd2-bdf2-5f96631cb9cf",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "634bb7f0-1b51-45da-b679-0ee2050ffc7d",
+      "name": "Satin Cover White Blazer 100lb 18x12",
+      "scrapedAt": "2026-08-14T06:40:38.687Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "7a5272c0-6527-4a46-8eaa-e26e14a6b146",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "691f35c0-2c0c-41d5-8604-628f4553b136",
+      "name": "Xante En/Press Transfer Belt",
+      "scrapedAt": "2026-08-14T06:40:47.415Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Xante%20En/Press%20Drum%20Black/Black%20drum.jpg?v=1782419125",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "5cd77834-3cb2-4921-bbac-fb1233334ef1",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "7fdb33d5-15c1-46bc-a091-7d5bcbcdcc2c",
+      "name": "Tag Strap 6in Clear",
+      "scrapedAt": "2026-08-14T06:41:02.650Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Tag%20Strap%206in%20Clear/6in%20Clear%20Tag%20Strape.jpg?v=1784411331",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "7c51ac94-72f5-401e-b01e-fb2656b64d6a",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "8038350c-fe44-4a8a-b0cd-8b06b805b4f4",
+      "name": "65lb Text",
+      "scrapedAt": "2026-08-14T06:41:15.451Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "52922f7d-54d5-4c1e-865c-277936f0ad45",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "82213770-857d-4c12-b13d-773fd1dc6920",
+      "name": "Xante En/Press Waste Toner Bottle",
+      "scrapedAt": "2026-08-14T06:41:25.941Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "22954521-0584-4f14-af36-6a6181ab6d05",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "8a1062b4-085c-4e3b-9db3-5ccd63efe56a",
+      "name": "C2S Tango 16Pt. 18x12",
+      "scrapedAt": "2026-08-14T06:41:35.456Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "2bb9df0d-8560-44e0-bd34-5ff280f566f3",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "9b0e69de-bbef-4470-bcd4-70d176450d88",
+      "name": "C1S Tango 10Pt. 19x13",
+      "scrapedAt": "2026-08-14T06:41:44.621Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "4160e2e7-869d-4a0f-b120-83375723e84e",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "a69a2ccb-d193-47e7-851b-53c94e2f37ef",
+      "name": "Vinyl Gold Mirror Oracal 352 48in",
+      "scrapedAt": "2026-08-14T06:41:53.187Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "051db7c4-cb1c-4b11-a9a1-f58e42f27325",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "c385a346-e0aa-416f-bb47-f4facff9a224",
+      "name": "Xante En/Press Fuser Unit 110v",
+      "scrapedAt": "2026-08-14T06:42:02.097Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Xante%20En/Press%20Drum%20Black/Black%20drum.jpg?v=1782419270",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "26f96a2a-d8ff-44f0-bf0e-b61b5a08103b",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "c5b9cc38-1aba-4c4f-8379-9b23f922a46c",
+      "name": "Vinyl Translucent Real Blue (692) 2Mil Avery UC900 48in",
+      "scrapedAt": "2026-08-14T06:42:10.768Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Translucent%20Real%20Blue%20%28692%29%202Mil%20Avery%20UC900%2048in/Screenshot%202026-05-09%20115811.jpg?v=1778345738",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "8ae42c6e-325e-4988-88fc-5c81928b8c6e",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "cfd78de1-a500-433e-b35f-554907eb08d1",
+      "name": "Vinyl Fluorescent Yellow Green (983) 3M Prismatic Conspicuity Tape 6in",
+      "scrapedAt": "2026-08-14T06:42:19.260Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Vinyl%20Fluorescent%20Yellow%20Green%20%28983%29%203M%20Prismatic%20Conspicuity%20Tape%206in/Screenshot%202026-06-09%20182504.png?v=1781040648",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "020e2349-0884-45ee-b14b-a6d8f29af39a",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "d88eca2f-bc5e-4c73-8669-620abe3ff4c5",
+      "name": "Pipe Post 2 3/8in Round 24ft Galvanized Pipe 16 Guage",
+      "scrapedAt": "2026-08-14T06:42:27.777Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/Pipe%20Post%202%203/8in%20Round%2024ft%20Galvanized%20Pipe%2016%20Guage/ybq9S992QVSMyXiRGYsC_PipePost.jpg?v=1785772217",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "bd59fb18-863f-4475-8037-f9840ad0d734",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "e9699d58-408f-459d-80d1-25f08746296c",
+      "name": "ADA Alternative Brush Black & Gold w/Adh .0625in - 1/8\"",
+      "scrapedAt": "2026-08-14T06:42:36.512Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": "https://assets.shopvox.com/accounts/3cd7bcdc-cfe9-42ae-b850-6ab5bd5ea49f/materials/ADA%20Alternative%20Brush%20Black%20%26%20Gold%20w/Adh%20.0625in%20-%201/8%22/Screenshot%202026-05-21%20165521.png?v=1779398662",
+        "write_result": "updated"
+      },
+      "field_diff": {
+        "materialId": "3e68929e-17c1-4d06-b9aa-70f78a02958a",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "f26a69b5-0fab-41ce-8b6c-505d40bce8cf",
+      "name": "Gloss Text Paper Blazer 80lb 18x12",
+      "scrapedAt": "2026-08-14T06:42:45.058Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "65cf2ebc-e65a-4521-b706-8d1fcd16b4b8",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "fbbe0515-2d46-43ef-be49-e2047d835c18",
+      "name": "Rebar 3 x 20Ft",
+      "scrapedAt": "2026-08-14T06:42:53.647Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "111a4341-f76f-42d4-ad27-bd8b3fb9347f",
+        "diffs": {},
+        "diffCount": 0,
+        "unresolvedRefs": [],
+        "cogMismatch": null,
+        "mysteryMultiplier": "1.0"
+      },
+      "shopvoxStatus": null
+    },
+    {
+      "uuid": "fc3697a5-8aaa-43ab-b3f5-9ced09722893",
+      "name": "Commercial Laminate 3mil - 27in x 250ft Matte Low Melt Roll",
+      "scrapedAt": "2026-08-14T06:43:02.238Z",
+      "found": true,
+      "flat": true,
+      "tiers": [],
+      "vendor_pricing": {
+        "found": false,
+        "reason": "no_grid_root"
+      },
+      "material_image": {
+        "captured": null,
+        "write_result": "no_image_found"
+      },
+      "field_diff": {
+        "materialId": "a521d17b-14f5-46d5-8320-2b8251f409d0",
         "diffs": {},
         "diffCount": 0,
         "unresolvedRefs": [],
