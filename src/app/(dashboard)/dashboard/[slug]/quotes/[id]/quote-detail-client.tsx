@@ -16,6 +16,7 @@ import SendEmailModal from './send-email-modal'
 import type { EasypostRate } from '@/lib/easypost'
 import QuoteCustomerPicker from './quote-customer-picker'
 import { suggestQuoteTitle } from '@/app/actions/ai-assist'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type ModifierDef = {
   id: string
@@ -1715,11 +1716,11 @@ export default function QuoteDetailClient({
                     <input type="text" value={smZip} onChange={e => setSmZip(e.target.value)} placeholder="78041" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
                   </div>
                 )}
-                <div className="ml-6 mt-2 max-w-[220px]">
+                <div className="ml-6 mt-2 max-w-[280px]">
                   <label className="block text-xs font-medium text-gray-500">
                     Phone <span className="text-gray-400 font-normal">(required by some carriers, e.g. FedEx)</span>
                   </label>
-                  <input type="tel" value={smPhone} onChange={e => setSmPhone(e.target.value)} placeholder="(555) 555-5555" className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none" />
+                  <PhoneInput value={smPhone} onChange={setSmPhone} className="mt-1" />
                 </div>
               </div>
             </div>

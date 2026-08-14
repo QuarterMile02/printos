@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import InviteMemberForm from './invite-member-form';
 import { STAFF_DEPARTMENTS } from '@/lib/staff-departments';
+import PhoneInput from '@/components/ui/PhoneInput';
 
 type Role = 'owner' | 'sales' | 'designer' | 'production' | 'installer' | 'digital' | 'accounting';
 type Tier = 'staff' | 'lead' | 'manager';
@@ -572,22 +573,18 @@ export default function TeamSettingsClient({
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">Phone</label>
-                  <input
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
+                  <PhoneInput
                     value={editPhone}
-                    onChange={e => setEditPhone(e.target.value)}
-                    placeholder="e.g. (555) 000-0000"
+                    onChange={setEditPhone}
                     disabled={!canManagePerms}
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">Mobile</label>
-                  <input
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-qm-lime disabled:bg-gray-50 disabled:text-gray-400"
+                  <PhoneInput
                     value={editMobile}
-                    onChange={e => setEditMobile(e.target.value)}
-                    placeholder="e.g. (555) 000-0000"
+                    onChange={setEditMobile}
                     disabled={!canManagePerms}
                   />
                 </div>

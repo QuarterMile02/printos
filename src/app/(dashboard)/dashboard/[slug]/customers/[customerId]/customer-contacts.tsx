@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { saveContact, deleteContact, setPrimaryContact, type ContactInput } from '../actions'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type ContactRow = {
   id: string; full_name: string; first_name: string | null; last_name: string | null
@@ -64,17 +65,26 @@ function ContactForm({
           <label className="block text-xs font-medium text-gray-600 mb-1">Email 2</label>
           <input type="email" value={draft.email2 ?? ''} onChange={(e) => onChange({ ...draft, email2: e.target.value || null })} className={ic} />
         </div>
-        <div>
+        {/* Phone spans 2 of 3 columns, next to Ext — a bare 1/3-width column
+            (fine for the old plain text input) truncates PhoneInput's
+            flag+dial-code+number layout, confirmed live. */}
+        <div className="col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-          <input type="text" value={draft.phone ?? ''} onChange={(e) => onChange({ ...draft, phone: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Phone 2</label>
-          <input type="text" value={draft.phone2 ?? ''} onChange={(e) => onChange({ ...draft, phone2: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
+          <PhoneInput
+            value={draft.phone ?? ''}
+            onChange={(val) => onChange({ ...draft, phone: val.replace(/\D/g, '').length > 3 ? val : null })}
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Ext</label>
           <input type="text" value={draft.phone_ext ?? ''} onChange={(e) => onChange({ ...draft, phone_ext: e.target.value || null })} className={ic} maxLength={10} />
+        </div>
+        <div className="col-span-3">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Phone 2</label>
+          <PhoneInput
+            value={draft.phone2 ?? ''}
+            onChange={(val) => onChange({ ...draft, phone2: val.replace(/\D/g, '').length > 3 ? val : null })}
+          />
         </div>
         <div className="col-span-3 flex items-center gap-6">
           <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">

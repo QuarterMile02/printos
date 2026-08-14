@@ -9,6 +9,7 @@ import { formatSoNumber } from '../sales-orders/format'
 import { selectShippingRate, type RateOption } from '@/lib/shipping-rate-selection'
 import { SHIP_STATUS_OPTIONS } from './format'
 import type { EasypostRate } from '@/lib/easypost'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type ShippingMethod = { id: string; name: string; carrier: string | null; is_active: boolean }
 type ShippingProfile = { id: string; name: string; length_in: number | null; width_in: number | null; height_in: number | null; max_weight_lbs: number | null; is_active: boolean }
@@ -439,7 +440,7 @@ export default function ShipmentFormClient({ orgId, orgSlug, shippingMethods, sh
             </div>
             <div className="sm:col-span-2">
               <label className={lbl}>Phone <span className="text-gray-400 font-normal">(required by some carriers, e.g. FedEx)</span></label>
-              <input type="tel" value={shipToPhone} onChange={(e) => setShipToPhone(e.target.value)} placeholder="(555) 555-5555" className={inp} />
+              <PhoneInput value={shipToPhone} onChange={setShipToPhone} className="mt-1" />
             </div>
           </div>
         </div>
