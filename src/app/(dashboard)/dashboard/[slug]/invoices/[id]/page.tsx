@@ -2,6 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { formatInvNumber, formatCents, INV_STATUS_STYLES, INV_STATUS_LABELS } from '../format'
 import { recordPayment } from '../actions'
+import { getInvoiceEditedSinceUnpost } from './actions'
+import InvoiceCustomerPicker from './invoice-customer-picker'
+import InvoiceEditPanel from './invoice-edit-panel'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
@@ -30,7 +33,13 @@ async function PageInner({ params }: PageProps) {
   const invRow = await dbOrThrow(
     supabase
       .from('invoices')
-      .select('id, invoice_number, status, subtotal, tax_total, total, amount_paid, balance_due, due_date, notes, sales_order_id, customer_id, created_at, customers(first_name, last_name, company_name, email)')
+      .select(
+        'id, invoice_number, status, subtotal, tax_total, total, amount_paid, balance_due, due_date, notes, ' +
+        'sales_order_id, customer_id, contact_id, is_posted, posted_at, title, install_address, ' +
+        'billing_company_name, billing_street, billing_street2, billing_city, billing_state, billing_zip, ' +
+        'shipping_name, shipping_street, shipping_street2, shipping_city, shipping_state, shipping_zip, ' +
+        'created_at, customers(first_name, last_name, company_name, email)'
+      )
       .eq('id', id)
       .eq('organization_id', org.id)
       .maybeSingle()
@@ -39,12 +48,39 @@ async function PageInner({ params }: PageProps) {
     id: string; invoice_number: number; status: string
     subtotal: number; tax_total: number; total: number; amount_paid: number; balance_due: number
     due_date: string | null; notes: string | null; sales_order_id: string | null
-    customer_id: string | null; created_at: string
+    customer_id: string | null; contact_id: string | null; is_posted: boolean; posted_at: string | null
+    title: string | null; install_address: string | null
+    billing_company_name: string | null; billing_street: string | null; billing_street2: string | null
+    billing_city: string | null; billing_state: string | null; billing_zip: string | null
+    shipping_name: string | null; shipping_street: string | null; shipping_street2: string | null
+    shipping_city: string | null; shipping_state: string | null; shipping_zip: string | null
+    created_at: string
     customers: { first_name: string; last_name: string; company_name: string | null; email: string | null } | null
   } | null
   if (!inv) return <div className="p-8 text-red-600">Invoice not found</div>
 
   const { allowed: canExportPdf } = await checkPermission(org.id, 'quotes.export_pdf')
+
+  // Owner/admin role — matches assertInvoiceEditor's gate in actions.ts.
+  const memberRow = await dbOrThrow(
+    supabase
+      .from('organization_members').select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+  ) as { role: string } | null
+  const canEdit = ['owner', 'admin'].includes(memberRow?.role ?? '')
+
+  // Contact (migration 132) — same shape as SO/quote/job's contact_id lookups.
+  let contactName: string | null = null
+  if (inv.contact_id) {
+    const ccRow = await dbOrThrow(
+      supabase.from('customer_contacts').select('full_name').eq('id', inv.contact_id).maybeSingle()
+    ) as { full_name: string } | null
+    contactName = ccRow?.full_name ?? null
+  }
+
+  const editedSinceUnpost = inv.is_posted ? false : await getInvoiceEditedSinceUnpost(inv.id)
 
   // SO reference
   let soNum: number | null = null
@@ -89,12 +125,17 @@ async function PageInner({ params }: PageProps) {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-extrabold text-gray-900">{invNum}</h1>
-            {inv.customers && (
-              <p className="mt-1 text-sm text-gray-600">
-                {inv.customers.first_name} {inv.customers.last_name}
-                {inv.customers.company_name && <span className="text-gray-400"> &mdash; {inv.customers.company_name}</span>}
-              </p>
-            )}
+            <InvoiceCustomerPicker
+              invoiceId={inv.id}
+              orgId={org.id}
+              orgSlug={slug}
+              initialCustomerId={inv.customer_id}
+              initialCustomerName={inv.customers ? `${inv.customers.first_name} ${inv.customers.last_name}`.trim() : null}
+              initialCompanyName={inv.customers?.company_name ?? null}
+              initialContactId={inv.contact_id}
+              initialContactName={contactName}
+              canReassign={canEdit && !inv.is_posted}
+            />
           </div>
           <div className="flex items-center gap-3">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${INV_STATUS_STYLES[inv.status] ?? 'bg-gray-100 text-gray-700'}`}>
@@ -141,6 +182,35 @@ async function PageInner({ params }: PageProps) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Unpost / Edit / Repost */}
+      <div className="mt-6">
+        <InvoiceEditPanel
+          invoiceId={inv.id}
+          orgId={org.id}
+          orgSlug={slug}
+          isPosted={inv.is_posted}
+          canEdit={canEdit}
+          editedSinceUnpost={editedSinceUnpost}
+          initial={{
+            title: inv.title,
+            notes: inv.notes,
+            install_address: inv.install_address,
+            billing_company_name: inv.billing_company_name,
+            billing_street: inv.billing_street,
+            billing_street2: inv.billing_street2,
+            billing_city: inv.billing_city,
+            billing_state: inv.billing_state,
+            billing_zip: inv.billing_zip,
+            shipping_name: inv.shipping_name,
+            shipping_street: inv.shipping_street,
+            shipping_street2: inv.shipping_street2,
+            shipping_city: inv.shipping_city,
+            shipping_state: inv.shipping_state,
+            shipping_zip: inv.shipping_zip,
+          }}
+        />
       </div>
 
       {/* Line items */}
