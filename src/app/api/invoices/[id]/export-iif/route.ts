@@ -182,9 +182,16 @@ export async function GET(
     // does not support creating tax items via import (TAX is not a valid
     // INVITEMTYPE) — the "Sales Tax" item must already exist in QuickBooks,
     // and is referenced by name only on the SPL line below.
+    //
+    // INVITEMTYPE "SERV" (not "SERVICE") — confirmed against a real IIF
+    // import failure ("SERVICE is an invalid value for field INVITEMTYPE
+    // [15106]"). ddfdc7b previously "fixed" this exact line from SERV to
+    // SERVICE based on a misreading of the QB docs; that was backwards —
+    // SERV is the correct short code, matching QB's actual INVITEMTYPE
+    // vocabulary (SERV, INVT, NINV, OTHC, PART, SUBT, GRP, PAY, DISC).
     lines.push('!INVITEM\tNAME\tINVITEMTYPE\tACCNT\tPRICE\tCOST\tDESC')
     for (const name of serviceItemNames) {
-      lines.push(`INVITEM\t${name}\tSERVICE\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
+      lines.push(`INVITEM\t${name}\tSERV\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
     }
 
     // Headers
