@@ -94,6 +94,11 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
   const [customerLabel_, setCustomerLabel_] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const customerSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Item 5 — the create-lead POST used to fail completely silently on a
+  // non-2xx response (no error state existed at all, the modal just sat
+  // there). Surfaced by the org_id/organization_id production bug — this
+  // is the minimal fix, not a full toast system.
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Won/Lost modals
   const [wonConfirm, setWonConfirm] = useState<{ lead: Lead; stageId: string } | null>(null);
@@ -193,6 +198,7 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
 
   const saveNewLead = async () => {
     if (!form.title.trim()) return;
+    setCreateError(null);
     const body: Record<string, unknown> = {
       title: form.title.trim(),
       stage_id: form.stage_id || null,
@@ -212,6 +218,9 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
       setShowModal(false);
       resetForm();
       fetchLeads();
+    } else {
+      const json = await res.json().catch(() => null);
+      setCreateError(json?.error ?? 'Failed to create lead. Please try again.');
     }
   };
 
@@ -220,6 +229,7 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
     setCustomerSearch('');
     setCustomerLabel_('');
     setCustomerResults([]);
+    setCreateError(null);
   };
 
   const filteredLeads = leads.filter(l => {
@@ -340,6 +350,11 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
               <h3 className="text-base font-bold text-gray-900">New Lead</h3>
             </div>
             <div className="p-6 space-y-4">
+              {createError && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {createError}
+                </div>
+              )}
               {/* Title */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Title *</label>
