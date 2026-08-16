@@ -77,8 +77,20 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
   const draggingLeadId = useRef<string | null>(null);
   const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
 
-  // New lead modal
+  // New Lead / Edit Lead modal — one modal, two modes. editingLeadId null
+  // means "creating"; set means "editing that lead," pre-filled from its
+  // current values, saved via PATCH instead of POST.
   const [showModal, setShowModal] = useState(false);
+  const [editingLeadId, setEditingLeadId] = useState<string | null>(null);
+  // Captured at the moment the edit modal opens — used to decide whether
+  // to include stage_id in the PATCH body at all. The PATCH route
+  // recomputes won_at/lost_at whenever stage_id is present, even if
+  // unchanged (it was only ever written assuming stage_id is sent
+  // exclusively by the drag-to-move-stage flow, a genuine transition).
+  // Sending the lead's own current stage back on every edit save would
+  // silently stamp a fresh won_at/lost_at on an already-won/lost lead —
+  // only include stage_id in the edit body when it actually changed.
+  const [editingOriginalStageId, setEditingOriginalStageId] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '',
     customer_id: '',
@@ -97,8 +109,10 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
   // Item 5 — the create-lead POST used to fail completely silently on a
   // non-2xx response (no error state existed at all, the modal just sat
   // there). Surfaced by the org_id/organization_id production bug — this
-  // is the minimal fix, not a full toast system.
+  // is the minimal fix, not a full toast system. Reused for edit/delete
+  // errors too now that this modal serves both.
   const [createError, setCreateError] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   // Won/Lost modals
   const [wonConfirm, setWonConfirm] = useState<{ lead: Lead; stageId: string } | null>(null);
@@ -196,12 +210,31 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
     fetchLeads();
   };
 
-  const saveNewLead = async () => {
+  const openEditModal = (lead: Lead) => {
+    setForm({
+      title: lead.title,
+      customer_id: lead.customer?.id ?? '',
+      assigned_to: lead.assigned_profile?.id ?? '',
+      stage_id: lead.stage_id ?? '',
+      estimated_value: lead.estimated_value != null ? String(lead.estimated_value) : '',
+      source: lead.source ?? '',
+      next_contact_date: lead.next_contact_date ?? '',
+      notes: lead.notes ?? '',
+    });
+    setCustomerLabel_(customerLabel(lead.customer) ?? '');
+    setCustomerSearch('');
+    setCustomerResults([]);
+    setEditingLeadId(lead.id);
+    setEditingOriginalStageId(lead.stage_id);
+    setCreateError(null);
+    setShowModal(true);
+  };
+
+  const saveLead = async () => {
     if (!form.title.trim()) return;
     setCreateError(null);
     const body: Record<string, unknown> = {
       title: form.title.trim(),
-      stage_id: form.stage_id || null,
       assigned_to: form.assigned_to || null,
       customer_id: form.customer_id || null,
       source: form.source || null,
@@ -209,18 +242,52 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
       notes: form.notes || null,
       estimated_value: form.estimated_value ? parseFloat(form.estimated_value) : null,
     };
-    const res = await fetch('/api/sales-leads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    // See editingOriginalStageId's declaration for why this is
+    // conditional on edit — creating always sends stage_id (there's no
+    // prior stage to preserve), editing only sends it when it actually
+    // changed, so an unrelated field edit can't silently re-stamp
+    // won_at/lost_at on an already-resolved lead.
+    if (!editingLeadId) {
+      body.stage_id = form.stage_id || null;
+    } else if ((form.stage_id || null) !== editingOriginalStageId) {
+      body.stage_id = form.stage_id || null;
+    }
+
+    const res = await fetch(
+      editingLeadId ? `/api/sales-leads/${editingLeadId}` : '/api/sales-leads',
+      {
+        method: editingLeadId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    );
     if (res.ok) {
       setShowModal(false);
       resetForm();
       fetchLeads();
     } else {
       const json = await res.json().catch(() => null);
-      setCreateError(json?.error ?? 'Failed to create lead. Please try again.');
+      setCreateError(json?.error ?? `Failed to ${editingLeadId ? 'save' : 'create'} lead. Please try again.`);
+    }
+  };
+
+  const handleDeleteLead = async () => {
+    if (!editingLeadId) return;
+    if (!confirm(`Permanently delete "${form.title}"? This cannot be undone.`)) return;
+    setCreateError(null);
+    setDeletePending(true);
+    try {
+      const res = await fetch(`/api/sales-leads/${editingLeadId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setShowModal(false);
+        resetForm();
+        fetchLeads();
+      } else {
+        const json = await res.json().catch(() => null);
+        setCreateError(json?.error ?? 'Failed to delete lead. Please try again.');
+      }
+    } finally {
+      setDeletePending(false);
     }
   };
 
@@ -230,6 +297,8 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
     setCustomerLabel_('');
     setCustomerResults([]);
     setCreateError(null);
+    setEditingLeadId(null);
+    setEditingOriginalStageId(null);
   };
 
   const filteredLeads = leads.filter(l => {
@@ -329,6 +398,7 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
                         lead={lead}
                         onDragStart={() => { draggingLeadId.current = lead.id; }}
                         onDragEnd={() => { draggingLeadId.current = null; setDragOverStageId(null); }}
+                        onClick={() => openEditModal(lead)}
                       />
                     ))}
                     {cards.length === 0 && (
@@ -342,12 +412,12 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
         </div>
       </div>
 
-      {/* New Lead Modal */}
+      {/* New Lead / Edit Lead Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="px-6 pt-6 pb-4 border-b border-gray-200">
-              <h3 className="text-base font-bold text-gray-900">New Lead</h3>
+              <h3 className="text-base font-bold text-gray-900">{editingLeadId ? 'Edit Lead' : 'New Lead'}</h3>
             </div>
             <div className="p-6 space-y-4">
               {createError && (
@@ -497,19 +567,30 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
               </div>
             </div>
 
-            <div className="px-6 pb-6 flex justify-end gap-2">
-              <button
-                onClick={() => { setShowModal(false); resetForm(); }}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveNewLead}
-                className="px-4 py-2 text-sm bg-qm-lime hover:brightness-110 text-white font-semibold rounded-lg transition-colors"
-              >
-                Create Lead
-              </button>
+            <div className="px-6 pb-6 flex items-center justify-between gap-2">
+              {editingLeadId ? (
+                <button
+                  onClick={handleDeleteLead}
+                  disabled={deletePending}
+                  className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {deletePending ? 'Deleting…' : 'Delete Lead'}
+                </button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowModal(false); resetForm(); }}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveLead}
+                  className="px-4 py-2 text-sm bg-qm-lime hover:brightness-110 text-white font-semibold rounded-lg transition-colors"
+                >
+                  {editingLeadId ? 'Save Changes' : 'Create Lead'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -592,10 +673,11 @@ export default function LeadsPageClient({ userId, orgId, slug }: Props) {
   );
 }
 
-function LeadCard({ lead, onDragStart, onDragEnd }: {
+function LeadCard({ lead, onDragStart, onDragEnd, onClick }: {
   lead: Lead;
   onDragStart: () => void;
   onDragEnd: () => void;
+  onClick: () => void;
 }) {
   const company = customerLabel(lead.customer);
   const isOverdue = lead.next_contact_date && !lead.won_at && !lead.lost_at &&
@@ -606,6 +688,11 @@ function LeadCard({ lead, onDragStart, onDragEnd }: {
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
+      // Native HTML5 drag-and-drop already distinguishes a real drag from
+      // a plain click at the browser level — a completed dragstart
+      // suppresses the click that would otherwise follow, so no manual
+      // movement-threshold tracking should be needed here.
+      onClick={onClick}
       className="bg-white rounded-lg border border-gray-200 p-3 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md hover:border-gray-300 transition-all select-none"
     >
       <p className="text-sm font-semibold text-gray-900 leading-snug">{lead.title}</p>
