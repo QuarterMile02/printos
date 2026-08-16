@@ -82,23 +82,27 @@ async function PageInner({ params }: PageProps) {
 
   const editedSinceUnpost = inv.is_posted ? false : await getInvoiceEditedSinceUnpost(inv.id)
 
-  // SO reference
+  // SO reference + order_thread_id (same "quote_id ?? sales_order_id" anchor
+  // as resolveOrderThreadId in actions.ts — one query covers both the SO
+  // number display and the link into the centralized order-history view).
   let soNum: number | null = null
+  let orderThreadId: string | null = null
   if (inv.sales_order_id) {
     const so = await dbOrThrow(
-      supabase.from('sales_orders').select('so_number').eq('id', inv.sales_order_id).maybeSingle()
-    )
-    soNum = (so as { so_number: number } | null)?.so_number ?? null
+      supabase.from('sales_orders').select('so_number, quote_id').eq('id', inv.sales_order_id).maybeSingle()
+    ) as { so_number: number; quote_id: string | null } | null
+    soNum = so?.so_number ?? null
+    orderThreadId = so?.quote_id ?? inv.sales_order_id
   }
 
   // Line items from the linked quote (via SO → quote)
   type LineItem = { description: string; quantity: number; unit_price: number; total_price: number }
   let lineItems: LineItem[] = []
-  if (inv.sales_order_id) {
-    const soRow = await dbOrThrow(
-      supabase.from('sales_orders').select('quote_id').eq('id', inv.sales_order_id).maybeSingle()
-    )
-    const quoteId = (soRow as { quote_id: string | null } | null)?.quote_id
+  if (orderThreadId) {
+    // orderThreadId is the quote_id when the SO came from a quote — only
+    // meaningful as a quote_line_items lookup in that case, not when it
+    // fell back to sales_order_id (no quote).
+    const quoteId = orderThreadId !== inv.sales_order_id ? orderThreadId : null
     if (quoteId) {
       const li = await dbOrThrow(
         supabase.from('quote_line_items').select('description, quantity, unit_price, total_price').eq('quote_id', quoteId).order('sort_order')
@@ -179,6 +183,13 @@ async function PageInner({ params }: PageProps) {
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Due </span>
               <span className="text-gray-700">{new Date(inv.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            </div>
+          )}
+          {orderThreadId && (
+            <div>
+              <Link href={`/dashboard/${slug}/orders/${orderThreadId}`} className="text-gray-500 hover:text-qm-fuchsia hover:underline">
+                View full order history →
+              </Link>
             </div>
           )}
         </div>
