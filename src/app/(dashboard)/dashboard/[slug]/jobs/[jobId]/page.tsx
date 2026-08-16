@@ -9,6 +9,7 @@ import JobCustomerPicker from './job-customer-picker'
 import JobDetailPanel from '../../sales-orders/[id]/job-detail-panel'
 import { dbOrThrow, DbError } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -316,6 +317,17 @@ async function PageInner({ params }: PageProps) {
             Upload Proof
           </button>
         </form>
+      </div>
+
+      <div className="mt-6">
+        <EntityAuditPanel
+          supabase={supabase}
+          orgId={org.id}
+          orgSlug={slug}
+          entityType="job"
+          entityId={job.id}
+          orderThreadId={sourceQuoteId}
+        />
       </div>
     </div>
   )

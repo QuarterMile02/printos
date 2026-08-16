@@ -5,6 +5,9 @@ import { renderPageError } from '@/lib/page-error'
 import { formatQuoteNumber } from '../../quotes/format'
 import { formatSoNumber } from '../../sales-orders/format'
 import { formatInvNumber } from '../../invoices/format'
+import {
+  type ActivityLogRow, groupActivityEntries, activityFieldLabel, resolveActivityFieldValue,
+} from '@/lib/activity-log-display'
 
 // Centralized order-lifecycle audit view (migration 132).
 //
@@ -87,73 +90,6 @@ async function resolveOrderChain(
   return { quote, sos, jobs, invoices }
 }
 
-type LogRow = {
-  id: string
-  user_id: string | null
-  entity_type: string
-  entity_id: string
-  action: string
-  from_value: string | null
-  to_value: string | null
-  field_name: string | null
-  change_group_id: string | null
-  created_at: string
-}
-
-type DisplayEntry =
-  | { kind: 'status'; id: string; created_at: string; user_id: string | null; entity_type: string; entity_id: string; summary: string }
-  | { kind: 'fields'; id: string; created_at: string; user_id: string | null; entity_type: string; entity_id: string; fields: { field: string; from: string | null; to: string | null }[] }
-
-// Groups field_changed rows sharing one change_group_id (one save action)
-// into a single entry — matches insertInvoiceFieldDiffs's write-side intent
-// ("Ruben changed 3 fields at 2:14pm" renders as one entry, not three).
-function groupEntries(rows: LogRow[]): DisplayEntry[] {
-  const entries: DisplayEntry[] = []
-  const groupIdx = new Map<string, number>()
-  for (const r of rows) {
-    if (r.action === 'field_changed' && r.change_group_id) {
-      let idx = groupIdx.get(r.change_group_id)
-      if (idx === undefined) {
-        entries.push({ kind: 'fields', id: r.change_group_id, created_at: r.created_at, user_id: r.user_id, entity_type: r.entity_type, entity_id: r.entity_id, fields: [] })
-        idx = entries.length - 1
-        groupIdx.set(r.change_group_id, idx)
-      }
-      const entry = entries[idx]
-      if (entry.kind === 'fields') entry.fields.push({ field: r.field_name ?? 'field', from: r.from_value, to: r.to_value })
-    } else {
-      entries.push({ kind: 'status', id: r.id, created_at: r.created_at, user_id: r.user_id, entity_type: r.entity_type, entity_id: r.entity_id, summary: summarizeAction(r) })
-    }
-  }
-  return entries
-}
-
-function summarizeAction(r: LogRow): string {
-  const label = r.action.replace(/_/g, ' ')
-  if (r.from_value && r.to_value) return `${label}: ${r.from_value} → ${r.to_value}`
-  if (r.to_value) return `${label} → ${r.to_value}`
-  return label
-}
-
-const FIELD_LABEL_OVERRIDES: Record<string, string> = { zip: 'ZIP' }
-function fieldLabel(field: string): string {
-  return field.split('_').map((w) => FIELD_LABEL_OVERRIDES[w] ?? (w.charAt(0).toUpperCase() + w.slice(1))).join(' ')
-}
-
-// customer_id/contact_id diffs store raw UUIDs (that's what's actually in
-// activity_log.from_value/to_value) — resolve to a display name so they
-// read like every other field instead of standing out as opaque ids.
-// Falls back to the raw id if the row was deleted since (still honest,
-// just not pretty — better than silently showing nothing).
-function resolveFieldValue(
-  field: string, value: string | null,
-  customerNameById: Map<string, string>, contactNameById: Map<string, string>,
-): string | null {
-  if (!value) return null
-  if (field === 'customer_id') return customerNameById.get(value) ?? value
-  if (field === 'contact_id') return contactNameById.get(value) ?? value
-  return value
-}
-
 // Same switch as _widgets/recent-activity.tsx's entityHref — kept local
 // since that widget isn't a shared module, matching this codebase's
 // existing convention of each page inlining its own lookups.
@@ -190,9 +126,9 @@ async function PageInner({ params }: PageProps) {
       .eq('organization_id', org.id)
       .eq('order_thread_id', threadId)
       .order('created_at', { ascending: true })
-  ) ?? []) as LogRow[]
+  ) ?? []) as ActivityLogRow[]
 
-  const entries = groupEntries(logRows)
+  const entries = groupActivityEntries(logRows)
 
   const userIds = Array.from(new Set(logRows.map((r) => r.user_id).filter((v): v is string => !!v)))
   const profileRows = userIds.length
@@ -317,11 +253,11 @@ async function PageInner({ params }: PageProps) {
                       ) : (
                         <ul className="mt-1 space-y-0.5">
                           {e.fields.map((f, i) => {
-                            const from = resolveFieldValue(f.field, f.from, customerNameById, contactNameById)
-                            const to = resolveFieldValue(f.field, f.to, customerNameById, contactNameById)
+                            const from = resolveActivityFieldValue(f.field, f.from, customerNameById, contactNameById)
+                            const to = resolveActivityFieldValue(f.field, f.to, customerNameById, contactNameById)
                             return (
                               <li key={i} className="text-sm text-gray-900">
-                                <span className="font-medium">{fieldLabel(f.field)}:</span>{' '}
+                                <span className="font-medium">{activityFieldLabel(f.field)}:</span>{' '}
                                 {from ? <span className="text-gray-500">{from}</span> : <span className="italic text-gray-400">empty</span>}
                                 {' → '}
                                 {to ? <span>{to}</span> : <span className="italic text-gray-400">empty</span>}

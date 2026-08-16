@@ -9,6 +9,7 @@ import JobDetailPanel from './job-detail-panel'
 import { resolveJobsForLineItems } from '@/lib/jobs/resolve-jobs-for-line-items'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 
 type PageProps = {
   params: Promise<{ slug: string; id: string }>
@@ -338,6 +339,17 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
         readyProofs={readyProofs}
         respondedProofs={respondedProofs}
       />
+
+      <div className="mt-6">
+        <EntityAuditPanel
+          supabase={supabase}
+          orgId={org.id}
+          orgSlug={slug}
+          entityType="sales_order"
+          entityId={so.id}
+          orderThreadId={so.quote_id ?? so.id}
+        />
+      </div>
     </div>
   )
 }

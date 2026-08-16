@@ -8,6 +8,7 @@ import InvoiceEditPanel from './invoice-edit-panel'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -326,6 +327,17 @@ async function PageInner({ params }: PageProps) {
           <p className="text-sm text-gray-700 whitespace-pre-wrap">{inv.notes}</p>
         </div>
       )}
+
+      <div className="mt-6">
+        <EntityAuditPanel
+          supabase={supabase}
+          orgId={org.id}
+          orgSlug={slug}
+          entityType="invoice"
+          entityId={inv.id}
+          orderThreadId={orderThreadId}
+        />
+      </div>
     </div>
   )
 }

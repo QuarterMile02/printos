@@ -8,6 +8,7 @@ import type { EmailTemplate } from '../actions'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -512,6 +513,17 @@ async function QuoteDetailPageInner({ params }: PageProps) {
         initialContactPhone={quoteContactPhone}
         isOwnerOrAdmin={isOwnerOrAdmin}
       />
+
+      <div className="mt-6">
+        <EntityAuditPanel
+          supabase={supabase}
+          orgId={org.id}
+          orgSlug={slug}
+          entityType="quote"
+          entityId={quote.id}
+          orderThreadId={quote.id}
+        />
+      </div>
     </div>
   )
 }
