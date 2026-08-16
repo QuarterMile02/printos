@@ -129,13 +129,15 @@ export async function updateSalesOrderStatus(
 
   const service = createServiceClient()
 
-  // Read previous status for activity log
+  // Read previous status for activity log — quote_id added to this same
+  // select (was just status) to resolve order_thread_id without an extra
+  // round trip: a quote_id ?? soId, same anchor rule as everywhere else.
   const { data: prevSo } = await service
     .from('sales_orders')
-    .select('status')
+    .select('status, quote_id')
     .eq('id', soId)
     .eq('organization_id', orgId)
-    .maybeSingle() as { data: { status: SalesOrderStatus } | null; error: unknown }
+    .maybeSingle() as { data: { status: SalesOrderStatus; quote_id: string | null } | null; error: unknown }
 
   const { error } = await service
     .from('sales_orders')
@@ -153,6 +155,7 @@ export async function updateSalesOrderStatus(
     action: 'status_changed',
     from_value: prevSo?.status,
     to_value: status,
+    order_thread_id: prevSo?.quote_id ?? soId,
   })
 
   // Auto-create invoice when SO is completed
@@ -223,6 +226,7 @@ export async function updateSalesOrderStatus(
               entity_id: newInvoice.id,
               action: 'created',
               metadata: { sales_order_id: soId, total },
+              order_thread_id: so.quote_id ?? soId,
             })
           }
 

@@ -863,6 +863,7 @@ export async function sendQuoteSmsAndDeliver(
     from_value: 'draft',
     to_value: 'delivered',
     metadata: { via: 'sms' },
+    order_thread_id: quoteId, // a quote is its own thread anchor
   })
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
@@ -909,6 +910,7 @@ export async function sendForReviewAndUpdate(
     entity_id: quoteId,
     action: 'status_changed',
     to_value: 'customer_review',
+    order_thread_id: quoteId,
   })
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
@@ -1087,6 +1089,7 @@ export async function sendQuoteEmailCustom(
       from_value: 'draft',
       to_value: 'delivered',
       metadata: { via: 'email' },
+      order_thread_id: quoteId,
     })
   }
 

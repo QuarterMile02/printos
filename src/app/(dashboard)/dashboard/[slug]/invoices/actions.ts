@@ -2,6 +2,8 @@
 
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { logActivity } from '@/lib/logActivity'
+import { resolveOrderThreadIdFromSalesOrder } from '@/lib/order-thread-id'
 
 export type InvoiceSearchRow = {
   id: string
@@ -96,12 +98,31 @@ export async function recordPayment(formData: FormData): Promise<void> {
 
   const amountCents = Math.round(amountDollars * 100)
   const supabase = await createClient()
+  // Switched invoices read/write to the service client — createClient()'s
+  // generic Database typing doesn't resolve an Update shape for this table
+  // in this file (pre-existing gap the old code masked with `as any` on
+  // the whole client; every other invoice-mutation action already uses the
+  // service client and has never needed that cast). supabase (RLS client)
+  // is kept only for auth.getUser() below.
+  const service = createServiceClient()
 
-  const { data: invoice, error: fetchError } = await supabase
+  // organization_id + status + sales_order_id added to this select (was
+  // just total/amount_paid/balance_due) so the marked_paid logActivity
+  // call below — previously missing entirely from this, the actually-live
+  // recordPayment (a separate, unused duplicate in invoices/[id]/actions.ts
+  // had it, nothing imported that one) — can fire with a resolved
+  // order_thread_id, same one extra round trip other call sites use.
+  const { data: invoice, error: fetchError } = await service
     .from('invoices')
-    .select('total, amount_paid, balance_due')
+    .select('total, amount_paid, balance_due, organization_id, status, sales_order_id')
     .eq('id', invoiceId)
-    .single() as any
+    .single() as {
+      data: {
+        total: number; amount_paid: number; balance_due: number
+        organization_id: string; status: string; sales_order_id: string | null
+      } | null
+      error: unknown
+    }
 
   if (fetchError || !invoice) throw new Error('Invoice not found')
 
@@ -109,7 +130,7 @@ export async function recordPayment(formData: FormData): Promise<void> {
   const newBalanceDue = Math.max(0, invoice.total - newAmountPaid)
   const newStatus = newBalanceDue <= 0 ? 'paid' : 'partial'
 
-  const { error } = await (supabase as any)
+  const { error } = await service
     .from('invoices')
     .update({
       amount_paid: newAmountPaid,
@@ -120,6 +141,22 @@ export async function recordPayment(formData: FormData): Promise<void> {
     .eq('id', invoiceId)
 
   if (error) throw new Error(error.message)
+
+  if (newStatus === 'paid' && invoice.status !== 'paid') {
+    const { data: { user } } = await supabase.auth.getUser()
+    const orderThreadId = await resolveOrderThreadIdFromSalesOrder(service, invoice.sales_order_id)
+    await logActivity({
+      org_id: invoice.organization_id,
+      user_id: user?.id ?? null,
+      entity_type: 'invoice',
+      entity_id: invoiceId,
+      action: 'marked_paid',
+      from_value: invoice.status,
+      to_value: 'paid',
+      metadata: { amount_paid_cents: newAmountPaid, total_cents: invoice.total },
+      order_thread_id: orderThreadId ?? undefined,
+    })
+  }
 
   revalidatePath(`/dashboard/${orgSlug}/invoices/${invoiceId}`)
   revalidatePath(`/dashboard/${orgSlug}/invoices`)
