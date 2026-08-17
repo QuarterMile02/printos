@@ -3,6 +3,8 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { checkPermission } from '@/lib/check-permission'
 import { revalidatePath } from 'next/cache'
+import { randomBytes } from 'crypto'
+import { SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 import type { OrgRole } from '@/types/database'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -650,4 +652,140 @@ export async function getCustomerById(orgId: string, customerId: string): Promis
     .eq('id', customerId)
     .maybeSingle()
   return data as { id: string; first_name: string; last_name: string; company_name: string | null } | null
+}
+
+// ── PORTAL INVITE ────────────────────────────────────────────────────────────
+//
+// Customer Portal account/invite build plan (rev. 2), step 3.
+//
+// Two staff-exclusion checks are deliberately both present, not redundant:
+// is_staff_contact (migration 135's backfilled flag, for auditability) AND a
+// live domain check right here. The flag only covers rows that existed at
+// backfill time -- a new @quartermileinc.com/@qtrmilegraphics.com contact row
+// added after that backfill would have is_staff_contact = false until someone
+// re-runs it, so the live check is what actually keeps this safe over time.
+//
+// Explicit opt-in only (locked decision, rev. 2 plan): if this email already
+// has a portal_user_id on a DIFFERENT customer_contacts row (same person,
+// already invited elsewhere), this links the existing account to this row --
+// no new password, no new auth.users row, no auto-discovery of other
+// relationships beyond what's being explicitly invited right now.
+const STAFF_EMAIL_DOMAINS = ['@quartermileinc.com', '@qtrmilegraphics.com']
+
+function baseAppUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://printos-lemon.vercel.app')
+}
+
+async function sendPortalInviteEmail(toEmail: string, contactName: string, customerLabel: string, orgName: string, link: string): Promise<string | null> {
+  if (!process.env.RESEND_API_KEY) return 'Email delivery not configured — RESEND_API_KEY is missing.'
+  const html = `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <p>Hi ${contactName.split(' ')[0] || contactName},</p>
+      <p>${orgName} has invited you to the Customer Portal for <strong>${customerLabel}</strong>, where you'll be able to view your quotes, orders, invoices, and payments.</p>
+      <p><a href="${link}" style="display:inline-block;background:#111827;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">Set up your account</a></p>
+      <p style="color:#6b7280;font-size:13px;">This link expires in 7 days. If you weren't expecting this, you can ignore this email.</p>
+    </div>`
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: SYSTEM_FROM_EMAIL, to: [toEmail], subject: `You're invited to the ${orgName} Customer Portal`, html }),
+  })
+  if (!res.ok) return `Email failed: ${await res.text()}`
+  return null
+}
+
+async function sendPortalLinkedNoticeEmail(toEmail: string, contactName: string, customerLabel: string, orgName: string): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return // best-effort notice only -- don't fail the whole action over it
+  const html = `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+      <p>Hi ${contactName.split(' ')[0] || contactName},</p>
+      <p>Your existing ${orgName} Customer Portal account now also has access to <strong>${customerLabel}</strong>. Sign in as usual to view it.</p>
+    </div>`
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: SYSTEM_FROM_EMAIL, to: [toEmail], subject: `${orgName} Customer Portal — new access added`, html }),
+  }).catch(() => {})
+}
+
+export async function sendPortalInvite(
+  contactId: string,
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string; linkedExisting?: boolean }> {
+  const { allowed } = await checkPermission(orgId, 'customers.edit')
+  if (!allowed) return { error: 'You do not have permission to invite contacts.' }
+
+  const service = createServiceClient()
+
+  const { data: contact, error: contactErr } = await service
+    .from('customer_contacts')
+    .select('id, email, full_name, is_staff_contact, portal_user_id')
+    .eq('id', contactId)
+    .eq('customer_id', customerId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as { data: { id: string; email: string | null; full_name: string; is_staff_contact: boolean; portal_user_id: string | null } | null; error: unknown }
+  if (contactErr) return { error: (contactErr as { message: string }).message }
+  if (!contact) return { error: 'Contact not found.' }
+  if (!contact.email) return { error: 'This contact has no email address on file.' }
+  if (contact.portal_user_id) return { error: 'This contact already has portal access.' }
+
+  const email = contact.email.trim().toLowerCase()
+  const isStaffDomain = STAFF_EMAIL_DOMAINS.some((d) => email.endsWith(d))
+  if (contact.is_staff_contact || isStaffDomain) {
+    return { error: 'This contact is a QMI staff address and cannot be given portal access.' }
+  }
+
+  const [customerRes, orgRes] = await Promise.all([
+    service.from('customers').select('company_name, first_name, last_name').eq('id', customerId).eq('organization_id', orgId).maybeSingle(),
+    service.from('organizations').select('name').eq('id', orgId).maybeSingle(),
+  ])
+  const customer = customerRes.data as { company_name: string | null; first_name: string; last_name: string } | null
+  const org = orgRes.data as { name: string | null } | null
+  const customerLabel = customer?.company_name?.trim() || `${customer?.first_name ?? ''} ${customer?.last_name ?? ''}`.trim() || 'your account'
+  const orgName = org?.name?.trim() || 'PrintOS'
+
+  // Explicit opt-in reuse check: does this email already have a portal
+  // account (on a DIFFERENT customer_contacts row, same org)? If so, link
+  // directly -- no token, no password prompt, per the locked decision.
+  const { data: existingAccount } = await service
+    .from('customer_contacts')
+    .select('portal_user_id')
+    .eq('organization_id', orgId)
+    .ilike('email', email)
+    .not('portal_user_id', 'is', null)
+    .neq('id', contactId)
+    .limit(1)
+    .maybeSingle() as { data: { portal_user_id: string } | null }
+
+  if (existingAccount?.portal_user_id) {
+    const { error: linkErr } = await service
+      .from('customer_contacts')
+      .update({ portal_user_id: existingAccount.portal_user_id, portal_invited_at: new Date().toISOString() })
+      .eq('id', contactId)
+    if (linkErr) return { error: linkErr.message }
+
+    await sendPortalLinkedNoticeEmail(email, contact.full_name, customerLabel, orgName)
+    revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+    return { linkedExisting: true }
+  }
+
+  // Fresh invite: generate token, mirrors organization_invites' shape (migration 001).
+  const token = randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const { error: tokenErr } = await service
+    .from('customer_contacts')
+    .update({ portal_invite_token: token, portal_invite_expires_at: expiresAt, portal_invited_at: new Date().toISOString() })
+    .eq('id', contactId)
+  if (tokenErr) return { error: tokenErr.message }
+
+  const link = `${baseAppUrl()}/portal/accept-invite?token=${token}`
+  const emailErr = await sendPortalInviteEmail(email, contact.full_name, customerLabel, orgName, link)
+  if (emailErr) return { error: emailErr }
+
+  revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  return {}
 }
