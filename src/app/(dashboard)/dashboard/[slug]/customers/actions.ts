@@ -812,3 +812,37 @@ export async function sendPortalInvite(
   revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
   return {}
 }
+
+// Per-relationship revoke (locked decision, rev. 2 plan) -- distinct from
+// "Delete Login" (settings/portal-accounts/actions.ts), which is
+// per-person and deletes the actual auth.users row. This is scoped to
+// exactly ONE customer_contacts row: nulls portal_user_id/token/expiry
+// here only. Does NOT touch auth.users and does NOT affect any other
+// customer_contacts row that happens to share the same portal_user_id
+// (the multi-customer case) -- that's the whole reason this is the
+// common, low-stakes action while Delete Login is the rare, deliberate
+// one. After revoking, the contact is invite-eligible again: a future
+// invite either creates a fresh account (if this was their only access)
+// or reuses their existing one via the explicit-opt-in reuse-link path
+// (if they still have access to another customer under the same email).
+export async function revokePortalAccess(
+  contactId: string,
+  customerId: string,
+  orgId: string,
+  orgSlug: string,
+): Promise<{ error?: string }> {
+  const { allowed } = await checkPermission(orgId, 'customers.edit')
+  if (!allowed) return { error: 'You do not have permission to manage portal access.' }
+
+  const service = createServiceClient()
+  const { error } = await service
+    .from('customer_contacts')
+    .update({ portal_user_id: null, portal_invite_token: null, portal_invite_expires_at: null })
+    .eq('id', contactId)
+    .eq('customer_id', customerId)
+    .eq('organization_id', orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${orgSlug}/customers/${customerId}`)
+  return {}
+}
