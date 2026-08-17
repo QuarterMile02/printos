@@ -13,6 +13,20 @@ function t(v: string | null | undefined) { return v?.trim() || null }
 function n(v: number | null | undefined) { return v ?? null }
 function b(v: boolean | null | undefined) { return v ?? null }
 
+// QMI's own domains -- a contact with one of these is staff, not a real
+// portal candidate (see migration 135's staff-email-exclusion backfill).
+// Used by both saveContact() (recomputed live on every create/edit, so a
+// changed email can never leave a stale flag behind) and sendPortalInvite()
+// (a second, independent check at invite time -- belt-and-suspenders, not
+// redundant: it protects rows that predate this recompute-on-save logic
+// too, e.g. any restored from a backup or written by a path that bypasses
+// saveContact entirely).
+const STAFF_EMAIL_DOMAINS = ['@quartermileinc.com', '@qtrmilegraphics.com']
+function isStaffEmail(email: string | null | undefined): boolean {
+  const e = email?.trim().toLowerCase()
+  return !!e && STAFF_EMAIL_DOMAINS.some((d) => e.endsWith(d))
+}
+
 // ── CREATE ───────────────────────────────────────────────────────────────────
 
 export async function createCustomer(
@@ -416,6 +430,7 @@ export async function saveContact(
         title: t(contact.title),
         is_primary: contact.is_primary ?? false,
         is_ap_contact: contact.is_ap_contact ?? false,
+        is_staff_contact: isStaffEmail(email),
       })
       .select('id')
       .single()
@@ -450,6 +465,11 @@ export async function saveContact(
       title: t(contact.title),
       is_primary: contact.is_primary ?? false,
       is_ap_contact: contact.is_ap_contact ?? false,
+      // Recomputed from the CURRENT email on every save, not just carried
+      // over -- this is the fix for the 2026-08-17 stale-flag bug: a
+      // contact whose email changed away from a QMI domain used to keep
+      // is_staff_contact=true forever, since nothing ever recomputed it.
+      is_staff_contact: isStaffEmail(email),
     })
     .eq('id', contactId)
     .eq('customer_id', customerId)
@@ -659,18 +679,22 @@ export async function getCustomerById(orgId: string, customerId: string): Promis
 // Customer Portal account/invite build plan (rev. 2), step 3.
 //
 // Two staff-exclusion checks are deliberately both present, not redundant:
-// is_staff_contact (migration 135's backfilled flag, for auditability) AND a
-// live domain check right here. The flag only covers rows that existed at
-// backfill time -- a new @quartermileinc.com/@qtrmilegraphics.com contact row
-// added after that backfill would have is_staff_contact = false until someone
-// re-runs it, so the live check is what actually keeps this safe over time.
+// is_staff_contact (kept live by saveContact() on every create/edit, plus
+// migration 135's original backfill) AND the isStaffEmail() live domain
+// check right here. The stored flag going stale was exactly the bug found
+// 2026-08-17 (a contact's email changed after backfill, saveContact() at
+// the time never recomputed the flag, so a real customer contact stayed
+// hidden from the invite UI) -- fixed at the source in saveContact() now,
+// but this second, independent check stays as defense-in-depth for any row
+// that bypasses saveContact entirely (direct DB writes, future import
+// tooling, etc.), same reasoning as the SMS/payment-gateway credential
+// checks elsewhere in this codebase never trusting a single layer alone.
 //
 // Explicit opt-in only (locked decision, rev. 2 plan): if this email already
 // has a portal_user_id on a DIFFERENT customer_contacts row (same person,
 // already invited elsewhere), this links the existing account to this row --
 // no new password, no new auth.users row, no auto-discovery of other
 // relationships beyond what's being explicitly invited right now.
-const STAFF_EMAIL_DOMAINS = ['@quartermileinc.com', '@qtrmilegraphics.com']
 
 function baseAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL
@@ -733,8 +757,7 @@ export async function sendPortalInvite(
   if (contact.portal_user_id) return { error: 'This contact already has portal access.' }
 
   const email = contact.email.trim().toLowerCase()
-  const isStaffDomain = STAFF_EMAIL_DOMAINS.some((d) => email.endsWith(d))
-  if (contact.is_staff_contact || isStaffDomain) {
+  if (contact.is_staff_contact || isStaffEmail(email)) {
     return { error: 'This contact is a QMI staff address and cannot be given portal access.' }
   }
 
