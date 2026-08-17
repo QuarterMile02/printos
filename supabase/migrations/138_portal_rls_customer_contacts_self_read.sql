@@ -1,0 +1,50 @@
+-- ============================================================
+-- Migration 138: Customer Portal RLS -- customer_contacts self-read
+-- Applied: PENDING — run manually in the Supabase SQL Editor (Ruben),
+--   not auto-applied by Claude Code. See chat for context.
+-- ============================================================
+--
+-- Build plan rev. 2, step 6 (quotes verification pass). Not a new
+-- table in the four-table plan (quotes/sales_orders/invoices/payments)
+-- -- this is a dependency those policies all silently need and none of
+-- them can work without.
+--
+-- Bug found via real verification of migration 137 (quotes RLS): a
+-- portal contact, logged in with a real authenticated session, saw
+-- ZERO quotes -- including one on their own customer. Root cause,
+-- confirmed directly (not guessed): customer_contacts already has RLS
+-- from migration 041, scoped to org members only. The quotes policy's
+-- subquery
+--   SELECT customer_id FROM customer_contacts WHERE portal_user_id = auth.uid()
+-- runs under the QUERYING SESSION's own security context -- so when a
+-- portal contact's session evaluates it, Postgres enforces
+-- customer_contacts' existing RLS on that subquery too. A portal
+-- contact is not an org member, so the subquery returns zero rows for
+-- everyone, and quotes' "customer_id IN (...)" becomes vacuously false
+-- regardless of who's asking. Confirmed directly: a real portal session
+-- queried customer_contacts for its own row (portal_user_id =
+-- <its own auth.uid()>) and got back zero rows before this migration.
+--
+-- This is the same dependency every one of the four planned RLS
+-- policies (quotes/sales_orders/invoices/payments) will have -- all of
+-- them read customer_contacts the same way. Adding this once here means
+-- sales_orders/invoices/payments shouldn't hit the same bug when their
+-- turn comes; still verifying each with a real session before
+-- believing that, per the standing pattern.
+--
+-- Second, independent policy -- OR-ed alongside migration 041's
+-- existing org-member one, not merged into it. Same locked
+-- architectural decision as every other portal RLS policy in this
+-- plan: two separate, individually-auditable/droppable rows in
+-- pg_policies rather than one combined clause.
+--
+-- Safe by construction, not just by intent: portal_user_id = auth.uid()
+-- can only ever match row(s) that were deliberately linked to THIS
+-- specific person via the invite/accept flow (build plan step 3) --
+-- never another contact's row, never another person's PII. A portal
+-- contact reading their own linked row(s) is exactly what "who am I,
+-- which customers can I see" requires and nothing more.
+
+CREATE POLICY "portal contacts can view their own customer_contacts rows"
+  ON customer_contacts FOR SELECT
+  USING (portal_user_id = auth.uid());

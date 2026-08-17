@@ -1,0 +1,56 @@
+-- ============================================================
+-- Migration 141: Customer Portal RLS -- payments (step 6, table 4 of 4, last one)
+-- Applied: PENDING — run manually in the Supabase SQL Editor (Ruben),
+--   not auto-applied by Supabase. See chat for context.
+--
+-- Paste ONLY the CREATE POLICY statement at the bottom into the SQL
+-- Editor -- not this whole file. Migration 140 (invoices) never
+-- actually landed on the first attempt even though the editor reported
+-- "Success" -- the working theory is a paste that captured this kind
+-- of long comment header without the statement after it, which is
+-- also valid, no-op SQL and reports the exact same "Success." Keeping
+-- the full reasoning here in the file for the repo's own history, but
+-- the statement itself is a single line specifically so it can't be
+-- partially selected by accident.
+-- ============================================================
+--
+-- Build plan rev. 2, step 6 -- LAST table. quotes (137), sales_orders
+-- (139), and invoices (140, after a re-run) are all done and verified
+-- with real authenticated sessions. Full detail, no restriction on
+-- payment_method (locked decision from earlier in the plan) --
+-- payment_method is a plain column here, nothing masks it.
+--
+-- Introspection done before writing this -- different from every
+-- other table: payments' own CREATE TABLE was never checked into
+-- migrations at all (confirmed earlier this session, same schema-drift
+-- pattern as payment_gateway_settings/portal_tiers/sms_settings), so
+-- there was no migration history to check for existing RLS either.
+-- Behavioral-only this time:
+--   - This org has ZERO real payment rows today, so the usual
+--     anon-vs-service-role row-count comparison couldn't distinguish
+--     "RLS is blocking" from "there's just no data." Inserted one real
+--     throwaway row via service-role instead, then confirmed an
+--     unauthenticated anon-key read STILL returned 0 rows/count with a
+--     genuine row present -- that's real proof RLS is enabled and
+--     enforcing, not an artifact of an empty table. Deleted the probe
+--     row immediately after.
+--   - Confirmed the real column shape via a schema-only probe (no
+--     error on select, even against 0 rows): id, organization_id,
+--     customer_id, invoice_id, payment_number, amount_paid,
+--     payment_method, balance, applied, paid_on, note -- matches what
+--     the existing staff-side payments API route already selects.
+--
+-- Second, independent policy -- OR-ed alongside whatever org-member
+-- policy already exists (not introspectable by name this time, same
+-- reasoning as above, but the anon-vs-real-row test above already
+-- proves SOME enforcing policy is live). Same locked architectural
+-- decision as quotes/sales_orders/invoices -- this new policy doesn't
+-- touch or replace whatever's already there.
+--
+-- Read-only, same as the other three -- no INSERT/UPDATE/DELETE for
+-- portal contacts, deferred to a future ordering/approval/payment
+-- phase. Full column access once matched, though -- no masking, per
+-- the locked decision (itemized amounts, dates, and payment_method
+-- e.g. "Visa ending 4242" all included).
+
+CREATE POLICY "portal contacts can view their own customer's payments" ON payments FOR SELECT USING (customer_id IN (SELECT customer_id FROM customer_contacts WHERE portal_user_id = auth.uid()));
