@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { saveContact, deleteContact, setPrimaryContact, type ContactInput } from '../actions'
+import { saveContact, deleteContact, setPrimaryContact, sendPortalInvite, type ContactInput } from '../actions'
 import PhoneInput from '@/components/ui/PhoneInput'
 
 type ContactRow = {
@@ -9,6 +9,8 @@ type ContactRow = {
   email: string | null; email2: string | null; phone: string | null
   phone2: string | null; phone_ext: string | null; title: string | null
   is_primary: boolean | null; is_ap_contact: boolean | null; is_active: boolean | null
+  is_staff_contact?: boolean; portal_user_id?: string | null
+  portal_invited_at?: string | null; portal_invite_expires_at?: string | null
 }
 
 type Props = {
@@ -126,6 +128,32 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
   const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null)
   const [primaryError, setPrimaryError] = useState<string | null>(null)
   const [primaryPending, startPrimaryTransition] = useTransition()
+
+  // Portal invite — local-only overlay for immediate feedback. Doesn't touch
+  // the real portal_user_id/portal_invited_at fields (server is the source of
+  // truth for those); just tracks "an invite/link action just succeeded for
+  // this row" so the badge updates without a full page reload.
+  const [invitingId, setInvitingId] = useState<string | null>(null)
+  // Tracked separately from invitingId -- invitingId clears as soon as the
+  // request settles (so the button re-enables), but the error needs to stay
+  // attached to its row until the next attempt, not disappear the instant
+  // invitingId clears.
+  const [inviteErrorId, setInviteErrorId] = useState<string | null>(null)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [invitePending, startInviteTransition] = useTransition()
+  const [inviteStatus, setInviteStatus] = useState<Record<string, 'invited' | 'linked'>>({})
+
+  function handleInvite(c: ContactRow) {
+    setInvitingId(c.id)
+    setInviteError(null)
+    setInviteErrorId(null)
+    startInviteTransition(async () => {
+      const res = await sendPortalInvite(c.id, customerId, orgId, orgSlug)
+      setInvitingId(null)
+      if (res.error) { setInviteError(res.error); setInviteErrorId(c.id); return }
+      setInviteStatus((s) => ({ ...s, [c.id]: res.linkedExisting ? 'linked' : 'invited' }))
+    })
+  }
 
   function startEdit(c: ContactRow) {
     setEditingId(c.id)
@@ -276,6 +304,17 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                     {c.is_ap_contact && (
                       <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">AP Contact</span>
                     )}
+                    {c.is_staff_contact ? (
+                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500" title="QMI staff address — not portal-eligible">Internal</span>
+                    ) : (c.portal_user_id || inviteStatus[c.id] === 'linked') ? (
+                      <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+                        {inviteStatus[c.id] === 'linked' ? 'Portal Access Linked' : 'Portal Active'}
+                      </span>
+                    ) : (c.portal_invited_at || inviteStatus[c.id] === 'invited') ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        Invite Pending{c.portal_invite_expires_at && new Date(c.portal_invite_expires_at) < new Date() ? ' (expired)' : ''}
+                      </span>
+                    ) : null}
                   </div>
                   {c.title && <p className="text-xs text-qm-gray">{c.title}</p>}
                   {c.email && (
@@ -297,8 +336,23 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                   {primaryError && settingPrimaryId === c.id && (
                     <p className="text-xs text-red-600 mt-1">{primaryError}</p>
                   )}
+                  {inviteError && inviteErrorId === c.id && (
+                    <p className="text-xs text-red-600 mt-1">{inviteError}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {!c.is_staff_contact && c.email && !c.portal_user_id && inviteStatus[c.id] !== 'linked' && (
+                    <button
+                      onClick={() => handleInvite(c)}
+                      disabled={invitePending && invitingId === c.id}
+                      className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-qm-lime-light hover:text-qm-lime-dark hover:border-qm-lime transition-colors disabled:opacity-40"
+                      title={c.portal_invited_at || inviteStatus[c.id] === 'invited' ? 'Resend portal invite' : 'Invite to Customer Portal'}
+                    >
+                      {invitePending && invitingId === c.id
+                        ? '…'
+                        : (c.portal_invited_at || inviteStatus[c.id] === 'invited') ? 'Resend Invite' : 'Invite to Portal'}
+                    </button>
+                  )}
                   {!c.is_primary && (
                     <button
                       onClick={() => handleSetPrimary(c.id)}

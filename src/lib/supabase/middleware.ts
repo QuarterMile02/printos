@@ -44,11 +44,25 @@ export async function updateSession(request: NextRequest) {
   // control; this just stops the redirect-to-/login that would otherwise
   // block every anonymous visit before the page even runs.
   const isProofReviewRoute = pathname.startsWith('/proofs/')
-  const isPublicRoute = pathname === '/' || isAuthRoute || isPasswordRoute || isApiRoute || isProofReviewRoute
+  // Customer Portal auth entry points (build plan rev. 2, step 3) -- a
+  // portal contact is, by definition, NOT logged in yet when they hit
+  // these, same reasoning as isProofReviewRoute above. /portal itself
+  // (the landing page) stays protected -- only these two need to be
+  // reachable while logged out. Found live during end-to-end testing:
+  // without this, an anonymous contact clicking their real invite link
+  // got bounced to staff /login before ever seeing the accept-invite
+  // page -- the first test pass only "worked" because the tester
+  // happened to still be authenticated as staff at that exact moment.
+  const isPortalAuthRoute = pathname.startsWith('/portal/login') || pathname.startsWith('/portal/accept-invite')
+  const isPublicRoute = pathname === '/' || isAuthRoute || isPasswordRoute || isApiRoute || isProofReviewRoute || isPortalAuthRoute
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    // Send a logged-out /portal visitor to the portal's own login page,
+    // not staff /login -- they're a customer, not staff, and even if
+    // they somehow had staff credentials, staff /login redirects
+    // authenticated users to /dashboard, not back to /portal.
+    url.pathname = pathname.startsWith('/portal') ? '/portal/login' : '/login'
     return NextResponse.redirect(url)
   }
 

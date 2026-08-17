@@ -111,11 +111,13 @@ async function CustomerDetailPageInner({ params }: PageProps) {
     email: string | null; email2: string | null; phone: string | null
     phone2: string | null; phone_ext: string | null; title: string | null
     is_primary: boolean | null; is_ap_contact: boolean | null; is_active: boolean | null
+    is_staff_contact: boolean; portal_user_id: string | null
+    portal_invited_at: string | null; portal_invite_expires_at: string | null
   }
   const contactRows = await dbOrThrow(
     supabase
       .from('customer_contacts')
-      .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active')
+      .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active, is_staff_contact, portal_user_id, portal_invited_at, portal_invite_expires_at')
       .eq('customer_id', customerId)
       .eq('organization_id', org.id)
       .order('is_primary', { ascending: false })
