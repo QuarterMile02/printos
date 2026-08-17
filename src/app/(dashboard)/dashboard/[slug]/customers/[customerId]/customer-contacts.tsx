@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { saveContact, deleteContact, setPrimaryContact, sendPortalInvite, type ContactInput } from '../actions'
+import { saveContact, deleteContact, setPrimaryContact, sendPortalInvite, revokePortalAccess, type ContactInput } from '../actions'
 import PhoneInput from '@/components/ui/PhoneInput'
 
 type ContactRow = {
@@ -152,6 +152,45 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
       setInvitingId(null)
       if (res.error) { setInviteError(res.error); setInviteErrorId(c.id); return }
       setInviteStatus((s) => ({ ...s, [c.id]: res.linkedExisting ? 'linked' : 'invited' }))
+    })
+  }
+
+  // True if this contact currently has portal access, whether that came
+  // from the server-loaded row (portal_user_id set) or from a fresh
+  // invite/link that just succeeded this session (inviteStatus, before a
+  // reload would reflect the real portal_user_id locally). Both the badge
+  // and the Revoke-vs-Invite button choice key off this single check so
+  // they can never disagree with each other.
+  function hasPortalAccess(c: ContactRow) {
+    return !c.is_staff_contact && (!!c.portal_user_id || inviteStatus[c.id] === 'linked')
+  }
+
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [confirmingRevokeId, setConfirmingRevokeId] = useState<string | null>(null)
+  const [revokeErrorId, setRevokeErrorId] = useState<string | null>(null)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
+  const [revokePending, startRevokeTransition] = useTransition()
+
+  function handleRevoke(c: ContactRow) {
+    setRevokingId(c.id)
+    setRevokeError(null)
+    setRevokeErrorId(null)
+    startRevokeTransition(async () => {
+      const res = await revokePortalAccess(c.id, customerId, orgId, orgSlug)
+      setRevokingId(null)
+      setConfirmingRevokeId(null)
+      if (res.error) { setRevokeError(res.error); setRevokeErrorId(c.id); return }
+      // Scoped to exactly this row -- clear it locally so "Invite to
+      // Portal" reappears immediately, without touching any other
+      // contact row (e.g. this same person on a different customer).
+      setContacts((cs) => cs.map((row): ContactRow => row.id !== c.id ? row : {
+        ...row, portal_user_id: null, portal_invited_at: null, portal_invite_expires_at: null,
+      }))
+      setInviteStatus((s) => {
+        const next = { ...s }
+        delete next[c.id]
+        return next
+      })
     })
   }
 
@@ -306,7 +345,7 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                     )}
                     {c.is_staff_contact ? (
                       <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500" title="QMI staff address — not portal-eligible">Internal</span>
-                    ) : (c.portal_user_id || inviteStatus[c.id] === 'linked') ? (
+                    ) : hasPortalAccess(c) ? (
                       <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
                         {inviteStatus[c.id] === 'linked' ? 'Portal Access Linked' : 'Portal Active'}
                       </span>
@@ -339,19 +378,52 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                   {inviteError && inviteErrorId === c.id && (
                     <p className="text-xs text-red-600 mt-1">{inviteError}</p>
                   )}
+                  {revokeError && revokeErrorId === c.id && (
+                    <p className="text-xs text-red-600 mt-1">{revokeError}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {!c.is_staff_contact && c.email && !c.portal_user_id && inviteStatus[c.id] !== 'linked' && (
-                    <button
-                      onClick={() => handleInvite(c)}
-                      disabled={invitePending && invitingId === c.id}
-                      className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-qm-lime-light hover:text-qm-lime-dark hover:border-qm-lime transition-colors disabled:opacity-40"
-                      title={c.portal_invited_at || inviteStatus[c.id] === 'invited' ? 'Resend portal invite' : 'Invite to Customer Portal'}
-                    >
-                      {invitePending && invitingId === c.id
-                        ? '…'
-                        : (c.portal_invited_at || inviteStatus[c.id] === 'invited') ? 'Resend Invite' : 'Invite to Portal'}
-                    </button>
+                  {hasPortalAccess(c) ? (
+                    confirmingRevokeId === c.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-500">Revoke access?</span>
+                        <button
+                          onClick={() => handleRevoke(c)}
+                          disabled={revokePending && revokingId === c.id}
+                          className="text-xs font-medium text-red-600 hover:underline disabled:opacity-40"
+                        >
+                          {revokePending && revokingId === c.id ? '…' : 'Yes'}
+                        </button>
+                        <button
+                          onClick={() => setConfirmingRevokeId(null)}
+                          disabled={revokePending && revokingId === c.id}
+                          className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-40"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmingRevokeId(c.id)}
+                        className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                        title="Revoke this customer's portal access -- only removes access to this customer, not any other login this person may have"
+                      >
+                        Revoke Portal Access
+                      </button>
+                    )
+                  ) : (
+                    !c.is_staff_contact && c.email && (
+                      <button
+                        onClick={() => handleInvite(c)}
+                        disabled={invitePending && invitingId === c.id}
+                        className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-qm-lime-light hover:text-qm-lime-dark hover:border-qm-lime transition-colors disabled:opacity-40"
+                        title={c.portal_invited_at || inviteStatus[c.id] === 'invited' ? 'Resend portal invite' : 'Invite to Customer Portal'}
+                      >
+                        {invitePending && invitingId === c.id
+                          ? '…'
+                          : (c.portal_invited_at || inviteStatus[c.id] === 'invited') ? 'Resend Invite' : 'Invite to Portal'}
+                      </button>
+                    )
                   )}
                   {!c.is_primary && (
                     <button
