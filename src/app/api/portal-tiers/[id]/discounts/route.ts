@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/server';
+import { checkPermission } from '@/lib/check-permission';
 
 async function getClient() {
   const cookieStore = await cookies();
@@ -24,7 +26,17 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     .single();
   if (!profile) return NextResponse.json({ error: 'No profile' }, { status: 403 });
 
-  const { data, error } = await supabase
+  // Viewing tier discounts requires the same permission as editing them —
+  // no view-only access for anyone else (locked decision, 2026-08-17).
+  const { allowed } = await checkPermission(profile.organization_id, 'portal_tiers.manage');
+  if (!allowed) {
+    return NextResponse.json({ error: 'You do not have permission to view portal tier discounts.' }, { status: 403 });
+  }
+
+  // Use service client — portal_tier_discounts has RLS enabled with zero
+  // policies, so a normal cookie-bound client can never see any row here.
+  const service = createServiceClient();
+  const { data, error } = await service
     .from('portal_tier_discounts')
     .select('unit_of_business, product_type, discount_percent')
     .eq('tier_id', id)
@@ -47,11 +59,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     .single();
   if (!profile) return NextResponse.json({ error: 'No profile' }, { status: 403 });
 
+  const { allowed } = await checkPermission(profile.organization_id, 'portal_tiers.manage');
+  if (!allowed) {
+    return NextResponse.json({ error: 'You do not have permission to edit portal tier discounts.' }, { status: 403 });
+  }
+
   const rows: { unit_of_business: string; product_type: string; discount_percent: number }[] =
     await request.json();
 
+  const service = createServiceClient();
+
   // Replace all rows for this tier
-  const { error: deleteError } = await supabase
+  const { error: deleteError } = await service
     .from('portal_tier_discounts')
     .delete()
     .eq('tier_id', id)
@@ -69,7 +88,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }));
 
   if (toInsert.length > 0) {
-    const { error } = await supabase.from('portal_tier_discounts').insert(toInsert);
+    const { error } = await service.from('portal_tier_discounts').insert(toInsert);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

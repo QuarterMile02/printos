@@ -78,6 +78,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'settings.team_members.view': true,
     'settings.team_members.manage': false,
     'settings.email_signature.own': true,
+    'portal_tiers.manage': false,
   },
   designer: {
     'dashboard.overview': true,
@@ -99,6 +100,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'invoices.view': false,
     'reports.jobs': true,
     'settings.email_signature.own': true,
+    'portal_tiers.manage': false,
   },
   production: {
     'jobs.print_label': true,
@@ -121,6 +123,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'invoices.view': false,
     'reports.jobs': true,
     'settings.email_signature.own': true,
+    'portal_tiers.manage': false,
   },
   installer: {
     'jobs.print_label': true,
@@ -142,6 +145,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'invoices.view': false,
     'reports.jobs': true,
     'settings.email_signature.own': true,
+    'portal_tiers.manage': false,
   },
   digital: {
     'dashboard.overview': true,
@@ -163,6 +167,7 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'invoices.view': false,
     'reports.jobs': true,
     'settings.email_signature.own': true,
+    'portal_tiers.manage': false,
   },
   accounting: {
     'dashboard.overview': true,
@@ -201,6 +206,26 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'reports.customers': true,
     'settings.email_signature.own': true,
     'settings.billing': false,
+    'portal_tiers.manage': false,
+  },
+}
+
+// Role+tier combination upgrades — more specific than TIER_UPGRADES (which
+// applies to every role at a given tier, regardless of department) and less
+// specific than a per-user override. Use this when a permission should only
+// go to a *specific* role at a *specific* tier (e.g. sales managers, not
+// every manager org-wide) — adding to TIER_UPGRADES instead would leak the
+// grant to managers in unrelated departments.
+export const ROLE_TIER_UPGRADES: Partial<Record<Role, Partial<Record<Tier, Record<string, boolean>>>>> = {
+  sales: {
+    manager: {
+      'portal_tiers.manage': true,
+    },
+  },
+  accounting: {
+    manager: {
+      'portal_tiers.manage': true,
+    },
   },
 }
 
@@ -238,6 +263,10 @@ export function hasPermission(
   // Check manual overrides first (granted by Owner/Manager)
   const override = overrides.find((o) => o.permission_key === permission)
   if (override !== undefined) return override.granted
+
+  // Check role+tier combination upgrades — more specific than tier alone
+  const roleTierUpgrade = ROLE_TIER_UPGRADES[profile.role]?.[profile.tier]?.[permission]
+  if (roleTierUpgrade !== undefined) return roleTierUpgrade
 
   // Check tier upgrades
   const tierUpgrade = TIER_UPGRADES[profile.tier]?.[permission]

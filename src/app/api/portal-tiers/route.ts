@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { checkPermission } from '@/lib/check-permission';
 
 const DEFAULT_TIERS = ['Political', 'Reseller', 'Retail', 'VIP', 'Wholesale'];
 
@@ -32,6 +33,11 @@ export async function GET() {
 
   const orgId = profile.organization_id;
   console.log('[portal-tiers GET] org_id:', orgId);
+
+  const { allowed } = await checkPermission(orgId, 'portal_tiers.manage');
+  if (!allowed) {
+    return NextResponse.json({ error: 'You do not have permission to view portal tiers.' }, { status: 403 });
+  }
 
   // Use service client so SELECT + INSERT are not blocked by RLS edge cases
   const service = createServiceClient();
@@ -93,6 +99,11 @@ export async function POST(request: Request) {
     .eq('id', user.id)
     .single();
   if (!profile) return NextResponse.json({ error: 'No profile' }, { status: 403 });
+
+  const { allowed } = await checkPermission(profile.organization_id, 'portal_tiers.manage');
+  if (!allowed) {
+    return NextResponse.json({ error: 'You do not have permission to create portal tiers.' }, { status: 403 });
+  }
 
   const body = await request.json();
   const name = body.name?.trim();

@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/server';
+import { checkPermission } from '@/lib/check-permission';
 
 async function getClient() {
   const cookieStore = await cookies();
@@ -24,12 +26,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .single();
   if (!profile) return NextResponse.json({ error: 'No profile' }, { status: 403 });
 
+  const { allowed } = await checkPermission(profile.organization_id, 'portal_tiers.manage');
+  if (!allowed) {
+    return NextResponse.json({ error: 'You do not have permission to manage portal tiers.' }, { status: 403 });
+  }
+
   const body = await request.json();
   const patch: Record<string, unknown> = {};
   if ('name' in body) patch.name = body.name?.trim() || null;
   if ('is_active' in body) patch.is_active = body.is_active;
 
-  const { data, error } = await supabase
+  // Use service client — portal_tiers has RLS enabled with zero policies,
+  // so a normal cookie-bound client can never see/affect any row here.
+  // Authorization is enforced above via checkPermission(), not RLS.
+  const service = createServiceClient();
+  const { data, error } = await service
     .from('portal_tiers')
     .update(patch)
     .eq('id', id)
@@ -49,17 +60,19 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('organization_id, role')
+    .select('organization_id')
     .eq('id', user.id)
     .single();
   if (!profile) return NextResponse.json({ error: 'No profile' }, { status: 403 });
 
-  if (profile.role !== 'owner' && profile.role !== 'admin') {
-    return NextResponse.json({ error: 'Only owners can delete portal tiers.' }, { status: 403 });
+  const { allowed } = await checkPermission(profile.organization_id, 'portal_tiers.manage');
+  if (!allowed) {
+    return NextResponse.json({ error: 'You do not have permission to manage portal tiers.' }, { status: 403 });
   }
 
   // Always soft-delete — never hard delete
-  const { data, error } = await supabase
+  const service = createServiceClient();
+  const { data, error } = await service
     .from('portal_tiers')
     .update({ is_active: false })
     .eq('id', id)

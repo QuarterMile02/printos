@@ -41,6 +41,10 @@ type Props = {
   initialData: CustomerData
   portalTiers?: PortalTierOption[]
   shippingMethods?: ShippingMethodOption[]
+  // Gated by portal_tiers.manage (Owner / Sales-Manager / Accounting-Manager
+  // only) — when false, the Pricing Tier field is fully hidden, not just
+  // read-only, since portalTiers itself is never populated for anyone else.
+  canManagePortalTiers?: boolean
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -117,6 +121,7 @@ function ColHeader({ label, onEdit }: { label: string; onEdit: () => void }) {
 export default function CustomerDetailClient({
   customerId, orgId, orgSlug, initialData,
   portalTiers = [], shippingMethods = [],
+  canManagePortalTiers = false,
 }: Props) {
   const [data, setData] = useState<CustomerData>(initialData)
 
@@ -529,19 +534,21 @@ export default function CustomerDetailClient({
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${portalDraft.portal_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
-            <div>
-              <Label>Pricing Tier</Label>
-              <select
-                value={portalDraft.portal_tier_id ?? ''}
-                onChange={(e) => setPortalDraft((d) => ({ ...d, portal_tier_id: e.target.value || null }))}
-                className={sc}
-              >
-                <option value="">— No tier assigned —</option>
-                {portalTiers.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
+            {canManagePortalTiers && (
+              <div>
+                <Label>Pricing Tier</Label>
+                <select
+                  value={portalDraft.portal_tier_id ?? ''}
+                  onChange={(e) => setPortalDraft((d) => ({ ...d, portal_tier_id: e.target.value || null }))}
+                  className={sc}
+                >
+                  <option value="">— No tier assigned —</option>
+                  {portalTiers.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -665,14 +672,16 @@ export default function CustomerDetailClient({
                     </span>
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-xs text-qm-gray mb-0.5">Tier</dt>
-                  <dd className="font-medium text-sm">
-                    {data.portal_tier_id
-                      ? (portalTiers.find((t) => t.id === data.portal_tier_id)?.name ?? <Dash />)
-                      : <Dash />}
-                  </dd>
-                </div>
+                {canManagePortalTiers && (
+                  <div>
+                    <dt className="text-xs text-qm-gray mb-0.5">Tier</dt>
+                    <dd className="font-medium text-sm">
+                      {data.portal_tier_id
+                        ? (portalTiers.find((t) => t.id === data.portal_tier_id)?.name ?? <Dash />)
+                        : <Dash />}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
 
