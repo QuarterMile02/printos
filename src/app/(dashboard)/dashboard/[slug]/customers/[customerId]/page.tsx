@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { checkPermission } from '@/lib/check-permission'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import CustomerDetailClient from './customer-detail-client'
 import CustomerContactsSection from './customer-contacts'
@@ -86,15 +87,22 @@ async function CustomerDetailPageInner({ params }: PageProps) {
 
   type PortalTierOption = { id: string; name: string }
   let portalTiers: PortalTierOption[] = []
-  try {
-    const { data: ptData } = await supabase
+  const { allowed: canManagePortalTiers } = await checkPermission(org.id, 'portal_tiers.manage')
+  if (canManagePortalTiers) {
+    // Service client — portal_tiers has RLS enabled with zero policies, so
+    // a normal cookie-bound client can never see any row here regardless of
+    // the checkPermission() result above. Only fetched at all when the
+    // caller is authorized, so the field stays fully absent (not just
+    // empty) for everyone else.
+    const service = createServiceClient()
+    const { data: ptData } = await service
       .from('portal_tiers')
       .select('id, name')
       .eq('organization_id', org.id)
       .eq('is_active', true)
       .order('name') as { data: PortalTierOption[] | null; error: unknown }
     portalTiers = ptData ?? []
-  } catch { /* migration 097 not yet applied */ }
+  }
 
   const membership = await dbOrThrow(
     supabase
@@ -359,6 +367,7 @@ async function CustomerDetailPageInner({ params }: PageProps) {
           }}
           portalTiers={portalTiers}
           shippingMethods={shippingMethods}
+          canManagePortalTiers={canManagePortalTiers}
         />
       </CustomerDetailsCollapsible>
       </div>
