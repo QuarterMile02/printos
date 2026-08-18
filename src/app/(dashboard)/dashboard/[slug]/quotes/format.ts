@@ -113,7 +113,3 @@ export const SO_STATUS_LABELS: Record<SalesOrderStatus, string> = {
   no_charge_approved: 'No Charge Approved',
   void: 'Void',
 }
-
-// Hardcoded for QMI in Laredo TX. Move to org settings later if other
-// shops onboard.
-export const TAX_RATE = 0.0825

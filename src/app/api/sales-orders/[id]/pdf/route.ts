@@ -4,6 +4,7 @@ import { checkPermission } from '@/lib/check-permission'
 import { renderToBuffer } from '@react-pdf/renderer'
 import QuoteDocument, { type QuotePdfData, type QuotePdfLineItem, type OrgProfile } from '@/lib/pdf/quote-document'
 import { formatSoNumber } from '@/app/(dashboard)/dashboard/[slug]/quotes/format'
+import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
 import React from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -89,12 +90,12 @@ export async function GET(
     }
 
     // 5. Customer
-    type CustomerRow = { company_name: string | null; first_name: string; last_name: string; email: string | null; phone: string | null; street: string | null; city: string | null; state: string | null; zip: string | null }
+    type CustomerRow = { company_name: string | null; first_name: string; last_name: string; email: string | null; phone: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; tax_rate: string | null; tax_exempt_code: string | null; tax_exempt_expires: string | null }
     let customer: CustomerRow | null = null
     if (so.customer_id) {
       const { data } = await service
         .from('customers')
-        .select('company_name, first_name, last_name, email, phone, street, city, state, zip')
+        .select('company_name, first_name, last_name, email, phone, street, city, state, zip, tax_rate, tax_exempt_code, tax_exempt_expires')
         .eq('id', so.customer_id)
         .maybeSingle() as { data: CustomerRow | null; error: unknown }
       customer = data
@@ -185,8 +186,17 @@ export async function GET(
       logo_url: null,
       tagline: 'Get it Done Right the First Time!',
       footer_note: null,
-      tax_rate: 0.0825,
     }
+
+    // 7b. Tax rate — resolved per customer (exemption -> customer rate ->
+    // org default), not hardcoded. Throws if the org has no default
+    // sales_taxes row, which the outer try/catch turns into a real error
+    // response rather than a silently-wrong PDF.
+    const { rate: taxRate } = await resolveTaxRateForCustomer(
+      service,
+      so.organization_id,
+      so.customer_id,
+    )
 
     // 8. Build PDF data
     const soNumber = formatSoNumber(so.so_number, so.created_at)
@@ -209,6 +219,7 @@ export async function GET(
       },
       lineItems,
       discountPercent: so.discount_percent ?? 0,
+      taxRate,
       modifierLabels,
       org: orgProfile,
     }

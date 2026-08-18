@@ -3,7 +3,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { OrgRole, QuoteStatus } from '@/types/database'
-import { TAX_RATE } from './format'
+import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
@@ -101,8 +101,10 @@ export async function searchQuotes(orgId: string, term: string): Promise<QuoteSe
 }
 
 // Sums all line items for a quote and writes subtotal/tax_total/total
-// back to the quotes row in cents. Tax is applied only to taxable items
-// at the Laredo TX rate. Called after every line-item mutation.
+// back to the quotes row in cents. Tax is applied only to taxable items,
+// at whatever rate resolves for this quote's customer (exemption ->
+// customer-specific rate -> org default, see src/lib/tax-rate.ts).
+// Called after every line-item mutation.
 async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promise<void> {
   const { data: items } = await service
     .from('quote_line_items')
@@ -117,6 +119,11 @@ async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promi
       }[] | null
       error: unknown
     }
+  const { data: quoteRow } = await service
+    .from('quotes')
+    .select('organization_id, customer_id')
+    .eq('id', quoteId)
+    .maybeSingle() as { data: { organization_id: string; customer_id: string | null } | null; error: unknown }
 
   let subtotal = 0
   let taxableSubtotal = 0
@@ -127,7 +134,16 @@ async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promi
     subtotal += lineTotal
     if (i.taxable !== false) taxableSubtotal += lineTotal
   }
-  const tax = Math.round(taxableSubtotal * TAX_RATE)
+  if (!quoteRow) throw new Error(`recalcQuoteTotals: quote ${quoteId} not found`)
+  // Deliberately not caught here -- a quote whose org has no default sales
+  // tax configured should fail loudly on save, not silently total at a
+  // hardcoded rate. See NoDefaultTaxRateError.
+  const { rate: taxRate } = await resolveTaxRateForCustomer(
+    service,
+    quoteRow.organization_id,
+    quoteRow.customer_id,
+  )
+  const tax = Math.round(taxableSubtotal * taxRate)
   const total = subtotal + tax
 
   await service

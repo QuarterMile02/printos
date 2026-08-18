@@ -40,7 +40,6 @@ import {
   productUsesDimensions,
   QUOTE_STATUS_STYLES,
   QUOTE_STATUS_LABELS,
-  TAX_RATE,
 } from '../format'
 
 type Quote = {
@@ -132,6 +131,12 @@ type Props = {
   initialContactEmail?: string | null
   initialContactPhone?: string | null
   isOwnerOrAdmin?: boolean
+  // Fraction, e.g. 0.0825 — resolved server-side per this quote's customer
+  // (exemption -> customer-specific rate -> org default). See
+  // src/lib/tax-rate.ts. Recomputed on every server render, which is why a
+  // customer reassignment (QuoteCustomerPicker) does a router.refresh()
+  // rather than trying to keep this in sync client-side.
+  taxRate: number
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -187,6 +192,7 @@ export default function QuoteDetailClient({
   orgId, orgSlug, quote, lineItems, products, salesOrder, teamMembers, salesRepName, emailTemplates, canSeePricing, canExportPdf, modifierDefs, shippingAddresses, shippingProfiles,
   initialCustomerId, initialContactId, initialContactName, initialContactEmail, initialContactPhone,
   isOwnerOrAdmin = false,
+  taxRate,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -552,7 +558,7 @@ export default function QuoteDetailClient({
     () => items.filter((i) => i.taxable).reduce((s, i) => s + i.total_price, 0),
     [items],
   )
-  const taxAmount = Math.round(taxableTotal * TAX_RATE)
+  const taxAmount = Math.round(taxableTotal * taxRate)
   const grandTotal = subtotal + taxAmount
 
   function flash(message: string, type: 'success' | 'error' = 'success') {
@@ -1564,7 +1570,7 @@ export default function QuoteDetailClient({
                 {taxAmount > 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">
-                      Tax ({(TAX_RATE * 100).toFixed(2)}%)
+                      Tax ({(taxRate * 100).toFixed(2)}%)
                     </td>
                     <td className="px-3 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(taxAmount)}</td>
                     <td colSpan={2}></td>
@@ -1630,7 +1636,7 @@ export default function QuoteDetailClient({
                   {taxAmount > 0 && (
                     <tr>
                       <td colSpan={4} className="px-4 py-2 text-right text-xs font-bold uppercase tracking-wider text-gray-500">
-                        Tax ({(TAX_RATE * 100).toFixed(2)}%)
+                        Tax ({(taxRate * 100).toFixed(2)}%)
                       </td>
                       <td colSpan={2} className="px-4 py-2 text-right text-sm tabular-nums text-gray-900">${formatCents(taxAmount)}</td>
                     </tr>
