@@ -4,9 +4,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import InviteMemberForm from './invite-member-form';
 import { STAFF_DEPARTMENTS } from '@/lib/staff-departments';
 import PhoneInput from '@/components/ui/PhoneInput';
+import {
+  ROLE_LABELS,
+  TIER_LABELS,
+  hasPermission,
+  type Role,
+  type Tier,
+} from '@/lib/permissions';
 
-type Role = 'owner' | 'sales' | 'designer' | 'production' | 'installer' | 'digital' | 'accounting';
-type Tier = 'staff' | 'lead' | 'manager';
 type OrgRole = 'owner' | 'admin' | 'designer' | 'accountant' | 'member' | 'viewer';
 type InviteStatus = 'pending' | 'accepted' | 'expired';
 
@@ -54,17 +59,13 @@ interface Props {
 const ROLES: Role[] = ['owner', 'sales', 'designer', 'production', 'installer', 'digital', 'accounting'];
 const TIERS: Tier[] = ['staff', 'lead', 'manager'];
 
-const ROLE_LABELS: Record<Role, string> = {
-  owner: 'Owner', sales: 'Sales', designer: 'Designer',
-  production: 'Production', installer: 'Installer', digital: 'Digital', accounting: 'Accounting',
-};
+// ROLE_LABELS, TIER_LABELS now imported from '@/lib/permissions' — the
+// real source of truth — instead of a second hardcoded copy here.
 
 const ORG_ROLE_LABELS: Record<OrgRole, string> = {
   owner: 'Owner', admin: 'Admin', designer: 'Designer',
   accountant: 'Accountant', member: 'Member', viewer: 'Viewer',
 };
-
-const TIER_LABELS: Record<Tier, string> = { staff: 'Staff', lead: 'Lead', manager: 'Manager' };
 
 const INVITE_STATUS_STYLES: Record<InviteStatus, string> = {
   pending: 'bg-amber-50 text-amber-700',
@@ -78,120 +79,187 @@ function formatDate(iso: string) {
 
 const DEPARTMENTS = STAFF_DEPARTMENTS;
 
-type PermissionKey =
-  | 'see_pricing' | 'apply_discount' | 'approve_exception'
-  | 'invoices.edit' | 'invoices.void'
-  | 'payments.record' | 'payments.refund'
-  | 'jobs.reassign' | 'jobs.delete'
-  | 'customers.delete' | 'reports.view_financial' | 'settings.edit'
-  | 'rates.edit_labor' | 'rates.edit_machine';
-
 interface PermissionDef {
-  key: PermissionKey;
+  key: string;
   label: string;
   pricingRelated?: boolean;
 }
 
-const PERMISSION_GROUPS: { title: string; permissions: PermissionDef[] }[] = [
+// Every permission key actually referenced by a checkPermission()/
+// hasPermission() call site anywhere in the codebase, confirmed by
+// grepping every call site directly (2026-08-19 investigation, redone
+// after migration 149 recreated permission_overrides). Keys NOT in this
+// set are defined in ROLE_DEFAULTS/TIER_UPGRADES but nothing currently
+// reads them -- toggling them has no real effect on access yet. Shown
+// with a "Not yet enforced" badge below so nobody mistakes a dormant
+// key for a working toggle. Update this set if a dormant key gets wired
+// up, or a route gating one of these gets removed.
+const ENFORCED_KEYS = new Set<string>([
+  'customers.create', 'customers.edit',
+  'dashboard.customize',
+  'invoices.view',
+  'jobs.assign_department', 'jobs.print_label',
+  'materials.edit_inventory',
+  'portal_tiers.manage',
+  'purchase_orders.view',
+  'quotes.create', 'quotes.export_pdf', 'quotes.see_pricing',
+  'reports.quotes',
+  'sales_orders.see_pricing',
+  'settings.labor_rates', 'settings.machine_rates',
+  'settings.material_categories', 'settings.material_types',
+  'settings.product_categories', 'settings.product_types',
+  'settings.promo_codes', 'settings.shipping_methods', 'settings.shipping_profiles',
+  'settings.custom_notes', 'settings.general_categories',
+  'shipping.create', 'shipping.view',
+]);
+
+// Grouped by real app area (not the old 5 arbitrary categories) — every
+// key defined anywhere in ROLE_DEFAULTS/TIER_UPGRADES/ROLE_TIER_UPGRADES
+// in src/lib/permissions.ts, 75 total. `note` on a group with an empty
+// permissions array documents an area with genuinely no permission key
+// yet, rather than silently omitting it.
+const PERMISSION_GROUPS: { title: string; note?: string; permissions: PermissionDef[] }[] = [
   {
-    title: 'Pricing',
+    title: 'Customers',
     permissions: [
-      { key: 'see_pricing', label: 'See pricing & costs', pricingRelated: true },
-      { key: 'apply_discount', label: 'Apply discounts', pricingRelated: true },
-      { key: 'approve_exception', label: 'Approve pricing exceptions', pricingRelated: true },
+      { key: 'customers.view', label: 'View customers' },
+      { key: 'customers.create', label: 'Create customers' },
+      { key: 'customers.edit', label: 'Edit customers' },
+      { key: 'customers.delete', label: 'Delete customers' },
+      { key: 'customers.see_invoice_history', label: 'See invoice history', pricingRelated: true },
+    ],
+  },
+  {
+    title: 'Quotes',
+    permissions: [
+      { key: 'quotes.view', label: 'View quotes' },
+      { key: 'quotes.create', label: 'Create quotes' },
+      { key: 'quotes.edit', label: 'Edit quotes' },
+      { key: 'quotes.see_pricing', label: 'See quote pricing', pricingRelated: true },
+      { key: 'quotes.discount_override', label: 'Override discount limits', pricingRelated: true },
+      { key: 'quotes.send', label: 'Send quotes' },
+      { key: 'quotes.convert', label: 'Convert quote to sales order' },
+      { key: 'quotes.delete', label: 'Delete quotes' },
+      { key: 'quotes.export_pdf', label: 'Export quote PDF' },
+    ],
+  },
+  {
+    title: 'Sales Orders',
+    permissions: [
+      { key: 'sales_orders.view', label: 'View sales orders' },
+      { key: 'sales_orders.edit', label: 'Edit sales orders' },
+      { key: 'sales_orders.see_pricing', label: 'See sales order pricing', pricingRelated: true },
     ],
   },
   {
     title: 'Invoices',
     permissions: [
-      { key: 'invoices.edit', label: 'Create & edit invoices' },
-      { key: 'invoices.void', label: 'Void invoices' },
+      { key: 'invoices.view', label: 'View invoices' },
+      { key: 'invoices.create', label: 'Create invoices' },
+      { key: 'invoices.edit', label: 'Edit invoices' },
+      { key: 'invoices.record_payment', label: 'Record invoice payments', pricingRelated: true },
+      { key: 'invoices.qb_export', label: 'Export to QuickBooks' },
     ],
   },
   {
     title: 'Payments',
-    permissions: [
-      { key: 'payments.record', label: 'Record payments' },
-      { key: 'payments.refund', label: 'Issue refunds' },
-    ],
+    note: 'No permission key exists for this area yet — payments has no access control anywhere in the app.',
+    permissions: [],
   },
   {
     title: 'Jobs',
     permissions: [
-      { key: 'jobs.reassign', label: 'Reassign jobs' },
-      { key: 'jobs.delete', label: 'Delete jobs' },
+      { key: 'jobs.view', label: 'View jobs' },
+      { key: 'jobs.move_stages', label: 'Move jobs between stages' },
+      { key: 'jobs.print_label', label: 'Print job labels' },
+      { key: 'jobs.proofs', label: 'Manage proofs' },
+      { key: 'jobs.see_pricing', label: 'See job pricing', pricingRelated: true },
+      { key: 'jobs.flag', label: 'Flag jobs' },
+      { key: 'jobs.time_tracking', label: 'Track time on jobs' },
+      { key: 'jobs.assign_department', label: 'Assign job department' },
+      { key: 'jobs.reassign_dept', label: 'Reassign job department' },
+      { key: 'jobs.view_dept_all', label: 'View all department jobs' },
+      { key: 'jobs.view_cross_dept', label: 'View cross-department jobs' },
     ],
   },
   {
-    title: 'Admin',
+    title: 'Purchase Orders',
     permissions: [
-      { key: 'customers.delete', label: 'Delete customers' },
-      { key: 'reports.view_financial', label: 'View financial reports' },
-      { key: 'settings.edit', label: 'Edit organization settings' },
-      { key: 'rates.edit_labor', label: 'Edit labor rates' },
-      { key: 'rates.edit_machine', label: 'Edit machine rates' },
+      { key: 'purchase_orders.view', label: 'View purchase orders' },
+      { key: 'purchase_orders.create', label: 'Create purchase orders' },
+      { key: 'purchase_orders.edit', label: 'Edit purchase orders' },
+    ],
+  },
+  {
+    title: 'Shipping',
+    permissions: [
+      { key: 'shipping.view', label: 'View shipments' },
+      { key: 'shipping.create', label: 'Create shipments' },
+    ],
+  },
+  {
+    title: 'Materials',
+    permissions: [
+      { key: 'materials.view', label: 'View materials' },
+      { key: 'materials.see_pricing', label: 'See material pricing', pricingRelated: true },
+      { key: 'materials.edit_inventory', label: 'Edit material inventory' },
+      { key: 'materials.create', label: 'Create materials' },
+      { key: 'materials.edit', label: 'Edit materials' },
+    ],
+  },
+  {
+    title: 'Reports',
+    permissions: [
+      { key: 'reports.quotes', label: 'Run quote reports' },
+      { key: 'reports.sales_orders', label: 'Run sales order reports' },
+      { key: 'reports.jobs', label: 'Run job reports' },
+      { key: 'reports.customers', label: 'Run customer reports' },
+      { key: 'reports.financial', label: 'Run financial reports', pricingRelated: true },
+    ],
+  },
+  {
+    title: 'Dashboard',
+    permissions: [
+      { key: 'dashboard.overview', label: 'View dashboard overview' },
+      { key: 'dashboard.revenue', label: 'View revenue widgets', pricingRelated: true },
+      { key: 'dashboard.job_queue', label: 'View job queue widget' },
+      { key: 'dashboard.metrics.own', label: 'View own metrics' },
+      { key: 'dashboard.metrics.all', label: 'View all metrics' },
+      { key: 'dashboard.dept_metrics', label: 'View department metrics' },
+      { key: 'dashboard.all_metrics', label: 'View all-org metrics' },
+      { key: 'dashboard.customize', label: 'Customize dashboard layout' },
+    ],
+  },
+  {
+    title: 'Portal Tiers',
+    permissions: [
+      { key: 'portal_tiers.manage', label: 'Manage portal tiers & discounts' },
+    ],
+  },
+  {
+    title: 'Settings',
+    permissions: [
+      { key: 'settings.email_templates', label: 'Edit email templates' },
+      { key: 'settings.team_members.view', label: 'View team members' },
+      { key: 'settings.team_members.manage', label: 'Manage team members' },
+      { key: 'settings.email_signature.own', label: 'Edit own email signature' },
+      { key: 'settings.labor_rates', label: 'Edit labor rates', pricingRelated: true },
+      { key: 'settings.machine_rates', label: 'Edit machine rates', pricingRelated: true },
+      { key: 'settings.billing', label: 'Manage billing', pricingRelated: true },
+      { key: 'settings.material_categories', label: 'Manage material categories' },
+      { key: 'settings.material_types', label: 'Manage material types' },
+      { key: 'settings.product_categories', label: 'Manage product categories' },
+      { key: 'settings.product_types', label: 'Manage product types' },
+      { key: 'settings.promo_codes', label: 'Manage promo codes', pricingRelated: true },
+      { key: 'settings.shipping_methods', label: 'Manage shipping methods' },
+      { key: 'settings.shipping_profiles', label: 'Manage shipping profiles' },
+      { key: 'settings.custom_notes', label: 'Manage custom notes' },
+      { key: 'settings.general_categories', label: 'Manage general categories' },
+      { key: 'permission_overrides.grant', label: 'Grant permission overrides' },
+      { key: 'pricing_formulas.edit', label: 'Edit pricing formulas', pricingRelated: true },
     ],
   },
 ];
-
-const ROLE_PERMISSION_DEFAULTS: Record<Role, Record<PermissionKey, boolean>> = {
-  owner: {
-    see_pricing: true, apply_discount: true, approve_exception: true,
-    'invoices.edit': true, 'invoices.void': true,
-    'payments.record': true, 'payments.refund': true,
-    'jobs.reassign': true, 'jobs.delete': true,
-    'customers.delete': true, 'reports.view_financial': true, 'settings.edit': true,
-    'rates.edit_labor': true, 'rates.edit_machine': true,
-  },
-  sales: {
-    see_pricing: true, apply_discount: true, approve_exception: false,
-    'invoices.edit': true, 'invoices.void': false,
-    'payments.record': true, 'payments.refund': false,
-    'jobs.reassign': false, 'jobs.delete': false,
-    'customers.delete': false, 'reports.view_financial': true, 'settings.edit': false,
-    'rates.edit_labor': false, 'rates.edit_machine': false,
-  },
-  accounting: {
-    see_pricing: true, apply_discount: false, approve_exception: false,
-    'invoices.edit': true, 'invoices.void': true,
-    'payments.record': true, 'payments.refund': true,
-    'jobs.reassign': false, 'jobs.delete': false,
-    'customers.delete': false, 'reports.view_financial': true, 'settings.edit': false,
-    'rates.edit_labor': true, 'rates.edit_machine': true,
-  },
-  designer: {
-    see_pricing: false, apply_discount: false, approve_exception: false,
-    'invoices.edit': false, 'invoices.void': false,
-    'payments.record': false, 'payments.refund': false,
-    'jobs.reassign': false, 'jobs.delete': false,
-    'customers.delete': false, 'reports.view_financial': false, 'settings.edit': false,
-    'rates.edit_labor': false, 'rates.edit_machine': false,
-  },
-  production: {
-    see_pricing: false, apply_discount: false, approve_exception: false,
-    'invoices.edit': false, 'invoices.void': false,
-    'payments.record': false, 'payments.refund': false,
-    'jobs.reassign': false, 'jobs.delete': false,
-    'customers.delete': false, 'reports.view_financial': false, 'settings.edit': false,
-    'rates.edit_labor': false, 'rates.edit_machine': false,
-  },
-  installer: {
-    see_pricing: false, apply_discount: false, approve_exception: false,
-    'invoices.edit': false, 'invoices.void': false,
-    'payments.record': false, 'payments.refund': false,
-    'jobs.reassign': false, 'jobs.delete': false,
-    'customers.delete': false, 'reports.view_financial': false, 'settings.edit': false,
-    'rates.edit_labor': false, 'rates.edit_machine': false,
-  },
-  digital: {
-    see_pricing: false, apply_discount: false, approve_exception: false,
-    'invoices.edit': false, 'invoices.void': false,
-    'payments.record': false, 'payments.refund': false,
-    'jobs.reassign': false, 'jobs.delete': false,
-    'customers.delete': false, 'reports.view_financial': false, 'settings.edit': false,
-    'rates.edit_labor': false, 'rates.edit_machine': false,
-  },
-};
 
 const PRICING_ROLES: Role[] = ['owner', 'sales', 'accounting'];
 
@@ -727,10 +795,21 @@ export default function TeamSettingsClient({
                         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
                           {group.title}
                         </p>
+                        {group.note ? (
+                          <p className="text-xs text-gray-400 italic px-1 pb-2">{group.note}</p>
+                        ) : (
                         <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
                           {group.permissions.map(perm => {
-                            const roleDefault =
-                              ROLE_PERMISSION_DEFAULTS[selected.role]?.[perm.key] ?? false;
+                            // Mirrors the exact server-side resolution (hasPermission
+                            // with no overrides applied) instead of a second hardcoded
+                            // copy of role defaults — this badge can't drift from what
+                            // checkPermission() actually computes.
+                            const roleDefault = hasPermission(
+                              { role: selected.role, tier: selected.tier },
+                              [],
+                              perm.key
+                            );
+                            const isEnforced = ENFORCED_KEYS.has(perm.key);
                             const override = overrides.find(o => o.permission_key === perm.key);
                             const isGrantedViaOverride = override?.granted === true;
                             const showPricingWarning =
@@ -744,7 +823,17 @@ export default function TeamSettingsClient({
                                 className="flex items-center justify-between px-3 py-2.5 gap-3"
                               >
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-sm text-gray-700">{perm.label}</p>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <p className="text-sm text-gray-700">{perm.label}</p>
+                                    {!isEnforced && (
+                                      <span
+                                        className="inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-400"
+                                        title="Defined in ROLE_DEFAULTS, but no route currently reads this permission key — toggling it has no effect yet."
+                                      >
+                                        Not yet enforced
+                                      </span>
+                                    )}
+                                  </div>
                                   {showPricingWarning && (
                                     <p className="text-xs text-red-500 mt-0.5">
                                       Warning: pricing access granted to non-pricing role
@@ -799,6 +888,7 @@ export default function TeamSettingsClient({
                             );
                           })}
                         </div>
+                        )}
                       </div>
                     ))}
                   </div>

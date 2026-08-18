@@ -79,6 +79,19 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'settings.team_members.manage': false,
     'settings.email_signature.own': true,
     'portal_tiers.manage': false,
+    // Catalog/reference-data settings pages — previously ungated (owner-
+    // only by omission, not intent) until migration 149 cleanup. Defaults
+    // below are a judgment call, flagged for review — see chat.
+    'settings.material_categories': false,
+    'settings.material_types': false,
+    'settings.product_categories': false,
+    'settings.product_types': false,
+    'settings.promo_codes': false,
+    'settings.shipping_methods': false,
+    'settings.shipping_profiles': false,
+    'settings.custom_notes': false,
+    'settings.general_categories': false,
+    'pricing_formulas.edit': false,
   },
   designer: {
     'dashboard.overview': true,
@@ -101,6 +114,16 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'reports.jobs': true,
     'settings.email_signature.own': true,
     'portal_tiers.manage': false,
+    'settings.material_categories': false,
+    'settings.material_types': false,
+    'settings.product_categories': false,
+    'settings.product_types': false,
+    'settings.promo_codes': false,
+    'settings.shipping_methods': false,
+    'settings.shipping_profiles': false,
+    'settings.custom_notes': false,
+    'settings.general_categories': false,
+    'pricing_formulas.edit': false,
   },
   production: {
     'jobs.print_label': true,
@@ -124,6 +147,16 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'reports.jobs': true,
     'settings.email_signature.own': true,
     'portal_tiers.manage': false,
+    'settings.material_categories': false,
+    'settings.material_types': false,
+    'settings.product_categories': false,
+    'settings.product_types': false,
+    'settings.promo_codes': false,
+    'settings.shipping_methods': false,
+    'settings.shipping_profiles': false,
+    'settings.custom_notes': false,
+    'settings.general_categories': false,
+    'pricing_formulas.edit': false,
   },
   installer: {
     'jobs.print_label': true,
@@ -146,6 +179,16 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'reports.jobs': true,
     'settings.email_signature.own': true,
     'portal_tiers.manage': false,
+    'settings.material_categories': false,
+    'settings.material_types': false,
+    'settings.product_categories': false,
+    'settings.product_types': false,
+    'settings.promo_codes': false,
+    'settings.shipping_methods': false,
+    'settings.shipping_profiles': false,
+    'settings.custom_notes': false,
+    'settings.general_categories': false,
+    'pricing_formulas.edit': false,
   },
   digital: {
     'dashboard.overview': true,
@@ -168,6 +211,16 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'reports.jobs': true,
     'settings.email_signature.own': true,
     'portal_tiers.manage': false,
+    'settings.material_categories': false,
+    'settings.material_types': false,
+    'settings.product_categories': false,
+    'settings.product_types': false,
+    'settings.promo_codes': false,
+    'settings.shipping_methods': false,
+    'settings.shipping_profiles': false,
+    'settings.custom_notes': false,
+    'settings.general_categories': false,
+    'pricing_formulas.edit': false,
   },
   accounting: {
     'dashboard.overview': true,
@@ -207,6 +260,27 @@ export const ROLE_DEFAULTS: Record<Role, Record<string, boolean>> = {
     'settings.email_signature.own': true,
     'settings.billing': false,
     'portal_tiers.manage': false,
+    // Catalog/reference-data settings — accounting granted true here,
+    // matching the existing settings.labor_rates/settings.machine_rates
+    // precedent (accounting already keeps rate/catalog reference data
+    // current elsewhere in this app). Judgment call, flagged for review:
+    // several of these could just as reasonably belong to sales (promo
+    // codes, custom notes are customer/quote-facing) or ops/production
+    // (material/product taxonomy, shipping config) depending on who
+    // actually maintains QMI's catalog day to day — not something I have
+    // visibility into. general_categories is left false even here — it
+    // spans asset/job/quote/industry/lead-source/machine/tag taxonomy,
+    // too cross-cutting to assign to one role with any confidence.
+    'settings.material_categories': true,
+    'settings.material_types': true,
+    'settings.product_categories': true,
+    'settings.product_types': true,
+    'settings.promo_codes': true,
+    'settings.shipping_methods': true,
+    'settings.shipping_profiles': true,
+    'settings.custom_notes': true,
+    'settings.general_categories': false,
+    'pricing_formulas.edit': true,
   },
 }
 
