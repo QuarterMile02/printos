@@ -1,0 +1,42 @@
+-- ============================================================
+-- Migration 155: activity_log -- tighten the wide-open INSERT policy.
+-- Applied: PROPOSED, NOT run.
+-- ============================================================
+--
+-- Found live via pg_policies: "system can insert activity" is
+-- FOR INSERT TO public WITH CHECK (true) -- combined with the
+-- schema-wide anon default grant (found while reconciling migration
+-- 153), anyone holding the public anon key can insert arbitrary rows
+-- into the audit trail today. SELECT is already org-scoped ("org
+-- members can view activity"); there is no UPDATE/DELETE policy at
+-- all, so those are already denied by default. This is an integrity
+-- gap (fabricated audit-trail rows), not a disclosure one.
+--
+-- Before proposing this, traced every write path into activity_log:
+--   - src/lib/logActivity.ts:36 -- the shared helper used by every
+--     logActivity() call site (~14+ files: quotes, sales orders,
+--     invoices, jobs, proofs, collection calls). Uses
+--     createServiceClient() internally at line 35; LogActivityParams
+--     takes no client argument, so no caller can override this.
+--   - src/app/(dashboard)/dashboard/[slug]/invoices/[id]/actions.ts:115
+--     -- insertInvoiceFieldDiffs, a separate batched insert for
+--     multi-field edits (bypasses logActivity() to share one
+--     change_group_id per save). Traced all 3 call sites (lines
+--     259/287/333) back to their enclosing functions' own
+--     `const service = createServiceClient()` -- genuinely
+--     service-role at runtime, not just by type annotation.
+-- No other write path exists in the codebase.
+--
+-- Conclusion: every writer is service-role, which bypasses RLS
+-- entirely regardless of this policy. Tightening it is free -- it
+-- cannot break any existing call path. logActivity() also swallows
+-- its own errors (console.error only, never throws) -- if this
+-- tightening somehow did reject a legitimate write, that failure
+-- would be silent, which is exactly why the write-path trace above
+-- was done first rather than assumed.
+--
+-- Paste both statements below, in order.
+
+DROP POLICY "system can insert activity" ON activity_log;
+
+CREATE POLICY "org members can insert activity" ON activity_log FOR INSERT TO authenticated WITH CHECK (organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid()));
