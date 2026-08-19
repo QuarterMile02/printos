@@ -160,26 +160,19 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     modifier_values: Record<string, boolean | number> | null
   }
 
-  // modifier_values is a jsonb column added in migration 030. Fall back to
-  // a fetch without it if the column doesn't exist yet on the live DB.
-  let lineItems: LineItemRow[] | null = null
-  {
-    const { data, error } = await supabase
+  // modifier_values is a jsonb column added by migration 151 (formerly
+  // 030, which never actually applied). Used to silently retry without
+  // this column on a missing-column error -- that swallow is gone now;
+  // a schema error here should fail loudly like every other dbOrThrow
+  // fetch on this page, not quietly drop the customer's modifier
+  // selections from the page.
+  const lineItems: LineItemRow[] | null = await dbOrThrow(
+    supabase
       .from('quote_line_items')
       .select('id, product_id, description, width, height, quantity, unit_price, discount_percent, total_price, taxable, sort_order, modifier_values')
       .eq('quote_id', id)
-      .order('sort_order', { ascending: true }) as { data: LineItemRow[] | null; error: { message?: string } | null }
-    if (data) {
-      lineItems = data
-    } else if (error?.message?.includes('modifier_values')) {
-      const { data: legacy } = await supabase
-        .from('quote_line_items')
-        .select('id, product_id, description, width, height, quantity, unit_price, discount_percent, total_price, taxable, sort_order')
-        .eq('quote_id', id)
-        .order('sort_order', { ascending: true }) as { data: Omit<LineItemRow, 'modifier_values'>[] | null; error: unknown }
-      lineItems = (legacy ?? []).map((li) => ({ ...li, modifier_values: null }))
-    }
-  }
+      .order('sort_order', { ascending: true })
+  ) as LineItemRow[] | null
 
   // Products for the line item picker (edit mode).
   type ProductOption = { id: string; name: string; formula: string | null }
