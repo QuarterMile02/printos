@@ -21,14 +21,17 @@
 -- (a draft/void/etc. invoice with zero payment_applications rows
 -- against it doesn't get forced into a payment-related status).
 --
--- Only fires for target_type = 'invoice' -- quote/sales_order
--- applications (the 60/40 deposit case) are handled by scoping this
--- function to invoices only. Deliberately NOT adding amount_paid/
--- balance_due columns to quotes/sales_orders in this pass -- that
--- wasn't asked for; a quote/SO's applied-payment total can be queried
--- live against payment_applications when needed (e.g. "deposit
--- received: $X of $Y") without denormalizing it, since those aren't
--- rendered in bulk list views the way invoice totals are.
+-- REVISED for payment_applications' three-nullable-FK shape (migration
+-- 160) -- checks invoice_id IS NOT NULL instead of a target_type
+-- string match. Only fires for the invoice_id column -- quote_id/
+-- sales_order_id applications (the 60/40 deposit case) are handled by
+-- scoping this function to invoices only. Deliberately NOT adding
+-- amount_paid/balance_due columns to quotes/sales_orders in this pass
+-- -- that wasn't asked for; a quote/SO's applied-payment total can be
+-- queried live against payment_applications when needed (e.g.
+-- "deposit received: $X of $Y"), since those aren't rendered in bulk
+-- list views the way invoice totals are. Flagged in chat as required
+-- follow-up UI work so it doesn't get lost.
 
 CREATE OR REPLACE FUNCTION recalc_invoice_payment_totals(p_invoice_id uuid) RETURNS void AS $$
 DECLARE
@@ -41,7 +44,7 @@ BEGIN
 
   SELECT COALESCE(SUM(amount_applied), 0) INTO v_paid
     FROM payment_applications
-   WHERE target_type = 'invoice' AND target_id = p_invoice_id;
+   WHERE invoice_id = p_invoice_id;
 
   v_balance := GREATEST(0, v_total - v_paid);
 
@@ -61,16 +64,16 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION trg_payment_applications_recalc_invoice() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    IF OLD.target_type = 'invoice' THEN PERFORM recalc_invoice_payment_totals(OLD.target_id); END IF;
+    IF OLD.invoice_id IS NOT NULL THEN PERFORM recalc_invoice_payment_totals(OLD.invoice_id); END IF;
     RETURN OLD;
   ELSIF TG_OP = 'UPDATE' THEN
-    IF OLD.target_type = 'invoice' THEN PERFORM recalc_invoice_payment_totals(OLD.target_id); END IF;
-    IF NEW.target_type = 'invoice' AND (OLD.target_type IS DISTINCT FROM NEW.target_type OR OLD.target_id IS DISTINCT FROM NEW.target_id) THEN
-      PERFORM recalc_invoice_payment_totals(NEW.target_id);
+    IF OLD.invoice_id IS NOT NULL THEN PERFORM recalc_invoice_payment_totals(OLD.invoice_id); END IF;
+    IF NEW.invoice_id IS NOT NULL AND NEW.invoice_id IS DISTINCT FROM OLD.invoice_id THEN
+      PERFORM recalc_invoice_payment_totals(NEW.invoice_id);
     END IF;
     RETURN NEW;
   ELSE
-    IF NEW.target_type = 'invoice' THEN PERFORM recalc_invoice_payment_totals(NEW.target_id); END IF;
+    IF NEW.invoice_id IS NOT NULL THEN PERFORM recalc_invoice_payment_totals(NEW.invoice_id); END IF;
     RETURN NEW;
   END IF;
 END;

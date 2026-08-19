@@ -13,6 +13,10 @@
 -- payment_method here is intentionally independent of the original
 -- payment's method -- a card payment can be refunded by check, a
 -- check payment refunded via ACH, etc. Not assumed to match.
+--
+-- RLS: added this pass, along with the REVOKE from anon that
+-- job_notifications (migration 153) needed added after the fact --
+-- not skipping that step again on a table that allocates money.
 
 CREATE TABLE refunds (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -52,3 +56,4 @@ CREATE INDEX idx_refunds_org ON refunds(organization_id);
 
 grant select, insert, update, delete on public.refunds to authenticated;
 grant select, insert, update, delete on public.refunds to service_role;
+revoke all on public.refunds from anon;

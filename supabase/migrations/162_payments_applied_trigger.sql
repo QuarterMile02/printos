@@ -10,6 +10,14 @@
 -- correct here is what keeps `balance` (and therefore the Unapplied
 -- Payments query: payments where balance > 0) correct, with zero
 -- separate trigger needed for balance itself.
+--
+-- Checked against payment_applications' revised three-nullable-FK
+-- shape (migration 160, quote_id/sales_order_id/invoice_id instead of
+-- target_type/target_id): no change needed here. This function only
+-- ever keyed on payment_id -- it sums every application row for a
+-- payment regardless of which target column is set, which is exactly
+-- right, since `applied` has to include quote/SO-targeted deposit
+-- applications too, not just invoice ones.
 
 CREATE OR REPLACE FUNCTION recalc_payment_applied(p_payment_id uuid) RETURNS void AS $$
 DECLARE
