@@ -1,8 +1,15 @@
 -- ============================================================
 -- Migration 152: payments -- add the missing staff INSERT policy
 -- ("Built But Not Connected" audit finding #2).
--- Applied: PENDING — run manually in the Supabase SQL Editor (Ruben),
---   not auto-applied by Claude Code.
+-- Applied: CONFIRMED LIVE in Supabase (2026-08-19) -- verified via
+--   pg_policies, not the success message. The first paste of this
+--   file reported success but did not actually apply (pg_policies
+--   showed no INSERT policy on payments afterward); Ruben re-ran it
+--   with the policy named "org members can insert payments" instead
+--   of "org members can record payments" below, and that one took.
+--   The statement below has been updated to match what's actually
+--   live, name included -- this file is no longer what was first
+--   proposed, it's a record of what's really in the database.
 -- ============================================================
 --
 -- Paste ONLY the CREATE POLICY statement at the bottom -- not this
@@ -25,4 +32,4 @@
 -- pattern, was considered but not used here since the ask was
 -- specifically to mirror 142.)
 
-CREATE POLICY "org members can record payments" ON payments FOR INSERT WITH CHECK (organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid()));
+CREATE POLICY "org members can insert payments" ON payments FOR INSERT WITH CHECK (organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid()));
