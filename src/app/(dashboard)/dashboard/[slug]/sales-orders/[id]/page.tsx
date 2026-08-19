@@ -10,6 +10,7 @@ import { resolveJobsForLineItems } from '@/lib/jobs/resolve-jobs-for-line-items'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import EntityAuditPanel from '../../_widgets/entity-audit-panel'
+import DepositReceivedCard from '@/components/payments/deposit-received-card'
 
 type PageProps = {
   params: Promise<{ slug: string; id: string }>
@@ -61,6 +62,7 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
       state: string | null
       zip: string | null
       shipping_method: string | null
+      terms: string | null
     } | null
   }
 
@@ -70,7 +72,7 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
       .select(`
         id, so_number, title, status, total, notes, quote_id, customer_id,
         created_at, updated_at,
-        customers(first_name, last_name, company_name, email, phone, street, city, state, zip, shipping_method)
+        customers(first_name, last_name, company_name, email, phone, street, city, state, zip, shipping_method, terms)
       `)
       .eq('id', id)
       .eq('organization_id', org.id)
@@ -295,6 +297,31 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     }))
   }
 
+  // Deposit received -- live query against payment_applications, no
+  // denormalized column on sales_orders (deliberate schema decision,
+  // this is the follow-up UI work for it).
+  const paymentMethods = (await dbOrThrow(
+    supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
+  ) ?? []) as { id: string; name: string; type: string }[]
+
+  const { data: depositAppsSum } = await supabase
+    .from('payment_applications')
+    .select('amount_applied')
+    .eq('sales_order_id', so.id) as { data: { amount_applied: number }[] | null }
+  const depositReceivedCents = (depositAppsSum ?? []).reduce((sum, r) => sum + r.amount_applied, 0)
+
+  let depositRequiredCents = 0
+  if (so.customers?.terms) {
+    const { data: tc } = await supabase
+      .from('term_codes')
+      .select('down_payment_percent')
+      .eq('organization_id', org.id)
+      .eq('name', so.customers.terms)
+      .maybeSingle() as { data: { down_payment_percent: number | null } | null }
+    const pct = Number(tc?.down_payment_percent ?? 0)
+    if (pct > 0) depositRequiredCents = Math.round((so.total ?? 0) * pct / 100)
+  }
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -339,6 +366,20 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
         readyProofs={readyProofs}
         respondedProofs={respondedProofs}
       />
+
+      {so.customer_id && (
+        <div className="mt-6 max-w-sm">
+          <DepositReceivedCard
+            orgId={org.id}
+            orgSlug={slug}
+            customerId={so.customer_id}
+            target={{ type: 'sales_order', id: so.id }}
+            depositReceivedCents={depositReceivedCents}
+            depositRequiredCents={depositRequiredCents}
+            paymentMethods={paymentMethods}
+          />
+        </div>
+      )}
 
       <div className="mt-6">
         <EntityAuditPanel
