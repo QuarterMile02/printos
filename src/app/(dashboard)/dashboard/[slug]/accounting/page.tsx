@@ -3,7 +3,7 @@ import { notFound, unstable_rethrow } from 'next/navigation'
 import Link from 'next/link'
 import { checkPermission } from '@/lib/check-permission'
 import AccountingClient from './accounting-client'
-import { postInvoices } from './actions'
+import { postInvoices, postPayments } from './actions'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
@@ -65,6 +65,27 @@ async function PageInner({ params }: PageProps) {
 
   const invoices = (invRows ?? []) as unknown as UnpostedInvoice[]
 
+  const payRows = await dbOrThrow(
+    supabase
+      .from('payments')
+      .select('id, payment_number, paid_on, note, amount_paid, balance, customers(first_name, last_name, company_name)')
+      .eq('organization_id', org.id)
+      .eq('is_posted', false)
+      .order('payment_number', { ascending: false })
+  )
+
+  type UnpostedPayment = {
+    id: string
+    payment_number: number
+    paid_on: string | null
+    note: string | null
+    amount_paid: number
+    balance: number
+    customers: { first_name: string | null; last_name: string | null; company_name: string | null } | null
+  }
+
+  const payments = (payRows ?? []) as unknown as UnpostedPayment[]
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
@@ -79,6 +100,8 @@ async function PageInner({ params }: PageProps) {
         orgId={org.id}
         initialInvoices={invoices}
         postInvoices={postInvoices}
+        initialPayments={payments}
+        postPayments={postPayments}
       />
     </div>
   )
