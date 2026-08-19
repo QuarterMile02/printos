@@ -1,9 +1,7 @@
 'use server'
 
-import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { logActivity } from '@/lib/logActivity'
-import { resolveOrderThreadIdFromSalesOrder } from '@/lib/order-thread-id'
 
 export type InvoiceSearchRow = {
   id: string
@@ -87,80 +85,14 @@ export async function searchInvoices(orgId: string, term: string): Promise<Invoi
   }))
 }
 
-export async function recordPayment(formData: FormData): Promise<void> {
-  const invoiceId = formData.get('invoiceId') as string
-  const orgSlug = formData.get('orgSlug') as string
-  const amountDollars = parseFloat(formData.get('amount') as string)
-
-  if (!invoiceId || !orgSlug || isNaN(amountDollars) || amountDollars <= 0) {
-    throw new Error('Invalid payment data')
-  }
-
-  const amountCents = Math.round(amountDollars * 100)
-  const supabase = await createClient()
-  // Switched invoices read/write to the service client — createClient()'s
-  // generic Database typing doesn't resolve an Update shape for this table
-  // in this file (pre-existing gap the old code masked with `as any` on
-  // the whole client; every other invoice-mutation action already uses the
-  // service client and has never needed that cast). supabase (RLS client)
-  // is kept only for auth.getUser() below.
-  const service = createServiceClient()
-
-  // organization_id + status + sales_order_id added to this select (was
-  // just total/amount_paid/balance_due) so the marked_paid logActivity
-  // call below — previously missing entirely from this, the actually-live
-  // recordPayment (a separate, unused duplicate in invoices/[id]/actions.ts
-  // had it, nothing imported that one) — can fire with a resolved
-  // order_thread_id, same one extra round trip other call sites use.
-  const { data: invoice, error: fetchError } = await service
-    .from('invoices')
-    .select('total, amount_paid, balance_due, organization_id, status, sales_order_id')
-    .eq('id', invoiceId)
-    .single() as {
-      data: {
-        total: number; amount_paid: number; balance_due: number
-        organization_id: string; status: string; sales_order_id: string | null
-      } | null
-      error: unknown
-    }
-
-  if (fetchError || !invoice) throw new Error('Invoice not found')
-
-  const newAmountPaid = invoice.amount_paid + amountCents
-  const newBalanceDue = Math.max(0, invoice.total - newAmountPaid)
-  const newStatus = newBalanceDue <= 0 ? 'paid' : 'partial'
-
-  const { error } = await service
-    .from('invoices')
-    .update({
-      amount_paid: newAmountPaid,
-      balance_due: newBalanceDue,
-      status: newStatus,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', invoiceId)
-
-  if (error) throw new Error(error.message)
-
-  if (newStatus === 'paid' && invoice.status !== 'paid') {
-    const { data: { user } } = await supabase.auth.getUser()
-    const orderThreadId = await resolveOrderThreadIdFromSalesOrder(service, invoice.sales_order_id)
-    await logActivity({
-      org_id: invoice.organization_id,
-      user_id: user?.id ?? null,
-      entity_type: 'invoice',
-      entity_id: invoiceId,
-      action: 'marked_paid',
-      from_value: invoice.status,
-      to_value: 'paid',
-      metadata: { amount_paid_cents: newAmountPaid, total_cents: invoice.total },
-      order_thread_id: orderThreadId ?? undefined,
-    })
-  }
-
-  revalidatePath(`/dashboard/${orgSlug}/invoices/${invoiceId}`)
-  revalidatePath(`/dashboard/${orgSlug}/invoices`)
-}
+// recordPayment used to live here -- removed. It wrote directly to
+// invoices.amount_paid/balance_due/status and never touched the
+// payments table at all, one of the two disconnected write paths this
+// redesign replaced. The real thing is now
+// src/app/actions/record-payment.ts, which writes payments +
+// payment_applications via the record_payment() RPC (migration 165)
+// and lets trigger 161 derive these invoice columns. Do not add a
+// second direct write to them here or anywhere else.
 
 export async function createInvoiceFromSO(
   salesOrderId: string,

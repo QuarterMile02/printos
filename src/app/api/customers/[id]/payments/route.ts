@@ -26,7 +26,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   const { data, error } = await supabase
     .from('payments')
-    .select('id, payment_number, invoice_id, amount_paid, payment_method, balance, applied, paid_on, note, created_at')
+    .select('id, payment_number, amount_paid, payment_method, balance, applied, refunded_amount, paid_on, note, created_at')
     .eq('customer_id', customerId)
     .eq('organization_id', profile.organization_id)
     .order('paid_on', { ascending: false, nullsFirst: false })

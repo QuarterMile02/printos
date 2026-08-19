@@ -10,6 +10,7 @@ import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
+import DepositReceivedCard from '@/components/payments/deposit-received-card'
 
 export const dynamic = 'force-dynamic'
 
@@ -420,6 +421,32 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     quote.customer_id,
   )
 
+  // Deposit received -- live query against payment_applications, no
+  // denormalized column on quotes (deliberate schema decision, this is
+  // the follow-up UI work for it). depositRequiredCents mirrors the PDF
+  // route's own down_payment_percent lookup so the two numbers agree.
+  const paymentMethods = (await dbOrThrow(
+    supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
+  ) ?? []) as { id: string; name: string; type: string }[]
+
+  const { data: depositAppsSum } = await supabase
+    .from('payment_applications')
+    .select('amount_applied')
+    .eq('quote_id', quote.id) as { data: { amount_applied: number }[] | null }
+  const depositReceivedCents = (depositAppsSum ?? []).reduce((sum, r) => sum + r.amount_applied, 0)
+
+  let depositRequiredCents = 0
+  if (quote.customers?.terms) {
+    const { data: tc } = await supabase
+      .from('term_codes')
+      .select('down_payment_percent')
+      .eq('organization_id', org.id)
+      .eq('name', quote.customers.terms)
+      .maybeSingle() as { data: { down_payment_percent: number | null } | null }
+    const pct = Number(tc?.down_payment_percent ?? 0)
+    if (pct > 0) depositRequiredCents = Math.round((quote.total ?? 0) * pct / 100)
+  }
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -519,6 +546,20 @@ async function QuoteDetailPageInner({ params }: PageProps) {
         isOwnerOrAdmin={isOwnerOrAdmin}
         taxRate={quoteTaxRate}
       />
+
+      {quote.customer_id && (
+        <div className="mt-6 max-w-sm">
+          <DepositReceivedCard
+            orgId={org.id}
+            orgSlug={slug}
+            customerId={quote.customer_id}
+            target={{ type: 'quote', id: quote.id }}
+            depositReceivedCents={depositReceivedCents}
+            depositRequiredCents={depositRequiredCents}
+            paymentMethods={paymentMethods}
+          />
+        </div>
+      )}
 
       <div className="mt-6">
         <EntityAuditPanel

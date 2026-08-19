@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { formatInvNumber, formatCents, INV_STATUS_STYLES, INV_STATUS_LABELS } from '../format'
-import { recordPayment } from '../actions'
 import { getInvoiceEditedSinceUnpost } from './actions'
 import InvoiceCustomerPicker from './invoice-customer-picker'
 import InvoiceEditPanel from './invoice-edit-panel'
+import RecordPaymentForm from '@/components/payments/record-payment-form'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
@@ -113,6 +113,18 @@ async function PageInner({ params }: PageProps) {
   }
 
   const invNum = formatInvNumber(inv.invoice_number, inv.created_at)
+
+  const paymentMethods = (await dbOrThrow(
+    supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
+  ) ?? []) as { id: string; name: string; type: string }[]
+
+  const applications = (await dbOrThrow(
+    supabase
+      .from('payment_applications')
+      .select('id, payment_id, amount_applied, payments(payment_number, payment_method)')
+      .eq('invoice_id', inv.id)
+      .order('applied_at')
+  ) ?? []) as { id: string; payment_id: string; amount_applied: number; payments: { payment_number: number; payment_method: string } | null }[]
 
   return (
     <div className="p-8 max-w-4xl">
@@ -282,7 +294,7 @@ async function PageInner({ params }: PageProps) {
               <span className="font-medium text-gray-900">${formatCents(inv.total)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Amount Paid</span>
+              <span className="text-gray-500">Applied</span>
               <span className="font-medium text-green-700">${formatCents(inv.amount_paid)}</span>
             </div>
             <div className="flex justify-between border-t border-gray-100 pt-3">
@@ -292,31 +304,35 @@ async function PageInner({ params }: PageProps) {
               </span>
             </div>
           </div>
+          {applications.length > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-3 space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Payments Applied</p>
+              {applications.map((a) => (
+                <Link
+                  key={a.id}
+                  href={`/dashboard/${slug}/payments/${a.payment_id}`}
+                  className="flex justify-between text-sm hover:text-qm-fuchsia"
+                >
+                  <span className="text-gray-600">#{a.payments?.payment_number} — {a.payments?.payment_method}</span>
+                  <span className="tabular-nums text-gray-900">${formatCents(a.amount_applied)}</span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
-        {inv.balance_due > 0 && (
+        {inv.balance_due > 0 && inv.customer_id && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
             <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Record Payment</h2>
-            <form action={recordPayment}>
-              <input type="hidden" name="invoiceId" value={inv.id} />
-              <input type="hidden" name="orgSlug" value={slug} />
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Amount ($)</label>
-                <input
-                  type="number"
-                  name="amount"
-                  step="0.01"
-                  min="0.01"
-                  max={(inv.balance_due / 100).toFixed(2)}
-                  defaultValue={(inv.balance_due / 100).toFixed(2)}
-                  required
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                />
-              </div>
-              <button type="submit" className="mt-3 rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
-                Record Payment
-              </button>
-            </form>
+            <RecordPaymentForm
+              orgId={org.id}
+              orgSlug={slug}
+              customerId={inv.customer_id}
+              target={{ type: 'invoice', id: inv.id }}
+              defaultAmountCents={inv.balance_due}
+              paymentMethods={paymentMethods}
+              revalidatePath={`/dashboard/${slug}/invoices/${inv.id}`}
+            />
           </div>
         )}
       </div>

@@ -8,7 +8,7 @@ type OpenJobRow = { id: string; job_number: number; title: string; status: strin
 type QuoteRow = { id: string; quote_number: number; title: string; status: string; total: number; created_at: string }
 type InvoiceRow = { id: string; invoice_number: number; status: string; total: number; due_date: string | null; created_at: string }
 type TxRow = { id: string; type: 'QT' | 'SO' | 'IN'; record_number: number; title: string | null; total: number; status: string; created_at: string; due_date?: string | null }
-type PayRow = { id: string; payment_number: number; invoice_id: string | null; amount_paid: number; payment_method: string | null; balance: number | null; applied: boolean | null; paid_on: string | null; note: string | null; created_at: string }
+type PayRow = { id: string; payment_number: number; amount_paid: number; payment_method: string | null; balance: number | null; applied: number | null; refunded_amount: number | null; paid_on: string | null; note: string | null; created_at: string }
 type TaskRow = { id: string; title: string; status: string; due_date: string | null; created_at: string }
 type LeadRow = { id: string; title: string; estimated_value: number | null; created_at: string }
 
@@ -62,7 +62,6 @@ const TASK_COLORS: Record<string, string> = {
 const TASK_LABELS: Record<string, string> = {
   open: 'Open', in_progress: 'In Progress', done: 'Done',
 }
-const PAYMENT_METHODS = ['Cash', 'Check', 'Credit Card', 'ACH', 'Wire Transfer', 'Other']
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -83,8 +82,6 @@ function Empty({ msg }: { msg: string }) {
   return <p className="px-6 py-10 text-center text-sm text-qm-gray">{msg}</p>
 }
 
-const ic = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
-const sc = 'block w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime'
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
@@ -103,12 +100,6 @@ export default function CustomerTabsSection({
   const [tasksLoading, setTasksLoading] = useState(false)
   const [leads, setLeads] = useState<LeadRow[] | null>(null)
   const [leadsLoading, setLeadsLoading] = useState(false)
-
-  // Payment log form
-  const [showPayForm, setShowPayForm] = useState(false)
-  const [payDraft, setPayDraft] = useState({ amount: '', method: 'Credit Card', paid_on: '', note: '' })
-  const [payError, setPayError] = useState<string | null>(null)
-  const [paySaving, setPaySaving] = useState(false)
 
   useEffect(() => {
     if (activeTab === 'transactions' && transactions === null && !txLoading) {
@@ -138,34 +129,13 @@ export default function CustomerTabsSection({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
-  async function logPayment() {
-    const dollars = parseFloat(payDraft.amount)
-    if (isNaN(dollars) || dollars <= 0) { setPayError('Enter a valid amount.'); return }
-    setPayError(null)
-    setPaySaving(true)
-    try {
-      const res = await fetch('/api/payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: customerId,
-          amount_paid: Math.round(dollars * 100),
-          payment_method: payDraft.method || null,
-          paid_on: payDraft.paid_on || null,
-          note: payDraft.note || null,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setPayError(data.error ?? 'Save failed'); return }
-      setPayments((prev) => [data, ...(prev ?? [])])
-      setPayDraft({ amount: '', method: 'Credit Card', paid_on: '', note: '' })
-      setShowPayForm(false)
-    } catch (e) {
-      setPayError('Network error')
-    } finally {
-      setPaySaving(false)
-    }
-  }
+  // Payment creation used to happen here (logPayment -> POST /api/payments)
+  // -- removed. It never sent an invoice_id and never applied to
+  // anything, one of the two disconnected write paths this redesign
+  // replaced. Recording a payment now happens on the invoice/quote/
+  // sales-order detail page it applies to (RecordPaymentForm ->
+  // src/app/actions/record-payment.ts). This tab stays read-only: a
+  // list of the customer's payments, each linking to its detail page.
 
   // ── Tab definitions ────────────────────────────────────────────────────────
 
@@ -309,58 +279,15 @@ export default function CustomerTabsSection({
       <>
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
           <span className="text-xs text-qm-gray font-medium">{payments?.length ?? '…'} payments</span>
-          <button
-            onClick={() => { setShowPayForm((v) => !v); setPayError(null) }}
-            className="inline-flex items-center gap-1.5 rounded-md bg-qm-lime px-3 py-1.5 text-sm font-semibold text-white hover:brightness-110"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Log Payment
-          </button>
+          <span className="text-xs text-gray-400">Record a payment from the invoice, quote, or sales order it applies to</span>
         </div>
-
-        {showPayForm && (
-          <div className="border-b border-gray-100 bg-gray-50 px-6 py-4 space-y-3">
-            {payError && <div className="rounded-md bg-red-50 border border-red-200 p-2 text-sm text-red-700">{payError}</div>}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Amount ($) <span className="text-red-500">*</span></label>
-                <input type="number" step="0.01" min="0" placeholder="0.00" value={payDraft.amount}
-                  onChange={(e) => setPayDraft({ ...payDraft, amount: e.target.value })} className={ic} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
-                <select value={payDraft.method} onChange={(e) => setPayDraft({ ...payDraft, method: e.target.value })} className={sc}>
-                  {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Date paid</label>
-              <input type="date" value={payDraft.paid_on}
-                onChange={(e) => setPayDraft({ ...payDraft, paid_on: e.target.value })} className={ic} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Note</label>
-              <input type="text" placeholder="Check #, reference, etc." value={payDraft.note}
-                onChange={(e) => setPayDraft({ ...payDraft, note: e.target.value })} className={ic} />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => { setShowPayForm(false); setPayError(null) }} className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Cancel</button>
-              <button onClick={logPayment} disabled={paySaving} className="rounded-md bg-qm-lime px-4 py-1.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-50">
-                {paySaving ? 'Saving…' : 'Save Payment'}
-              </button>
-            </div>
-          </div>
-        )}
 
         {payLoading ? <Spinner /> : !payments || payments.length === 0 ? (
           <Empty msg="No payments recorded" />
         ) : (
           <div className="divide-y divide-gray-50">
             {payments.map((p) => (
-              <div key={p.id} className="flex items-center justify-between px-6 py-3">
+              <a key={p.id} href={`/dashboard/${orgSlug}/payments/${p.id}`} className="flex items-center justify-between px-6 py-3 hover:bg-gray-50">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-xs font-semibold text-qm-gray">#{p.payment_number}</span>
@@ -381,7 +308,7 @@ export default function CustomerTabsSection({
                   <p className="text-sm font-semibold text-qm-black">${formatCents(p.amount_paid ?? 0)}</p>
                   <p className="text-xs text-qm-gray">{p.paid_on ? formatDate(p.paid_on) : formatDate(p.created_at)}</p>
                 </div>
-              </div>
+              </a>
             ))}
           </div>
         )}
