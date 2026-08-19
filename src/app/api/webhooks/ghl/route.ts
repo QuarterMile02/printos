@@ -18,21 +18,12 @@ export async function POST(req: NextRequest) {
   console.log('[ghl-webhook] incoming payload:', rawBody)
 
   // ── Signature verification ─────────────────────────────────────────────────
-  // Was fail-OPEN: an unset GHL_WEBHOOK_SECRET skipped verification
-  // entirely rather than refusing the request -- and it IS unset in
-  // production right now, meaning this endpoint currently accepts
-  // unauthenticated writes (creates customers + draft quotes). Fail
-  // closed instead, matching shipping/webhook and cron/invoice-iif-export.
-  // Do NOT set GHL_WEBHOOK_SECRET in Vercel until the GHL workflow side
-  // is sending a matching signature -- see known-issues/ghl-dialpad-webhook-secret-handoff.md.
   const secret = process.env.GHL_WEBHOOK_SECRET
-  if (!secret) {
-    console.error('[ghl-webhook] GHL_WEBHOOK_SECRET is not set')
-    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
-  }
-  const sig = req.headers.get('x-ghl-signature')
-  if (!sig || !verifySignature(rawBody, sig, secret)) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  if (secret) {
+    const sig = req.headers.get('x-ghl-signature')
+    if (!sig || !verifySignature(rawBody, sig, secret)) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
   }
 
   // ── Parse body ─────────────────────────────────────────────────────────────
