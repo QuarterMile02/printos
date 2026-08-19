@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { userBelongsToOrg } from '@/lib/require-org-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -120,6 +121,13 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
     const product = productRow as { id: string; organization_id: string; shopvox_data: ShopvoxData | null } | null
     if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+
+    // Had NO auth check at all -- full cost/sell breakdown for any
+    // product_id, unauthenticated. Resolve org from the product row itself
+    // (never trust a client-supplied org id) and require membership.
+    if (!(await userBelongsToOrg(product.organization_id))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const shopvox = product.shopvox_data ?? null
     const items = (shopvox?.default_items ?? []) as ShopvoxDefaultItem[]

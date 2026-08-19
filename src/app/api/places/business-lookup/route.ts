@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
+  // Cost-abuse gate only (no org-scoped resource involved) -- had no
+  // check at all, so anyone who found the URL could burn Google Places
+  // API quota/billing.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const query = request.nextUrl.searchParams.get('q') ?? ''
   if (query.length < 3) return NextResponse.json(null)
 
