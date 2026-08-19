@@ -319,15 +319,23 @@ export async function updateJobStatus(
           }
         }
 
-        // Log notification
+        // Log notification. Non-fatal by design: the email/SMS above has
+        // already been sent by this point, so a logging failure here
+        // (missing table, RLS, whatever) must never surface as an error
+        // on an action that actually succeeded from the customer's side.
         if (sentEmail || sentSms) {
           const method = sentEmail && sentSms ? 'both' : sentEmail ? 'email' : 'sms'
-          await service.from('job_notifications').insert({
-            job_id: jobId,
-            customer_id: job.customer_id,
-            method,
-            status: 'sent',
-          })
+          try {
+            const { error: logError } = await service.from('job_notifications').insert({
+              job_id: jobId,
+              customer_id: job.customer_id,
+              method,
+              status: 'sent',
+            })
+            if (logError) console.error('[job_notifications] Log insert failed (notification was still sent):', logError.message)
+          } catch (logError) {
+            console.error('[job_notifications] Log insert threw (notification was still sent):', logError)
+          }
           notifiedJobNumber = job.job_number
         }
       }

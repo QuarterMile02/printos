@@ -1,0 +1,35 @@
+-- ============================================================
+-- Migration 152: payments -- add the missing staff INSERT policy
+-- ("Built But Not Connected" audit finding #2).
+-- Applied: CONFIRMED LIVE in Supabase (2026-08-19) -- verified via
+--   pg_policies, not the success message. The first paste of this
+--   file reported success but did not actually apply (pg_policies
+--   showed no INSERT policy on payments afterward); Ruben re-ran it
+--   with the policy named "org members can insert payments" instead
+--   of "org members can record payments" below, and that one took.
+--   The statement below has been updated to match what's actually
+--   live, name included -- this file is no longer what was first
+--   proposed, it's a record of what's really in the database.
+-- ============================================================
+--
+-- Paste ONLY the CREATE POLICY statement at the bottom -- not this
+-- whole comment block. Same convention as migration 142, which fixed
+-- the same table's missing SELECT policy for the identical reason:
+-- payments' own CREATE TABLE was never checked into migrations, so
+-- whatever RLS existed was set up entirely outside version control and
+-- apparently never included working INSERT/UPDATE/DELETE either.
+--
+-- Confirmed: src/app/api/payments/route.ts's POST handler and
+-- src/app/api/customers/[id]/payments/route.ts both use the normal
+-- cookie-authenticated client (not service-role) to insert. With no
+-- INSERT policy, every "Record Payment" attempt from the real app UI
+-- is silently rejected by RLS -- this is the literal "staff cannot
+-- post a payment" bug.
+--
+-- Matches migration 142's SELECT policy shape exactly, as asked --
+-- plain org-membership, no role restriction. (A stricter
+-- "non-viewer only" version, matching invoices' inv_insert_non_viewers
+-- pattern, was considered but not used here since the ask was
+-- specifically to mirror 142.)
+
+CREATE POLICY "org members can insert payments" ON payments FOR INSERT WITH CHECK (organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid()));

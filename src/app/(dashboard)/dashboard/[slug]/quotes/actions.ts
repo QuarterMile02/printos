@@ -731,21 +731,11 @@ export async function addQuoteLineItem(
       baseRow.modifier_values = draft.modifier_values
     }
 
-    let insertResult = await ctx.service
+    const insertResult = await ctx.service
       .from('quote_line_items')
       .insert(baseRow)
       .select('id')
       .single()
-
-    // If modifier_values column doesn't exist, retry without it
-    if (insertResult.error?.message?.includes('modifier_values')) {
-      delete baseRow.modifier_values
-      insertResult = await ctx.service
-        .from('quote_line_items')
-        .insert(baseRow)
-        .select('id')
-        .single()
-    }
 
     if (insertResult.error) {
       console.error('[addQuoteLineItem] Insert failed:', insertResult.error.message)

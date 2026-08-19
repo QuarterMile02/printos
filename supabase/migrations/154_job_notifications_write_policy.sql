@@ -1,0 +1,26 @@
+-- ============================================================
+-- Migration 154: job_notifications -- add the matching INSERT/UPDATE/
+-- DELETE policy (153 only added SELECT).
+-- Applied: PROPOSED, NOT run -- open question, not a confirmed bug.
+-- ============================================================
+--
+-- Migration 153 granted authenticated INSERT/UPDATE/DELETE at the
+-- object level but only wrote a SELECT RLS policy. With RLS on and no
+-- write policy, an authenticated-client write is silently denied --
+-- same shape as the payments bug this whole pass started from. Today
+-- the only writer is jobs/actions.ts:325, which uses the service-role
+-- client (bypasses RLS), so nothing is broken in practice.
+--
+-- This is the same situation migration 148 already made a judgment
+-- call on for portal_tiers/portal_tier_discounts: policies here are
+-- defense-in-depth for any future authenticated-client code path, not
+-- the primary enforcement mechanism, since the real write path is and
+-- is expected to remain service-role. Proposing this to match that
+-- established convention, not because anything is broken today --
+-- confirm this is wanted before pasting, since the alternative
+-- (SELECT-only, permanently) is also a legitimate, already-used
+-- pattern in this codebase (e.g. quote_deliveries).
+--
+-- Paste ONLY the CREATE POLICY statement at the bottom.
+
+CREATE POLICY "org members can log job notifications" ON job_notifications FOR ALL USING (EXISTS (SELECT 1 FROM jobs JOIN organization_members ON organization_members.organization_id = jobs.organization_id WHERE jobs.id = job_notifications.job_id AND organization_members.user_id = auth.uid())) WITH CHECK (EXISTS (SELECT 1 FROM jobs JOIN organization_members ON organization_members.organization_id = jobs.organization_id WHERE jobs.id = job_notifications.job_id AND organization_members.user_id = auth.uid()));
