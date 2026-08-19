@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,6 +86,18 @@ export async function GET(
     const inv = invRow as InvoiceRow | null
     if (!inv) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    }
+
+    // 1b. Auth + org scoping — this route had NEITHER (confirmed live: an
+    // unauthenticated request returned real invoice/customer data). Same
+    // gate as the sibling pdf/route.ts: resolve the invoice first (need its
+    // organization_id to check against), then require the requesting user
+    // be a member of THAT org with the QB-export permission. Denies both
+    // "not logged in" and "logged in but wrong org" — checkPermission
+    // covers both (no session -> allowed:false before any org lookup).
+    const { allowed } = await checkPermission(inv.organization_id, 'invoices.qb_export')
+    if (!allowed) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // 2. Org profile (for filename) + account mappings
