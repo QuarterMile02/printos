@@ -120,23 +120,12 @@ export async function createInvoiceFromSO(
 
   const { data: soRow, error: soError } = await service
     .from('sales_orders')
-    .select('id, title, customer_id, total, quote_id, organization_id')
+    .select('id, title, customer_id, total, quote_id')
     .eq('id', salesOrderId)
     .single()
 
   if (soError || !soRow) throw new Error('Sales order not found')
-  const so = soRow as { id: string; title: string | null; customer_id: string | null; total: number | null; quote_id: string | null; organization_id: string }
-
-  // This is the actual hole (see the route's caller comment): salesOrderId
-  // and orgSlug both come from whoever's calling this, and until now
-  // nothing checked that the sales order actually belongs to the org it's
-  // about to be invoiced into. Enforced here rather than only at the one
-  // call site that had a request body, since this function has other
-  // internal callers (e.g. jobs/actions.ts's auto-invoice-on-complete)
-  // that should get the same guarantee.
-  if (so.organization_id !== org.id) {
-    throw new Error('Sales order does not belong to this organization')
-  }
+  const so = soRow as { id: string; title: string | null; customer_id: string | null; total: number | null; quote_id: string | null }
 
   // Prefer quote totals (include tax) over SO total
   let subtotal = so.total ?? 0

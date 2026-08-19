@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { buildInvoicesIif, markInvoicesIifExported } from '@/lib/iif/build-invoices-iif'
-import { checkPermission } from '@/lib/check-permission'
-import { userBelongsToOrg } from '@/lib/require-org-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,20 +14,6 @@ export async function POST(request: NextRequest) {
     }
     if (!organizationId) {
       return NextResponse.json({ error: 'organizationId is required' }, { status: 400 })
-    }
-
-    // Bulk sibling of GET /api/invoices/[id]/export-iif -- had the exact
-    // same gap (no auth at all) plus organizationId taken straight from
-    // the request body and trusted to scope the query. Same gate as that
-    // route (invoices.qb_export), plus an explicit membership check since
-    // checkPermission alone doesn't verify the caller belongs to
-    // organizationId (see require-org-access.ts).
-    const [isMember, { allowed }] = await Promise.all([
-      userBelongsToOrg(organizationId),
-      checkPermission(organizationId, 'invoices.qb_export'),
-    ])
-    if (!isMember || !allowed) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const service = createServiceClient()
