@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { recordPayment, type PaymentTargetType } from '@/app/actions/record-payment'
+import SendReceiptConfirm from './send-receipt-confirm'
 
 export type PaymentMethodOption = { id: string; name: string; type: string }
 
@@ -23,6 +25,7 @@ function todayIso(): string {
 export default function RecordPaymentForm({
   orgId, orgSlug, customerId, target, defaultAmountCents, paymentMethods, revalidatePath, onRecorded,
 }: Props) {
+  const router = useRouter()
   const [amount, setAmount] = useState((defaultAmountCents / 100).toFixed(2))
   const [methodId, setMethodId] = useState(paymentMethods[0]?.id ?? '')
   const [checkNumber, setCheckNumber] = useState('')
@@ -30,6 +33,9 @@ export default function RecordPaymentForm({
   const [note, setNote] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set once recordPayment() succeeds -- swaps the form out for the
+  // send-receipt confirmation step until the user sends or skips.
+  const [recordedPaymentId, setRecordedPaymentId] = useState<string | null>(null)
 
   const selectedMethod = paymentMethods.find((m) => m.id === methodId)
   const isCheck = selectedMethod?.type === 'Check'
@@ -57,7 +63,25 @@ export default function RecordPaymentForm({
     setIsSaving(false)
 
     if (res.error) { setError(res.error); return }
-    if (res.paymentId) onRecorded?.(res.paymentId)
+    if (res.paymentId) setRecordedPaymentId(res.paymentId)
+  }
+
+  // Fires once the receipt confirmation step is dismissed (sent or
+  // skipped) -- refresh so the page's own server-fetched numbers
+  // (balance_due, status, etc.) catch up with what recordPayment just
+  // changed, then let the caller close its modal / reset, if it has one.
+  function handleReceiptStepDone() {
+    const id = recordedPaymentId
+    setRecordedPaymentId(null)
+    setAmount((defaultAmountCents / 100).toFixed(2))
+    setCheckNumber('')
+    setNote('')
+    router.refresh()
+    if (id) onRecorded?.(id)
+  }
+
+  if (recordedPaymentId) {
+    return <SendReceiptConfirm paymentId={recordedPaymentId} orgId={orgId} onDone={handleReceiptStepDone} />
   }
 
   return (

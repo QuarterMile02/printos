@@ -14,9 +14,48 @@ import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-templa
 import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { getUserSenderIdentity, SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 
+// Default-recipient resolution, split out so the post-record-payment
+// confirmation step (RecordPaymentForm -> SendReceiptConfirm) can
+// prefill an editable field with the same default sendPaymentReceipt
+// would otherwise pick silently -- primary customer_contacts row for
+// this customer, falling back to customers.email. Same precedence the
+// quote send-email flow uses for its own default recipient.
+export async function getDefaultReceiptRecipient(
+  paymentId: string,
+  orgId: string,
+): Promise<{ email: string | null; error?: string }> {
+  const { allowed } = await checkPermission(orgId, 'invoices.record_payment')
+  if (!allowed) return { email: null, error: 'You do not have permission to send receipts.' }
+
+  const service = createServiceClient()
+  const { data: payment } = await service
+    .from('payments')
+    .select('customer_id')
+    .eq('id', paymentId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as { data: { customer_id: string } | null }
+  if (!payment) return { email: null, error: 'Payment not found.' }
+
+  const { data: customer } = await service
+    .from('customers')
+    .select('email')
+    .eq('id', payment.customer_id)
+    .maybeSingle() as { data: { email: string | null } | null }
+
+  const { data: primaryContact } = await service
+    .from('customer_contacts')
+    .select('email')
+    .eq('customer_id', payment.customer_id)
+    .eq('is_primary', true)
+    .maybeSingle() as { data: { email: string | null } | null }
+
+  return { email: primaryContact?.email ?? customer?.email ?? null }
+}
+
 export async function sendPaymentReceipt(
   paymentId: string,
   orgId: string,
+  recipientOverride?: string,
 ): Promise<{ error?: string }> {
   const { allowed } = await checkPermission(orgId, 'invoices.record_payment')
   if (!allowed) return { error: 'You do not have permission to send receipts.' }
@@ -46,14 +85,16 @@ export async function sendPaymentReceipt(
     .eq('id', payment.customer_id)
     .maybeSingle() as { data: { first_name: string; last_name: string; company_name: string | null; email: string | null } | null }
 
-  const { data: primaryContact } = await service
-    .from('customer_contacts')
-    .select('email')
-    .eq('customer_id', payment.customer_id)
-    .eq('is_primary', true)
-    .maybeSingle() as { data: { email: string | null } | null }
-
-  const recipientEmail = primaryContact?.email ?? customer?.email
+  let recipientEmail: string | null = recipientOverride?.trim() || null
+  if (!recipientEmail) {
+    const { data: primaryContact } = await service
+      .from('customer_contacts')
+      .select('email')
+      .eq('customer_id', payment.customer_id)
+      .eq('is_primary', true)
+      .maybeSingle() as { data: { email: string | null } | null }
+    recipientEmail = primaryContact?.email ?? customer?.email ?? null
+  }
   if (!recipientEmail) return { error: 'Customer has no email on file.' }
 
   const template = await getEmailTemplate(orgId, 'payment_received')

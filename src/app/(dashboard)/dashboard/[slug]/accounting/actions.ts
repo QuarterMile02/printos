@@ -25,3 +25,27 @@ export async function postInvoices(invoiceIds: string[], orgId: string): Promise
   if (error) return { error: error.message }
   return { posted: ownedIds.length }
 }
+
+export async function postPayments(paymentIds: string[], orgId: string): Promise<{ posted?: number; error?: string }> {
+  if (!paymentIds.length) return { error: 'No payments selected' }
+
+  const service = createServiceClient()
+
+  // Verify all payments belong to this org before updating
+  const { data: owned } = await service
+    .from('payments')
+    .select('id')
+    .eq('organization_id', orgId)
+    .in('id', paymentIds)
+
+  const ownedIds = ((owned ?? []) as { id: string }[]).map(r => r.id)
+  if (ownedIds.length === 0) return { error: 'No valid payments found for this organization' }
+
+  const { error } = await service
+    .from('payments')
+    .update({ is_posted: true, posted_at: new Date().toISOString() })
+    .in('id', ownedIds)
+
+  if (error) return { error: error.message }
+  return { posted: ownedIds.length }
+}
