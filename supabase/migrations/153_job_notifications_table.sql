@@ -2,8 +2,22 @@
 -- Migration 153: job_notifications -- the table migration 010 was
 -- supposed to create and never did ("Built But Not Connected" audit
 -- finding #6).
--- Applied: PENDING — run manually in the Supabase SQL Editor (Ruben),
---   not auto-applied by Claude Code.
+-- Applied: CONFIRMED LIVE in Supabase (2026-08-19) -- verified via
+--   pg_type / information_schema.tables / pg_policies / pg_indexes,
+--   not the success message.
+--
+-- One statement below was NOT in the file as originally pasted and had
+-- to be added after the fact: the final REVOKE. After the two GRANT
+-- statements landed, information_schema.role_table_grants showed
+-- `anon` holding full privileges on this table (DELETE, INSERT,
+-- UPDATE, TRUNCATE, SELECT, REFERENCES, TRIGGER) -- Postgres's default
+-- PUBLIC grant on a newly created table, not anything this migration
+-- asked for. RLS blocks anon reads/writes, but TRUNCATE bypasses RLS
+-- entirely, so this was a real gap, not a cosmetic one. Ruben ran
+-- `revoke all on public.job_notifications from anon;` and confirmed
+-- anon no longer appears in role_table_grants for this table. That
+-- REVOKE is now included below as a required part of this migration,
+-- not optional cleanup -- run it immediately after the two GRANTs.
 -- ============================================================
 --
 -- Confirmed live via to_regclass: this table does not exist. But
@@ -57,3 +71,4 @@ create index idx_job_notifications_job on job_notifications(job_id);
 -- keeps the table consistent with every other table in the schema.
 grant select, insert, update, delete on public.job_notifications to authenticated;
 grant select, insert, update, delete on public.job_notifications to service_role;
+revoke all on public.job_notifications from anon;
