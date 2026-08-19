@@ -9,6 +9,7 @@ import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import EntityAuditPanel from '../../_widgets/entity-audit-panel'
+import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
 
 export const dynamic = 'force-dynamic'
 
@@ -415,6 +416,17 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     } catch { /* migration 076 guard */ }
   }
 
+  // Resolved fresh on every render (not cached) so a customer reassignment
+  // -- which triggers a router.refresh() from QuoteCustomerPicker -- always
+  // picks up that customer's own rate/exemption on the next render. Throws
+  // NoDefaultTaxRateError if the org has no default sales_taxes row
+  // configured, same "fail loudly, don't guess" contract as dbOrThrow above.
+  const { rate: quoteTaxRate } = await resolveTaxRateForCustomer(
+    createServiceClient(),
+    org.id,
+    quote.customer_id,
+  )
+
   return (
     <div className="p-8 max-w-6xl">
       <div className="mb-4 flex items-center gap-2 text-sm text-gray-500">
@@ -512,6 +524,7 @@ async function QuoteDetailPageInner({ params }: PageProps) {
         initialContactEmail={quoteContactEmail}
         initialContactPhone={quoteContactPhone}
         isOwnerOrAdmin={isOwnerOrAdmin}
+        taxRate={quoteTaxRate}
       />
 
       <div className="mt-6">
