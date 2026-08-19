@@ -1,0 +1,21 @@
+-- ============================================================
+-- Migration 168: payment_gateway_settings -- add client_key column.
+-- Applied: PENDING -- run manually in the Supabase SQL Editor (Ruben),
+--   not auto-applied by Claude Code.
+-- ============================================================
+--
+-- Accept.js (client-side card tokenization) needs TWO credentials in
+-- the browser: the API Login ID (already stored) and a separate
+-- "Public Client Key" -- a distinct credential generated in the
+-- Authorize.net merchant interface under Account > Security Settings >
+-- Manage Public Client Key, NOT the same value as api_login_id or
+-- transaction_key. transaction_key must never leave the server (used
+-- server-side to actually create/capture the transaction); the client
+-- key by design is meant to be embedded in the page -- Authorize.net
+-- scopes it to tokenization only, it cannot authorize a charge on its
+-- own. Encrypted at rest anyway, same as the other two columns, purely
+-- for consistency (every credential in this table goes through the
+-- same encrypt/decrypt path in src/lib/credential-crypto.ts) -- not
+-- because leaking it alone would let someone charge a card.
+
+ALTER TABLE payment_gateway_settings ADD COLUMN IF NOT EXISTS client_key text;

@@ -38,6 +38,14 @@ export type RecordPaymentInput = {
   // Path to revalidate after recording -- the calling page knows its
   // own URL better than this shared action does.
   revalidate: string
+  // Card payments only -- set by chargeCardPayment() (src/app/actions/
+  // charge-card-payment.ts) AFTER Authorize.net has already approved the
+  // charge, never before. This function has no way to verify that on its
+  // own; it just records whatever it's given, which is why the ordering
+  // guarantee lives entirely in the caller.
+  gatewayTransactionId?: string | null
+  cardLast4?: string | null
+  cardBrand?: string | null
 }
 
 export async function recordPayment(
@@ -73,6 +81,9 @@ export async function recordPayment(
     p_applications: [
       { target_type: input.target.type, target_id: input.target.id, amount_applied: input.amountPaidCents },
     ],
+    p_gateway_transaction_id: input.gatewayTransactionId ?? null,
+    p_card_last4: input.cardLast4 ?? null,
+    p_card_brand: input.cardBrand ?? null,
   }) as { data: string | null; error: { message: string } | null }
 
   if (error) return { error: error.message }

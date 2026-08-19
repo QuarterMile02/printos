@@ -7,6 +7,7 @@ type GatewaySettings = {
   gateway_type: string
   hasApiLoginId: boolean
   hasTransactionKey: boolean
+  hasClientKey: boolean
   use_test_mode: boolean
   is_connected: boolean
 }
@@ -40,18 +41,21 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
   // whether one exists (hasLoginId/hasTxKey), shown as a masked placeholder instead.
   const [loginId, setLoginId] = useState('')
   const [txKey, setTxKey] = useState('')
+  const [clientKey, setClientKey] = useState('')
   const [hasLoginId, setHasLoginId] = useState(initialSettings.hasApiLoginId ?? false)
   const [hasTxKey, setHasTxKey] = useState(initialSettings.hasTransactionKey ?? false)
+  const [hasClientKey, setHasClientKey] = useState(initialSettings.hasClientKey ?? false)
   const [testMode, setTestMode] = useState(initialSettings.use_test_mode ?? false)
   const [connected, setConnected] = useState(initialSettings.is_connected ?? false)
   const [saving, setSaving] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
-  const [errors, setErrors] = useState<{ loginId?: string; txKey?: string }>({})
+  const [errors, setErrors] = useState<{ loginId?: string; txKey?: string; clientKey?: string }>({})
 
   async function handleSave() {
     const errs: typeof errors = {}
     if (!loginId.trim() && !hasLoginId) errs.loginId = 'API Login ID is required'
     if (!txKey.trim() && !hasTxKey) errs.txKey = 'Transaction Key is required'
+    if (!clientKey.trim() && !hasClientKey) errs.clientKey = 'Client Key is required for card payments (Account → Security Settings → Manage Public Client Key in Authorize.net)'
     if (Object.keys(errs).length) { setErrors(errs); return }
     setErrors({})
     setSaving(true)
@@ -59,6 +63,7 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
       gateway_type: 'authorize_net',
       api_login_id: loginId.trim() || undefined,
       transaction_key: txKey.trim() || undefined,
+      client_key: clientKey.trim() || undefined,
       use_test_mode: testMode,
       is_connected: true,
     })
@@ -66,8 +71,10 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
     if (res.error) { showToast(`Error: ${res.error}`); return }
     if (loginId.trim()) setHasLoginId(true)
     if (txKey.trim()) setHasTxKey(true)
+    if (clientKey.trim()) setHasClientKey(true)
     setLoginId('')
     setTxKey('')
+    setClientKey('')
     setConnected(true)
     showToast('Saved')
   }
@@ -79,8 +86,10 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
     if (res.error) { showToast(`Error: ${res.error}`); return }
     setLoginId('')
     setTxKey('')
+    setClientKey('')
     setHasLoginId(false)
     setHasTxKey(false)
+    setHasClientKey(false)
     setConnected(false)
     showToast('Disconnected')
   }
@@ -171,6 +180,23 @@ export default function PaymentGatewayClient({ orgId, orgSlug, initialSettings }
               className={`w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 ${errors.txKey ? 'border-red-300 focus:border-red-400 focus:ring-red-200' : 'border-gray-200 focus:border-qm-lime focus:ring-qm-lime'}`}
             />
             {errors.txKey && <p className="mt-1 text-xs text-red-600">{errors.txKey}</p>}
+          </div>
+
+          {/* Client Key */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Client Key</label>
+            <input
+              type="text"
+              value={clientKey}
+              onChange={(e) => { setClientKey(e.target.value); setErrors((p) => ({ ...p, clientKey: undefined })) }}
+              placeholder={hasClientKey ? '•••••••• (saved — leave blank to keep)' : 'Your Public Client Key'}
+              className={`w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 ${errors.clientKey ? 'border-red-300 focus:border-red-400 focus:ring-red-200' : 'border-gray-200 focus:border-qm-lime focus:ring-qm-lime'}`}
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              Separate from the API Login ID / Transaction Key above — required for card entry on invoices and
+              deposits (Authorize.net: Account → Security Settings → Manage Public Client Key).
+            </p>
+            {errors.clientKey && <p className="mt-1 text-xs text-red-600">{errors.clientKey}</p>}
           </div>
 
           {/* Test Mode toggle */}

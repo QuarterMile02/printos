@@ -11,6 +11,7 @@ import { renderPageError } from '@/lib/page-error'
 import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
 import DepositReceivedCard from '@/components/payments/deposit-received-card'
+import { getPublicGatewayConfig } from '@/lib/payments/gateway-config'
 
 export const dynamic = 'force-dynamic'
 
@@ -429,6 +430,8 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
   ) ?? []) as { id: string; name: string; type: string }[]
 
+  const gatewayConfig = await getPublicGatewayConfig(org.id)
+
   const { data: depositAppsSum } = await supabase
     .from('payment_applications')
     .select('amount_applied')
@@ -557,6 +560,7 @@ async function QuoteDetailPageInner({ params }: PageProps) {
             depositReceivedCents={depositReceivedCents}
             depositRequiredCents={depositRequiredCents}
             paymentMethods={paymentMethods}
+            gatewayConfig={gatewayConfig}
           />
         </div>
       )}

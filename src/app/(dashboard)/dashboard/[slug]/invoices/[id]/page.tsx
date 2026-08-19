@@ -5,6 +5,7 @@ import { getInvoiceEditedSinceUnpost } from './actions'
 import InvoiceCustomerPicker from './invoice-customer-picker'
 import InvoiceEditPanel from './invoice-edit-panel'
 import RecordPaymentForm from '@/components/payments/record-payment-form'
+import { getPublicGatewayConfig } from '@/lib/payments/gateway-config'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
@@ -117,6 +118,8 @@ async function PageInner({ params }: PageProps) {
   const paymentMethods = (await dbOrThrow(
     supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
   ) ?? []) as { id: string; name: string; type: string }[]
+
+  const gatewayConfig = await getPublicGatewayConfig(org.id)
 
   const applications = (await dbOrThrow(
     supabase
@@ -331,6 +334,7 @@ async function PageInner({ params }: PageProps) {
               target={{ type: 'invoice', id: inv.id }}
               defaultAmountCents={inv.balance_due}
               paymentMethods={paymentMethods}
+              gatewayConfig={gatewayConfig}
               revalidatePath={`/dashboard/${slug}/invoices/${inv.id}`}
             />
           </div>

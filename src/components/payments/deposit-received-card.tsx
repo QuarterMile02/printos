@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import RecordPaymentForm, { type PaymentMethodOption } from './record-payment-form'
 import type { PaymentTargetType } from '@/app/actions/record-payment'
+import type { PublicGatewayConfig } from '@/lib/payments/gateway-config'
 
 function formatCents(cents: number): string {
   return (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -16,13 +17,14 @@ type Props = {
   depositReceivedCents: number
   depositRequiredCents: number // 0 if no down-payment term configured
   paymentMethods: PaymentMethodOption[]
+  gatewayConfig?: PublicGatewayConfig
 }
 
 // Live query against payment_applications at display time, per the
 // deliberate decision NOT to denormalize amount_paid/balance_due onto
 // quotes/sales_orders -- this card is that follow-up UI work.
 export default function DepositReceivedCard({
-  orgId, orgSlug, customerId, target, depositReceivedCents, depositRequiredCents, paymentMethods,
+  orgId, orgSlug, customerId, target, depositReceivedCents, depositRequiredCents, paymentMethods, gatewayConfig,
 }: Props) {
   const [showModal, setShowModal] = useState(false)
 
@@ -68,6 +70,7 @@ export default function DepositReceivedCard({
               target={target}
               defaultAmountCents={Math.max(0, depositRequiredCents - depositReceivedCents) || depositReceivedCents}
               paymentMethods={paymentMethods}
+              gatewayConfig={gatewayConfig}
               revalidatePath={target.type === 'quote' ? `/dashboard/${orgSlug}/quotes/${target.id}` : `/dashboard/${orgSlug}/sales-orders/${target.id}`}
               onRecorded={() => setShowModal(false)}
             />

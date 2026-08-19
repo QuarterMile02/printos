@@ -68,10 +68,11 @@ async function PageInner({ params }: PageProps) {
     is_connected?: boolean
     hasApiLoginId?: boolean
     hasTransactionKey?: boolean
+    hasClientKey?: boolean
   } | null = null
   try {
     const { data } = await supabase.from('payment_gateway_settings').select('*').eq('organization_id', org.id).maybeSingle()
-    const row = data as { gateway_type?: string; use_test_mode?: boolean; is_connected?: boolean; api_login_id?: string | null; transaction_key?: string | null } | null
+    const row = data as { gateway_type?: string; use_test_mode?: boolean; is_connected?: boolean; api_login_id?: string | null; transaction_key?: string | null; client_key?: string | null } | null
     // Never send the decrypted (or even encrypted) credential values to the browser --
     // only whether each one already has a saved value, so the form can render a masked
     // placeholder instead of the real secret.
@@ -82,6 +83,7 @@ async function PageInner({ params }: PageProps) {
         is_connected: row.is_connected,
         hasApiLoginId: Boolean(row.api_login_id),
         hasTransactionKey: Boolean(row.transaction_key),
+        hasClientKey: Boolean(row.client_key),
       }
     }
   } catch {}

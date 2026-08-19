@@ -11,6 +11,7 @@ import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 import DepositReceivedCard from '@/components/payments/deposit-received-card'
+import { getPublicGatewayConfig } from '@/lib/payments/gateway-config'
 
 type PageProps = {
   params: Promise<{ slug: string; id: string }>
@@ -304,6 +305,8 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
     supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
   ) ?? []) as { id: string; name: string; type: string }[]
 
+  const gatewayConfig = await getPublicGatewayConfig(org.id)
+
   const { data: depositAppsSum } = await supabase
     .from('payment_applications')
     .select('amount_applied')
@@ -377,6 +380,7 @@ async function SalesOrderDetailPageInner({ params, searchParams }: PageProps) {
             depositReceivedCents={depositReceivedCents}
             depositRequiredCents={depositRequiredCents}
             paymentMethods={paymentMethods}
+            gatewayConfig={gatewayConfig}
           />
         </div>
       )}

@@ -21,6 +21,7 @@ export async function upsertPaymentGateway(
     gateway_type: string
     api_login_id: string | null
     transaction_key: string | null
+    client_key: string | null
     use_test_mode: boolean
     is_connected: boolean
   }>,
@@ -32,6 +33,7 @@ export async function upsertPaymentGateway(
   if (patch.is_connected !== undefined) row.is_connected = patch.is_connected
   if (patch.api_login_id?.trim()) row.api_login_id = encryptCredential(patch.api_login_id.trim())
   if (patch.transaction_key?.trim()) row.transaction_key = encryptCredential(patch.transaction_key.trim())
+  if (patch.client_key?.trim()) row.client_key = encryptCredential(patch.client_key.trim())
 
   const { error } = await svc
     .from('payment_gateway_settings')
@@ -53,6 +55,7 @@ export async function disconnectPaymentGateway(
         organization_id: orgId,
         api_login_id: null,
         transaction_key: null,
+        client_key: null,
         is_connected: false,
         updated_at: new Date().toISOString(),
       },
