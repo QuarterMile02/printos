@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
 const FAL_KEY = process.env.FAL_KEY;
 
@@ -12,6 +13,14 @@ function truncate(s: string, max = MAX_LOG_LEN) {
 type ImageLike = { url?: string; content?: string };
 
 export async function POST(req: NextRequest) {
+  // Cost-abuse gate only (no org-scoped resource involved) -- had no
+  // check at all, so anyone who found the URL could burn FAL_KEY credits.
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { endpoint, body } = await req.json();
 
   // Whitelist only fal endpoints we use
