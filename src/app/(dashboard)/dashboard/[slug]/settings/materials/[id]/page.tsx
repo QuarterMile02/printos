@@ -4,7 +4,7 @@ import MaterialForm from '../material-form'
 import PricingMatrixSection from '../pricing-matrix-section'
 import { cloneMaterial, deleteMaterial } from '../actions-sr'
 import { checkPermission } from '@/lib/check-permission'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, dbBestEffort } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 
 export const dynamic = 'force-dynamic'
@@ -123,8 +123,10 @@ async function PageInner({ params, searchParams }: PageProps) {
   let materialTypes: { id: string; name: string }[] = []
   let materialCategories: { id: string; name: string }[] = []
   let discounts: { id: string; name: string }[] = []
+  let productTypes: { id: string; name: string }[] = []
+  let selectedProductTypeIds: string[] = []
   if (editing) {
-    const [typesData, catsData, dData] = await Promise.all([
+    const [typesData, catsData, dData, ptData, selectedPtData] = await Promise.all([
       dbOrThrow(
         supabase
           .from('material_types')
@@ -148,10 +150,32 @@ async function PageInner({ params, searchParams }: PageProps) {
           .eq('organization_id', org.id)
           .order('name')
       ),
+      dbOrThrow(
+        supabase
+          .from('product_types')
+          .select('id, name')
+          .eq('organization_id', org.id)
+          .eq('is_active', true)
+          .order('sort_order')
+      ),
+      // best-effort: material_product_types is a new table (migration 169,
+      // PENDING as of this commit -- not auto-applied). Until Ruben runs
+      // it, this query 404s at the DB level; fail soft to an empty list
+      // rather than crashing the whole material edit page.
+      dbBestEffort(
+        supabase
+          .from('material_product_types')
+          .select('product_type_id')
+          .eq('material_id', id),
+        'material_product_types',
+        [],
+      ),
     ])
     materialTypes = (typesData ?? []) as { id: string; name: string }[]
     materialCategories = (catsData ?? []) as { id: string; name: string }[]
     discounts = (dData ?? []) as { id: string; name: string }[]
+    productTypes = (ptData ?? []) as { id: string; name: string }[]
+    selectedProductTypeIds = ((selectedPtData ?? []) as { product_type_id: string }[]).map(r => r.product_type_id)
   }
 
   const n = (v: number | null, d = 0) => Number(v ?? d)
@@ -183,6 +207,8 @@ async function PageInner({ params, searchParams }: PageProps) {
               materialTypes={materialTypes}
               materialCategories={materialCategories}
               discounts={discounts}
+              productTypes={productTypes}
+              selectedProductTypeIds={selectedProductTypeIds}
             />
           </div>
         </>
@@ -217,8 +243,8 @@ async function PageInner({ params, searchParams }: PageProps) {
                 <div className="flex justify-between"><dt className="text-gray-500">Multiplier</dt><dd className="font-medium tabular-nums">{n(m.multiplier, 2).toFixed(2)}x</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Sell/Buy Ratio</dt><dd className="font-medium tabular-nums">{n(m.sell_buy_ratio, 1).toFixed(2)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Sheet Cost</dt><dd className="font-medium tabular-nums">{m.sheet_cost != null ? `$${n(m.sheet_cost).toFixed(2)}` : '—'}</dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Unit Cost</dt><dd className="font-medium tabular-nums">{m.unit_cost != null ? `$${n(m.unit_cost).toFixed(4)}` : '—'}</dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Wastage Markup</dt><dd className="font-medium tabular-nums">{n(m.wastage_markup).toFixed(2)}%</dd></div>
+                {/* Unit Cost hidden -- confirmed redundant, see material-form.tsx */}
+                <div className="flex justify-between"><dt className="text-gray-500">Wastage Markup</dt><dd className="font-medium tabular-nums">{n(m.wastage_markup, 1).toFixed(2)}×</dd></div>
               </dl>
             </div>
 

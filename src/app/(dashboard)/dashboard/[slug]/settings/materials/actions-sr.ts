@@ -22,6 +22,14 @@ export async function saveMaterial(formData: FormData) {
   const id = formData.get('id') as string | null
   const orgId = formData.get('orgId') as string
   const orgSlug = formData.get('orgSlug') as string
+  // Units of Business -- a material can belong to many, unlike a product
+  // (which belongs to exactly one via products.product_type_id). Same
+  // checkbox-list + delete-then-insert-junction pattern as Departments on
+  // the labor/machine rate forms (labor_rate_departments/
+  // machine_rate_departments), just keyed by product_type_id instead of
+  // department_id -- product_types is the real "unit of business" entity,
+  // see known-issues/2026-08-21-material-units-of-business.md.
+  const productTypeIds = formData.getAll('product_type_ids').map(v => v as string).filter(Boolean)
 
   const fields: Record<string, unknown> = {
     name: formData.get('name') as string,
@@ -36,7 +44,10 @@ export async function saveMaterial(formData: FormData) {
     width: numOrNull(formData.get('width')),
     height: numOrNull(formData.get('height')),
     sheet_cost: numOrNull(formData.get('sheet_cost')),
-    wastage_markup: parseFloat(formData.get('wastage_markup') as string) || 0,
+    // Multiplier, not a percentage (1 = cost only/no wastage, 2 = cost
+    // doubled) -- fallback is 1 (neutral), not 0, since 0 would now mean
+    // "free material" instead of "no wastage."
+    wastage_markup: parseFloat(formData.get('wastage_markup') as string) || 1,
     sell_buy_ratio: parseFloat(formData.get('sell_buy_ratio') as string) || 1,
     preferred_vendor: strOrNull(formData.get('preferred_vendor')),
     labor_charge: parseFloat(formData.get('labor_charge') as string) || 0,
@@ -50,7 +61,11 @@ export async function saveMaterial(formData: FormData) {
     material_category: null,
     unit_width: numOrNull(formData.get('unit_width')),
     unit_height: numOrNull(formData.get('unit_height')),
-    unit_cost: numOrNull(formData.get('unit_cost')),
+    // unit_cost deliberately NOT written -- Ruben confirmed ShopVOX has no
+    // Unit Cost concept, PrintOS invented it; hidden from the form below.
+    // Column stays (not dropped -- deletion waits for the pre-cutover
+    // re-scrape), just never touched by a save from here on, so existing
+    // values on older rows aren't clobbered with null.
     other_charge: numOrNull(formData.get('other_charge')),
     per_li_unit: formData.get('per_li_unit') === 'on',
     calculate_wastage: formData.get('calculate_wastage') === 'on',
@@ -90,17 +105,40 @@ export async function saveMaterial(formData: FormData) {
 
   const service = createServiceClient()
 
+  let savedId: string | null = id
   if (id) {
     const { error } = await service.from('materials').update(fields).eq('id', id)
     if (error) redirect(`/dashboard/${orgSlug}/settings/materials/${id}?edit=1&error=${encodeURIComponent(error.message)}`)
-    redirect(`/dashboard/${orgSlug}/settings/materials/${id}`)
   } else {
     fields.organization_id = orgId
     const { data, error } = await service.from('materials').insert(fields).select('id').single()
     if (error) redirect(`/dashboard/${orgSlug}/settings/materials/new?error=${encodeURIComponent(error.message)}`)
-    const newId = (data as { id: string } | null)?.id
-    redirect(`/dashboard/${orgSlug}/settings/materials${newId ? '/' + newId : ''}`)
+    savedId = (data as { id: string } | null)?.id ?? null
   }
+
+  if (savedId) {
+    // Best-effort: material_product_types is a new table (migration 169,
+    // PENDING as of this commit). Until it's applied, these calls 404 at
+    // the DB level -- logged, not blocking, so a missing junction table
+    // doesn't prevent saving the material's own fields (which already
+    // succeeded above).
+    try {
+      const { error: delErr } = await service.from('material_product_types').delete().eq('material_id', savedId)
+      if (delErr) throw delErr
+      if (productTypeIds.length > 0) {
+        const { error: ptErr } = await service.from('material_product_types').insert(
+          productTypeIds.map(ptId => ({ material_id: savedId!, product_type_id: ptId, organization_id: orgId }))
+        )
+        if (ptErr) throw ptErr
+      }
+    } catch (e) {
+      console.error('[saveMaterial] material_product_types write failed (non-blocking):', e instanceof Error ? e.message : e)
+    }
+  }
+
+  redirect(id
+    ? `/dashboard/${orgSlug}/settings/materials/${id}`
+    : `/dashboard/${orgSlug}/settings/materials${savedId ? '/' + savedId : ''}`)
 }
 
 export async function cloneMaterial(formData: FormData) {
@@ -180,6 +218,13 @@ export async function importMaterialsCsv(formData: FormData): Promise<{ created:
         else row[col] = vals[idx]
       }
     }
+    // wastage_markup is now a multiplier (1 = no wastage, 2 = cost
+    // doubled), not a percentage -- same conversion applied at every other
+    // write path that reads a raw ShopVOX-style value. Currently unreached
+    // (this whole function has no caller anywhere in the app -- see
+    // known-issues/2026-08-21-wastage-markup-semantics.md), fixed anyway
+    // for parity in case it's ever wired up.
+    if (typeof row.wastage_markup === 'number') row.wastage_markup = 1 + row.wastage_markup / 100
 
     const existingId = nameToId.get(name.toLowerCase())
     if (existingId) {

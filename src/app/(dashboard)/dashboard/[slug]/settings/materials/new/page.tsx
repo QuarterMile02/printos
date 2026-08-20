@@ -29,7 +29,7 @@ async function PageInner({ params, searchParams }: PageProps) {
 
   const { allowed: canEditInventory } = await checkPermission(org.id, 'materials.edit_inventory')
 
-  const [typesData, catsData, dData] = await Promise.all([
+  const [typesData, catsData, dData, ptData] = await Promise.all([
     dbOrThrow(
       supabase
         .from('material_types')
@@ -53,10 +53,19 @@ async function PageInner({ params, searchParams }: PageProps) {
         .eq('organization_id', org.id)
         .order('name')
     ),
+    dbOrThrow(
+      supabase
+        .from('product_types')
+        .select('id, name')
+        .eq('organization_id', org.id)
+        .eq('is_active', true)
+        .order('sort_order')
+    ),
   ])
   const materialTypes = (typesData ?? []) as { id: string; name: string }[]
   const materialCategories = (catsData ?? []) as { id: string; name: string }[]
   const discounts = (dData ?? []) as { id: string; name: string }[]
+  const productTypes = (ptData ?? []) as { id: string; name: string }[]
 
   return (
     <div className="p-8 max-w-4xl">
@@ -85,6 +94,8 @@ async function PageInner({ params, searchParams }: PageProps) {
           materialTypes={materialTypes}
           materialCategories={materialCategories}
           discounts={discounts}
+          productTypes={productTypes}
+          selectedProductTypeIds={[]}
         />
       </div>
     </div>
