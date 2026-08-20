@@ -2,8 +2,12 @@
 -- Migration 150: product_option_rates -- add real org-member RLS policy
 -- (currently zero policies, confirmed via pg_policies -- "Built But Not
 -- Connected" audit finding #4).
--- Applied: PENDING — run manually in the Supabase SQL Editor (Ruben),
---   not auto-applied by Claude Code.
+-- Applied: LIVE — run by Ruben in the Supabase SQL Editor and verified
+--   via pg_policies ("org members can manage product option rates",
+--   FOR ALL). This header was never updated after that; corrected here.
+--   The delete-then-insert data-loss risk described below is therefore
+--   closed -- the Migrate page's Labor/Machine sections can see existing
+--   rows again, so a save no longer resubmits an empty/incomplete array.
 -- ============================================================
 --
 -- Paste ONLY the CREATE POLICY statement at the bottom -- not this whole
