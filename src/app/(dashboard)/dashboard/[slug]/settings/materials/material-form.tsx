@@ -48,6 +48,7 @@ type MaterialData = {
 type DiscountOption = { id: string; name: string }
 type MaterialTypeOption = { id: string; name: string }
 type MaterialCategoryOption = { id: string; name: string }
+type ProductTypeOption = { id: string; name: string }
 
 type Props = {
   material: MaterialData | null
@@ -57,6 +58,13 @@ type Props = {
   materialTypes: MaterialTypeOption[]
   materialCategories: MaterialCategoryOption[]
   discounts: DiscountOption[]
+  // Units of Business -- product_types is the real entity for this (see
+  // known-issues/2026-08-21-material-units-of-business.md): "a product
+  // belongs to ONE unit of business" already exists as products.product_type_id;
+  // a material can belong to MANY, via the new material_product_types
+  // junction table below.
+  productTypes: ProductTypeOption[]
+  selectedProductTypeIds: string[]
 }
 
 const UNITS = ['Each', 'Sqft', 'Roll', 'Sheet', 'Feet', 'Inch', 'Yard', 'Hr', 'Linear Ft']
@@ -72,9 +80,11 @@ const labelCls = 'block text-sm font-medium text-gray-700'
 
 export default function MaterialForm({
   material, orgId, orgSlug, canEditInventory, materialTypes, materialCategories, discounts,
+  productTypes, selectedProductTypeIds,
 }: Props) {
   const m = material
   const isEdit = !!m?.id
+  const selectedPtIds = new Set(selectedProductTypeIds)
   return (
     <form action={saveMaterial} className="space-y-6">
       {isEdit && <input type="hidden" name="id" value={m!.id} />}
@@ -111,17 +121,39 @@ export default function MaterialForm({
         </div>
       </div>
 
+      {/* Units of Business -- a material can belong to many (unlike a
+          product, which belongs to exactly one via product_type_id).
+          Drives the monthly QuickBooks material-cost allocation export
+          (not built yet -- this is just the classification data it'll
+          need). Same checkbox-list pattern as Departments on the labor/
+          machine rate forms. */}
+      <div>
+        <h3 className={sectionTitleCls}>Units of Business</h3>
+        {productTypes.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">No units of business configured for this org.</p>
+        ) : (
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {productTypes.map(pt => (
+              <label key={pt.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" name="product_type_ids" value={pt.id} defaultChecked={selectedPtIds.has(pt.id)} className="h-4 w-4 accent-qm-lime" />
+                {pt.name}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Package Details */}
       <div>
         <h3 className={sectionTitleCls}>Package Details</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Unit Cost hidden -- confirmed redundant: ShopVOX has no Unit Cost
+            concept, PrintOS invented it. There's one cost concept per
+            material (Cost, above), named by type (Roll Cost / Sheet Cost /
+            etc in the redesigned form). Column not dropped -- see
+            known-issues/2026-08-21-wastage-markup-semantics.md. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className={labelCls}>Unit Width (in)</label><input type="number" name="unit_width" step="0.0001" defaultValue={m?.unit_width ?? ''} className={inp()} /></div>
           <div><label className={labelCls}>Unit Height (in)</label><input type="number" name="unit_height" step="0.0001" defaultValue={m?.unit_height ?? ''} className={inp()} /></div>
-          <div>
-            <label className={labelCls}>Unit Cost ($)</label>
-            <input type="number" name="unit_cost" step="0.0001" defaultValue={m?.unit_cost ?? ''} className={inp()} />
-            <p className="mt-1 text-xs text-gray-500">Cost per physical unit/package (e.g. cost per sheet, per roll)</p>
-          </div>
         </div>
       </div>
 
@@ -174,7 +206,11 @@ export default function MaterialForm({
           <div><label className={labelCls}>Width</label><input type="number" name="width" step="0.01" defaultValue={m?.width ?? ''} className={inp()} /></div>
           <div><label className={labelCls}>Height</label><input type="number" name="height" step="0.01" defaultValue={m?.height ?? ''} className={inp()} /></div>
           <div><label className={labelCls}>Sheet Cost</label><input type="number" name="sheet_cost" step="0.01" defaultValue={m?.sheet_cost ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Wastage Markup %</label><input type="number" name="wastage_markup" step="0.01" defaultValue={n(m?.wastage_markup).toFixed(2)} className={inp()} /></div>
+          <div>
+            <label className={labelCls}>Wastage Markup (X)</label>
+            <input type="number" name="wastage_markup" step="0.01" defaultValue={n(m?.wastage_markup, 1).toFixed(2)} className={inp()} />
+            <p className="mt-1 text-xs text-gray-500">Multiplier, not a percent — 1 = cost only, 2 = cost doubled (100% wastage)</p>
+          </div>
         </div>
       </div>
 

@@ -116,6 +116,22 @@ function parseStr(v: string): string | null {
   return s === '' ? null : s
 }
 
+// ShopVOX's "Wastage Markup (X)" column is a percentage of extra material
+// to charge for waste (their own "(X)" suffix matches the same convention
+// as "Multiplier (X)" -- Ruben confirmed this reads as a percentage, e.g.
+// 100 = +100% material). PrintOS's wastage_markup column now stores a
+// plain multiplier instead, same convention as materials.multiplier
+// elsewhere (1 = cost only/no wastage, 2 = cost doubled). Converting HERE,
+// at the import boundary, not as a one-time migration on existing rows --
+// the materials re-scrape is still pending before cutover and would
+// otherwise write ShopVOX's raw 100 straight back into the column on the
+// next import, silently reintroducing a 100x-strength value with nothing
+// erroring. See known-issues/2026-08-21-wastage-markup-semantics.md.
+function convertWastageMarkupToMultiplier(shopvoxPercent: number | null): number | null {
+  if (shopvoxPercent === null) return null
+  return 1 + shopvoxPercent / 100
+}
+
 // ─── Row builder ────────────────────────────────────────────────────────────
 
 // Shape that the server action expects. Type/category come across as text
@@ -196,7 +212,7 @@ export function buildRow(headerIndex: Record<string, number>, row: string[]): Ma
     fixed_quantity: parseNum(get_('fixed_quantity')),
     sheet_cost: parseNum(get_('sheet_cost')),
 
-    wastage_markup: parseNum(get_('wastage_markup')),
+    wastage_markup: convertWastageMarkupToMultiplier(parseNum(get_('wastage_markup'))),
     calculate_wastage: parseBool(get_('calculate_wastage')) ?? false,
     allow_variants: parseBool(get_('allow_variants')) ?? false,
 
