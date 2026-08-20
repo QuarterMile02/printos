@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { saveMaterial } from './actions-sr'
+import UnitsOfBusinessSelect from './units-of-business-select'
 
 type MaterialData = {
   id?: string
@@ -84,19 +85,40 @@ export default function MaterialForm({
 }: Props) {
   const m = material
   const isEdit = !!m?.id
-  const selectedPtIds = new Set(selectedProductTypeIds)
   return (
     <form action={saveMaterial} className="space-y-6">
       {isEdit && <input type="hidden" name="id" value={m!.id} />}
       <input type="hidden" name="orgId" value={orgId} />
       <input type="hidden" name="orgSlug" value={orgSlug} />
 
-      {/* Names */}
+      {/* General -- names + the "always visible" flags. These 4 checkboxes
+          used to live at the bottom of the form (Active standalone, the
+          other 3 under Display & Accounting) -- moved here per Ruben's
+          spec so they're seen immediately, not after scrolling past
+          pricing/dimensions/charges. */}
       <div>
         <h3 className={sectionTitleCls}>General</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className={labelCls}>Name *</label><input type="text" name="name" required defaultValue={m?.name ?? ''} className={inp()} /></div>
           <div><label className={labelCls}>Display Name</label><input type="text" name="external_name" defaultValue={m?.external_name ?? ''} className={inp()} /></div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-6">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="print_image_on_pdf" defaultChecked={m?.print_image_on_pdf === true} className="h-4 w-4 accent-qm-lime" />
+            Print Image on PDF
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="show_internal" defaultChecked={m?.show_internal === true} className="h-4 w-4 accent-qm-lime" />
+            Show Internal
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="display_description_in_li" defaultChecked={m?.display_description_in_li === true} className="h-4 w-4 accent-qm-lime" />
+            Display Description in Line Item
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="active" defaultChecked={m?.active !== false} className="h-4 w-4 rounded border-gray-300 accent-qm-lime" />
+            Active
+          </label>
         </div>
       </div>
 
@@ -119,58 +141,22 @@ export default function MaterialForm({
             </select>
           </div>
         </div>
-      </div>
-
-      {/* Units of Business -- a material can belong to many (unlike a
-          product, which belongs to exactly one via product_type_id).
-          Drives the monthly QuickBooks material-cost allocation export
-          (not built yet -- this is just the classification data it'll
-          need). Same checkbox-list pattern as Departments on the labor/
-          machine rate forms. */}
-      <div>
-        <h3 className={sectionTitleCls}>Units of Business</h3>
-        {productTypes.length === 0 ? (
-          <p className="text-sm text-gray-400 italic">No units of business configured for this org.</p>
-        ) : (
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            {productTypes.map(pt => (
-              <label key={pt.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" name="product_type_ids" value={pt.id} defaultChecked={selectedPtIds.has(pt.id)} className="h-4 w-4 accent-qm-lime" />
-                {pt.name}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Package Details */}
-      <div>
-        <h3 className={sectionTitleCls}>Package Details</h3>
-        {/* Unit Cost hidden -- confirmed redundant: ShopVOX has no Unit Cost
-            concept, PrintOS invented it. There's one cost concept per
-            material (Cost, above), named by type (Roll Cost / Sheet Cost /
-            etc in the redesigned form). Column not dropped -- see
-            known-issues/2026-08-21-wastage-markup-semantics.md. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className={labelCls}>Unit Width (in)</label><input type="number" name="unit_width" step="0.0001" defaultValue={m?.unit_width ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Unit Height (in)</label><input type="number" name="unit_height" step="0.0001" defaultValue={m?.unit_height ?? ''} className={inp()} /></div>
+        {/* Units of Business -- a material can belong to many (unlike a
+            product, which belongs to exactly one via product_type_id).
+            Drives the monthly QuickBooks material-cost allocation export
+            (not built yet -- this is just the classification data it'll
+            need). Dropdown + removable chips, not a checkbox grid --
+            same product_types list, same material_product_types junction. */}
+        <div className="mt-4">
+          <label className={labelCls}>Units of Business</label>
+          <UnitsOfBusinessSelect productTypes={productTypes} initialSelectedIds={selectedProductTypeIds} />
         </div>
       </div>
 
-      {/* Pricing */}
+      {/* Pricing -- units/formula ABOVE cost, per Ruben: how the material
+          is bought/sold and priced is decided before the actual numbers. */}
       <div>
         <h3 className={sectionTitleCls}>Pricing</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div><label className={labelCls}>Cost</label><input type="number" name="cost" step="0.0001" defaultValue={n(m?.cost).toFixed(4)} className={inp()} /></div>
-          <div><label className={labelCls}>Price</label><input type="number" name="price" step="0.0001" defaultValue={n(m?.price).toFixed(4)} className={inp()} /></div>
-          <div><label className={labelCls}>Multiplier</label><input type="number" name="multiplier" step="0.01" defaultValue={n(m?.multiplier, 2).toFixed(2)} className={inp()} /></div>
-          <div><label className={labelCls}>Sell/Buy Ratio</label><input type="number" name="sell_buy_ratio" step="0.01" defaultValue={n(m?.sell_buy_ratio, 1).toFixed(2)} className={inp()} /></div>
-        </div>
-      </div>
-
-      {/* Units / Formula */}
-      <div>
-        <h3 className={sectionTitleCls}>Units &amp; Formula</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <label className={labelCls}>Buying Units</label>
@@ -190,31 +176,66 @@ export default function MaterialForm({
               {FORMULAS.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
-          <div>
-            <label className={labelCls}>Fixed Side</label>
-            <select name="fixed_side" defaultValue={m?.fixed_side ?? ''} className={inp()}>
-              <option value="">—</option><option value="Width">Width</option><option value="Height">Height</option>
-            </select>
-          </div>
+          <div />
+        </div>
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div><label className={labelCls}>Cost</label><input type="number" name="cost" step="0.0001" defaultValue={n(m?.cost).toFixed(4)} className={inp()} /></div>
+          <div><label className={labelCls}>Price</label><input type="number" name="price" step="0.0001" defaultValue={n(m?.price).toFixed(4)} className={inp()} /></div>
+          <div><label className={labelCls}>Multiplier</label><input type="number" name="multiplier" step="0.01" defaultValue={n(m?.multiplier, 2).toFixed(2)} className={inp()} /></div>
+          <div><label className={labelCls}>Sell/Buy Ratio</label><input type="number" name="sell_buy_ratio" step="0.01" defaultValue={n(m?.sell_buy_ratio, 1).toFixed(2)} className={inp()} /></div>
         </div>
       </div>
 
-      {/* Dimensions / Sheet */}
+      {/* Wastage & Fixed Side -- grouped together: Fixed Side decides which
+          roll dimension is "fixed" for the waste-strip calculation that
+          Calculate Wastage turns on, and Wastage Markup is the multiplier
+          applied to that waste. */}
       <div>
-        <h3 className={sectionTitleCls}>Dimensions &amp; Sheet</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div><label className={labelCls}>Width</label><input type="number" name="width" step="0.01" defaultValue={m?.width ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Height</label><input type="number" name="height" step="0.01" defaultValue={m?.height ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Sheet Cost</label><input type="number" name="sheet_cost" step="0.01" defaultValue={m?.sheet_cost ?? ''} className={inp()} /></div>
+        <h3 className={sectionTitleCls}>Wastage &amp; Fixed Side</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className={labelCls}>Wastage Markup (X)</label>
             <input type="number" name="wastage_markup" step="0.01" defaultValue={n(m?.wastage_markup, 1).toFixed(2)} className={inp()} />
             <p className="mt-1 text-xs text-gray-500">Multiplier, not a percent — 1 = cost only, 2 = cost doubled (100% wastage)</p>
           </div>
+          <div>
+            <label className={labelCls}>Fixed Side</label>
+            <select name="fixed_side" defaultValue={m?.fixed_side ?? ''} className={inp()}>
+              <option value="">None</option>
+              <option value="Width">Width</option>
+              <option value="Height">Height</option>
+            </select>
+          </div>
+          <div className="flex items-end pb-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" name="calculate_wastage" defaultChecked={m?.calculate_wastage === true} className="h-4 w-4 accent-qm-lime" />
+              Calculate Wastage
+            </label>
+          </div>
         </div>
       </div>
 
-      {/* Charges + Pricing flags */}
+      {/* Dimensions -- left as-is this pass (field content/labels untouched,
+          "Sheet Cost" showing regardless of buying type is a known issue,
+          fixed in Part 2 with type-driven labels). Package Details (Unit
+          Width/Height) and the former Dimensions & Sheet fields (Width/
+          Height/Sheet Cost) grouped under one heading per the new section
+          order -- wastage_markup moved out to the section above. */}
+      <div>
+        <h3 className={sectionTitleCls}>Dimensions</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className={labelCls}>Unit Width (in)</label><input type="number" name="unit_width" step="0.0001" defaultValue={m?.unit_width ?? ''} className={inp()} /></div>
+          <div><label className={labelCls}>Unit Height (in)</label><input type="number" name="unit_height" step="0.0001" defaultValue={m?.unit_height ?? ''} className={inp()} /></div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div><label className={labelCls}>Width</label><input type="number" name="width" step="0.01" defaultValue={m?.width ?? ''} className={inp()} /></div>
+          <div><label className={labelCls}>Height</label><input type="number" name="height" step="0.01" defaultValue={m?.height ?? ''} className={inp()} /></div>
+          <div><label className={labelCls}>Sheet Cost</label><input type="number" name="sheet_cost" step="0.01" defaultValue={m?.sheet_cost ?? ''} className={inp()} /></div>
+        </div>
+      </div>
+
+      {/* Charges + Pricing flags -- Calculate Wastage moved out to Wastage
+          & Fixed Side above. */}
       <div>
         <h3 className={sectionTitleCls}>Charges</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -237,10 +258,6 @@ export default function MaterialForm({
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input type="checkbox" name="per_li_unit" defaultChecked={m?.per_li_unit === true} className="h-4 w-4 accent-qm-lime" />
             Per LI Unit
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="calculate_wastage" defaultChecked={m?.calculate_wastage === true} className="h-4 w-4 accent-qm-lime" />
-            Calculate Wastage
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input type="checkbox" name="include_in_base_price" defaultChecked={m?.include_in_base_price === true} className="h-4 w-4 accent-qm-lime" />
@@ -300,7 +317,8 @@ export default function MaterialForm({
         </div>
       )}
 
-      {/* Display & Accounting */}
+      {/* Display & Accounting -- the 3 flags that used to live here moved
+          up to General; this section keeps the rest. */}
       <div>
         <h3 className={sectionTitleCls}>Display &amp; Accounting</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -325,27 +343,7 @@ export default function MaterialForm({
           <label className={labelCls}>Description</label>
           <textarea name="description" rows={3} defaultValue={m?.description ?? ''} className={inp()} />
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-6">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="print_image_on_pdf" defaultChecked={m?.print_image_on_pdf === true} className="h-4 w-4 accent-qm-lime" />
-            Print Image on PDF
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="show_internal" defaultChecked={m?.show_internal === true} className="h-4 w-4 accent-qm-lime" />
-            Show Internal
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="display_description_in_li" defaultChecked={m?.display_description_in_li === true} className="h-4 w-4 accent-qm-lime" />
-            Display Description in Line Item
-          </label>
-        </div>
       </div>
-
-      {/* Active */}
-      <label className="flex items-center gap-2 text-sm cursor-pointer">
-        <input type="checkbox" name="active" defaultChecked={m?.active !== false} className="h-4 w-4 rounded border-gray-300 accent-qm-lime" />
-        Active
-      </label>
 
       <div className="flex gap-3 border-t border-gray-200 pt-4">
         <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">Save Material</button>
