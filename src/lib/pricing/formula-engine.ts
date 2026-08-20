@@ -279,106 +279,25 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     }
   }
 
-  // 6b. Load product_option_rates (labor/machine rates that can be selected at quote time)
-  const { data: optionRateRows } = await service
-    .from('product_option_rates')
-    .select('id, rate_type, rate_id, formula, multiplier, charge_per_li_unit, include_in_base_price, modifier_formula')
-    .eq('product_id', input.product_id)
-    .order('sort_order')
-  const optionRates = (optionRateRows ?? []) as {
-    id: string; rate_type: 'labor_rate' | 'machine_rate'; rate_id: string
-    formula: string | null; multiplier: number | null
-    charge_per_li_unit: boolean | null; include_in_base_price: boolean | null
-    modifier_formula: string | null
-  }[]
-
-  const orLaborIds = optionRates.filter(r => r.rate_type === 'labor_rate').map(r => r.rate_id)
-  const orMachineIds = optionRates.filter(r => r.rate_type === 'machine_rate').map(r => r.rate_id)
-  if (orLaborIds.length > 0) {
-    const { data } = await service.from('labor_rates').select('id, name, cost, price, production_rate, units, setup_charge, other_charge').in('id', orLaborIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }[]) {
-      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units, setup_charge: r.setup_charge ? Number(r.setup_charge) : null, other_charge: r.other_charge ? Number(r.other_charge) : null })
-    }
-  }
-  if (orMachineIds.length > 0) {
-    const { data } = await service.from('machine_rates').select('id, name, cost, price, production_rate, units, setup_charge, other_charge').in('id', orMachineIds)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }[]) {
-      if (!rateMap.has(r.id)) rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: r.production_rate ? Number(r.production_rate) : null, units: r.units, setup_charge: r.setup_charge ? Number(r.setup_charge) : null, other_charge: r.other_charge ? Number(r.other_charge) : null })
-    }
-  }
+  // product_option_rates is deliberately NOT read or priced here anymore.
+  // Investigation (known-issues/2026-08-19-product-option-rates-double-pricing.md)
+  // found that every row in that table -- 5,903 of 5,903, across 625 of
+  // 887 products, 558 of them active -- was an exact rate_id duplicate of
+  // a row already in this same product's product_default_items (the
+  // recipe loop above), meaning this section was double-charging labor
+  // and machine costs on the majority of the live catalog. The
+  // modifier-gating behavior this loop used to apply (modifier_formula,
+  // gating a rate on/off by a product modifier's value) was the one
+  // thing that would have made a row here meaningfully different from
+  // its default_items twin -- confirmed via a full backup export
+  // (backups/2026-08-20T00-31-39Z-product_option_rates.json) that 0 of
+  // the 5,903 rows actually had modifier_formula set, so removing this
+  // loop is a pure price correction, not a loss of any real feature.
+  // The 5,903 rows themselves are untouched (see the known-issues doc
+  // for the separate decision on what to do with them) -- this only
+  // stops them from being summed into a price.
 
   const selectedMods = input.selected_modifiers ?? {}
-  const modifierValueByName = new Map<string, boolean | number>()
-  for (const [key, value] of Object.entries(selectedMods)) {
-    const mod = modifierMap.get(key)
-    if (!mod) continue
-    modifierValueByName.set(mod.name, value)
-    if (mod.system_lookup_name) modifierValueByName.set(mod.system_lookup_name, value)
-  }
-
-  for (const r of optionRates) {
-    const rate = rateMap.get(r.rate_id)
-    const name = rate?.name ?? 'Unknown rate'
-    const formula = r.formula ?? product.formula ?? 'Area'
-    const mult = Number(r.multiplier ?? 1)
-    const rateCost = rate?.cost ?? 0
-    const ratePrice = rate?.price ?? 0
-    const fMult = formulaMultiplier(formula, input.width_inches, input.height_inches, input.quantity)
-
-    const chargeQty = r.charge_per_li_unit ? input.quantity : 1
-    let itemCost: number
-    let itemPrice: number
-    if (rate) {
-      const { totalCost, totalPrice } = computeLineItem(
-        { name: rate.name, cost: rateCost, price: ratePrice, markup: 1, production_rate: rate.production_rate ?? undefined, setup_charge: rate.setup_charge ?? undefined, other_charge: rate.other_charge ?? undefined },
-        fMult * mult,
-        chargeQty,
-      )
-      itemCost = totalCost
-      itemPrice = totalPrice
-    } else {
-      itemCost = 0
-      itemPrice = 0
-    }
-
-    // Apply modifier condition — modifier_formula may name a product modifier.
-    // Boolean modifier: only charges when selected. Numeric modifier: multiplies by value.
-    let inactive = false
-    let inactiveReason: string | undefined
-    let gatedModifierId: string | undefined
-    if (r.modifier_formula && modifierValueByName.size > 0) {
-      const gatedMod = modifierMap.get(r.modifier_formula)
-      if (gatedMod) gatedModifierId = gatedMod.id
-      const direct = modifierValueByName.get(r.modifier_formula)
-      if (direct !== undefined) {
-        if (typeof direct === 'boolean') {
-          if (!direct) { inactive = true; inactiveReason = `${r.modifier_formula} unchecked` }
-        } else if (typeof direct === 'number') {
-          itemCost *= direct; itemPrice *= direct
-        }
-      }
-      // If modifier_formula doesn't match a known modifier name, treat as always-charges custom formula.
-    }
-
-    const costCents = inactive ? 0 : Math.round(itemCost * 100)
-    const priceCents = inactive ? 0 : Math.round(itemPrice * 100)
-
-    breakdown.push({
-      name,
-      item_type: r.rate_type === 'labor_rate' ? 'LaborRate' : 'MachineRate',
-      formula,
-      cost_cents: costCents,
-      price_cents: priceCents,
-      in_base: r.include_in_base_price ?? false,
-      inactive,
-      inactive_reason: inactiveReason,
-      modifier_id: gatedModifierId,
-    })
-    if (!inactive) {
-      totalCostCents += costCents
-      if (r.include_in_base_price) basePriceCents += priceCents
-    }
-  }
 
   // 7. Apply modifier charges
   for (const [key, value] of Object.entries(selectedMods)) {

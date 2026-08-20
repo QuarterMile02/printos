@@ -2,11 +2,28 @@
 
 ## Status
 
-**Investigation only, reported per Ruben's request — nothing changed except this doc and a
-stale comment fix on migration 150.** This blocks Ruben's ~50-simplified-product build; do not
-start that build until (d) below is decided. Follow-up to
+**Pricing bug FIXED (2026-08-20) — the 5,903 rows themselves are untouched, that's a separate,
+still-open decision (see bottom of this doc).** Originally investigation-only; the finding
+below was severe and reversible enough (a code change, not data deletion) that Ruben asked for
+the fix to ship ahead of deciding what to do with the underlying rows. Follow-up to
 `known-issues/2026-08-19-pricing-tables-product-option-rates-vs-default-items.md`, which
-established that both tables price — this doc quantifies what that actually costs in practice.
+established that both tables price — this doc quantifies what that actually cost in practice
+and fixes it.
+
+**What shipped, in order:**
+1. Full backup of all 5,903 `product_option_rates` rows to
+   `backups/2026-08-20T00-31-39Z-product_option_rates.json` before anything else changed.
+2. Confirmed 0 of those 5,903 rows have `modifier_formula` set — see "Before touching
+   anything" below for why that mattered.
+3. `formula-engine.ts` no longer reads or prices `product_option_rates` at all — reversible,
+   one code change, corrects all 625 affected products at once, no data destroyed.
+4. Re-verified Banner Regular through the real pricing path: **$296.02**, exactly the
+   predicted un-duplicated price.
+5. Re-verified 5 more affected products spanning different product types — see results below.
+6. Fixed the cause: `bulk-import-shopvox/route.ts` no longer writes to `product_option_rates`
+   either (it's dead data now that nothing reads it).
+7. The 5,903 existing rows are NOT deleted — that's called out as a separate decision, not
+   bundled into this fix.
 
 **Correction to that earlier doc:** migration 150 (the `product_option_rates` RLS policy) **is
 live** — Ruben ran it and verified via `pg_policies` ("org members can manage product option
@@ -14,6 +31,24 @@ rates", FOR ALL). Its header comment said "PENDING" and was never updated after 
 was actually applied; fixed in this commit. **The data-loss risk that doc flagged (a Migrate
 save silently wiping option-rate rows because the page couldn't see them) is closed** — the
 page can see existing rows now, so a save no longer resubmits an empty array.
+
+## Before touching anything: backup + the modifier_formula question
+
+**Backup:** `backups/2026-08-20T00-31-39Z-product_option_rates.json` — full paginated export
+(past PostgREST's 1000-row default, same trap that caused the earlier miscount below) of all
+5,903 `product_option_rates` rows, taken via service role immediately before any code changed.
+This is the reversible source of truth if any row ever needs restoring or migrating into
+`product_default_items`.
+
+**modifier_formula: 0 of 5,903 rows have it set (non-null, non-empty).** This was the question
+that determined whether removing the pricing loop was a pure no-op or would silently drop real
+behavior — a row with `modifier_formula` set gates itself on/off by a product modifier's value
+at quote time, which its `product_default_items` twin can't do (that table's own
+`modifier_formula` column is never read by the recipe loop — established in the prior doc).
+With zero rows using it, **every single row in this table is doing nothing that its
+default_items twin doesn't already do** — confirmed by the same export script that produced the
+backup. This is what made stopping the pricing loop (below) a correction, not a feature
+removal.
 
 ## a) Priced Banner Regular- Single Sided up to 5ft live (H=48, W=96, Qty=1) via the real path
 
@@ -88,51 +123,112 @@ is Ruben's user id, consistent with him (or someone using his session) having tr
 bulk import for this product — via `bulk-import-shopvox-button.tsx`, a real UI button that
 calls this route, not manual field-by-field editing.
 
-## d) What happens if Ruben rebuilds in /edit — and what to do about it
+## d) What happens if Ruben rebuilds in /edit — original concern, now moot for pricing
 
-**`/edit` does not touch `product_option_rates` at all** (confirmed in the prior doc — no
-reference anywhere in `.../products/[id]/edit/` or its shared `product-form.tsx`). That means:
-if Ruben rebuilds one of the 625 affected products through `/edit`, his new clean
-`product_default_items` rows go in, but **any pre-existing `product_option_rates` rows for that
-product are left completely untouched** — `calculateProductPrice()` will keep summing them on
-top of his rebuild, unconditionally, regardless of which editor was used. **Building in `/edit`
-alone does not fix this for a product that already has option-rate rows — it silently
-continues the exact same double-counting on his rebuilt product**, and there'd be no UI
-anywhere (neither `/edit` nor the quote builder) that would show him why the price looks wrong.
+**`/edit` still does not touch `product_option_rates` at all** — but that no longer matters for
+pricing correctness, because nothing prices `product_option_rates` anymore (below). Before the
+fix, this section warned that rebuilding a product in `/edit` would silently continue
+double-counting on top of the rebuild, since `/edit` never clears the old option-rate rows.
+That specific risk is closed by the pricing fix — a rebuilt product's price is now driven
+entirely by whatever's in `product_default_items`, regardless of what stale
+`product_option_rates` rows still exist for it. (Its Migrate-page Labor/Machine columns may
+still look wrong if someone opens `/migrate` for it — see below — but the price itself is
+correct either way now.)
 
-Three options, in order of how much they fix:
+## The fix (2026-08-20)
 
-1. **Minimum (unblocks the 50-product build only):** before/when Ruben opens each of his ~50
-   products in `/edit` to rebuild it, delete that product's `product_option_rates` rows first.
-   Scoped, safe, but leaves the other ~575 affected products (508 of them still active) silently
-   over-pricing every quote that uses them.
-2. **Recommended: clear `product_option_rates` for all 625 affected products now**, independent
-   of the 50-product build. Given (a)-(c) — every row is a proven exact duplicate, the "sales
-   rep choice at quote time" feature it was named for was never built (prior doc, finding b),
-   and its one real remaining function (populating the Migrate page's Labor/Machine display)
-   only matters for products still being migrated through that page — clearing the table stops
-   558 live products from over-pricing customers today, not just the ones Ruben happens to
-   touch. This is a straight `DELETE`, reversible only via re-running the bulk importer, so
-   worth Ruben's explicit sign-off before it happens, but there's no case found in this
-   investigation where a row in this table was doing anything a `product_default_items` row
-   wasn't already doing.
-3. **Root cause, for whoever picks this up next:** fix `bulk-import-shopvox/route.ts` to stop
-   the double-write (option 2 above doesn't prevent it from happening again on the next bulk
-   import run), and/or change the Migrate page's Labor/Machine sections to read from
-   `product_default_items` the same way its Materials section already does — which would make
-   `product_option_rates` unnecessary for the Migrate page too, not just for `/edit`.
+**1. `formula-engine.ts` no longer reads or prices `product_option_rates`.** Removed the load
+(old lines 283-287) and the entire second pricing loop (old lines 319-381) — one self-contained
+block, replaced with a comment pointing here. Nothing else in the function changed; the recipe
+loop (`product_default_items`) is untouched. Reversible in one revert if this doc's conclusions
+ever turn out to be wrong.
 
-None of this was executed — reported per the instruction to investigate only.
+**2. Re-verified Banner Regular through the real path:** **$296.02**, exactly the price
+predicted from removing the $120.67 in duplicate cost. Confirmed via the pricing function's own
+output that no breakdown row carries the `inactive` field anymore (the tell for a row that used
+to come from `product_option_rates`).
+
+**3. Re-verified 5 more affected, active products spanning different product types** (H=24,
+W=36, Qty=1 — the same default dimensions the product-detail "Check Pricing" panel uses):
+
+| Product | Type | Before | After |
+|---|---|---|---|
+| Wall Signs (Paintable) - .25in Solid Aluminum... | Signs / Large Format Printing | $265.67 | $134.88 |
+| Polycarbonate/Lexan- Digital Translucent Vinyl Transfer (3 Layer) | Illuminated Signs | $315.91 | $162.41 |
+| ARG Petro- Tanker Black Cast Kiss Cut Graphics | Fleets/Vehicle Wraps | $458.30 | $458.30 |
+| Moderate Icon & Text Logo Design w/ Branding Booklet | Branding | $97.38 | $48.69 |
+| Wall Sign- Full Color Comp Alum with GI-18/GI-00 Pads... | (uncategorized) | $896.32 | $488.50 |
+
+Four of five dropped substantially, as expected. **The one that didn't (ARG Petro) is a real,
+explained result, not a gap in the fix** — every one of its 8 `product_option_rates` rows has
+`multiplier: 0`, so they contributed $0 to the total at any dimensions even before the fix;
+its actual price comes entirely from two `Material` rows, which `product_option_rates` never
+carries (its own `rate_type` CHECK constraint only allows `labor_rate`/`machine_rate` — never
+`Material`). Confirmed by re-running with the code temporarily reverted (`git stash`) to get
+the "before" column, then restored.
+
+**4. Fixed the cause: `bulk-import-shopvox/route.ts` no longer writes to
+`product_option_rates`.** Removed `optionRateRows` construction (`seenLabor`/`seenMachine`
+dedup, the two `optionRateRows.push()` calls) and the delete+insert against that table. It was
+built specifically to keep the Migrate page's Labor/Machine sections populated (its own old
+comment said so) — now that nothing reads that table for pricing, writing to it is dead work
+that would just keep re-accumulating exact duplicates on every future bulk-import run. Without
+this fix, the double-write (and the risk of some future code reading that table again and
+re-introducing the double-pricing bug) would have kept happening on every subsequent import.
+
+## Migrate page Labor/Machine display — recommendation, not built
+
+Ruben's assumption was right and should become true: **the Migrate page's Labor/Machine
+sections should read from `product_default_items`, the same way its Materials section already
+does**, instead of `product_option_rates`. That's the only remaining real reason
+`product_option_rates` still exists as a concept — with the bulk-importer fix above, newly
+(re-)imported products will show correct labor/machine rates in `product_default_items` but an
+**empty** Labor/Machine display on the Migrate page, since that page still only reads the now
+unpopulated table. This is a display gap, not a pricing one, but it's real and will confuse
+whoever opens `/migrate` for a freshly-imported product next.
+
+**Not built in this pass** — deliberately scoped out of the pricing fix (this PR is
+`formula-engine.ts` + `bulk-import-shopvox/route.ts`, both small and self-contained; changing
+`migrate-client.tsx`'s Labor/Machine sections, `actions.ts`'s save path, and `page.tsx`'s fetch
+is a separate, larger UI change touching a 1,600-line client component). Concretely, what it'd
+take: `migrate-client.tsx`'s `laborRateRows`/`machineRateRows` (currently seeded from
+`existingOptionRates`, lines ~247/254) would seed from `existingDefaultItems.filter(item_type
+=== 'LaborRate'/'MachineRate')` instead, matching the Materials section's own pattern exactly;
+`actions.ts`'s `replaceOptionRates()` would become dead code (or get removed); and the save
+bundle's `defaultItems` construction would need to include Labor/Machine rows the same way
+Materials rows already do. Worth its own PR.
+
+## Separate, still-open decision: what to do with the 5,903 existing rows
+
+**Not deleted. Not decided here — deliberately not bundled into the pricing fix**, per
+instruction. The rows are backed up
+(`backups/2026-08-20T00-31-39Z-product_option_rates.json`) and now have zero effect on price or
+anything else in the app (nothing reads `product_option_rates` anymore, on either the pricing
+or the write side). They're inert, not actively harmful, so there's no urgency forcing this
+decision — options, unchanged from the prior version of this doc:
+
+1. Leave them as-is indefinitely — genuinely harmless now that nothing reads or writes them.
+2. `DELETE` them once the Migrate-page change above ships (at that point they're not even
+   serving their last real purpose — populating that page's display — since the page would read
+   `product_default_items` instead).
+3. Something else Ruben has in mind that this investigation didn't anticipate.
+
+This needs Ruben's explicit sign-off, not a recommendation executed on his behalf — flagging it
+here so it doesn't get forgotten, not proposing an action.
 
 ## Related
 
 - `known-issues/2026-08-19-pricing-tables-product-option-rates-vs-default-items.md` — the prior
   doc this one corrects the product-count figure in and follows up on.
-- `src/lib/pricing/formula-engine.ts` — both pricing loops (lines 93-97/178-265 for
-  `product_default_items`, 283-287/319-381 for `product_option_rates`).
-- `src/app/api/products/bulk-import-shopvox/route.ts` (lines 197-273) — the double-write, with
-  its own comment explaining the (mistaken) design intent.
+- `backups/2026-08-20T00-31-39Z-product_option_rates.json` — full pre-fix backup, 5,903 rows.
+- `src/lib/pricing/formula-engine.ts` — the recipe loop (`product_default_items`) is the only
+  pricing loop left; the `product_option_rates` load + loop were removed.
+- `src/app/api/products/bulk-import-shopvox/route.ts` — no longer writes to
+  `product_option_rates`; still writes `product_default_items` with ALL item types (Material +
+  LaborRate + MachineRate), unchanged.
 - `src/app/(dashboard)/dashboard/[slug]/products/bulk-import-shopvox-button.tsx` — the UI
   trigger for that route.
+- `src/app/(dashboard)/dashboard/[slug]/products/[id]/migrate/migrate-client.tsx` — where the
+  Labor/Machine-from-`product_default_items` change described above would land.
 - `supabase/migrations/150_product_option_rates_rls_policy.sql` — header comment corrected in
-  this commit; policy itself confirmed live, not pending.
+  the prior commit; policy itself confirmed live, not pending.
