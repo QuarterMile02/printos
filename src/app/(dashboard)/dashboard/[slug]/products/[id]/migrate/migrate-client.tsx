@@ -698,7 +698,12 @@ export default function MigrateClient({
           {/* Scrollable content */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
             {leftMode === 'reference' && (
-              <ShopVOXReferencePanel shopvoxData={shopvoxData} />
+              <ShopVOXReferencePanel
+                shopvoxData={shopvoxData}
+                productId={product.id}
+                pricingType={product.pricing_type}
+                formula={product.formula}
+              />
             )}
             {leftMode === 'preview' && !hasShopvox && (
               <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
