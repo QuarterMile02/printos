@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { saveMaterial } from './actions-sr'
 import UnitsOfBusinessSelect from './units-of-business-select'
+import MaterialSizeFields from './material-size-fields'
 
 type MaterialData = {
   id?: string
@@ -26,7 +27,9 @@ type MaterialData = {
   material_category?: string | null
   unit_width?: number | null
   unit_height?: number | null
+  unit_depth?: number | null
   unit_cost?: number | null
+  thickness?: number | null
   other_charge?: number | null
   per_li_unit?: boolean | null
   calculate_wastage?: boolean | null
@@ -122,17 +125,13 @@ export default function MaterialForm({
         </div>
       </div>
 
-      {/* Classification */}
+      {/* Classification -- Type moved out to MaterialSizeFields below: it
+          now lives right next to the fields it drives the labels of
+          (Material Size), not next to Category, so the type-driven
+          relabeling is visually obvious as you change it. */}
       <div>
         <h3 className={sectionTitleCls}>Classification</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Type</label>
-            <select name="material_type_id" defaultValue={m?.material_type_id ?? ''} className={inp()}>
-              <option value="">— None —</option>
-              {materialTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
           <div>
             <label className={labelCls}>Category</label>
             <select name="category_id" defaultValue={m?.category_id ?? ''} className={inp()}>
@@ -215,22 +214,44 @@ export default function MaterialForm({
         </div>
       </div>
 
-      {/* Dimensions -- left as-is this pass (field content/labels untouched,
-          "Sheet Cost" showing regardless of buying type is a known issue,
-          fixed in Part 2 with type-driven labels). Package Details (Unit
-          Width/Height) and the former Dimensions & Sheet fields (Width/
-          Height/Sheet Cost) grouped under one heading per the new section
-          order -- wastage_markup moved out to the section above. */}
+      {/* Material Size -- Type-driven labels (Part 2 of the material form
+          redesign). Roll: Width x Length. Substrate: Height x Width x
+          Thickness. Unit: Height x Width x Depth/Thickness. Cost label
+          (Roll Cost/Sheet Cost/Unit Cost) follows the same Type, all three
+          reusing the same `sheet_cost` column -- this is the fix for
+          "Sheet Cost showing on a Roll material." See
+          known-issues/2026-08-21-material-form-redesign-part2-type-resolution.md. */}
+      <MaterialSizeFields
+        materialTypes={materialTypes}
+        initialTypeId={m?.material_type_id ?? null}
+        initialWidth={m?.width}
+        initialHeight={m?.height}
+        initialThickness={m?.thickness}
+        initialSheetCost={m?.sheet_cost}
+      />
+
+      {/* Packaging / Shipping -- unit_width/unit_height are the packaging
+          pair (Part 1 confirmed zero readers outside their own detail
+          view, so free to repurpose), plus the new unit_depth third
+          dimension. Weight/Weight UOM moved here out of Identification
+          (Part 1 finding D: one column pair, 258/1788 populated, no
+          readers, safe to move). */}
       <div>
-        <h3 className={sectionTitleCls}>Dimensions</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div><label className={labelCls}>Unit Width (in)</label><input type="number" name="unit_width" step="0.0001" defaultValue={m?.unit_width ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Unit Height (in)</label><input type="number" name="unit_height" step="0.0001" defaultValue={m?.unit_height ?? ''} className={inp()} /></div>
+        <h3 className={sectionTitleCls}>Packaging / Shipping</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div><label className={labelCls}>Height (in)</label><input type="number" name="unit_height" step="0.0001" defaultValue={m?.unit_height ?? ''} className={inp()} /></div>
+          <div><label className={labelCls}>Width/Length (in)</label><input type="number" name="unit_width" step="0.0001" defaultValue={m?.unit_width ?? ''} className={inp()} /></div>
+          <div><label className={labelCls}>Depth (in)</label><input type="number" name="unit_depth" step="0.0001" defaultValue={m?.unit_depth ?? ''} className={inp()} /></div>
         </div>
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div><label className={labelCls}>Width</label><input type="number" name="width" step="0.01" defaultValue={m?.width ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Height</label><input type="number" name="height" step="0.01" defaultValue={m?.height ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Sheet Cost</label><input type="number" name="sheet_cost" step="0.01" defaultValue={m?.sheet_cost ?? ''} className={inp()} /></div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className={labelCls}>Weight</label><input type="number" name="weight" step="0.0001" defaultValue={m?.weight ?? ''} className={inp()} /></div>
+          <div>
+            <label className={labelCls}>Weight UOM</label>
+            <select name="weight_uom" defaultValue={m?.weight_uom ?? ''} className={inp()}>
+              <option value="">—</option>
+              {WEIGHT_UOMS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -266,20 +287,12 @@ export default function MaterialForm({
         </div>
       </div>
 
-      {/* Identification */}
+      {/* Identification -- Weight/Weight UOM moved to Packaging/Shipping. */}
       <div>
         <h3 className={sectionTitleCls}>Identification</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div><label className={labelCls}>Part Number</label><input type="text" name="part_number" defaultValue={m?.part_number ?? ''} className={inp()} /></div>
           <div><label className={labelCls}>SKU</label><input type="text" name="sku" defaultValue={m?.sku ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Weight</label><input type="number" name="weight" step="0.0001" defaultValue={m?.weight ?? ''} className={inp()} /></div>
-          <div>
-            <label className={labelCls}>Weight UOM</label>
-            <select name="weight_uom" defaultValue={m?.weight_uom ?? ''} className={inp()}>
-              <option value="">—</option>
-              {WEIGHT_UOMS.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>
         </div>
       </div>
 
