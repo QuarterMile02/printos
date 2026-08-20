@@ -61,6 +61,17 @@ export async function saveMaterial(formData: FormData) {
     material_category: null,
     unit_width: numOrNull(formData.get('unit_width')),
     unit_height: numOrNull(formData.get('unit_height')),
+    // unit_depth -- new third packaging dimension. thickness -- new
+    // Material Size dimension, shared by Substrate ("Thickness") and Unit
+    // ("Depth/Thickness") -- see
+    // known-issues/2026-08-21-material-form-redesign-part2-type-resolution.md.
+    // Both are migration 170, PENDING as of this commit -- see the
+    // "does not exist" retry fallback around the update/insert calls
+    // below, which drops these two and re-saves if the migration hasn't
+    // been applied yet, so a pending migration can't block every
+    // material save.
+    unit_depth: numOrNull(formData.get('unit_depth')),
+    thickness: numOrNull(formData.get('thickness')),
     // unit_cost deliberately NOT written -- Ruben confirmed ShopVOX has no
     // Unit Cost concept, PrintOS invented it; hidden from the form below.
     // Column stays (not dropped -- deletion waits for the pre-cutover
@@ -105,13 +116,47 @@ export async function saveMaterial(formData: FormData) {
 
   const service = createServiceClient()
 
+  // thickness/unit_depth are migration 170, PENDING as of this commit
+  // (proposed only -- Ruben pastes it into the SQL Editor separately).
+  // Unlike material_product_types below, these two live in the SAME
+  // `fields` object as every other materials column, so a missing column
+  // would fail the ENTIRE save (not just these two values) if written
+  // unconditionally. Confirmed live against the real pre-migration schema:
+  // supabase-js's PostgREST layer does NOT return a raw "does not exist"
+  // message for this (that's what a couple of other pending-migration
+  // fallbacks elsewhere in this app match on, e.g. convert-action.ts's
+  // quotes.converted_to_so_id) -- an unknown column here comes back as
+  // `code: 'PGRST204'`, "Could not find the '<col>' column of 'materials'
+  // in the schema cache". Matching on that code (checked first, since
+  // it's the actual behavior for this call shape) with the message
+  // substring as a fallback for any other Postgres error path: retry once
+  // without the pending columns so the rest of the material still saves,
+  // rather than blocking every material save until Ruben runs the
+  // migration.
+  function isMissingColumnError(error: { code?: string; message?: string } | null): boolean {
+    if (!error) return false
+    return error.code === 'PGRST204' || !!error.message?.includes('does not exist')
+  }
+  function withoutPendingSizeColumns(f: Record<string, unknown>) {
+    const rest = { ...f }
+    delete rest.thickness
+    delete rest.unit_depth
+    return rest
+  }
+
   let savedId: string | null = id
   if (id) {
-    const { error } = await service.from('materials').update(fields).eq('id', id)
+    let { error } = await service.from('materials').update(fields).eq('id', id)
+    if (isMissingColumnError(error)) {
+      ;({ error } = await service.from('materials').update(withoutPendingSizeColumns(fields)).eq('id', id))
+    }
     if (error) redirect(`/dashboard/${orgSlug}/settings/materials/${id}?edit=1&error=${encodeURIComponent(error.message)}`)
   } else {
     fields.organization_id = orgId
-    const { data, error } = await service.from('materials').insert(fields).select('id').single()
+    let { data, error } = await service.from('materials').insert(fields).select('id').single()
+    if (isMissingColumnError(error)) {
+      ;({ data, error } = await service.from('materials').insert(withoutPendingSizeColumns(fields)).select('id').single())
+    }
     if (error) redirect(`/dashboard/${orgSlug}/settings/materials/new?error=${encodeURIComponent(error.message)}`)
     savedId = (data as { id: string } | null)?.id ?? null
   }
