@@ -11,6 +11,7 @@ import MigrateClient, {
   type MaterialOption, type LaborRateOption, type MachineRateOption,
   type ExistingOptionRate,
 } from './migrate-client'
+import type { QuoteModifierInput } from '@/components/products/shopvox-quote-preview'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +59,7 @@ async function PageInner({ params }: PageProps) {
     productModifiersRes,
     dropdownMenusRes,
     dropdownItemsRes,
+    quoteModifiersRes,
   ] = await Promise.all([
     dbOrThrow(supabase.from('product_categories').select('*').eq('organization_id', org.id).order('name')),
     dbOrThrow(supabase.from('workflow_templates').select('*').eq('organization_id', org.id).order('name')),
@@ -72,6 +74,18 @@ async function PageInner({ params }: PageProps) {
     dbOrThrow(supabase.from('product_modifiers').select('*').eq('product_id', id).order('sort_order')),
     dbOrThrow(supabase.from('product_dropdown_menus').select('*').eq('product_id', id).order('sort_order')),
     dbOrThrow(supabase.from('product_dropdown_items').select('*')),
+    // For Quote Preview -- the product's REAL recipe modifiers, joined to
+    // the modifiers catalog for display_name/modifier_type, so Quote
+    // Preview can render them as usable inputs (Numeric -> number field,
+    // Boolean -> checkbox) seeded from their own Default. Separate from
+    // productModifiersRes above, which the right-panel builder UI owns.
+    dbOrThrow(
+      supabase
+        .from('product_modifiers')
+        .select('default_value, sort_order, modifiers(id, system_lookup_name, display_name, modifier_type)')
+        .eq('product_id', id)
+        .order('sort_order')
+    ),
   ])
 
   const menus = (dropdownMenusRes ?? []) as { id: string; menu_name: string; is_optional: boolean | null }[]
@@ -86,6 +100,24 @@ async function PageInner({ params }: PageProps) {
     is_optional: boolean | null
     sort_order: number | null
   }[]
+  type QuoteModifierRow = {
+    default_value: string | null
+    modifiers: { id: string; system_lookup_name: string | null; display_name: string; modifier_type: string } | { id: string; system_lookup_name: string | null; display_name: string; modifier_type: string }[] | null
+  }
+  const productModifiers: QuoteModifierInput[] = ((quoteModifiersRes ?? []) as QuoteModifierRow[])
+    .map((r) => {
+      const mod = Array.isArray(r.modifiers) ? r.modifiers[0] : r.modifiers
+      if (!mod) return null
+      return {
+        id: mod.id,
+        system_lookup_name: mod.system_lookup_name,
+        display_name: mod.display_name,
+        modifier_type: mod.modifier_type,
+        default_value: r.default_value,
+      }
+    })
+    .filter((m): m is QuoteModifierInput => m !== null)
+
   const existingDropdownMenus: ExistingDropdownMenu[] = menus.map((m) => ({
     menu_name: m.menu_name,
     is_optional: m.is_optional ?? false,
@@ -123,6 +155,7 @@ async function PageInner({ params }: PageProps) {
       existingOptionRates={(optionRatesRes ?? []) as ExistingOptionRate[]}
       existingModifiers={(productModifiersRes ?? []) as ProductModifier[]}
       existingDropdownMenus={existingDropdownMenus}
+      productModifiers={productModifiers}
     />
   )
 }

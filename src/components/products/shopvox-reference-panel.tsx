@@ -4,9 +4,6 @@ import React, { useState } from 'react'
 
 type Props = {
   shopvoxData: any
-  productId: string
-  pricingType: string | null
-  formula: string | null
 }
 
 // Return the first non-null non-empty string among candidates.
@@ -17,111 +14,18 @@ function pick(...vals: any[]): string {
   return ''
 }
 
-function formatDollars(cents: number): string {
-  return '$' + (cents / 100).toFixed(2)
-}
-
-// ShopVOX doesn't store Width/Height as modifiers -- it synthesizes them at
-// quote time from the product's own pricing_type/formula (confirmed live
-// against ShopVOX's Configure Pricing screen: Coroplast 4mm- Direct
-// Printing's Modifiers list has no Width/Height entries, yet its Check
-// Pricing screen renders both as required, driving "Total Area: Sqft").
-// This mirrors that: which dimension(s) a given formula needs, synthesized
-// as real inputs rather than looked for in the modifiers list.
-//
-// Catalog survey (2026-08-20, all 253 pricing_type='Formula' products):
-// Area (251), Total_Area (1, a single test product -- computed identically
-// to Area in formula-engine.ts), Unit (1). No Perimeter/Width/Height/None
-// formula currently exists in this catalog -- 'both'/'width'/'height' below
-// are implemented per the stated rule and ready for when one shows up, but
-// unverified against a real product since none exists to check against.
-type DimensionalMode = 'both' | 'width' | 'height' | 'none'
-function dimensionalMode(formula: string | null): DimensionalMode {
-  switch (formula) {
-    case 'Area':
-    case 'Total_Area':
-    case 'Perimeter':
-      return 'both'
-    case 'Width':
-      return 'width'
-    case 'Height':
-      return 'height'
-    default: // Unit, None, null, or anything unrecognized
-      return 'none'
-  }
-}
-
-type ReferenceBreakdownLine = {
-  idx: number
-  name: string
-  kind: 'Material' | 'LaborRate' | 'MachineRate'
-  formula: string
-  total_cost_cents: number
-  total_sell_cents: number
-  inactive: boolean
-  inactive_reason: string | null
-  rate_found: boolean
-}
-type ReferencePriceResult = {
-  breakdown: ReferenceBreakdownLine[]
-  total_cost_cents: number
-  total_sell_cents: number
-  margin_pct: number
-  discount_percent?: number
-  discount_type?: string
-  warning?: string
-  error?: string
-}
-
-export default function ShopVOXReferencePanel({ shopvoxData, productId, pricingType, formula }: Props) {
+// Read-only ShopVOX mirror -- checkboxes here are a review/import checklist
+// (crossing an item off once it's been copied into the PrintOS recipe), not
+// pricing controls. Deliberately does NOT price anything: Ruben's decision
+// is that this panel is a reference view only, with "Check Reference Price"
+// (added in PR #23) removed entirely -- all real pricing now lives on the
+// Quote Preview tab, calculated through the actual PrintOS pricing engine
+// (calculateProductPrice), not a parallel implementation here. See
+// known-issues/2026-08-21-quote-preview-real-pricing.md.
+export default function ShopVOXReferencePanel({ shopvoxData }: Props) {
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   function toggle(key: string) {
     setChecked((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
-
-  const mode = dimensionalMode(formula)
-  const [width, setWidth] = useState<string>('')
-  const [height, setHeight] = useState<string>('')
-  const [quantity, setQuantity] = useState('1')
-  const [checking, setChecking] = useState(false)
-  const [checkError, setCheckError] = useState<string | null>(null)
-  const [priceResult, setPriceResult] = useState<ReferencePriceResult | null>(null)
-
-  const needsWidth = mode === 'both' || mode === 'width'
-  const needsHeight = mode === 'both' || mode === 'height'
-  const widthMissing = needsWidth && (!width.trim() || Number(width) <= 0)
-  const heightMissing = needsHeight && (!height.trim() || Number(height) <= 0)
-
-  async function handleCheckReferencePrice() {
-    setCheckError(null)
-    if (widthMissing || heightMissing) {
-      setCheckError('Width and Height are required for this formula — enter both before checking.')
-      return
-    }
-    setChecking(true)
-    setPriceResult(null)
-    try {
-      const res = await fetch('/api/pricing/shopvox', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_id: productId,
-          width_inches: needsWidth ? Number(width) : 0,
-          height_inches: needsHeight ? Number(height) : 0,
-          quantity: Math.max(1, parseInt(quantity, 10) || 1),
-        }),
-      })
-      const data = (await res.json()) as ReferencePriceResult
-      if (!res.ok || data.error) {
-        setCheckError(data.error ?? 'Reference pricing request failed')
-      } else {
-        setPriceResult(data)
-      }
-    } catch (e) {
-      setCheckError(e instanceof Error ? e.message : 'Reference pricing request failed')
-    } finally {
-      setChecking(false)
-    }
   }
 
   if (!shopvoxData || (!shopvoxData.basic && !shopvoxData.modifiers && !shopvoxData.default_items)) {
@@ -224,106 +128,6 @@ export default function ShopVOXReferencePanel({ shopvoxData, productId, pricingT
               })}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {/* Section 2b: Reference Price Check — synthesized Width/Height,
-          exactly as ShopVOX does (they're not in the Modifiers list below,
-          they're driven by pricing_type/formula above). Only shown for
-          pricing_type='Formula' -- that's the entire population this
-          per-item-formula pricing model applies to. */}
-      {pricingType === 'Formula' && (
-        <div>
-          <SectionHeader title="Check Reference Price" />
-          <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-2">
-            <div className="grid grid-cols-3 gap-2">
-              {needsWidth && (
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-500">
-                    Width (in) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number" step="0.01" min={0} value={width}
-                    onChange={(e) => setWidth(e.target.value)}
-                    className={`mt-0.5 block w-full rounded border px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-qm-lime ${widthMissing && checkError ? 'border-red-300' : 'border-gray-300'}`}
-                  />
-                </div>
-              )}
-              {needsHeight && (
-                <div>
-                  <label className="block text-[10px] font-medium text-gray-500">
-                    Height (in) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number" step="0.01" min={0} value={height}
-                    onChange={(e) => setHeight(e.target.value)}
-                    className={`mt-0.5 block w-full rounded border px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-qm-lime ${heightMissing && checkError ? 'border-red-300' : 'border-gray-300'}`}
-                  />
-                </div>
-              )}
-              <div>
-                <label className="block text-[10px] font-medium text-gray-500">Qty</label>
-                <input
-                  type="number" step="1" min={1} value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  className="mt-0.5 block w-full rounded border border-gray-300 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                />
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleCheckReferencePrice}
-              disabled={checking}
-              className="w-full rounded bg-qm-lime px-2 py-1.5 text-xs font-semibold text-white hover:brightness-110 disabled:opacity-50"
-            >
-              {checking ? 'Checking…' : 'Check Reference Price'}
-            </button>
-
-            {checkError && <p className="text-[11px] text-red-600">{checkError}</p>}
-
-            {priceResult && (
-              <div className="space-y-1 border-t border-gray-200 pt-2">
-                {priceResult.warning && (
-                  <p className="text-[11px] text-amber-600 italic">{priceResult.warning}</p>
-                )}
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Total cost</span>
-                  <span className="tabular-nums text-gray-700">{formatDollars(priceResult.total_cost_cents)}</span>
-                </div>
-                <div className="flex justify-between font-bold">
-                  <span className="text-gray-700">Total sell</span>
-                  <span className="tabular-nums text-gray-900">{formatDollars(priceResult.total_sell_cents)}</span>
-                </div>
-                <div className="flex justify-between text-[10px] text-gray-400">
-                  <span>Margin</span>
-                  <span className="tabular-nums">{priceResult.margin_pct.toFixed(1)}%</span>
-                </div>
-                {priceResult.discount_percent ? (
-                  <p className="text-[10px] text-gray-400">
-                    {priceResult.discount_type} discount applied: {priceResult.discount_percent}%
-                  </p>
-                ) : null}
-                {priceResult.breakdown.length > 0 && (
-                  <table className="w-full mt-1">
-                    <tbody>
-                      {priceResult.breakdown.map((b) => (
-                        <tr key={b.idx} className={b.inactive ? 'opacity-40' : ''}>
-                          <td className="py-0.5 pr-1 text-[10px] text-gray-600 truncate max-w-[120px]" title={b.name}>
-                            {b.name}{!b.rate_found && <span className="text-amber-500"> (no rate match)</span>}
-                          </td>
-                          <td className="py-0.5 pr-1 text-[10px] text-gray-400 font-mono">{b.formula}</td>
-                          <td className="py-0.5 text-right text-[10px] tabular-nums text-gray-700">
-                            {formatDollars(b.total_sell_cents)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
