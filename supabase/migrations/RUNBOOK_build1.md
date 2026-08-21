@@ -1,7 +1,7 @@
 # Build 1 Runbook — Material Redesign (Substrates)
 
 Paste-ready, one statement per step, run directly in the Supabase SQL Editor.
-100 steps total, numbered continuously across migrations 171–179 (the
+103 steps total, numbered continuously across migrations 171–179 (the
 `customer_display_name` rename is migration **180** and is deliberately
 **not** in this runbook — see the note at the bottom).
 
@@ -244,7 +244,25 @@ where organization_id = '4ca12dff-97be-4472-8099-ab102a3af01a' order by sort_ord
 
 ---
 
-## Step 18 — material_variants: create table
+## Step 18 — material_variants: create the material_length_to_feet helper function
+```sql
+CREATE OR REPLACE FUNCTION material_length_to_feet(value numeric, uom text)
+RETURNS numeric AS $$
+  SELECT CASE uom
+    WHEN 'in' THEN value / 12.0
+    WHEN 'ft' THEN value
+    WHEN 'yd' THEN value * 3.0
+    ELSE NULL
+  END
+$$ LANGUAGE sql IMMUTABLE;
+```
+**Verify:**
+```sql
+select material_length_to_feet(50, 'yd') as yd_50, material_length_to_feet(150, 'ft') as ft_150, material_length_to_feet(96, 'in') as in_96;
+```
+**Expect:** one row — `yd_50 = 150.0`, `ft_150 = 150.0` (equal to each other — 50 yards and 150 feet are the same length), `in_96 = 8.0000000000000000`.
+
+## Step 19 — material_variants: create table
 ```sql
 CREATE TABLE public.material_variants (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -268,10 +286,7 @@ CREATE TABLE public.material_variants (
   sqft numeric(12,4) GENERATED ALWAYS AS (
     CASE
       WHEN height IS NULL OR width IS NULL THEN NULL
-      WHEN length_uom = 'in' THEN round((height * width) / 144.0, 4)
-      WHEN length_uom = 'ft' THEN round(height * width, 4)
-      WHEN length_uom = 'yd' THEN round((height * width) * 9.0, 4)
-      ELSE NULL
+      ELSE round((width / 12.0) * material_length_to_feet(height, length_uom), 4)
     END
   ) STORED,
   total_cost numeric(12,4) GENERATED ALWAYS AS (
@@ -280,21 +295,11 @@ CREATE TABLE public.material_variants (
   cost_per_unit numeric(12,4) GENERATED ALWAYS AS (
     CASE
       WHEN base_cost IS NULL THEN NULL
-      WHEN height IS NOT NULL AND width IS NOT NULL AND
-           (CASE length_uom
-              WHEN 'in' THEN (height * width) / 144.0
-              WHEN 'ft' THEN height * width
-              WHEN 'yd' THEN (height * width) * 9.0
-              ELSE NULL
-            END) > 0
+      WHEN height IS NOT NULL AND width IS NOT NULL
+           AND (width / 12.0) * material_length_to_feet(height, length_uom) > 0
       THEN round(
              (base_cost + COALESCE(shipping_cost, 0)) /
-             (CASE length_uom
-                WHEN 'in' THEN (height * width) / 144.0
-                WHEN 'ft' THEN height * width
-                WHEN 'yd' THEN (height * width) * 9.0
-                ELSE NULL
-              END), 4)
+             ((width / 12.0) * material_length_to_feet(height, length_uom)), 4)
       ELSE round(base_cost + COALESCE(shipping_cost, 0), 4)
     END
   ) STORED,
@@ -303,20 +308,10 @@ CREATE TABLE public.material_variants (
       WHEN base_cost IS NULL OR multiplier IS NULL THEN NULL
       ELSE round(
         (CASE
-           WHEN height IS NOT NULL AND width IS NOT NULL AND
-                (CASE length_uom
-                   WHEN 'in' THEN (height * width) / 144.0
-                   WHEN 'ft' THEN height * width
-                   WHEN 'yd' THEN (height * width) * 9.0
-                   ELSE NULL
-                 END) > 0
+           WHEN height IS NOT NULL AND width IS NOT NULL
+                AND (width / 12.0) * material_length_to_feet(height, length_uom) > 0
            THEN (base_cost + COALESCE(shipping_cost, 0)) /
-                (CASE length_uom
-                   WHEN 'in' THEN (height * width) / 144.0
-                   WHEN 'ft' THEN height * width
-                   WHEN 'yd' THEN (height * width) * 9.0
-                   ELSE NULL
-                 END)
+                ((width / 12.0) * material_length_to_feet(height, length_uom))
            ELSE (base_cost + COALESCE(shipping_cost, 0))
          END) * multiplier, 4)
     END
@@ -335,7 +330,7 @@ order by column_name;
 ```
 **Expect:** 4 rows — `cost_per_unit`, `sell_per_unit`, `sqft`, `total_cost`, each `is_generated = ALWAYS`.
 
-## Step 19 — material_variants: updated_at trigger
+## Step 20 — material_variants: updated_at trigger
 ```sql
 DROP TRIGGER IF EXISTS set_material_variants_updated_at ON public.material_variants;
 CREATE TRIGGER set_material_variants_updated_at
@@ -348,7 +343,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_variants'::regcla
 ```
 **Expect:** one row.
 
-## Step 20 — material_variants: one-default-per-material index
+## Step 21 — material_variants: one-default-per-material index
 ```sql
 CREATE UNIQUE INDEX idx_material_variants_one_default
   ON public.material_variants(material_id) WHERE is_default;
@@ -359,7 +354,7 @@ select indexname from pg_indexes where tablename = 'material_variants' and index
 ```
 **Expect:** one row.
 
-## Step 21 — material_variants: material_id index
+## Step 22 — material_variants: material_id index
 ```sql
 CREATE INDEX idx_material_variants_material ON public.material_variants(material_id);
 ```
@@ -369,7 +364,7 @@ select indexname from pg_indexes where tablename = 'material_variants' and index
 ```
 **Expect:** one row.
 
-## Step 22 — material_variants: organization_id index
+## Step 23 — material_variants: organization_id index
 ```sql
 CREATE INDEX idx_material_variants_org ON public.material_variants(organization_id);
 ```
@@ -379,7 +374,7 @@ select indexname from pg_indexes where tablename = 'material_variants' and index
 ```
 **Expect:** one row.
 
-## Step 23 — material_variants: enable RLS
+## Step 24 — material_variants: enable RLS
 ```sql
 ALTER TABLE public.material_variants ENABLE ROW LEVEL SECURITY;
 ```
@@ -389,7 +384,7 @@ select relrowsecurity from pg_class where oid = 'public.material_variants'::regc
 ```
 **Expect:** `true`
 
-## Step 24 — material_variants: policy
+## Step 25 — material_variants: policy
 ```sql
 CREATE POLICY "org members can manage material_variants" ON public.material_variants
   FOR ALL
@@ -402,7 +397,7 @@ select policyname, cmd from pg_policies where schemaname = 'public' and tablenam
 ```
 **Expect:** one row — `org members can manage material_variants | ALL`
 
-## Step 25 — material_variants: grant authenticated
+## Step 26 — material_variants: grant authenticated
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_variants TO authenticated;
 ```
@@ -413,7 +408,7 @@ where table_schema = 'public' and table_name = 'material_variants' and grantee =
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 26 — material_variants: grant service_role
+## Step 27 — material_variants: grant service_role
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_variants TO service_role;
 ```
@@ -424,7 +419,7 @@ where table_schema = 'public' and table_name = 'material_variants' and grantee =
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 27 — material_variants: revoke anon ⚠️
+## Step 28 — material_variants: revoke anon ⚠️
 ```sql
 REVOKE ALL ON public.material_variants FROM anon;
 ```
@@ -435,7 +430,7 @@ where table_schema = 'public' and table_name = 'material_variants' and grantee =
 ```
 **Expect:** 0 rows. If this returns any row, `anon` still has a privilege on this table — do not proceed.
 
-## Step 28 — material_variants: sync-from-parent function
+## Step 29 — material_variants: sync-from-parent function
 ```sql
 CREATE OR REPLACE FUNCTION sync_material_variant_from_parent() RETURNS trigger AS $$
 BEGIN
@@ -458,7 +453,7 @@ select proname from pg_proc where proname = 'sync_material_variant_from_parent' 
 ```
 **Expect:** one row.
 
-## Step 29 — material_variants: sync-from-parent trigger
+## Step 30 — material_variants: sync-from-parent trigger
 ```sql
 DROP TRIGGER IF EXISTS sync_material_variant_before_write ON public.material_variants;
 CREATE TRIGGER sync_material_variant_before_write
@@ -471,7 +466,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_variants'::regcla
 ```
 **Expect:** one row.
 
-## Step 30 — materials: cascade length_uom function
+## Step 31 — materials: cascade length_uom function
 ```sql
 CREATE OR REPLACE FUNCTION cascade_material_length_uom() RETURNS trigger AS $$
 BEGIN
@@ -490,7 +485,7 @@ select proname from pg_proc where proname = 'cascade_material_length_uom' and pr
 ```
 **Expect:** one row.
 
-## Step 31 — materials: cascade length_uom trigger
+## Step 32 — materials: cascade length_uom trigger
 ```sql
 DROP TRIGGER IF EXISTS cascade_material_length_uom_trigger ON public.materials;
 CREATE TRIGGER cascade_material_length_uom_trigger
@@ -503,10 +498,10 @@ select tgname from pg_trigger where tgrelid = 'public.materials'::regclass and t
 ```
 **Expect:** one row.
 
-## Step 32 — material_variants: functional smoke test (generated columns)
+## Step 33 — material_variants: smoke test case 1 — sheet, 48×96, 'in'
 ```sql
-INSERT INTO public.material_variants (material_id, height, width, base_cost, shipping_cost, multiplier, is_default)
-SELECT id, 48, 96, 100, 20, 2.0, true FROM public.materials
+INSERT INTO public.material_variants (material_id, height, width, length_uom, base_cost, shipping_cost, multiplier, is_default)
+SELECT id, 96, 48, 'in', 100, 20, 2.0, true FROM public.materials
 WHERE organization_id = '4ca12dff-97be-4472-8099-ab102a3af01a' LIMIT 1
 RETURNING id, length_uom, sqft, total_cost, cost_per_unit, sell_per_unit;
 ```
@@ -515,11 +510,38 @@ RETURNING id, length_uom, sqft, total_cost, cost_per_unit, sell_per_unit;
 select length_uom, sqft, total_cost, cost_per_unit, sell_per_unit
 from public.material_variants where sqft = 32.0000 and total_cost = 120.0000;
 ```
-**Expect:** one row — `length_uom='in'`, `sqft=32.0000` (48×96/144), `total_cost=120.0000`, `cost_per_unit=3.7500` (120/32), `sell_per_unit=7.5000`.
+**Expect:** one row — `length_uom='in'`, `sqft=32.0000` (48×96/144, the sheet case the original bug also got right), `total_cost=120.0000`, `cost_per_unit=3.7500`, `sell_per_unit=7.5000`.
 
-## Step 33 — material_variants: clean up the smoke-test row
+## Step 34 — material_variants: smoke test case 2 — roll, 38in × 50yd
 ```sql
-DELETE FROM public.material_variants WHERE sqft = 32.0000 AND total_cost = 120.0000 AND sell_per_unit = 7.5000;
+INSERT INTO public.material_variants (material_id, height, width, length_uom, base_cost, shipping_cost, multiplier)
+SELECT id, 50, 38, 'yd', 950, 50, 2.0 FROM public.materials
+WHERE organization_id = '4ca12dff-97be-4472-8099-ab102a3af01a' LIMIT 1
+RETURNING id, length_uom, sqft, total_cost, cost_per_unit, sell_per_unit;
+```
+**Verify:**
+```sql
+select length_uom, sqft, total_cost, cost_per_unit, sell_per_unit
+from public.material_variants where sqft = 475.0000 and length_uom = 'yd';
+```
+**Expect:** one row — `length_uom='yd'`, `sqft=475.0000` (38in wide = 3.1667ft × 50yd long = 150ft), `total_cost=1000.0000`, `cost_per_unit=2.1053`, `sell_per_unit=4.2105`.
+
+## Step 35 — material_variants: smoke test case 3 — the SAME roll as 38in × 150ft, must agree with case 2
+```sql
+INSERT INTO public.material_variants (material_id, height, width, length_uom, base_cost, shipping_cost, multiplier)
+SELECT id, 150, 38, 'ft', 950, 50, 2.0 FROM public.materials
+WHERE organization_id = '4ca12dff-97be-4472-8099-ab102a3af01a' LIMIT 1
+RETURNING id, length_uom, sqft, total_cost, cost_per_unit, sell_per_unit;
+```
+**Verify:**
+```sql
+select length_uom, sqft from public.material_variants where base_cost = 950 and shipping_cost = 50 order by length_uom;
+```
+**Expect:** 2 rows — `ft | 475.0000` and `yd | 475.0000`. Both rows describe the same physical roll (50 yards = 150 feet) and MUST show the identical `sqft`. If they differ, the unit conversion is broken again — do not proceed to material_colors.
+
+## Step 36 — material_variants: clean up the smoke-test rows
+```sql
+DELETE FROM public.material_variants WHERE sqft IN (32.0000, 475.0000);
 ```
 **Verify:**
 ```sql
@@ -529,7 +551,7 @@ select count(*) from public.material_variants;
 
 ---
 
-## Step 34 — material_colors: create table
+## Step 37 — material_colors: create table
 ```sql
 CREATE TABLE public.material_colors (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -551,7 +573,7 @@ where table_schema = 'public' and table_name = 'material_colors' order by ordina
 ```
 **Expect:** 10 rows.
 
-## Step 35 — material_colors: updated_at trigger
+## Step 38 — material_colors: updated_at trigger
 ```sql
 DROP TRIGGER IF EXISTS set_material_colors_updated_at ON public.material_colors;
 CREATE TRIGGER set_material_colors_updated_at
@@ -564,7 +586,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_colors'::regclass
 ```
 **Expect:** one row.
 
-## Step 36 — material_colors: sync-org function
+## Step 39 — material_colors: sync-org function
 ```sql
 CREATE OR REPLACE FUNCTION sync_material_color_org() RETURNS trigger AS $$
 BEGIN
@@ -583,7 +605,7 @@ select proname from pg_proc where proname = 'sync_material_color_org' and pronam
 ```
 **Expect:** one row.
 
-## Step 37 — material_colors: sync-org trigger
+## Step 40 — material_colors: sync-org trigger
 ```sql
 DROP TRIGGER IF EXISTS sync_material_color_org_trigger ON public.material_colors;
 CREATE TRIGGER sync_material_color_org_trigger
@@ -596,7 +618,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_colors'::regclass
 ```
 **Expect:** one row.
 
-## Step 38 — material_colors: material_id index
+## Step 41 — material_colors: material_id index
 ```sql
 CREATE INDEX idx_material_colors_material ON public.material_colors(material_id);
 ```
@@ -606,7 +628,7 @@ select indexname from pg_indexes where tablename = 'material_colors' and indexna
 ```
 **Expect:** one row.
 
-## Step 39 — material_colors: organization_id index
+## Step 42 — material_colors: organization_id index
 ```sql
 CREATE INDEX idx_material_colors_org ON public.material_colors(organization_id);
 ```
@@ -616,7 +638,7 @@ select indexname from pg_indexes where tablename = 'material_colors' and indexna
 ```
 **Expect:** one row.
 
-## Step 40 — material_colors: enable RLS
+## Step 43 — material_colors: enable RLS
 ```sql
 ALTER TABLE public.material_colors ENABLE ROW LEVEL SECURITY;
 ```
@@ -626,7 +648,7 @@ select relrowsecurity from pg_class where oid = 'public.material_colors'::regcla
 ```
 **Expect:** `true`
 
-## Step 41 — material_colors: policy
+## Step 44 — material_colors: policy
 ```sql
 CREATE POLICY "org members can manage material_colors" ON public.material_colors
   FOR ALL
@@ -639,7 +661,7 @@ select policyname, cmd from pg_policies where schemaname = 'public' and tablenam
 ```
 **Expect:** one row — `org members can manage material_colors | ALL`
 
-## Step 42 — material_colors: grant authenticated
+## Step 45 — material_colors: grant authenticated
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_colors TO authenticated;
 ```
@@ -650,7 +672,7 @@ where table_schema = 'public' and table_name = 'material_colors' and grantee = '
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 43 — material_colors: grant service_role
+## Step 46 — material_colors: grant service_role
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_colors TO service_role;
 ```
@@ -661,7 +683,7 @@ where table_schema = 'public' and table_name = 'material_colors' and grantee = '
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 44 — material_colors: revoke anon ⚠️
+## Step 47 — material_colors: revoke anon ⚠️
 ```sql
 REVOKE ALL ON public.material_colors FROM anon;
 ```
@@ -674,7 +696,7 @@ where table_schema = 'public' and table_name = 'material_colors' and grantee = '
 
 ---
 
-## Step 45 — material_vendors: add is_preferred
+## Step 48 — material_vendors: add is_preferred
 ```sql
 ALTER TABLE public.material_vendors
   ADD COLUMN IF NOT EXISTS is_preferred boolean NOT NULL DEFAULT false;
@@ -686,7 +708,7 @@ where table_schema = 'public' and table_name = 'material_vendors' and column_nam
 ```
 **Expect:** one row — `is_preferred | boolean | false`
 
-## Step 46 — material_vendors: one-preferred-per-material index
+## Step 49 — material_vendors: one-preferred-per-material index
 ```sql
 CREATE UNIQUE INDEX IF NOT EXISTS idx_material_vendors_one_preferred
   ON public.material_vendors(material_id) WHERE is_preferred;
@@ -697,7 +719,7 @@ select indexname from pg_indexes where tablename = 'material_vendors' and indexn
 ```
 **Expect:** one row.
 
-## Step 47 — material_vendors: add vendor_part_number
+## Step 50 — material_vendors: add vendor_part_number
 ```sql
 ALTER TABLE public.material_vendors
   ADD COLUMN IF NOT EXISTS vendor_part_number text;
@@ -709,7 +731,7 @@ where table_schema = 'public' and table_name = 'material_vendors' and column_nam
 ```
 **Expect:** one row — `vendor_part_number | text`
 
-## Step 48 — material_vendors: add sku
+## Step 51 — material_vendors: add sku
 ```sql
 ALTER TABLE public.material_vendors
   ADD COLUMN IF NOT EXISTS sku text;
@@ -721,7 +743,7 @@ where table_schema = 'public' and table_name = 'material_vendors' and column_nam
 ```
 **Expect:** one row — `sku | text`
 
-## Step 49 — material_vendors: add delivery_method_id
+## Step 52 — material_vendors: add delivery_method_id
 ```sql
 ALTER TABLE public.material_vendors
   ADD COLUMN IF NOT EXISTS delivery_method_id uuid REFERENCES public.delivery_methods(id) ON DELETE SET NULL;
@@ -732,7 +754,7 @@ select conname from pg_constraint where conrelid = 'public.material_vendors'::re
 ```
 **Expect:** one row.
 
-## Step 50 — material_vendors: delivery_method_id index
+## Step 53 — material_vendors: delivery_method_id index
 ```sql
 CREATE INDEX IF NOT EXISTS idx_material_vendors_delivery_method ON public.material_vendors(delivery_method_id);
 ```
@@ -742,7 +764,7 @@ select indexname from pg_indexes where tablename = 'material_vendors' and indexn
 ```
 **Expect:** one row.
 
-## Step 51 — material_vendors: add delivery_days
+## Step 54 — material_vendors: add delivery_days
 ```sql
 ALTER TABLE public.material_vendors
   ADD COLUMN IF NOT EXISTS delivery_days text[];
@@ -754,7 +776,7 @@ where table_schema = 'public' and table_name = 'material_vendors' and column_nam
 ```
 **Expect:** one row — `delivery_days | _text`
 
-## Step 52 — material_vendors: add lead_time_days, free_delivery, po_description
+## Step 55 — material_vendors: add lead_time_days, free_delivery, po_description
 ```sql
 ALTER TABLE public.material_vendors
   ADD COLUMN IF NOT EXISTS lead_time_days integer,
@@ -772,7 +794,7 @@ order by column_name;
 
 ---
 
-## Step 53 — material_vendor_price_breaks: create table
+## Step 56 — material_vendor_price_breaks: create table
 ```sql
 CREATE TABLE public.material_vendor_price_breaks (
   id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -795,7 +817,7 @@ where table_schema = 'public' and table_name = 'material_vendor_price_breaks' or
 ```
 **Expect:** 8 rows.
 
-## Step 54 — material_vendor_price_breaks: updated_at trigger
+## Step 57 — material_vendor_price_breaks: updated_at trigger
 ```sql
 DROP TRIGGER IF EXISTS set_material_vendor_price_breaks_updated_at ON public.material_vendor_price_breaks;
 CREATE TRIGGER set_material_vendor_price_breaks_updated_at
@@ -808,7 +830,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_vendor_price_brea
 ```
 **Expect:** one row.
 
-## Step 55 — material_vendor_price_breaks: sync-org function
+## Step 58 — material_vendor_price_breaks: sync-org function
 ```sql
 CREATE OR REPLACE FUNCTION sync_material_vendor_price_break_org() RETURNS trigger AS $$
 BEGIN
@@ -827,7 +849,7 @@ select proname from pg_proc where proname = 'sync_material_vendor_price_break_or
 ```
 **Expect:** one row.
 
-## Step 56 — material_vendor_price_breaks: sync-org trigger
+## Step 59 — material_vendor_price_breaks: sync-org trigger
 ```sql
 DROP TRIGGER IF EXISTS sync_material_vendor_price_break_org_trigger ON public.material_vendor_price_breaks;
 CREATE TRIGGER sync_material_vendor_price_break_org_trigger
@@ -840,7 +862,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_vendor_price_brea
 ```
 **Expect:** one row.
 
-## Step 57 — material_vendor_price_breaks: material_vendor_id index
+## Step 60 — material_vendor_price_breaks: material_vendor_id index
 ```sql
 CREATE INDEX idx_material_vendor_price_breaks_vendor ON public.material_vendor_price_breaks(material_vendor_id);
 ```
@@ -850,7 +872,7 @@ select indexname from pg_indexes where tablename = 'material_vendor_price_breaks
 ```
 **Expect:** one row.
 
-## Step 58 — material_vendor_price_breaks: organization_id index
+## Step 61 — material_vendor_price_breaks: organization_id index
 ```sql
 CREATE INDEX idx_material_vendor_price_breaks_org ON public.material_vendor_price_breaks(organization_id);
 ```
@@ -860,7 +882,7 @@ select indexname from pg_indexes where tablename = 'material_vendor_price_breaks
 ```
 **Expect:** one row.
 
-## Step 59 — material_vendor_price_breaks: enable RLS
+## Step 62 — material_vendor_price_breaks: enable RLS
 ```sql
 ALTER TABLE public.material_vendor_price_breaks ENABLE ROW LEVEL SECURITY;
 ```
@@ -870,7 +892,7 @@ select relrowsecurity from pg_class where oid = 'public.material_vendor_price_br
 ```
 **Expect:** `true`
 
-## Step 60 — material_vendor_price_breaks: policy
+## Step 63 — material_vendor_price_breaks: policy
 ```sql
 CREATE POLICY "org members can manage material_vendor_price_breaks" ON public.material_vendor_price_breaks
   FOR ALL
@@ -883,7 +905,7 @@ select policyname, cmd from pg_policies where schemaname = 'public' and tablenam
 ```
 **Expect:** one row — `org members can manage material_vendor_price_breaks | ALL`
 
-## Step 61 — material_vendor_price_breaks: grant authenticated
+## Step 64 — material_vendor_price_breaks: grant authenticated
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_vendor_price_breaks TO authenticated;
 ```
@@ -894,7 +916,7 @@ where table_schema = 'public' and table_name = 'material_vendor_price_breaks' an
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 62 — material_vendor_price_breaks: grant service_role
+## Step 65 — material_vendor_price_breaks: grant service_role
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_vendor_price_breaks TO service_role;
 ```
@@ -905,7 +927,7 @@ where table_schema = 'public' and table_name = 'material_vendor_price_breaks' an
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 63 — material_vendor_price_breaks: revoke anon ⚠️
+## Step 66 — material_vendor_price_breaks: revoke anon ⚠️
 ```sql
 REVOKE ALL ON public.material_vendor_price_breaks FROM anon;
 ```
@@ -918,7 +940,7 @@ where table_schema = 'public' and table_name = 'material_vendor_price_breaks' an
 
 ---
 
-## Step 64 — material_relationships: create table
+## Step 67 — material_relationships: create table
 ```sql
 CREATE TABLE public.material_relationships (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -937,7 +959,7 @@ where table_schema = 'public' and table_name = 'material_relationships' order by
 ```
 **Expect:** 5 rows.
 
-## Step 65 — material_relationships: sync-org function
+## Step 68 — material_relationships: sync-org function
 ```sql
 CREATE OR REPLACE FUNCTION sync_material_relationship_org() RETURNS trigger AS $$
 DECLARE
@@ -963,7 +985,7 @@ select proname from pg_proc where proname = 'sync_material_relationship_org' and
 ```
 **Expect:** one row.
 
-## Step 66 — material_relationships: sync-org trigger
+## Step 69 — material_relationships: sync-org trigger
 ```sql
 DROP TRIGGER IF EXISTS sync_material_relationship_org_trigger ON public.material_relationships;
 CREATE TRIGGER sync_material_relationship_org_trigger
@@ -976,7 +998,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_relationships'::r
 ```
 **Expect:** one row.
 
-## Step 67 — material_relationships: material_id_a index
+## Step 70 — material_relationships: material_id_a index
 ```sql
 CREATE INDEX idx_material_relationships_a ON public.material_relationships(material_id_a);
 ```
@@ -986,7 +1008,7 @@ select indexname from pg_indexes where tablename = 'material_relationships' and 
 ```
 **Expect:** one row.
 
-## Step 68 — material_relationships: material_id_b index
+## Step 71 — material_relationships: material_id_b index
 ```sql
 CREATE INDEX idx_material_relationships_b ON public.material_relationships(material_id_b);
 ```
@@ -996,7 +1018,7 @@ select indexname from pg_indexes where tablename = 'material_relationships' and 
 ```
 **Expect:** one row.
 
-## Step 69 — material_relationships: organization_id index
+## Step 72 — material_relationships: organization_id index
 ```sql
 CREATE INDEX idx_material_relationships_org ON public.material_relationships(organization_id);
 ```
@@ -1006,7 +1028,7 @@ select indexname from pg_indexes where tablename = 'material_relationships' and 
 ```
 **Expect:** one row.
 
-## Step 70 — material_relationships: enable RLS
+## Step 73 — material_relationships: enable RLS
 ```sql
 ALTER TABLE public.material_relationships ENABLE ROW LEVEL SECURITY;
 ```
@@ -1016,7 +1038,7 @@ select relrowsecurity from pg_class where oid = 'public.material_relationships':
 ```
 **Expect:** `true`
 
-## Step 71 — material_relationships: policy
+## Step 74 — material_relationships: policy
 ```sql
 CREATE POLICY "org members can manage material_relationships" ON public.material_relationships
   FOR ALL
@@ -1029,7 +1051,7 @@ select policyname, cmd from pg_policies where schemaname = 'public' and tablenam
 ```
 **Expect:** one row — `org members can manage material_relationships | ALL`
 
-## Step 72 — material_relationships: grant authenticated
+## Step 75 — material_relationships: grant authenticated
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_relationships TO authenticated;
 ```
@@ -1040,7 +1062,7 @@ where table_schema = 'public' and table_name = 'material_relationships' and gran
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 73 — material_relationships: grant service_role
+## Step 76 — material_relationships: grant service_role
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_relationships TO service_role;
 ```
@@ -1051,7 +1073,7 @@ where table_schema = 'public' and table_name = 'material_relationships' and gran
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 74 — material_relationships: revoke anon ⚠️
+## Step 77 — material_relationships: revoke anon ⚠️
 ```sql
 REVOKE ALL ON public.material_relationships FROM anon;
 ```
@@ -1064,7 +1086,7 @@ where table_schema = 'public' and table_name = 'material_relationships' and gran
 
 ---
 
-## Step 75 — material_files: create table
+## Step 78 — material_files: create table
 ```sql
 CREATE TABLE public.material_files (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1088,7 +1110,7 @@ where table_schema = 'public' and table_name = 'material_files' order by ordinal
 ```
 **Expect:** 11 rows.
 
-## Step 76 — material_files: updated_at trigger
+## Step 79 — material_files: updated_at trigger
 ```sql
 DROP TRIGGER IF EXISTS set_material_files_updated_at ON public.material_files;
 CREATE TRIGGER set_material_files_updated_at
@@ -1101,7 +1123,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_files'::regclass 
 ```
 **Expect:** one row.
 
-## Step 77 — material_files: sync-org function
+## Step 80 — material_files: sync-org function
 ```sql
 CREATE OR REPLACE FUNCTION sync_material_file_org() RETURNS trigger AS $$
 BEGIN
@@ -1119,7 +1141,7 @@ select proname from pg_proc where proname = 'sync_material_file_org' and proname
 ```
 **Expect:** one row.
 
-## Step 78 — material_files: sync-org trigger
+## Step 81 — material_files: sync-org trigger
 ```sql
 DROP TRIGGER IF EXISTS sync_material_file_org_trigger ON public.material_files;
 CREATE TRIGGER sync_material_file_org_trigger
@@ -1132,7 +1154,7 @@ select tgname from pg_trigger where tgrelid = 'public.material_files'::regclass 
 ```
 **Expect:** one row.
 
-## Step 79 — material_files: material_id index
+## Step 82 — material_files: material_id index
 ```sql
 CREATE INDEX idx_material_files_material ON public.material_files(material_id);
 ```
@@ -1142,7 +1164,7 @@ select indexname from pg_indexes where tablename = 'material_files' and indexnam
 ```
 **Expect:** one row.
 
-## Step 80 — material_files: organization_id index
+## Step 83 — material_files: organization_id index
 ```sql
 CREATE INDEX idx_material_files_org ON public.material_files(organization_id);
 ```
@@ -1152,7 +1174,7 @@ select indexname from pg_indexes where tablename = 'material_files' and indexnam
 ```
 **Expect:** one row.
 
-## Step 81 — material_files: enable RLS
+## Step 84 — material_files: enable RLS
 ```sql
 ALTER TABLE public.material_files ENABLE ROW LEVEL SECURITY;
 ```
@@ -1162,7 +1184,7 @@ select relrowsecurity from pg_class where oid = 'public.material_files'::regclas
 ```
 **Expect:** `true`
 
-## Step 82 — material_files: policy
+## Step 85 — material_files: policy
 ```sql
 CREATE POLICY "org members can manage material_files" ON public.material_files
   FOR ALL
@@ -1175,7 +1197,7 @@ select policyname, cmd from pg_policies where schemaname = 'public' and tablenam
 ```
 **Expect:** one row — `org members can manage material_files | ALL`
 
-## Step 83 — material_files: grant authenticated
+## Step 86 — material_files: grant authenticated
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_files TO authenticated;
 ```
@@ -1186,7 +1208,7 @@ where table_schema = 'public' and table_name = 'material_files' and grantee = 'a
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 84 — material_files: grant service_role
+## Step 87 — material_files: grant service_role
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.material_files TO service_role;
 ```
@@ -1197,7 +1219,7 @@ where table_schema = 'public' and table_name = 'material_files' and grantee = 's
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 85 — material_files: revoke anon ⚠️
+## Step 88 — material_files: revoke anon ⚠️
 ```sql
 REVOKE ALL ON public.material_files FROM anon;
 ```
@@ -1210,7 +1232,7 @@ where table_schema = 'public' and table_name = 'material_files' and grantee = 'a
 
 ---
 
-## Step 86 — shopvox_materials: create table
+## Step 89 — shopvox_materials: create table
 ```sql
 CREATE TABLE public.shopvox_materials (
   id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1263,7 +1285,7 @@ where table_schema = 'public' and table_name = 'shopvox_materials' and is_genera
 ```
 **Expect:** one row — `status | ALWAYS`.
 
-## Step 87 — shopvox_materials: updated_at trigger
+## Step 90 — shopvox_materials: updated_at trigger
 ```sql
 DROP TRIGGER IF EXISTS set_shopvox_materials_updated_at ON public.shopvox_materials;
 CREATE TRIGGER set_shopvox_materials_updated_at
@@ -1276,7 +1298,7 @@ select tgname from pg_trigger where tgrelid = 'public.shopvox_materials'::regcla
 ```
 **Expect:** one row.
 
-## Step 88 — shopvox_materials: organization_id index
+## Step 91 — shopvox_materials: organization_id index
 ```sql
 CREATE INDEX idx_shopvox_materials_org ON public.shopvox_materials(organization_id);
 ```
@@ -1286,7 +1308,7 @@ select indexname from pg_indexes where tablename = 'shopvox_materials' and index
 ```
 **Expect:** one row.
 
-## Step 89 — shopvox_materials: status index
+## Step 92 — shopvox_materials: status index
 ```sql
 CREATE INDEX idx_shopvox_materials_status ON public.shopvox_materials(organization_id, status);
 ```
@@ -1296,7 +1318,7 @@ select indexname from pg_indexes where tablename = 'shopvox_materials' and index
 ```
 **Expect:** one row.
 
-## Step 90 — shopvox_materials: material_type_id index
+## Step 93 — shopvox_materials: material_type_id index
 ```sql
 CREATE INDEX idx_shopvox_materials_type ON public.shopvox_materials(material_type_id);
 ```
@@ -1306,7 +1328,7 @@ select indexname from pg_indexes where tablename = 'shopvox_materials' and index
 ```
 **Expect:** one row.
 
-## Step 91 — shopvox_materials: migrated_to_material_id index
+## Step 94 — shopvox_materials: migrated_to_material_id index
 ```sql
 CREATE INDEX idx_shopvox_materials_migrated_to ON public.shopvox_materials(migrated_to_material_id);
 ```
@@ -1316,7 +1338,7 @@ select indexname from pg_indexes where tablename = 'shopvox_materials' and index
 ```
 **Expect:** one row.
 
-## Step 92 — shopvox_materials: enable RLS
+## Step 95 — shopvox_materials: enable RLS
 ```sql
 ALTER TABLE public.shopvox_materials ENABLE ROW LEVEL SECURITY;
 ```
@@ -1326,7 +1348,7 @@ select relrowsecurity from pg_class where oid = 'public.shopvox_materials'::regc
 ```
 **Expect:** `true`
 
-## Step 93 — shopvox_materials: policy
+## Step 96 — shopvox_materials: policy
 ```sql
 CREATE POLICY "org members can manage shopvox_materials" ON public.shopvox_materials
   FOR ALL
@@ -1339,7 +1361,7 @@ select policyname, cmd from pg_policies where schemaname = 'public' and tablenam
 ```
 **Expect:** one row — `org members can manage shopvox_materials | ALL`
 
-## Step 94 — shopvox_materials: grant authenticated
+## Step 97 — shopvox_materials: grant authenticated
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.shopvox_materials TO authenticated;
 ```
@@ -1350,7 +1372,7 @@ where table_schema = 'public' and table_name = 'shopvox_materials' and grantee =
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 95 — shopvox_materials: grant service_role
+## Step 98 — shopvox_materials: grant service_role
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.shopvox_materials TO service_role;
 ```
@@ -1361,7 +1383,7 @@ where table_schema = 'public' and table_name = 'shopvox_materials' and grantee =
 ```
 **Expect:** 4 rows — DELETE, INSERT, SELECT, UPDATE.
 
-## Step 96 — shopvox_materials: revoke anon ⚠️
+## Step 99 — shopvox_materials: revoke anon ⚠️
 ```sql
 REVOKE ALL ON public.shopvox_materials FROM anon;
 ```
@@ -1372,7 +1394,7 @@ where table_schema = 'public' and table_name = 'shopvox_materials' and grantee =
 ```
 **Expect:** 0 rows. If this returns any row, `anon` still has a privilege on this table — do not proceed.
 
-## Step 97 — shopvox_materials: status smoke test — NEW
+## Step 100 — shopvox_materials: status smoke test — NEW
 ```sql
 INSERT INTO public.shopvox_materials (organization_id, shopvox_id, name, source_hash, scraped_at)
 VALUES ('4ca12dff-97be-4472-8099-ab102a3af01a', gen_random_uuid(), 'RUNBOOK_TEST_MATERIAL', 'hash1', now())
@@ -1384,7 +1406,7 @@ select status from public.shopvox_materials where name = 'RUNBOOK_TEST_MATERIAL'
 ```
 **Expect:** `NEW`
 
-## Step 98 — shopvox_materials: status smoke test — MIGRATED
+## Step 101 — shopvox_materials: status smoke test — MIGRATED
 ```sql
 UPDATE public.shopvox_materials
 SET migrated_to_material_id = (SELECT id FROM public.materials WHERE organization_id = '4ca12dff-97be-4472-8099-ab102a3af01a' LIMIT 1),
@@ -1398,7 +1420,7 @@ select status from public.shopvox_materials where name = 'RUNBOOK_TEST_MATERIAL'
 ```
 **Expect:** `MIGRATED`
 
-## Step 99 — shopvox_materials: status smoke test — CHANGED
+## Step 102 — shopvox_materials: status smoke test — CHANGED
 ```sql
 UPDATE public.shopvox_materials SET source_hash = 'hash2' WHERE name = 'RUNBOOK_TEST_MATERIAL';
 ```
@@ -1408,7 +1430,7 @@ select status from public.shopvox_materials where name = 'RUNBOOK_TEST_MATERIAL'
 ```
 **Expect:** `CHANGED`
 
-## Step 100 — shopvox_materials: clean up the smoke-test row
+## Step 103 — shopvox_materials: clean up the smoke-test row
 ```sql
 DELETE FROM public.shopvox_materials WHERE name = 'RUNBOOK_TEST_MATERIAL';
 ```
@@ -1429,5 +1451,6 @@ Build 2 updates those call sites breaks material create/edit, the materials
 list, and the CSV export immediately. Run it only after Build 2 ships, as its
 own separate action — not part of this runbook.
 
-After step 100, the schema is complete and `scripts/backfill-shopvox-materials.mjs --execute`
+After step 103, the schema is complete and `scripts/backfill-shopvox-materials.mjs --execute`
 can run (dry-run already confirmed 1785/1788 materials will get a `shopvox_id`).
+
