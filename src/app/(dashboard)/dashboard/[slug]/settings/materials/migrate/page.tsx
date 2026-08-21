@@ -3,7 +3,8 @@ import { notFound, unstable_rethrow } from 'next/navigation'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import MigrateClient from './migrate-client'
-import { buildSubstrateProposals, type ShopvoxMaterialRow } from '@/lib/material-migrate-proposals'
+import { buildFamilyProposals } from '@/lib/material-family-proposals'
+import type { ShopvoxMaterialRow } from '@/lib/material-migrate-proposals'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,25 +30,27 @@ async function PageInner({ params }: PageProps) {
   ) as { id: string; name: string; slug: string } | null
   if (!org) notFound()
 
-  // SUBSTRATES ONLY this pass (Build 1 scope) -- the proposal rules in
-  // material-migrate-proposals.ts were validated against this one type
-  // (Finding A). Other ShopVOX material types stay untouched on the
-  // ShopVOX side; nothing here filters them out of shopvox_materials
-  // itself, just out of this screen.
+  // SUBSTRATES ONLY this pass (Build 1/1b scope) -- the family/colour
+  // proposal rules in material-family-proposals.ts were validated
+  // against this one type (Build 1b's report). Other ShopVOX material
+  // types stay untouched on the ShopVOX side, just out of this screen.
   const substrateType = await dbOrThrow(
     supabase.from('material_types').select('id, name').eq('organization_id', org.id).eq('name', SUBSTRATE_TYPE_NAME).maybeSingle()
   ) as { id: string; name: string } | null
 
-  const rows = substrateType
-    ? await dbOrThrow(
-        supabase
-          .from('shopvox_materials')
-          .select('id, shopvox_id, name, material_type_id, category_id, width, height, sheet_cost, cost, price, multiplier, preferred_vendor, part_number, sku, po_description, info_url, image_url, description, vendor_pricing, status, migrated_to_material_id, migrated_at, source_hash, migrated_source_hash')
-          .eq('organization_id', org.id)
-          .eq('material_type_id', substrateType.id)
-          .order('name')
-      )
-    : []
+  const [rows, categoriesRes] = await Promise.all([
+    substrateType
+      ? dbOrThrow(
+          supabase
+            .from('shopvox_materials')
+            .select('id, shopvox_id, name, material_type_id, category_id, width, height, sheet_cost, cost, price, multiplier, preferred_vendor, part_number, sku, po_description, info_url, image_url, description, vendor_pricing, status, migrated_to_material_id, migrated_at, source_hash, migrated_source_hash')
+            .eq('organization_id', org.id)
+            .eq('material_type_id', substrateType.id)
+            .order('name')
+        )
+      : Promise.resolve([]),
+    dbOrThrow(supabase.from('material_categories').select('id, name').eq('organization_id', org.id)),
+  ])
 
   const typedRows = (rows ?? []) as unknown as (ShopvoxMaterialRow & {
     migrated_to_material_id: string | null
@@ -56,8 +59,10 @@ async function PageInner({ params }: PageProps) {
     migrated_source_hash: string | null
   })[]
 
+  const categoryNames = new Map(((categoriesRes ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]))
+
   const newRows = typedRows.filter((r) => r.status === 'NEW')
-  const proposals = buildSubstrateProposals(newRows)
+  const proposals = buildFamilyProposals(newRows, categoryNames)
 
   // For CHANGED rows, load the linked material's current values so the
   // client can render a field-by-field diff (ShopVOX now vs. PrintOS
