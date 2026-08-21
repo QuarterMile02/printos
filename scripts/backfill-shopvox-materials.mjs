@@ -18,11 +18,22 @@
 // row at all (shopvox_id is NOT NULL on that table — there is nothing
 // to backfill it with). Reported, not silently skipped.
 //
-// Backfilled rows are marked already-migrated (migrated_to_material_id =
-// the material's own id, migrated_source_hash = source_hash), so they
-// start in MIGRATED status, not NEW — they ARE real, live materials
-// already, not proposals awaiting acceptance. A future re-scrape that
-// finds a real change will flip them to CHANGED, same as any other row.
+// FIXED 2026-08-21 (caught by Ruben before this was run against
+// production data — the live table has already been cleared of the
+// three columns below, no data fix needed, script-only): this
+// previously set migrated_to_material_id/migrated_at/migrated_source_
+// hash on every backfilled row, so every row's derived status came out
+// MIGRATED and the migrate screen's NEW tab started empty — the exact
+// opposite of the point of this backfill. Seeding shopvox_materials
+// means "this is what ShopVOX has" — that's unmigrated BY DEFINITION.
+// The link is created when Ruben ACCEPTS a proposal on the migrate
+// screen (acceptSubstrateProposal in migrate/actions.ts), never by this
+// script. Backfilled rows are left with all three of those columns
+// NULL, same as any other freshly-scraped row — they land in NEW, and
+// Ruben's migrate-screen accept is what moves them to MIGRATED (setting
+// migrated_source_hash to the row's CURRENT source_hash at accept time,
+// which is what makes a later re-scrape correctly flip a changed row to
+// CHANGED instead of leaving it silently stuck at MIGRATED forever).
 //
 // DOES NOT touch public.materials. Delete nothing, ever — this only
 // inserts into shopvox_materials.
@@ -141,9 +152,9 @@ async function main() {
       pricing_tiers: [],
       source_hash,
       scraped_at: m.last_price_update ?? m.updated_at ?? now,
-      migrated_to_material_id: m.id,
-      migrated_at: now,
-      migrated_source_hash: source_hash, // status = MIGRATED immediately, see header comment
+      // migrated_to_material_id / migrated_at / migrated_source_hash:
+      // deliberately NOT set here — see header comment. Left NULL, same
+      // as any other unmigrated row; status derives to NEW.
     })
   }
 
