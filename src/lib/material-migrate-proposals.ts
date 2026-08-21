@@ -54,7 +54,22 @@ export type ShopvoxMaterialRow = {
 // positives a naive \d.{0,4}x.{0,4}\d regex hits (CC3X2-500M, 3X1-501 —
 // both bare digit-x-digit with no unit). Zero exceptions found in the
 // live dataset.
-const SIZE_TOKEN_RE = /(\d+(?:\.\d+)?)\s*(in|ft|yd|'|")\s*[x×]\s*(\d+(?:\.\d+)?)\s*(in|ft|yd|'|")?/gi
+//
+// FIXED 2026-08-21 (Build 1b): added `(?<![\d.])` before the first
+// number. Without it, a thickness restated as "in x fraction" — e.g.
+// "Aluminum 5ft x 10ft Mill .125in x 1/8in" — let the regex start
+// matching mid-decimal (skipping the leading "." of ".125in", or even
+// mid-digit-run) and produced a bogus match like "125in x 1" or "25in x
+// 1", which stripSizeToken then removed as if it were the sheet size —
+// leaving the REAL size ("5ft x 10ft") untouched and garbling
+// everything downstream. Confirmed this fix changes NOTHING about
+// Build 1's own reported Finding A counts (235 total / 227 both-
+// populated / 8 neither / 57 name-has-size — re-verified identical with
+// the fix applied) since none of those 57 rows depended on the buggy
+// behavior; the fix only stops a small set of Aluminum thickness-
+// restatement rows from being mis-parsed as if the thickness were a
+// second sheet size.
+const SIZE_TOKEN_RE = /(?<![\d.])(\d+(?:\.\d+)?)\s*(in|ft|yd|'|")\s*[x×]\s*(\d+(?:\.\d+)?)\s*(in|ft|yd|'|")?/gi
 
 // Bare "NNin" width extractor for the 8 cut-to-length Polycarbonate reel
 // rows (Finding A: neither width nor height populated, no size TOKEN in
