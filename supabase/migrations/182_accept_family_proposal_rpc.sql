@@ -5,6 +5,33 @@
 -- (shopvox_materials), and 181 (material_variants.color_id) already live.
 -- ============================================================
 --
+-- FIXED 2026-08-21, before this was ever run: caught on Ruben's first
+-- real accept (the one material created was unwound, its 7 source rows
+-- reset to NEW, before this fix landed). The bug was upstream of this
+-- function, not in it -- migrate-client.tsx's handleAccept hardcoded
+-- `baseCost: null, multiplier: null` on every variant instead of
+-- looking up each variant's own source row, and this function then
+-- COALESCE-d the resulting nulls to a multiplier of 2 for every
+-- variant, silently, regardless of what the real per-row multipliers
+-- actually were (confirmed: 3, except one at 3.77). Two things fixed:
+-- (1) the real bug, upstream, in migrate-client.tsx -- out of scope for
+-- this file; (2) the COALESCE(...,2) here, which masked that upstream
+-- bug by inventing a plausible-looking number instead of failing. Both
+-- COALESCE(...,2) calls below are removed -- see each site for which of
+-- "leave NULL" or "fail loudly" applies, decided by whether the target
+-- column is nullable (checked live/against every migration touching it,
+-- not assumed):
+--   - materials.multiplier: nullable (numeric(8,4) DEFAULT 2.0 from
+--     migration 010, no NOT NULL ever added anywhere) -- leaving it
+--     NULL when unknown is a legal, honest DB state.
+--   - material_variants.multiplier: NOT NULL (migration 173,
+--     `numeric(10,4) NOT NULL DEFAULT 1`) -- "leave NULL" isn't
+--     possible here without the INSERT itself erroring, so this
+--     function now RAISES explicitly and clearly when a variant's
+--     multiplier is missing, rather than letting a generic not-null
+--     constraint violation (or, worse, a silently invented default)
+--     stand in for it.
+--
 -- "acceptSubstrateProposal creates material_colors rows and sets
 -- material_variants.color_id, in one transaction with the rest" --
 -- Supabase/PostgREST has no client-side multi-statement transaction
@@ -87,7 +114,7 @@ BEGIN
     (v_material->>'cost')::numeric,
     (v_material->>'price')::numeric,
     (v_material->>'sheet_cost')::numeric,
-    COALESCE((v_material->>'multiplier')::numeric, 2),
+    (v_material->>'multiplier')::numeric, -- no COALESCE(...,2): materials.multiplier is nullable (no NOT NULL anywhere on it), so an unknown value is left NULL, honestly, rather than invented -- see header comment
     (v_material->>'weight')::numeric,
     v_material->>'part_number',
     v_material->>'sku',
@@ -115,6 +142,22 @@ BEGIN
 
     FOR v_variant IN SELECT * FROM jsonb_array_elements(v_colour->'variants')
     LOOP
+      -- material_variants.multiplier is NOT NULL (migration 173) -- a
+      -- missing value here can't just be "left NULL" the way materials.
+      -- multiplier above can. FAIL LOUDLY instead of COALESCE-ing to a
+      -- default: a confirmed real accept previously produced
+      -- multiplier=2.0000 on every variant of a 7-variant family whose
+      -- real multipliers were 3 and 3.77 -- a silently invented number
+      -- that priced without complaint. Same failure shape as the
+      -- tax-rate incident this mirrors. Raising here also gives a much
+      -- clearer error than the raw "null value in column multiplier
+      -- violates not-null constraint" Postgres would throw anyway if
+      -- this check were skipped and the INSERT just failed on its own.
+      IF v_variant->>'multiplier' IS NULL THEN
+        RAISE EXCEPTION 'accept_family_proposal: no multiplier available for a "%" variant (%x%) -- refusing to invent one. Every variant must carry its own real multiplier.',
+          COALESCE(v_colour->>'name', '(no colour/finish)'), v_variant->>'height', v_variant->>'width';
+      END IF;
+
       INSERT INTO public.material_variants (
         material_id, color_id, height, width, length_increment,
         is_default, base_cost, multiplier, sort_order
@@ -125,7 +168,7 @@ BEGIN
         (v_variant->>'length_increment')::numeric,
         COALESCE((v_variant->>'is_default')::boolean, false),
         (v_variant->>'base_cost')::numeric,
-        COALESCE((v_variant->>'multiplier')::numeric, 2),
+        (v_variant->>'multiplier')::numeric,
         COALESCE((v_variant->>'sort_order')::integer, 0)
       );
     END LOOP;
@@ -166,7 +209,7 @@ REVOKE ALL ON FUNCTION accept_family_proposal(jsonb) FROM anon;
 -- Expected: authenticated and service_role rows with EXECUTE, no anon row.
 
 -- ------------------------------------------------------------
--- STATEMENT 2 of 2 -- functional smoke test: accept a tiny 2-colour,
+-- STATEMENT 2 of 3 -- functional smoke test: accept a tiny 2-colour,
 -- 3-variant proposal, confirm the material/colours/variants/vendor
 -- landed and are linked correctly, then delete the test material
 -- (cascades to its variants/colours/vendor rows).
@@ -199,3 +242,25 @@ REVOKE ALL ON FUNCTION accept_family_proposal(jsonb) FROM anon;
 --
 -- delete from materials where name = 'RUNBOOK_TEST_FAMILY .118in - 1/8"';
 -- Expected: cascades to material_colors, material_variants, material_vendors for that material (all FK ON DELETE CASCADE).
+
+-- ------------------------------------------------------------
+-- STATEMENT 3 of 3 -- functional smoke test: a variant with NO
+-- multiplier must fail loudly, and must not leave ANY partial material
+-- behind (proves the one-transaction rollback actually rolls back, not
+-- just that the check fires).
+-- ------------------------------------------------------------
+-- select accept_family_proposal('{
+--   "organization_id": "4ca12dff-97be-4472-8099-ab102a3af01a",
+--   "material": {"name": "RUNBOOK_TEST_FAIL_LOUD .118in - 1/8\"", "length_uom": "in"},
+--   "colours": [
+--     {"name": "White", "variants": [
+--       {"height": 48, "width": 96, "is_default": true, "base_cost": 10, "multiplier": null}
+--     ]}
+--   ],
+--   "vendor_seed": null,
+--   "source_row_ids": []
+-- }'::jsonb);
+-- Expected: ERROR -- "accept_family_proposal: no multiplier available for a "White" variant (48x96) -- refusing to invent one...".
+--
+-- select count(*) from materials where name = 'RUNBOOK_TEST_FAIL_LOUD .118in - 1/8"';
+-- Expected: 0 -- the failed variant insert rolled back the material insert too, nothing partial landed.
