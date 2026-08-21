@@ -1,8 +1,9 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import type { ShopvoxMaterialRow, SubstrateProposal, ProposedVariant } from '@/lib/material-migrate-proposals'
-import { acceptSubstrateProposal, applyChangedFields } from './actions'
+import type { ShopvoxMaterialRow } from '@/lib/material-migrate-proposals'
+import type { FamilyProposal, FamilyColourGroup, FamilyVariant } from '@/lib/material-family-proposals'
+import { acceptSubstrateProposal, applyChangedFields, type AcceptColourInput, type AcceptVariantInput } from './actions'
 
 type FullRow = ShopvoxMaterialRow & {
   migrated_to_material_id: string | null
@@ -23,7 +24,7 @@ type Props = {
   orgSlug: string
   substrateTypeFound: boolean
   rows: FullRow[]
-  proposals: SubstrateProposal[]
+  proposals: FamilyProposal[]
   linkedMaterials: Record<string, unknown>[]
   migratedMaterialNames: { id: string; name: string }[]
 }
@@ -36,13 +37,43 @@ const CONFIDENCE_STYLE: Record<string, string> = {
   low: 'bg-red-50 text-red-700 border-red-200',
 }
 
+// Editable copy of a FamilyVariant, plus this screen's own state.
+type EditableVariant = FamilyVariant & { isDefault: boolean; removed: boolean }
+// Editable copy of a FamilyColourGroup — "Colour / Finish" is the UI
+// label everywhere (per instruction: the real data includes Mill, Brite
+// Brushed Gold, Painted 1 Side — finishes and prep states, not colours;
+// the grouping is right, only the word was wrong). Internal field names
+// and the material_colors table name stay "colour" throughout.
+type EditableColourFinish = { key: string; name: string; code: string; isStocked: boolean; removed: boolean; variants: EditableVariant[] }
+
+function pickDefaultIndex(variants: FamilyVariant[]): number {
+  const noSizeIdx = variants.findIndex((v) => v.sizeLabel === null)
+  return noSizeIdx >= 0 ? noSizeIdx : 0
+}
+
+function buildEditableState(proposal: FamilyProposal): EditableColourFinish[] {
+  return proposal.colours.map((c: FamilyColourGroup, ci) => {
+    const defaultIdx = pickDefaultIndex(c.variants)
+    return {
+      key: `${proposal.key}::${ci}`,
+      name: c.colourName ?? '',
+      code: c.code ?? '',
+      isStocked: false,
+      removed: false,
+      variants: c.variants.map((v, vi) => ({ ...v, isDefault: vi === defaultIdx, removed: false })),
+    }
+  })
+}
+
 export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows, proposals, linkedMaterials, migratedMaterialNames }: Props) {
   const [tab, setTab] = useState<Tab>('NEW')
   const [selectedKey, setSelectedKey] = useState<string | null>(proposals[0]?.key ?? null)
-  const [excludedRowIds, setExcludedRowIds] = useState<Set<string>>(new Set())
-  const [editedVariants, setEditedVariants] = useState<Record<string, ProposedVariant[]>>({})
+  const [familyNameOverride, setFamilyNameOverride] = useState<string | null>(null)
+  const [editableColours, setEditableColours] = useState<EditableColourFinish[] | null>(null)
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
+
+  const rowById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
 
   const rowsByStatus = useMemo(() => ({
     NEW: rows.filter((r) => r.status === 'NEW'),
@@ -63,51 +94,92 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
   }, [migratedMaterialNames])
 
   const selectedProposal = proposals.find((p) => p.key === selectedKey) ?? null
-  const activeVariants = selectedProposal ? (editedVariants[selectedProposal.key] ?? selectedProposal.variants) : []
+  const activeColours = editableColours ?? (selectedProposal ? buildEditableState(selectedProposal) : [])
+  const defaultFamilyName = selectedProposal ? `${selectedProposal.line}${selectedProposal.axisValue ? ` ${selectedProposal.axisValue}` : ''}`.trim() : ''
 
-  function updateVariant(idx: number, patch: Partial<ProposedVariant>) {
-    if (!selectedProposal) return
-    const next = activeVariants.map((v, i) => (i === idx ? { ...v, ...patch } : (patch.isDefault ? { ...v, isDefault: false } : v)))
-    setEditedVariants((prev) => ({ ...prev, [selectedProposal.key]: next }))
+  function selectProposal(p: FamilyProposal) {
+    setSelectedKey(p.key)
+    setEditableColours(null)
+    setFamilyNameOverride(null)
+    setMessage(null)
   }
 
-  function toggleRowExcluded(rowId: string) {
-    setExcludedRowIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(rowId)) next.delete(rowId)
-      else next.add(rowId)
-      return next
+  function updateColour(idx: number, patch: Partial<EditableColourFinish>) {
+    const next = activeColours.map((c, i) => (i === idx ? { ...c, ...patch } : c))
+    setEditableColours(next)
+  }
+
+  function removeColour(idx: number) {
+    updateColour(idx, { removed: true })
+  }
+
+  function updateVariant(colourIdx: number, variantIdx: number, patch: Partial<EditableVariant>) {
+    const next = activeColours.map((c, ci) => {
+      if (ci !== colourIdx) return c
+      const variants = c.variants.map((v, vi) => {
+        if (vi !== variantIdx) return { ...v, isDefault: patch.isDefault ? false : v.isDefault }
+        return { ...v, ...patch }
+      })
+      return { ...c, variants }
     })
+    setEditableColours(next)
+  }
+
+  function removeVariant(colourIdx: number, variantIdx: number) {
+    updateVariant(colourIdx, variantIdx, { removed: true })
+  }
+
+  // Vendor seed + legacy pricing fields are sourced from the raw
+  // shopvox_materials rows (not the proposal object, which only carries
+  // grouping/colour/size structure) — the first non-excluded row across
+  // all remaining colours, same "best available" approach Build 1 used.
+  function pickSeedRow(colours: EditableColourFinish[]): FullRow | null {
+    for (const c of colours) {
+      if (c.removed) continue
+      for (const v of c.variants) {
+        if (v.removed) continue
+        const row = rowById.get(v.sourceRowId)
+        if (row) return row
+      }
+    }
+    return null
+  }
+
+  function pickVendorSeed(seedRow: FullRow | null) {
+    if (!seedRow) return null
+    const best = [...(seedRow.vendor_pricing ?? [])].sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))[0]
+    if (best?.vendor_name) return { vendorName: best.vendor_name, vendorPrice: best.price, partNumber: best.part_number, rank: best.rank }
+    if (seedRow.preferred_vendor) return { vendorName: seedRow.preferred_vendor, vendorPrice: seedRow.cost, partNumber: seedRow.part_number, rank: null }
+    return null
   }
 
   function handleAccept() {
     if (!selectedProposal) return
-    const includedIdx = selectedProposal.variants
-      .map((v, i) => ({ v, i }))
-      .filter(({ v }) => !excludedRowIds.has(v.sourceRowId))
-    if (includedIdx.length === 0) { setMessage('All rows in this family are unchecked — nothing to accept.'); return }
+    const remainingColours = activeColours.filter((c) => !c.removed && c.variants.some((v) => !v.removed))
+    if (remainingColours.length === 0) { setMessage('Every colour/finish is removed — nothing to accept.'); return }
 
-    const variants = includedIdx.map(({ i }) => activeVariants[i])
-    const sourceRowIds = includedIdx.map(({ v }) => v.sourceRowId)
-    // Legacy pricing fields seeded from the default variant's source row
-    // (or the first included row if no default survives exclusion).
-    const seedRow = rows.find((r) => r.id === (variants.find((v) => v.isDefault)?.sourceRowId ?? sourceRowIds[0]))
+    const colours: AcceptColourInput[] = remainingColours.map((c) => {
+      const variants: AcceptVariantInput[] = c.variants
+        .filter((v) => !v.removed)
+        .map((v) => ({ height: v.height, width: v.width, lengthIncrement: v.lengthIncrement, isDefault: v.isDefault, baseCost: null, multiplier: null }))
+      return { name: c.name.trim() || null, code: c.code.trim() || null, isStocked: c.isStocked, variants }
+    })
+
+    const sourceRowIds = remainingColours.flatMap((c) => c.variants.filter((v) => !v.removed).map((v) => v.sourceRowId))
+    const seedRow = pickSeedRow(remainingColours)
+    const vendorSeed = pickVendorSeed(seedRow)
+    const familyName = (familyNameOverride ?? defaultFamilyName).trim()
+    if (!familyName) { setMessage('Family name is required.'); return }
 
     startTransition(async () => {
       const result = await acceptSubstrateProposal({
         orgId, orgSlug,
-        familyName: selectedProposal.familyName,
+        familyName,
         materialTypeId: selectedProposal.materialTypeId,
         categoryId: selectedProposal.categoryId,
         sourceRowIds,
-        variants: variants.map((v) => ({
-          height: v.height, width: v.width, lengthIncrement: v.lengthIncrement, isDefault: v.isDefault,
-          baseCost: seedRow?.sheet_cost ?? seedRow?.cost ?? null,
-          multiplier: seedRow?.multiplier ?? null,
-        })),
-        vendorSeed: selectedProposal.vendorSeed
-          ? { vendorName: selectedProposal.vendorSeed.vendorName, vendorPrice: selectedProposal.vendorSeed.vendorPrice, partNumber: selectedProposal.vendorSeed.partNumber, rank: selectedProposal.vendorSeed.rank }
-          : null,
+        colours,
+        vendorSeed,
         legacyFields: {
           cost: seedRow?.cost ?? null, price: seedRow?.price ?? null, sheetCost: seedRow?.sheet_cost ?? null,
           multiplier: seedRow?.multiplier ?? null, weight: null,
@@ -118,9 +190,9 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
       })
       if (result.error) setMessage(`Error: ${result.error}`)
       else {
-        setMessage(`Created material "${selectedProposal.familyName}".`)
+        setMessage(`Created material "${familyName}".`)
         setSelectedKey(null)
-        setExcludedRowIds(new Set())
+        setEditableColours(null)
       }
     })
   }
@@ -133,7 +205,7 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
     <div className="flex flex-col gap-4 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Migrate Materials from ShopVOX</h1>
-        <p className="mt-1 text-sm text-gray-500">Substrates only. Left is the read-only ShopVOX scrape. Right is a pre-filled proposal — nothing is written to PrintOS until you accept it.</p>
+        <p className="mt-1 text-sm text-gray-500">Substrates only. Left is the read-only ShopVOX scrape, grouped into proposed families. Right is a pre-filled proposal — nothing is written to PrintOS until you accept it.</p>
       </div>
 
       {message && (
@@ -154,35 +226,37 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
 
       {tab === 'NEW' && (
         <div className="grid grid-cols-2 gap-4">
-          {/* LEFT: read-only ShopVOX scrape, checkboxes to tick items off */}
+          {/* LEFT: read-only proposed families */}
           <div className="rounded-md border border-gray-200">
-            <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-medium uppercase text-gray-500">ShopVOX scrape ({rowsByStatus.NEW.length})</div>
-            <div className="max-h-[70vh] overflow-y-auto divide-y divide-gray-100">
-              {proposals.map((p) => (
-                <div key={p.key} className={`px-3 py-2 ${selectedKey === p.key ? 'bg-blue-50' : ''}`}>
-                  <button className="flex w-full items-center justify-between text-left" onClick={() => setSelectedKey(p.key)}>
-                    <span className="text-sm font-medium text-gray-900">{p.familyName}</span>
-                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase ${CONFIDENCE_STYLE[p.confidence]}`}>{p.confidence}</span>
+            <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-medium uppercase text-gray-500">Proposed families ({proposals.length})</div>
+            <div className="max-h-[75vh] overflow-y-auto divide-y divide-gray-100">
+              {proposals.map((p) => {
+                const label = `${p.line}${p.axisValue ? ` ${p.axisValue}` : ''}`
+                return (
+                  <button
+                    key={p.key}
+                    onClick={() => selectProposal(p)}
+                    className={`block w-full px-3 py-2 text-left ${selectedKey === p.key ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-900">{label}</span>
+                      <span className={`rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase ${CONFIDENCE_STYLE[p.confidence]}`}>{p.confidence}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-gray-500">
+                      {p.sourceRowIds.length} row{p.sourceRowIds.length === 1 ? '' : 's'} · {p.colours.length} colour/finish{p.colours.length === 1 ? '' : 'es'}
+                    </div>
+                    {/* Reasoning always visible, per instruction -- so Ruben can
+                        see WHY a family grouped (or a LOW row declined to
+                        group) before he ever clicks in, not just that it did. */}
+                    <div className="mt-1 text-[11px] text-gray-400 line-clamp-2">{p.reasoning}</div>
                   </button>
-                  <div className="mt-1 space-y-1 pl-2">
-                    {p.variants.map((v) => (
-                      <label key={v.sourceRowId} className="flex items-center gap-2 text-xs text-gray-600">
-                        <input
-                          type="checkbox"
-                          checked={!excludedRowIds.has(v.sourceRowId)}
-                          onChange={() => toggleRowExcluded(v.sourceRowId)}
-                        />
-                        <span className={excludedRowIds.has(v.sourceRowId) ? 'line-through text-gray-400' : ''}>{v.sourceName}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
               {proposals.length === 0 && <div className="p-4 text-sm text-gray-500">Nothing new to migrate.</div>}
             </div>
           </div>
 
-          {/* RIGHT: pre-filled proposal */}
+          {/* RIGHT: editable proposal */}
           <div className="rounded-md border border-gray-200">
             <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-medium uppercase text-gray-500">Proposal</div>
             {!selectedProposal ? (
@@ -191,41 +265,70 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
               <div className="space-y-3 p-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500">Material name</label>
-                  <div className="text-sm font-semibold text-gray-900">{selectedProposal.familyName}</div>
+                  <input
+                    type="text"
+                    className="mt-0.5 w-full rounded border border-gray-300 px-2 py-1 text-sm font-semibold text-gray-900"
+                    value={familyNameOverride ?? defaultFamilyName}
+                    onChange={(e) => setFamilyNameOverride(e.target.value)}
+                  />
                 </div>
                 <div className={`rounded border px-2 py-1.5 text-xs ${CONFIDENCE_STYLE[selectedProposal.confidence]}`}>
                   <span className="font-semibold uppercase">{selectedProposal.confidence} confidence</span> — {selectedProposal.reasoning}
                 </div>
 
-                <div>
-                  <div className="mb-1 text-xs font-medium text-gray-500">Variants</div>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left text-gray-500">
-                        <th className="pb-1">Default</th><th>Height</th><th>Width</th><th>Length incr.</th><th>Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeVariants.map((v, i) => (
-                        <tr key={v.sourceRowId} className={excludedRowIds.has(v.sourceRowId) ? 'opacity-40' : ''}>
-                          <td><input type="radio" name="default-variant" checked={v.isDefault} onChange={() => updateVariant(i, { isDefault: true })} /></td>
-                          <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={v.height ?? ''} onChange={(e) => updateVariant(i, { height: e.target.value === '' ? null : parseFloat(e.target.value) })} /></td>
-                          <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={v.width ?? ''} onChange={(e) => updateVariant(i, { width: e.target.value === '' ? null : parseFloat(e.target.value) })} /></td>
-                          <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={v.lengthIncrement ?? ''} onChange={(e) => updateVariant(i, { lengthIncrement: e.target.value === '' ? null : parseFloat(e.target.value) })} /></td>
-                          <td className="max-w-[160px] truncate text-gray-500" title={v.sourceName}>{v.sourceName}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <div className="space-y-3">
+                  {activeColours.map((c, ci) => {
+                    if (c.removed) return null
+                    return (
+                      <div key={c.key} className="rounded border border-gray-200 p-2">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] font-medium uppercase text-gray-500">Colour / Finish</label>
+                          <input
+                            type="text"
+                            placeholder="(none)"
+                            className="flex-1 rounded border border-gray-300 px-1.5 py-0.5 text-xs"
+                            value={c.name}
+                            onChange={(e) => updateColour(ci, { name: e.target.value })}
+                          />
+                          <input
+                            type="text"
+                            placeholder="code"
+                            className="w-20 rounded border border-gray-300 px-1.5 py-0.5 text-xs"
+                            value={c.code}
+                            onChange={(e) => updateColour(ci, { code: e.target.value })}
+                          />
+                          <label className="flex items-center gap-1 text-[11px] text-gray-600">
+                            <input type="checkbox" checked={c.isStocked} onChange={(e) => updateColour(ci, { isStocked: e.target.checked })} /> Stocked
+                          </label>
+                          <button onClick={() => removeColour(ci)} className="text-xs text-red-600 hover:underline">Remove</button>
+                        </div>
 
-                {selectedProposal.vendorSeed && (
-                  <div className="text-xs text-gray-600">
-                    <span className="font-medium text-gray-500">Vendor seed:</span> {selectedProposal.vendorSeed.vendorName}
-                    {selectedProposal.vendorSeed.vendorPrice != null && ` — $${selectedProposal.vendorSeed.vendorPrice}`}
-                    {selectedProposal.vendorSeed.partNumber && ` (#${selectedProposal.vendorSeed.partNumber})`}
-                  </div>
-                )}
+                        <table className="mt-2 w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-gray-500">
+                              <th className="w-8">Default</th><th>Height</th><th>Width</th><th>Length incr.</th><th>Source</th><th></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {c.variants.map((v, vi) => {
+                              if (v.removed) return null
+                              return (
+                                <tr key={v.sourceRowId}>
+                                  <td><input type="radio" name={`default-${c.key}`} checked={v.isDefault} onChange={() => updateVariant(ci, vi, { isDefault: true })} /></td>
+                                  <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={v.height ?? ''} onChange={(e) => updateVariant(ci, vi, { height: e.target.value === '' ? null : parseFloat(e.target.value) })} /></td>
+                                  <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={v.width ?? ''} onChange={(e) => updateVariant(ci, vi, { width: e.target.value === '' ? null : parseFloat(e.target.value) })} /></td>
+                                  <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={v.lengthIncrement ?? ''} onChange={(e) => updateVariant(ci, vi, { lengthIncrement: e.target.value === '' ? null : parseFloat(e.target.value) })} /></td>
+                                  <td className="max-w-[140px] truncate text-gray-500" title={v.sourceName}>{v.sourceName}</td>
+                                  <td><button onClick={() => removeVariant(ci, vi)} className="text-red-600 hover:underline">✕</button></td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })}
+                </div>
 
                 <div className="flex gap-2 pt-2">
                   <button
@@ -237,7 +340,7 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
                   </button>
                   <button
                     disabled={pending}
-                    onClick={() => { setSelectedKey(null); setExcludedRowIds(new Set()) }}
+                    onClick={() => { setSelectedKey(null); setEditableColours(null); setFamilyNameOverride(null) }}
                     className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Reject
