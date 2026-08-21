@@ -90,7 +90,13 @@ export async function acceptSubstrateProposal(input: AcceptFamilyProposalInput) 
       cost: input.legacyFields.cost,
       price: input.legacyFields.price,
       sheet_cost: input.legacyFields.sheetCost,
-      multiplier: input.legacyFields.multiplier ?? 2,
+      // No ?? 2 fallback -- materials.multiplier is nullable (confirmed
+      // against migration 010's own CREATE TABLE and every later
+      // migration touching it; no NOT NULL was ever added), so leaving
+      // it NULL when unknown is a legal, honest DB state. Inventing 2
+      // here would price silently and look plausible -- same failure
+      // shape the tax-rate incident was.
+      multiplier: input.legacyFields.multiplier,
       weight: input.legacyFields.weight,
       part_number: input.legacyFields.partNumber,
       sku: input.legacyFields.sku,
@@ -109,7 +115,13 @@ export async function acceptSubstrateProposal(input: AcceptFamilyProposalInput) 
         length_increment: v.lengthIncrement,
         is_default: v.isDefault,
         base_cost: v.baseCost,
-        multiplier: v.multiplier ?? 2,
+        // No ?? 2 fallback -- material_variants.multiplier is NOT NULL
+        // (migration 173), so a missing value here must FAIL the accept
+        // (accept_family_proposal raises loudly on a null variant
+        // multiplier) rather than silently insert an invented 2. Send
+        // the raw value through, null and all, so that check actually
+        // gets a chance to fire.
+        multiplier: v.multiplier,
         sort_order: i,
       })),
     })),

@@ -158,10 +158,29 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
     const remainingColours = activeColours.filter((c) => !c.removed && c.variants.some((v) => !v.removed))
     if (remainingColours.length === 0) { setMessage('Every colour/finish is removed — nothing to accept.'); return }
 
+    // BUG FIX 2026-08-21: baseCost/multiplier were hardcoded null here,
+    // silently dropping every variant's own real cost and multiplier
+    // (confirmed live: a real accept produced base_cost=NULL and
+    // multiplier=2.0000 on all 7 variants of an accepted Polycarbonate
+    // family, when the true per-row costs ranged $2.61-$4.12 and
+    // multipliers were 3 / 3.77). Each variant's cost and multiplier
+    // live on its OWN source shopvox_materials row (v.sourceRowId), not
+    // on the family/colour as a whole -- look each one up individually
+    // rather than reusing the single family-level seedRow used for
+    // legacyFields below. sheet_cost is preferred over cost, matching
+    // ShopVOX's own "Sheet Cost" field for a per-sqft/per-unit price
+    // (cost is the coarser, less specific fallback).
     const colours: AcceptColourInput[] = remainingColours.map((c) => {
       const variants: AcceptVariantInput[] = c.variants
         .filter((v) => !v.removed)
-        .map((v) => ({ height: v.height, width: v.width, lengthIncrement: v.lengthIncrement, isDefault: v.isDefault, baseCost: null, multiplier: null }))
+        .map((v) => {
+          const sourceRow = rowById.get(v.sourceRowId)
+          return {
+            height: v.height, width: v.width, lengthIncrement: v.lengthIncrement, isDefault: v.isDefault,
+            baseCost: sourceRow?.sheet_cost ?? sourceRow?.cost ?? null,
+            multiplier: sourceRow?.multiplier ?? null,
+          }
+        })
       return { name: c.name.trim() || null, code: c.code.trim() || null, isStocked: c.isStocked, variants }
     })
 
