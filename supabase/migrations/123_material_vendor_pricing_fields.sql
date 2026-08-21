@@ -1,6 +1,11 @@
 -- ============================================================
 -- Migration 123: add ShopVOX "Vendor Price" columns to material_vendors
--- Applied: NOT YET APPLIED — proposed only, paste into Supabase SQL editor to run
+-- Applied: yes — confirmed live 2026-08-21 (material redesign Build 1,
+-- Finding C): image_url/info_url/width/length/sqft_price/quantity all
+-- exist on the live material_vendors table with real data (quantity/
+-- length/sqft_price populated on all 893 rows). This header previously
+-- read "NOT YET APPLIED", which was stale — corrected here, nothing
+-- else in this file changed.
 -- ============================================================
 --
 -- material_vendors already exists (010_product_builder_FIXED.sql), already has
