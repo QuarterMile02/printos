@@ -3,13 +3,19 @@
 import { useMemo, useState, useTransition } from 'react'
 import type { ShopvoxMaterialRow } from '@/lib/material-migrate-proposals'
 import type { FamilyProposal, FamilyColourGroup, FamilyVariant } from '@/lib/material-family-proposals'
-import { acceptSubstrateProposal, applyChangedFields, type AcceptColourInput, type AcceptVariantInput } from './actions'
+import { SUBSTRATE_FAMILY_CONFIG } from '@/lib/material-family-proposals'
+import { suggestParentMaterials } from '@/lib/material-parent-suggestions'
+import {
+  acceptSubstrateProposal, applyChangedFields, addVariantToExistingMaterial, dismissRows, restoreDismissedRow,
+  type AcceptColourInput, type AcceptVariantInput,
+} from './actions'
 
 type FullRow = ShopvoxMaterialRow & {
   migrated_to_material_id: string | null
   migrated_at: string | null
   source_hash: string
   migrated_source_hash: string | null
+  dismissed_at: string | null
 }
 
 type LinkedMaterial = {
@@ -19,6 +25,9 @@ type LinkedMaterial = {
   description: string | null
 }
 
+type ExistingMaterial = { id: string; name: string; category_id: string | null }
+type ExistingColour = { id: string; material_id: string; name: string | null; code: string | null }
+
 type Props = {
   orgId: string
   orgSlug: string
@@ -27,9 +36,12 @@ type Props = {
   proposals: FamilyProposal[]
   linkedMaterials: Record<string, unknown>[]
   migratedMaterialNames: { id: string; name: string }[]
+  existingMaterials: ExistingMaterial[]
+  existingColours: ExistingColour[]
+  categoryNames: Record<string, string>
 }
 
-type Tab = 'NEW' | 'CHANGED' | 'MIGRATED'
+type Tab = 'NEW' | 'CHANGED' | 'MIGRATED' | 'DISMISSED'
 
 const CONFIDENCE_STYLE: Record<string, string> = {
   high: 'bg-green-50 text-green-700 border-green-200',
@@ -65,7 +77,7 @@ function buildEditableState(proposal: FamilyProposal): EditableColourFinish[] {
   })
 }
 
-export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows, proposals, linkedMaterials, migratedMaterialNames }: Props) {
+export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows, proposals, linkedMaterials, migratedMaterialNames, existingMaterials, existingColours, categoryNames }: Props) {
   const [tab, setTab] = useState<Tab>('NEW')
   const [selectedKey, setSelectedKey] = useState<string | null>(proposals[0]?.key ?? null)
   const [familyNameOverride, setFamilyNameOverride] = useState<string | null>(null)
@@ -73,12 +85,28 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
 
+  // "Add to existing material" state -- separate from the Accept-as-new
+  // state above, since both actions are offered side by side on a
+  // singleton proposal and Ruben may look at both before deciding.
+  const [parentSearch, setParentSearch] = useState('')
+  const [selectedParentId, setSelectedParentId] = useState<string | null>(null)
+  const [colourChoice, setColourChoice] = useState<'new' | string>('new')
+  const [newColourName, setNewColourName] = useState('')
+  const [newColourCode, setNewColourCode] = useState('')
+  const [addHeight, setAddHeight] = useState<number | null>(null)
+  const [addWidth, setAddWidth] = useState<number | null>(null)
+  const [addLengthIncrement, setAddLengthIncrement] = useState<number | null>(null)
+  const [addBaseCost, setAddBaseCost] = useState<number | null>(null)
+  const [addMultiplier, setAddMultiplier] = useState<number | null>(null)
+  const [addIsDefault, setAddIsDefault] = useState(false)
+
   const rowById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
 
   const rowsByStatus = useMemo(() => ({
     NEW: rows.filter((r) => r.status === 'NEW'),
     CHANGED: rows.filter((r) => r.status === 'CHANGED'),
     MIGRATED: rows.filter((r) => r.status === 'MIGRATED'),
+    DISMISSED: rows.filter((r) => r.status === 'DISMISSED'),
   }), [rows])
 
   const materialById = useMemo(() => {
@@ -96,12 +124,60 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
   const selectedProposal = proposals.find((p) => p.key === selectedKey) ?? null
   const activeColours = editableColours ?? (selectedProposal ? buildEditableState(selectedProposal) : [])
   const defaultFamilyName = selectedProposal ? `${selectedProposal.line}${selectedProposal.axisValue ? ` ${selectedProposal.axisValue}` : ''}`.trim() : ''
+  const isSingleton = selectedProposal ? selectedProposal.sourceRowIds.length === 1 : false
+  const singletonRow = isSingleton && selectedProposal ? rowById.get(selectedProposal.sourceRowIds[0]) ?? null : null
+
+  const suggestions = useMemo(() => {
+    if (!selectedProposal || !isSingleton) return []
+    return suggestParentMaterials(
+      {
+        line: selectedProposal.line,
+        axisValue: selectedProposal.axisValue,
+        categoryId: selectedProposal.categoryId,
+        categoryName: selectedProposal.categoryId ? categoryNames[selectedProposal.categoryId] ?? null : null,
+      },
+      existingMaterials.map((m) => ({ id: m.id, name: m.name, categoryId: m.category_id })),
+      SUBSTRATE_FAMILY_CONFIG.findAxisStart,
+    )
+  }, [selectedProposal, isSingleton, existingMaterials, categoryNames])
+
+  const filteredExistingMaterials = useMemo(() => {
+    const q = parentSearch.trim().toLowerCase()
+    if (!q) return existingMaterials.slice(0, 20)
+    return existingMaterials.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 20)
+  }, [parentSearch, existingMaterials])
+
+  const coloursForSelectedParent = useMemo(
+    () => (selectedParentId ? existingColours.filter((c) => c.material_id === selectedParentId) : []),
+    [selectedParentId, existingColours],
+  )
 
   function selectProposal(p: FamilyProposal) {
     setSelectedKey(p.key)
     setEditableColours(null)
     setFamilyNameOverride(null)
     setMessage(null)
+
+    // Prefill the "Add to existing material" fields from the singleton's
+    // own source row -- same per-source-row lookup the Accept fix uses.
+    // height/width/lengthIncrement come from the already-parsed
+    // FamilyVariant (correct for cut-to-length rows too); baseCost/
+    // multiplier come from the raw row, same as handleAccept below.
+    setSelectedParentId(null)
+    setParentSearch('')
+    setColourChoice('new')
+    setNewColourName('')
+    setNewColourCode('')
+    if (p.sourceRowIds.length === 1) {
+      const v = p.colours[0]?.variants[0]
+      const sourceRow = rowById.get(p.sourceRowIds[0])
+      setAddHeight(v?.height ?? null)
+      setAddWidth(v?.width ?? null)
+      setAddLengthIncrement(v?.lengthIncrement ?? null)
+      setAddBaseCost(sourceRow?.sheet_cost ?? sourceRow?.cost ?? null)
+      setAddMultiplier(sourceRow?.multiplier ?? null)
+      setAddIsDefault(false)
+    }
   }
 
   function updateColour(idx: number, patch: Partial<EditableColourFinish>) {
@@ -216,6 +292,57 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
     })
   }
 
+  function handleAddToExisting() {
+    if (!selectedProposal || !isSingleton || !singletonRow) return
+    if (!selectedParentId) { setMessage('Pick an existing material first.'); return }
+    if (colourChoice === 'new' && !newColourName.trim() && !newColourCode.trim()) {
+      setMessage('Name the new colour/finish, or pick an existing one.')
+      return
+    }
+
+    startTransition(async () => {
+      const result = await addVariantToExistingMaterial({
+        orgId, orgSlug,
+        materialId: selectedParentId,
+        colour: colourChoice === 'new'
+          ? { existingColorId: null, name: newColourName.trim() || null, code: newColourCode.trim() || null, isStocked: false }
+          : { existingColorId: colourChoice, name: null, code: null, isStocked: false },
+        variant: {
+          height: addHeight, width: addWidth, lengthIncrement: addLengthIncrement,
+          baseCost: addBaseCost, multiplier: addMultiplier, isDefault: addIsDefault,
+        },
+        sourceRowId: singletonRow.id,
+      })
+      if (result.error) setMessage(`Error: ${result.error}`)
+      else {
+        const parentName = existingMaterials.find((m) => m.id === selectedParentId)?.name ?? selectedParentId
+        setMessage(`Added "${singletonRow.name}" to "${parentName}".`)
+        setSelectedKey(null)
+        setEditableColours(null)
+      }
+    })
+  }
+
+  function handleDismiss() {
+    if (!selectedProposal) return
+    startTransition(async () => {
+      const result = await dismissRows({ orgId, orgSlug, shopvoxMaterialIds: selectedProposal.sourceRowIds })
+      if (result.error) setMessage(`Error: ${result.error}`)
+      else {
+        setMessage(`Dismissed ${selectedProposal.sourceRowIds.length} row(s).`)
+        setSelectedKey(null)
+        setEditableColours(null)
+      }
+    })
+  }
+
+  function handleRestore(rowId: string) {
+    startTransition(async () => {
+      const result = await restoreDismissedRow({ orgId, orgSlug, shopvoxMaterialId: rowId })
+      setMessage(result.error ? `Error: ${result.error}` : 'Restored to NEW.')
+    })
+  }
+
   if (!substrateTypeFound) {
     return <div className="p-6 text-sm text-red-700">Material type &ldquo;Rigid Substrates- Sheets&rdquo; not found for this org — nothing to migrate.</div>
   }
@@ -224,7 +351,7 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
     <div className="flex flex-col gap-4 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Migrate Materials from ShopVOX</h1>
-        <p className="mt-1 text-sm text-gray-500">Substrates only. Left is the read-only ShopVOX scrape, grouped into proposed families. Right is a pre-filled proposal — nothing is written to PrintOS until you accept it.</p>
+        <p className="mt-1 text-sm text-gray-500">Substrates only. Left is the read-only ShopVOX scrape, grouped into proposed families. Right is a pre-filled proposal — nothing is written to PrintOS until you accept it, add it to an existing material, or dismiss it.</p>
       </div>
 
       {message && (
@@ -232,7 +359,7 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
       )}
 
       <div className="flex gap-1 border-b border-gray-200">
-        {(['NEW', 'CHANGED', 'MIGRATED'] as Tab[]).map((t) => (
+        {(['NEW', 'CHANGED', 'MIGRATED', 'DISMISSED'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -281,7 +408,7 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
             {!selectedProposal ? (
               <div className="p-4 text-sm text-gray-500">Select a family on the left.</div>
             ) : (
-              <div className="space-y-3 p-3">
+              <div className="max-h-[75vh] space-y-4 overflow-y-auto p-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500">Material name</label>
                   <input
@@ -349,13 +476,20 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
                   })}
                 </div>
 
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-1">
                   <button
                     disabled={pending}
                     onClick={handleAccept}
                     className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {pending ? 'Saving…' : 'Accept'}
+                    {pending ? 'Saving…' : 'Accept as new material'}
+                  </button>
+                  <button
+                    disabled={pending}
+                    onClick={handleDismiss}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Dismiss
                   </button>
                   <button
                     disabled={pending}
@@ -365,6 +499,110 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
                     Reject
                   </button>
                 </div>
+
+                {/* Add to existing material -- only offered for a true
+                    singleton (one source row, one colour, one size). A
+                    multi-row family already grouped several rows into
+                    one proposed material; "add to existing" targets the
+                    ~69-singleton-leftovers workflow specifically. */}
+                {isSingleton && singletonRow && (
+                  <div className="mt-4 border-t border-gray-200 pt-3">
+                    <div className="mb-2 text-xs font-semibold uppercase text-gray-500">Or add to an existing material</div>
+
+                    {suggestions.length > 0 ? (
+                      <div className="mb-2 space-y-1">
+                        <div className="text-[11px] font-medium text-gray-500">Suggested parent materials</div>
+                        {suggestions.map((s) => (
+                          <button
+                            key={s.materialId}
+                            onClick={() => { setSelectedParentId(s.materialId); setParentSearch(s.materialName) }}
+                            className={`block w-full rounded border px-2 py-1 text-left text-xs ${selectedParentId === s.materialId ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                          >
+                            <div className="font-medium text-gray-800">{s.materialName}</div>
+                            <div className="text-[10px] text-gray-500">{s.reason}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mb-2 text-[11px] text-gray-400">No likely parent found — search below if you think one exists.</div>
+                    )}
+
+                    <input
+                      type="text"
+                      placeholder="Search existing materials by name…"
+                      className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                      value={parentSearch}
+                      onChange={(e) => { setParentSearch(e.target.value); setSelectedParentId(null) }}
+                    />
+                    {parentSearch && !selectedParentId && (
+                      <div className="mt-1 max-h-32 overflow-y-auto rounded border border-gray-200">
+                        {filteredExistingMaterials.map((m) => (
+                          <button
+                            key={m.id}
+                            onClick={() => { setSelectedParentId(m.id); setParentSearch(m.name) }}
+                            className="block w-full px-2 py-1 text-left text-xs hover:bg-gray-50"
+                          >
+                            {m.name}
+                          </button>
+                        ))}
+                        {filteredExistingMaterials.length === 0 && <div className="px-2 py-1 text-xs text-gray-400">No matches.</div>}
+                      </div>
+                    )}
+
+                    {selectedParentId && (
+                      <div className="mt-2 space-y-2 rounded border border-gray-200 p-2">
+                        <div className="text-xs font-medium text-gray-700">{existingMaterials.find((m) => m.id === selectedParentId)?.name}</div>
+
+                        <div>
+                          <div className="text-[10px] font-medium uppercase text-gray-500">Colour / Finish</div>
+                          <div className="mt-1 space-y-1">
+                            {coloursForSelectedParent.map((c) => (
+                              <label key={c.id} className="flex items-center gap-1.5 text-xs">
+                                <input type="radio" name="add-colour-choice" checked={colourChoice === c.id} onChange={() => setColourChoice(c.id)} />
+                                {c.name ?? '(none)'}{c.code ? ` (${c.code})` : ''}
+                              </label>
+                            ))}
+                            <label className="flex items-center gap-1.5 text-xs">
+                              <input type="radio" name="add-colour-choice" checked={colourChoice === 'new'} onChange={() => setColourChoice('new')} />
+                              + New colour/finish
+                            </label>
+                            {colourChoice === 'new' && (
+                              <div className="ml-5 flex gap-1.5">
+                                <input type="text" placeholder="Name" className="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs" value={newColourName} onChange={(e) => setNewColourName(e.target.value)} />
+                                <input type="text" placeholder="Code" className="w-16 rounded border border-gray-300 px-1.5 py-0.5 text-xs" value={newColourCode} onChange={(e) => setNewColourCode(e.target.value)} />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <table className="w-full text-xs">
+                          <thead><tr className="text-left text-gray-500"><th>Height</th><th>Width</th><th>Length incr.</th><th>Base cost</th><th>Multiplier</th></tr></thead>
+                          <tbody>
+                            <tr>
+                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addHeight ?? ''} onChange={(e) => setAddHeight(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
+                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addWidth ?? ''} onChange={(e) => setAddWidth(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
+                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addLengthIncrement ?? ''} onChange={(e) => setAddLengthIncrement(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
+                              <td><input type="number" className="w-20 rounded border border-gray-300 px-1 py-0.5" value={addBaseCost ?? ''} onChange={(e) => setAddBaseCost(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
+                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addMultiplier ?? ''} onChange={(e) => setAddMultiplier(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                          <input type="checkbox" checked={addIsDefault} onChange={(e) => setAddIsDefault(e.target.checked)} />
+                          Make this the default size for this colour/finish{colourChoice !== 'new' ? ' (moves the existing default)' : ''}
+                        </label>
+
+                        <button
+                          disabled={pending}
+                          onClick={handleAddToExisting}
+                          className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {pending ? 'Saving…' : 'Add to this material'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -392,6 +630,20 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
             </div>
           ))}
           {rowsByStatus.MIGRATED.length === 0 && <div className="p-4 text-sm text-gray-500">Nothing migrated yet.</div>}
+        </div>
+      )}
+
+      {tab === 'DISMISSED' && (
+        <div className="rounded-md border border-gray-200 divide-y divide-gray-100">
+          {rowsByStatus.DISMISSED.map((r) => (
+            <div key={r.id} className="flex items-center justify-between px-3 py-2 text-sm">
+              <span className="text-gray-900">{r.name}</span>
+              <button disabled={pending} onClick={() => handleRestore(r.id)} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                Restore to NEW
+              </button>
+            </div>
+          ))}
+          {rowsByStatus.DISMISSED.length === 0 && <div className="p-4 text-sm text-gray-500">Nothing dismissed.</div>}
         </div>
       )}
     </div>

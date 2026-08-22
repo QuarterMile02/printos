@@ -42,7 +42,7 @@ export type ShopvoxMaterialRow = {
     sqft_price: number | null
     quantity: number | null
   }>
-  status: 'NEW' | 'MIGRATED' | 'CHANGED'
+  status: 'NEW' | 'MIGRATED' | 'CHANGED' | 'DISMISSED'
 }
 
 // VALIDATED size-token regex (Build 1 Finding A + item 12 instruction:
