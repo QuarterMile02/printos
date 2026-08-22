@@ -174,3 +174,106 @@ export async function applyChangedFields(input: {
   revalidatePath(`/dashboard/${input.orgSlug}/settings/materials/migrate`)
   return { ok: true }
 }
+
+export type AddToExistingMaterialInput = {
+  orgId: string
+  orgSlug: string
+  materialId: string // the existing material being added to
+  colour: {
+    existingColorId: string | null // null = create a new colour/finish
+    name: string | null
+    code: string | null
+    isStocked: boolean
+  }
+  variant: {
+    height: number | null
+    width: number | null
+    lengthIncrement: number | null
+    baseCost: number | null
+    multiplier: number | null
+    isDefault: boolean
+  }
+  sourceRowId: string // shopvox_materials.id being folded in
+}
+
+// Folds ONE leftover shopvox_materials row into an EXISTING (already
+// accepted) material, as another colour/finish or another size on one
+// -- Ruben's actual workflow: fold leftovers into existing families
+// FIRST, only accept a row as its own material once confirmed it
+// belongs nowhere. One DB transaction via add_variant_to_existing_
+// material (migration 183), same PostgREST-has-no-client-transaction
+// reasoning as acceptSubstrateProposal.
+export async function addVariantToExistingMaterial(input: AddToExistingMaterialInput) {
+  const { allowed } = await checkPermission(input.orgId, 'materials.edit')
+  if (!allowed) return { error: 'Not permitted to edit materials.' }
+
+  if (!input.colour.existingColorId && !input.colour.name?.trim()) {
+    return { error: 'Pick an existing colour/finish or name the new one.' }
+  }
+
+  const sb = createServiceClient()
+
+  const payload = {
+    organization_id: input.orgId,
+    material_id: input.materialId,
+    colour: {
+      existing_color_id: input.colour.existingColorId,
+      name: input.colour.name,
+      code: input.colour.code,
+      is_stocked: input.colour.isStocked,
+    },
+    variant: {
+      height: input.variant.height,
+      width: input.variant.width,
+      length_increment: input.variant.lengthIncrement,
+      base_cost: input.variant.baseCost,
+      multiplier: input.variant.multiplier,
+      is_default: input.variant.isDefault,
+    },
+    source_row_id: input.sourceRowId,
+  }
+
+  const { data: variantId, error } = await sb.rpc('add_variant_to_existing_material', { payload })
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${input.orgSlug}/settings/materials/migrate`)
+  revalidatePath(`/dashboard/${input.orgSlug}/settings/materials`)
+  return { variantId: variantId as string }
+}
+
+// Dismiss / restore -- reversible, never a delete. dismissed_at set now
+// pulls a row out of the NEW queue into its own DISMISSED tab;
+// restoring clears it back to whatever status it would otherwise read
+// as (NEW, unless it was also separately migrated/changed).
+export async function dismissRows(input: { orgId: string; orgSlug: string; shopvoxMaterialIds: string[] }) {
+  const { allowed } = await checkPermission(input.orgId, 'materials.edit')
+  if (!allowed) return { error: 'Not permitted to edit materials.' }
+  if (input.shopvoxMaterialIds.length === 0) return { error: 'Nothing to dismiss.' }
+
+  const sb = createServiceClient()
+  const { error } = await sb
+    .from('shopvox_materials')
+    .update({ dismissed_at: new Date().toISOString() })
+    .in('id', input.shopvoxMaterialIds)
+    .eq('organization_id', input.orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${input.orgSlug}/settings/materials/migrate`)
+  return { ok: true }
+}
+
+export async function restoreDismissedRow(input: { orgId: string; orgSlug: string; shopvoxMaterialId: string }) {
+  const { allowed } = await checkPermission(input.orgId, 'materials.edit')
+  if (!allowed) return { error: 'Not permitted to edit materials.' }
+
+  const sb = createServiceClient()
+  const { error } = await sb
+    .from('shopvox_materials')
+    .update({ dismissed_at: null })
+    .eq('id', input.shopvoxMaterialId)
+    .eq('organization_id', input.orgId)
+  if (error) return { error: error.message }
+
+  revalidatePath(`/dashboard/${input.orgSlug}/settings/materials/migrate`)
+  return { ok: true }
+}

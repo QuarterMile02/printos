@@ -43,7 +43,7 @@ async function PageInner({ params }: PageProps) {
       ? dbOrThrow(
           supabase
             .from('shopvox_materials')
-            .select('id, shopvox_id, name, material_type_id, category_id, width, height, sheet_cost, cost, price, multiplier, preferred_vendor, part_number, sku, po_description, info_url, image_url, description, vendor_pricing, status, migrated_to_material_id, migrated_at, source_hash, migrated_source_hash')
+            .select('id, shopvox_id, name, material_type_id, category_id, width, height, sheet_cost, cost, price, multiplier, preferred_vendor, part_number, sku, po_description, info_url, image_url, description, vendor_pricing, status, migrated_to_material_id, migrated_at, source_hash, migrated_source_hash, dismissed_at')
             .eq('organization_id', org.id)
             .eq('material_type_id', substrateType.id)
             .order('name')
@@ -57,6 +57,7 @@ async function PageInner({ params }: PageProps) {
     migrated_at: string | null
     source_hash: string
     migrated_source_hash: string | null
+    dismissed_at: string | null
   })[]
 
   const categoryNames = new Map(((categoriesRes ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]))
@@ -68,21 +69,51 @@ async function PageInner({ params }: PageProps) {
   // client can render a field-by-field diff (ShopVOX now vs. PrintOS
   // current) before Ruben chooses what to carry over.
   const changedRows = typedRows.filter((r) => r.status === 'CHANGED')
-  const linkedMaterialIds = [...new Set(changedRows.map((r) => r.migrated_to_material_id).filter(Boolean))] as string[]
-  const linkedMaterials = linkedMaterialIds.length
+  const migratedRows = typedRows.filter((r) => r.status === 'MIGRATED')
+  // DISMISSED rows aren't queried separately here -- migrate-client.tsx
+  // already has the full `rows` array and derives its own DISMISSED tab
+  // client-side (rowsByStatus.DISMISSED), same as it already does for
+  // NEW/CHANGED/MIGRATED.
+
+  // "Existing materials" for the Add-to-existing picker + suggested
+  // parents: any material a CHANGED or MIGRATED row already points at
+  // -- i.e. every material actually created through THIS migrate screen
+  // (accept or a prior add-to-existing), not the ~235 original flat
+  // legacy materials the ShopVOX scrape wrote directly (Build 1 finding
+  // B) -- those are the source data being consolidated, not valid merge
+  // targets. Derived from migrated_to_material_id, not a separate flag,
+  // since none exists and this derivation is exact.
+  const existingMaterialIds = [...new Set(
+    [...changedRows, ...migratedRows].map((r) => r.migrated_to_material_id).filter((id): id is string => !!id)
+  )]
+
+  const [linkedMaterialsRes, existingMaterialsRes] = await Promise.all([
+    changedRows.length
+      ? dbOrThrow(
+          supabase
+            .from('materials')
+            .select('id, name, width, height, sheet_cost, cost, price, multiplier, preferred_vendor, part_number, sku, po_description, info_url, description')
+            .in('id', [...new Set(changedRows.map((r) => r.migrated_to_material_id).filter(Boolean))] as string[])
+        )
+      : Promise.resolve([]),
+    existingMaterialIds.length
+      ? dbOrThrow(supabase.from('materials').select('id, name, category_id').in('id', existingMaterialIds))
+      : Promise.resolve([]),
+  ])
+
+  const existingColoursRes = existingMaterialIds.length
     ? await dbOrThrow(
         supabase
-          .from('materials')
-          .select('id, name, width, height, sheet_cost, cost, price, multiplier, preferred_vendor, part_number, sku, po_description, info_url, description')
-          .in('id', linkedMaterialIds)
+          .from('material_colors')
+          .select('id, material_id, name, code')
+          .in('material_id', existingMaterialIds)
+          .order('name')
       )
     : []
 
-  const migratedRows = typedRows.filter((r) => r.status === 'MIGRATED')
-  const migratedMaterialIds = [...new Set(migratedRows.map((r) => r.migrated_to_material_id).filter(Boolean))] as string[]
-  const migratedMaterialNames = migratedMaterialIds.length
-    ? await dbOrThrow(supabase.from('materials').select('id, name').in('id', migratedMaterialIds))
-    : []
+  // Reuses existingMaterialsRes (already fetched above) rather than a
+  // second round-trip for the same id set with fewer columns.
+  const migratedMaterialNames = ((existingMaterialsRes ?? []) as { id: string; name: string }[]).map((m) => ({ id: m.id, name: m.name }))
 
   return (
     <MigrateClient
@@ -91,8 +122,11 @@ async function PageInner({ params }: PageProps) {
       substrateTypeFound={!!substrateType}
       rows={typedRows}
       proposals={proposals}
-      linkedMaterials={(linkedMaterials ?? []) as Record<string, unknown>[]}
+      linkedMaterials={(linkedMaterialsRes ?? []) as Record<string, unknown>[]}
       migratedMaterialNames={(migratedMaterialNames ?? []) as { id: string; name: string }[]}
+      existingMaterials={(existingMaterialsRes ?? []) as { id: string; name: string; category_id: string | null }[]}
+      existingColours={(existingColoursRes ?? []) as { id: string; material_id: string; name: string | null; code: string | null }[]}
+      categoryNames={Object.fromEntries(categoryNames)}
     />
   )
 }
