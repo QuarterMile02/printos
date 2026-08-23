@@ -1,9 +1,10 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import type { ShopvoxMaterialRow } from '@/lib/material-migrate-proposals'
 import type { FamilyProposal, FamilyColourGroup, FamilyVariant } from '@/lib/material-family-proposals'
-import { SUBSTRATE_FAMILY_CONFIG } from '@/lib/material-family-proposals'
+import { FAMILY_CONFIGS } from '@/lib/material-family-proposals'
 import { suggestParentMaterials } from '@/lib/material-parent-suggestions'
 import {
   acceptSubstrateProposal, applyChangedFields, addVariantToExistingMaterial, dismissRows, restoreDismissedRow,
@@ -28,10 +29,16 @@ type LinkedMaterial = {
 type ExistingMaterial = { id: string; name: string; category_id: string | null }
 type ExistingColour = { id: string; material_id: string; name: string | null; code: string | null }
 
+type MaterialType = { id: string; name: string }
+
 type Props = {
   orgId: string
   orgSlug: string
-  substrateTypeFound: boolean
+  types: MaterialType[]
+  newCountsByType: Record<string, number> // material_type_id -> TRUE NEW count, org-wide, fully paginated -- never derived from `proposals`
+  selectedTypeId: string | null
+  parserConfigured: boolean // false = no FAMILY_CONFIGS entry for the selected type -- never render an empty screen for this, see the banner below
+  trueNewCount: number // the selected type's NEW row count, straight from the paginated fetch -- independent of `proposals`, checked against it below
   rows: FullRow[]
   proposals: FamilyProposal[]
   linkedMaterials: Record<string, unknown>[]
@@ -63,6 +70,15 @@ function pickDefaultIndex(variants: FamilyVariant[]): number {
   return noSizeIdx >= 0 ? noSizeIdx : 0
 }
 
+// Brand/product-line (rolls only, e.g. "Oracal 651", "Avery SW900") is
+// FAMILY-DISTINGUISHING and goes into the generated material NAME as
+// plain text -- confirmed by Ruben, no database column for it. Always
+// null for substrates, so this is a no-op there (identical output to
+// before this field existed).
+function familyDisplayName(p: Pick<FamilyProposal, 'line' | 'axisValue' | 'brand'>): string {
+  return [p.line, p.axisValue, p.brand].filter(Boolean).join(' ').trim()
+}
+
 function buildEditableState(proposal: FamilyProposal): EditableColourFinish[] {
   return proposal.colours.map((c: FamilyColourGroup, ci) => {
     const defaultIdx = pickDefaultIndex(c.variants)
@@ -77,7 +93,8 @@ function buildEditableState(proposal: FamilyProposal): EditableColourFinish[] {
   })
 }
 
-export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows, proposals, linkedMaterials, migratedMaterialNames, existingMaterials, existingColours, categoryNames }: Props) {
+export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, selectedTypeId, parserConfigured, trueNewCount, rows, proposals, linkedMaterials, migratedMaterialNames, existingMaterials, existingColours, categoryNames }: Props) {
+  const router = useRouter()
   const [tab, setTab] = useState<Tab>('NEW')
   const [selectedKey, setSelectedKey] = useState<string | null>(proposals[0]?.key ?? null)
   const [familyNameOverride, setFamilyNameOverride] = useState<string | null>(null)
@@ -123,12 +140,20 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
 
   const selectedProposal = proposals.find((p) => p.key === selectedKey) ?? null
   const activeColours = editableColours ?? (selectedProposal ? buildEditableState(selectedProposal) : [])
-  const defaultFamilyName = selectedProposal ? `${selectedProposal.line}${selectedProposal.axisValue ? ` ${selectedProposal.axisValue}` : ''}`.trim() : ''
+  const defaultFamilyName = selectedProposal ? familyDisplayName(selectedProposal) : ''
   const isSingleton = selectedProposal ? selectedProposal.sourceRowIds.length === 1 : false
   const singletonRow = isSingleton && selectedProposal ? rowById.get(selectedProposal.sourceRowIds[0]) ?? null : null
 
+  // The config that actually produced `proposals` — keyed by the
+  // SELECTED type's name (not hardcoded to substrates), so suggested-
+  // parent ranking uses the right axis parser for whatever type is on
+  // screen. Falls back to a no-op axis finder when unconfigured (the
+  // suggestions list will just be empty via the categoryId gate below).
+  const selectedTypeName = types.find((t) => t.id === selectedTypeId)?.name ?? null
+  const activeConfig = selectedTypeName ? FAMILY_CONFIGS[selectedTypeName] : undefined
+
   const suggestions = useMemo(() => {
-    if (!selectedProposal || !isSingleton) return []
+    if (!selectedProposal || !isSingleton || !activeConfig) return []
     return suggestParentMaterials(
       {
         line: selectedProposal.line,
@@ -137,9 +162,9 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
         categoryName: selectedProposal.categoryId ? categoryNames[selectedProposal.categoryId] ?? null : null,
       },
       existingMaterials.map((m) => ({ id: m.id, name: m.name, categoryId: m.category_id })),
-      SUBSTRATE_FAMILY_CONFIG.findAxisStart,
+      activeConfig.findAxisStart,
     )
-  }, [selectedProposal, isSingleton, existingMaterials, categoryNames])
+  }, [selectedProposal, isSingleton, existingMaterials, categoryNames, activeConfig])
 
   const filteredExistingMaterials = useMemo(() => {
     const q = parentSearch.trim().toLowerCase()
@@ -343,16 +368,65 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
     })
   }
 
-  if (!substrateTypeFound) {
-    return <div className="p-6 text-sm text-red-700">Material type &ldquo;Rigid Substrates- Sheets&rdquo; not found for this org — nothing to migrate.</div>
+  function handleDismissSingleRow(rowId: string) {
+    startTransition(async () => {
+      const result = await dismissRows({ orgId, orgSlug, shopvoxMaterialIds: [rowId] })
+      setMessage(result.error ? `Error: ${result.error}` : 'Dismissed.')
+    })
   }
+
+  // types.length === 0 is the only case with truly nothing to show — an
+  // org with zero material types has zero possible rows. Every other
+  // case (a type selected, configured or not) renders the full layout
+  // below; an unconfigured type gets a banner and a flat row list, NEVER
+  // a bare/empty screen — that ambiguity (empty vs. nothing-to-do) is
+  // exactly what hid 5 real rows before this fix.
+  if (types.length === 0) {
+    return <div className="p-6 text-sm text-red-700">No material types found for this org — nothing to migrate.</div>
+  }
+
+  // proposalRowCount is derived ONLY from `proposals` (client-side, its
+  // own independent sum). trueNewCount is the row count page.tsx fetched
+  // directly, fully paginated, with no dependency on proposals at all.
+  // buildFamilyProposals never drops a row, so these should always
+  // match when a type is configured — but "should always match" is
+  // exactly the kind of assumption that hid rows before. Check it, don't
+  // trust it.
+  const proposalRowCount = proposals.reduce((sum, p) => sum + p.sourceRowIds.length, 0)
+  const countsDisagree = parserConfigured && proposalRowCount !== trueNewCount
 
   return (
     <div className="flex flex-col gap-4 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Migrate Materials from ShopVOX</h1>
-        <p className="mt-1 text-sm text-gray-500">Substrates only. Left is the read-only ShopVOX scrape, grouped into proposed families. Right is a pre-filled proposal — nothing is written to PrintOS until you accept it, add it to an existing material, or dismiss it.</p>
+        <p className="mt-1 text-sm text-gray-500">Left is the read-only ShopVOX scrape, grouped into proposed families. Right is a pre-filled proposal — nothing is written to PrintOS until you accept it, add it to an existing material, or dismiss it.</p>
       </div>
+
+      <div className="flex items-center gap-2">
+        <label htmlFor="type-picker" className="text-xs font-medium uppercase text-gray-500">Material type</label>
+        <select
+          id="type-picker"
+          className="rounded border border-gray-300 px-2 py-1 text-sm text-gray-900"
+          value={selectedTypeId ?? ''}
+          onChange={(e) => router.push(`?type=${e.target.value}`)}
+        >
+          {types.map((t) => (
+            <option key={t.id} value={t.id}>{t.name} — {newCountsByType[t.id] ?? 0} NEW</option>
+          ))}
+        </select>
+      </div>
+
+      {!parserConfigured && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          No parser configured for this material type yet — rows are shown raw below, one at a time. You can review and dismiss them; grouped &ldquo;Accept as new material&rdquo; proposals aren&rsquo;t available until a parser config is added for this type.
+        </div>
+      )}
+
+      {countsDisagree && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+          ⚠ {proposals.length} proposal(s) cover {proposalRowCount} of {trueNewCount} true NEW row(s) for this type — {trueNewCount - proposalRowCount} row(s) may be missing from the grouping below. Do not treat the proposal list as complete until this is resolved.
+        </div>
+      )}
 
       {message && (
         <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">{message}</div>
@@ -370,14 +444,35 @@ export default function MigrateClient({ orgId, orgSlug, substrateTypeFound, rows
         ))}
       </div>
 
-      {tab === 'NEW' && (
+      {tab === 'NEW' && !parserConfigured && (
+        <div className="rounded-md border border-gray-200 divide-y divide-gray-100">
+          {rowsByStatus.NEW.map((r) => (
+            <div key={r.id} className="flex items-center justify-between px-3 py-2 text-sm">
+              <div>
+                <div className="text-gray-900">{r.name}</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  {r.category_id ? categoryNames[r.category_id] ?? '' : '(no category)'}
+                  {r.width != null ? ` · ${r.width}in wide` : ''}
+                  {r.sheet_cost != null ? ` · $${r.sheet_cost}` : ''}
+                </div>
+              </div>
+              <button disabled={pending} onClick={() => handleDismissSingleRow(r.id)} className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50">
+                Dismiss
+              </button>
+            </div>
+          ))}
+          {rowsByStatus.NEW.length === 0 && <div className="p-4 text-sm text-gray-500">Nothing new to migrate for this type.</div>}
+        </div>
+      )}
+
+      {tab === 'NEW' && parserConfigured && (
         <div className="grid grid-cols-2 gap-4">
           {/* LEFT: read-only proposed families */}
           <div className="rounded-md border border-gray-200">
             <div className="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-medium uppercase text-gray-500">Proposed families ({proposals.length})</div>
             <div className="max-h-[75vh] overflow-y-auto divide-y divide-gray-100">
               {proposals.map((p) => {
-                const label = `${p.line}${p.axisValue ? ` ${p.axisValue}` : ''}`
+                const label = familyDisplayName(p)
                 return (
                   <button
                     key={p.key}

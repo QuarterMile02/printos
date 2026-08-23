@@ -1,16 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, unstable_rethrow } from 'next/navigation'
-import { dbOrThrow } from '@/lib/db'
+import { dbOrThrow, dbAllOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import MigrateClient from './migrate-client'
-import { buildFamilyProposals } from '@/lib/material-family-proposals'
+import { buildFamilyProposals, FAMILY_CONFIGS } from '@/lib/material-family-proposals'
 import type { ShopvoxMaterialRow } from '@/lib/material-migrate-proposals'
 
 export const dynamic = 'force-dynamic'
 
-type PageProps = { params: Promise<{ slug: string }> }
-
-const SUBSTRATE_TYPE_NAME = 'Rigid Substrates- Sheets'
+type PageProps = { params: Promise<{ slug: string }>; searchParams: Promise<{ type?: string }> }
 
 export default async function MaterialsMigratePage(props: PageProps) {
   try {
@@ -21,8 +19,9 @@ export default async function MaterialsMigratePage(props: PageProps) {
   }
 }
 
-async function PageInner({ params }: PageProps) {
+async function PageInner({ params, searchParams }: PageProps) {
   const { slug } = await params
+  const sp = await searchParams
   const supabase = await createClient()
 
   const org = await dbOrThrow(
@@ -30,40 +29,89 @@ async function PageInner({ params }: PageProps) {
   ) as { id: string; name: string; slug: string } | null
   if (!org) notFound()
 
-  // SUBSTRATES ONLY this pass (Build 1/1b scope) -- the family/colour
-  // proposal rules in material-family-proposals.ts were validated
-  // against this one type (Build 1b's report). Other ShopVOX material
-  // types stay untouched on the ShopVOX side, just out of this screen.
-  const substrateType = await dbOrThrow(
-    supabase.from('material_types').select('id, name').eq('organization_id', org.id).eq('name', SUBSTRATE_TYPE_NAME).maybeSingle()
-  ) as { id: string; name: string } | null
+  // ── Type-aware screen ────────────────────────────────────────────
+  // This screen used to hardcode ONE material type (Substrates) — any
+  // row of any other type was invisible, not filtered-and-shown-as-
+  // zero, just never fetched at all. That hid 5 real "Substrates" (a
+  // different type from "Rigid Substrates- Sheets") rows behind a tab
+  // that read "NEW (1)" — see known-issues/2026-08-22-roll-vinyl-
+  // migrate-pass-proposal.md, Problem 1. Fixed with the minimum needed:
+  // a type picker (?type= URL param), a small name->config lookup with
+  // an explicit "unconfigured" fallback (never an empty screen — an
+  // empty screen is indistinguishable from "nothing to do", which is
+  // exactly what hid those 5 rows), and per-type counts computed with
+  // explicit, unbounded pagination so a count can never silently
+  // truncate at PostgREST's 1000-row cap.
+  const allTypes = await dbAllOrThrow<{ id: string; name: string }>((from, to) =>
+    supabase.from('material_types').select('id, name').eq('organization_id', org.id).order('name').range(from, to)
+  )
+
+  // Every NEW row, org-wide, minimal columns — paginated. This is what
+  // makes the per-type counts in the picker a TRUE count: it is not
+  // derived from any proposal, not filtered to one type ahead of time,
+  // and cannot silently stop at 1000 the way an unbounded query would.
+  const allNewRowTypeIds = await dbAllOrThrow<{ material_type_id: string | null }>((from, to) =>
+    supabase.from('shopvox_materials').select('material_type_id').eq('organization_id', org.id).eq('status', 'NEW').range(from, to)
+  )
+  const newCountsByType = new Map<string, number>()
+  for (const r of allNewRowTypeIds) {
+    if (!r.material_type_id) continue
+    newCountsByType.set(r.material_type_id, (newCountsByType.get(r.material_type_id) ?? 0) + 1)
+  }
+
+  // Default selection: the requested ?type= if it's a real type for
+  // this org, else the first type (alphabetically) that actually has
+  // NEW rows, else just the first type — never Substrates specifically,
+  // and never "nothing selected" as long as the org has at least one
+  // material type.
+  const requestedType = sp.type ? allTypes.find((t) => t.id === sp.type) ?? null : null
+  const selectedType = requestedType
+    ?? allTypes.find((t) => (newCountsByType.get(t.id) ?? 0) > 0)
+    ?? allTypes[0]
+    ?? null
+
+  const config = selectedType ? FAMILY_CONFIGS[selectedType.name] : undefined
+  const parserConfigured = !!config
 
   const [rows, categoriesRes] = await Promise.all([
-    substrateType
-      ? dbOrThrow(
+    selectedType
+      ? dbAllOrThrow<ShopvoxMaterialRow & {
+          migrated_to_material_id: string | null
+          migrated_at: string | null
+          source_hash: string
+          migrated_source_hash: string | null
+          dismissed_at: string | null
+        }>((from, to) =>
           supabase
             .from('shopvox_materials')
             .select('id, shopvox_id, name, material_type_id, category_id, width, height, sheet_cost, cost, price, multiplier, preferred_vendor, part_number, sku, po_description, info_url, image_url, description, vendor_pricing, status, migrated_to_material_id, migrated_at, source_hash, migrated_source_hash, dismissed_at')
             .eq('organization_id', org.id)
-            .eq('material_type_id', substrateType.id)
+            .eq('material_type_id', selectedType.id)
             .order('name')
+            .range(from, to)
         )
       : Promise.resolve([]),
-    dbOrThrow(supabase.from('material_categories').select('id, name').eq('organization_id', org.id)),
+    dbAllOrThrow<{ id: string; name: string }>((from, to) =>
+      supabase.from('material_categories').select('id, name').eq('organization_id', org.id).range(from, to)
+    ),
   ])
 
-  const typedRows = (rows ?? []) as unknown as (ShopvoxMaterialRow & {
-    migrated_to_material_id: string | null
-    migrated_at: string | null
-    source_hash: string
-    migrated_source_hash: string | null
-    dismissed_at: string | null
-  })[]
+  const typedRows = rows
 
-  const categoryNames = new Map(((categoriesRes ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]))
+  const categoryNames = new Map(categoriesRes.map((c) => [c.id, c.name]))
 
+  // The TRUE unmigrated-row count for the selected type — sourced
+  // directly from the row fetch above (now fully paginated), never from
+  // `proposals`. buildFamilyProposals never drops a row (every row
+  // lands in some family, worst case its own singleton), so
+  // proposalRowCount and newRows.length should always agree — but the
+  // client checks that explicitly and surfaces a banner if they ever
+  // don't, rather than trusting the invariant silently. This is what
+  // "cannot silently under-report" means in practice: two independently
+  // computed numbers, checked against each other, not one number
+  // presented as if it were self-evidently correct.
   const newRows = typedRows.filter((r) => r.status === 'NEW')
-  const proposals = buildFamilyProposals(newRows, categoryNames)
+  const proposals = parserConfigured ? buildFamilyProposals(newRows, categoryNames, config) : []
 
   // For CHANGED rows, load the linked material's current values so the
   // client can render a field-by-field diff (ShopVOX now vs. PrintOS
@@ -119,7 +167,11 @@ async function PageInner({ params }: PageProps) {
     <MigrateClient
       orgId={org.id}
       orgSlug={slug}
-      substrateTypeFound={!!substrateType}
+      types={allTypes}
+      newCountsByType={Object.fromEntries(newCountsByType)}
+      selectedTypeId={selectedType?.id ?? null}
+      parserConfigured={parserConfigured}
+      trueNewCount={newRows.length}
       rows={typedRows}
       proposals={proposals}
       linkedMaterials={(linkedMaterialsRes ?? []) as Record<string, unknown>[]}
