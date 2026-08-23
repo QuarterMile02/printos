@@ -214,49 +214,126 @@ export const SUBSTRATE_FAMILY_CONFIG: FamilyAxisConfig = {
 // (CC3X2-500M) and (3X1-501) match the same shape (those are real
 // colour codes here, unlike Build 1 where the same strings were false
 // positives for the unrelated SIZE token — different regex, different
-// purpose). Generic across axes — not part of FamilyAxisConfig.
+// purpose), and "Coroplast 4mm (COLOR)" needs this to still capture
+// "COLOR" itself as a `code` value (with no digit at all) so the
+// literal-unfinished-ShopVOX-record check further down can catch it —
+// see the substrate branch of parseRemainder below. Used AS-IS,
+// unmodified, for substrates. Rolls use a separate, stricter,
+// gated/multi-paren-aware detector — see findLastQualifyingParen below
+// and its use in parseRemainder's roll-style branch — because roll
+// data has shapes this simple regex gets wrong (see that function's
+// header comment). The two are deliberately NOT unified: substrates'
+// "COLOR" placeholder needs exactly the looser, no-digit-required
+// behavior this regex already has; verified live that reusing the
+// stricter roll gate here flips "Coroplast 4mm (COLOR)" from LOW to
+// MEDIUM confidence (96/69/4/23 -> 96/69/5/22) by making that check
+// never fire. Generic across axes — not part of FamilyAxisConfig.
 const COLOUR_CODE_RE = /^(.*?)\(([A-Za-z0-9][A-Za-z0-9-]*)\)(.*)$/
 
-function parseRemainder(remainder: string, config: FamilyAxisConfig): { colour: string | null; code: string | null; axisValue: string | null; brand: string | null } {
-  const codeMatch = remainder.match(COLOUR_CODE_RE)
+// FIX 2026-08-23, ROLLS ONLY (see COLOUR_CODE_RE's comment for why this
+// isn't shared with substrates): the roll parser's original code
+// detection took the FIRST paren group unconditionally. Two real
+// failure modes on live roll data: (1) a name can carry an ALTERNATE
+// COLOUR NAME in its own parens before the real code -- "Night Sky Blue
+// (Deep Sea Blue) (288C)" -- where the first group is prose, not a
+// code; (2) a single paren can hold a non-code descriptor with no
+// digit at all -- "Process Black C (Onyx)" -- "Onyx" isn't a code,
+// it's an alternate name, but the original regex happily accepted it
+// as one.
+//
+// Every genuine code in the live Roll Materials dataset has NO SPACE
+// and CONTAINS AT LEAST ONE DIGIT (confirmed against the full list:
+// 155C, 2747, 3005C, 434-T, 877C, 116C, 214, 043, 101, 288C, 427C, 470,
+// 375C, 692, 254, 626, 186C, 440, 236, 337, 106, 182, 60) — gated on
+// that rule, scanning every "(...)" group and taking the LAST one
+// whose content ends in a code-shaped token, rather than blindly
+// taking the first paren found. A paren group that fails the gate (has
+// a space with no trailing code token, or has no digit at all) stays
+// as part of the colour text, unparsed, exactly as before this fix —
+// never guessed. "(Pantone 266C)" still yields code "266C": the gate
+// checks the LAST WORD inside the parens, not the whole content, so a
+// descriptive prefix word ("Pantone") doesn't disqualify a real
+// trailing code — it's folded back into the colour text instead of
+// being discarded.
+const CODE_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9-]*$/
+function isCodeShaped(token: string): boolean {
+  return CODE_TOKEN_RE.test(token) && /\d/.test(token)
+}
 
+type QualifyingParen = { start: number; end: number; code: string; prefixWords: string }
+
+function findLastQualifyingParen(text: string): QualifyingParen | null {
+  const PAREN_RE = /\(([^()]*)\)/g
+  let best: QualifyingParen | null = null
+  let m: RegExpExecArray | null
+  while ((m = PAREN_RE.exec(text))) {
+    const inner = m[1].trim()
+    if (!inner) continue
+    const words = inner.split(/\s+/)
+    const last = words[words.length - 1]
+    if (isCodeShaped(last)) {
+      best = { start: m.index, end: m.index + m[0].length, code: last, prefixWords: words.slice(0, -1).join(' ') }
+    }
+  }
+  return best
+}
+
+function joinNonEmpty(parts: (string | null | undefined)[]): string | null {
+  return parts.filter((s): s is string => !!s && s.trim().length > 0).map((s) => s.trim()).join(' ').trim() || null
+}
+
+function parseRemainder(remainder: string, config: FamilyAxisConfig): { colour: string | null; code: string | null; axisValue: string | null; brand: string | null } {
   if (config.findAxisSpan) {
-    // Roll-style: axis is a bounded token; text after it is brand. The
-    // colour/code shape ("ColourName (CODE) ...") is unchanged/shared —
-    // only what happens to the text AFTER the code differs from
-    // substrates below.
-    const afterColour = codeMatch ? codeMatch[3] : remainder
-    const colourFromCode = codeMatch ? (codeMatch[1].trim() || null) : null
-    const code = codeMatch ? codeMatch[2] : null
-    const span = config.findAxisSpan(afterColour)
+    // Roll-style: find the axis FIRST, on the raw remainder — the code
+    // search below is explicitly scoped to "before the axis" (per
+    // instruction), which requires knowing where the axis is before
+    // scanning for parens, not after (the pre-fix version searched for
+    // a code first and looked for axis only in the leftover text).
+    const span = config.findAxisSpan(remainder)
+    const preAxis = span ? remainder.slice(0, span.start) : remainder
+    const paren = findLastQualifyingParen(preAxis)
+    const code = paren?.code ?? null
+    const before = paren ? preAxis.slice(0, paren.start) : preAxis
+    const afterParenBeforeAxis = paren ? preAxis.slice(paren.end) : '' // empirically always empty on live data — no real row has text between the code and the axis
+
     if (!span) {
-      // BUG FIX 2026-08-23: no axis token, but a colour code WAS
-      // matched -- these names are still structurally "<colour> (<code>)
-      // <brand>", the axis token is just absent (confirmed live for 89
-      // of 368 rows). afterColour is brand, not discarded and not
-      // folded into colour/axisValue. Proven live: "Vinyl Intermediate
-      // Cardinal Red (430) Avery HP750" was silently losing "Avery
-      // HP750" here, which welded that Avery row into a 29-row family
-      // that was otherwise all Oracal 651 -- different brand, different
-      // cost, different multiplier.
-      //
-      // Without a code match, there is no reliable boundary between
-      // colour and brand at all -- genuinely ambiguous, so brand stays
-      // null and the whole remainder is kept as undifferentiated colour
-      // text, same as before this fix. Do not guess.
-      if (codeMatch) {
-        return { colour: colourFromCode, code, axisValue: null, brand: afterColour.trim() || null }
+      // No axis token. Same rule as the previous fix: with a code
+      // present, everything after the code is brand, not colour —
+      // never discarded. Without a code, this stays genuinely
+      // ambiguous — brand null, whole remainder kept as colour text.
+      // Do not guess.
+      if (code) {
+        const colour = joinNonEmpty([before, paren!.prefixWords])
+        const brand = afterParenBeforeAxis.trim() || null
+        return { colour, code, axisValue: null, brand }
       }
       return { colour: remainder.trim() || null, code: null, axisValue: null, brand: null }
     }
-    const axisValue = afterColour.slice(span.start, span.end).trim() || null
-    const brand = afterColour.slice(span.end).trim() || null
-    const colour = codeMatch ? colourFromCode : (afterColour.slice(0, span.start).trim() || null)
+
+    const axisValue = remainder.slice(span.start, span.end).trim() || null
+    const brand = remainder.slice(span.end).trim() || null
+    const colour = joinNonEmpty([before, paren?.prefixWords, afterParenBeforeAxis])
     return { colour, code, axisValue, brand }
   }
 
-  // Substrate-style (unchanged): axis is "rest of remainder from
-  // findAxisStart to the end" — no separate brand concept.
+  // Substrate-style: COMPLETELY UNCHANGED from before the 2026-08-23
+  // fix -- the gated/last-qualifying-paren logic above is roll-only.
+  // Reusing it here regressed one real row: "Coroplast 4mm (COLOR)" --
+  // "COLOR" is a literal unfinished ShopVOX placeholder with no digit
+  // in it, which the new digit-required gate correctly rejects as a
+  // real code... but the ENTIRE POINT of the original substrate regex
+  // capturing "COLOR" as a `code` value was so the very next check in
+  // buildFamilyProposals (`code.toUpperCase() === 'COLOR'`) could catch
+  // it and force LOW confidence. Reject it at the gate here instead and
+  // that downstream check never fires -- confirmed live, this flipped
+  // that one row from LOW to MEDIUM (96/69/4/23 -> 96/69/5/22) before
+  // this branch was reverted to the original unbounded, ungated,
+  // first-paren-match regex. No known substrate row has more than one
+  // paren group or a nested nested nested-paren shape (Build 1b's
+  // exhaustive 235-row investigation never surfaced one) -- if that
+  // ever changes, extend the roll-style gate to substrates deliberately
+  // and re-verify against real data, don't assume.
+  const codeMatch = remainder.match(COLOUR_CODE_RE)
   if (codeMatch) {
     return { colour: codeMatch[1].trim() || null, code: codeMatch[2], axisValue: codeMatch[3].trim() || null, brand: null }
   }
@@ -270,6 +347,46 @@ function normWord(w: string): string {
 }
 function normWords(s: string): string[] {
   return s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean)
+}
+
+// FIX 2026-08-23: a colour whose leading word matches another material
+// category's name IS correctly detected as a sub-line qualifier (see
+// the comment on this exact signal further down, where it's applied) —
+// but the qualifier word is part of the product's real name, not an
+// untrustworthy colour. It belongs in `line`, not stripped out into a
+// forced singleton. Confirmed live this was producing eight separate
+// identical "Vinyl 2Mil Avery UC900" singletons ("Translucent" colliding
+// with the standalone "Translucent Backlit Film" category) and six
+// separate "Magnet 20Mil/30Mil Magnum" singletons ("Digital" colliding
+// with the "Digital Vinyl" category) that should have been one or two
+// real families.
+//
+// Qualifiers stack: peels ONE leading word at a time, for as long as
+// each new leading word keeps matching another category's name — e.g.
+// "Translucent Digital ..." peels both "Translucent" and "Digital" in
+// turn if both independently collide. Stops the moment a word doesn't
+// match; never guesses past a genuine colour/finish word. A colour
+// that peels down to nothing (e.g. "Digital" alone) is not a parse
+// failure — some qualified rows genuinely have no colour/finish at
+// all, just line + axis + brand.
+function peelSubLineQualifiers(
+  line: string,
+  colour: string | null,
+  ownCategoryFirstWord: string,
+  otherCategoryFirstWords: string[],
+): { line: string; colour: string | null; peeled: string[] } {
+  if (!colour) return { line, colour, peeled: [] }
+  const colourWords = colour.split(/\s+/).filter(Boolean)
+  const lineWords = line.split(/\s+/).filter(Boolean)
+  const peeled: string[] = []
+  while (colourWords.length > 0) {
+    const firstWord = normWord(colourWords[0])
+    if (!otherCategoryFirstWords.includes(firstWord) || firstWord === ownCategoryFirstWord) break
+    const word = colourWords.shift()!
+    lineWords.push(word)
+    peeled.push(word)
+  }
+  return { line: lineWords.join(' '), colour: colourWords.join(' ') || null, peeled }
 }
 
 type PreparedRow = {
@@ -375,10 +492,11 @@ export function buildFamilyProposals(
     const catRows = byCategory.get(catKey)!
     const catRowCount = catRows.length
     const lineWordCount = Math.min(lcpByCategory.get(catKey) ?? 1, p.words.length)
-    const line = p.words.slice(0, lineWordCount).join(' ')
+    let line = p.words.slice(0, lineWordCount).join(' ')
     const remainder = p.words.slice(lineWordCount).join(' ')
     const parsed = parseRemainder(remainder, config)
-    const { colour, code, brand } = parsed
+    const { code, brand } = parsed
+    let colour = parsed.colour
     let axisValue = parsed.axisValue
 
     // Roll-style only: some product lines carry an IDENTICAL axis value
@@ -400,8 +518,29 @@ export function buildFamilyProposals(
       }
     }
 
+    // FIX 2026-08-23, roll-style configs only: move sub-line qualifier
+    // word(s) out of colour and into line — see peelSubLineQualifiers'
+    // header comment. Runs before any of the confidence checks below
+    // so they all see the corrected colour/line, not the pre-peel
+    // text. Gated to configs with findAxisSpan (rolls) — substrates use
+    // the ORIGINAL forced-low behavior below, unmodified, to keep
+    // substrate output byte-identical (verified: 96 families / 69
+    // high / 4 medium / 23 low, unchanged by this fix).
+    const ownCategoryFirstWord = categoryNameFirstWords.get(p.row.category_id ?? '') ?? ''
+    let peeledQualifiers: string[] = []
+    if (config.findAxisSpan) {
+      const peelResult = peelSubLineQualifiers(line, colour, ownCategoryFirstWord, otherCategoryFirstWords)
+      line = peelResult.line
+      colour = peelResult.colour
+      peeledQualifiers = peelResult.peeled
+    }
+
     const reasons: string[] = []
     let confidence: FamilyConfidence = 'high'
+
+    if (peeledQualifiers.length > 0) {
+      reasons.push(`sub-line qualifier${peeledQualifiers.length > 1 ? 's' : ''} "${peeledQualifiers.join(' ')}" moved from colour/finish into the product line (matches another material category's name in this dataset) — not a real colour/finish, and not a parse failure`)
+    }
 
     // Real row that caused this: PETG ("PETG Clear .020in", the only
     // row in its category) and Steel Corton (2 rows that are IDENTICAL
@@ -480,7 +619,14 @@ export function buildFamilyProposals(
     // product category in this dataset (a totally different substrate).
     // A colour word colliding with another category's name is a strong
     // signal it's actually a sub-line reference, not a genuine colour.
-    if (confidence !== 'low' && colour) {
+    //
+    // SUBSTRATE-ONLY as of the 2026-08-23 fix: this is the exact
+    // detection the roll-style peelSubLineQualifiers step above now
+    // acts on differently (moves the qualifier into line instead of
+    // forcing a singleton) — kept here, unmodified, gated to configs
+    // WITHOUT findAxisSpan so substrate output stays byte-identical
+    // (verified: 96 families / 69 high / 4 medium / 23 low, unchanged).
+    if (!config.findAxisSpan && confidence !== 'low' && colour) {
       const firstWord = normWord(colour.split(/\s+/)[0])
       const thisCategoryFirstWord = categoryNameFirstWords.get(p.row.category_id ?? '') ?? ''
       if (otherCategoryFirstWords.includes(firstWord) && firstWord !== thisCategoryFirstWord) {
