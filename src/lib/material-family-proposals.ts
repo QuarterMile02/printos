@@ -230,7 +230,24 @@ function parseRemainder(remainder: string, config: FamilyAxisConfig): { colour: 
     const code = codeMatch ? codeMatch[2] : null
     const span = config.findAxisSpan(afterColour)
     if (!span) {
-      return { colour: codeMatch ? colourFromCode : (remainder.trim() || null), code, axisValue: null, brand: null }
+      // BUG FIX 2026-08-23: no axis token, but a colour code WAS
+      // matched -- these names are still structurally "<colour> (<code>)
+      // <brand>", the axis token is just absent (confirmed live for 89
+      // of 368 rows). afterColour is brand, not discarded and not
+      // folded into colour/axisValue. Proven live: "Vinyl Intermediate
+      // Cardinal Red (430) Avery HP750" was silently losing "Avery
+      // HP750" here, which welded that Avery row into a 29-row family
+      // that was otherwise all Oracal 651 -- different brand, different
+      // cost, different multiplier.
+      //
+      // Without a code match, there is no reliable boundary between
+      // colour and brand at all -- genuinely ambiguous, so brand stays
+      // null and the whole remainder is kept as undifferentiated colour
+      // text, same as before this fix. Do not guess.
+      if (codeMatch) {
+        return { colour: colourFromCode, code, axisValue: null, brand: afterColour.trim() || null }
+      }
+      return { colour: remainder.trim() || null, code: null, axisValue: null, brand: null }
     }
     const axisValue = afterColour.slice(span.start, span.end).trim() || null
     const brand = afterColour.slice(span.end).trim() || null
