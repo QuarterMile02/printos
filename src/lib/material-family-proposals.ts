@@ -36,6 +36,14 @@
 // missing (deliberately not built here).
 
 import { stripSizeToken, extractCutToLengthWidth, type ShopvoxMaterialRow } from './material-migrate-proposals'
+import { findRollAxisSpan } from './roll-axis-regex.js'
+
+// Single source of truth for both material type names this file has a
+// config for — page.tsx imports these rather than re-declaring the
+// literal, so the type-picker default and FAMILY_CONFIGS below can
+// never drift apart.
+export const SUBSTRATE_TYPE_NAME = 'Rigid Substrates- Sheets'
+export const ROLL_TYPE_NAME = 'Roll Materials'
 
 export type FamilyConfidence = 'high' | 'medium' | 'low'
 
@@ -59,6 +67,15 @@ export type FamilyProposal = {
   line: string
   axisLabel: string // e.g. "Thickness" — display label for axisValue, from the config
   axisValue: string | null
+  // Brand / product-line marker (e.g. "Oracal 651", "Avery SW900", "3M
+  // 180C") — rolls only (always null for configs without findAxisSpan).
+  // FAMILY-DISTINGUISHING, confirmed by Ruben: two vinyls identical
+  // except brand are different materials (different cost, different
+  // vendor). Goes into the generated family NAME as plain text — there
+  // is deliberately no database column for it; nothing reads it as
+  // structured data, and adding an unread column is the exact failure
+  // mode this project keeps hitting.
+  brand: string | null
   categoryId: string | null
   materialTypeId: string | null
   confidence: FamilyConfidence
@@ -83,6 +100,19 @@ export type FamilyAxisConfig = {
   // starts, or -1 if none is found. Substrate implementation below
   // handles ".118in - 1/8"", "3mm", "11 Guage", bare ".040" (no unit).
   findAxisStart: (remainder: string) => number
+  // Optional. Substrate's axis is "everything from findAxisStart to the
+  // end of the remainder" — the trailing decoration on the name (e.g.
+  // ".118in - 1/8""). Rolls are different: the axis is a single bounded
+  // TOKEN (e.g. "2Mil"), and text that follows it is the brand/product-
+  // line marker (Oracal 651, Avery SW900, 3M 180C) — a separate,
+  // family-distinguishing field, never folded into axisValue or colour.
+  // When a config provides this, parseRemainder uses it instead of
+  // findAxisStart to get an exact [start,end) span and captures
+  // whatever follows as `brand`. findAxisStart is still required on
+  // every config (suggestParentMaterials uses it for an approximate
+  // line/axis split on existing materials) — a findAxisSpan config can
+  // just return that span's start.
+  findAxisSpan?: (remainder: string) => { start: number; end: number } | null
   // Given the full row (name text AND the row's own stored dimensions —
   // needed because a cut-to-length row's real width lives in the row,
   // not always recoverable from text alone), strip whatever this axis
@@ -187,14 +217,35 @@ export const SUBSTRATE_FAMILY_CONFIG: FamilyAxisConfig = {
 // purpose). Generic across axes — not part of FamilyAxisConfig.
 const COLOUR_CODE_RE = /^(.*?)\(([A-Za-z0-9][A-Za-z0-9-]*)\)(.*)$/
 
-function parseRemainder(remainder: string, config: FamilyAxisConfig): { colour: string | null; code: string | null; axisValue: string | null } {
+function parseRemainder(remainder: string, config: FamilyAxisConfig): { colour: string | null; code: string | null; axisValue: string | null; brand: string | null } {
   const codeMatch = remainder.match(COLOUR_CODE_RE)
+
+  if (config.findAxisSpan) {
+    // Roll-style: axis is a bounded token; text after it is brand. The
+    // colour/code shape ("ColourName (CODE) ...") is unchanged/shared —
+    // only what happens to the text AFTER the code differs from
+    // substrates below.
+    const afterColour = codeMatch ? codeMatch[3] : remainder
+    const colourFromCode = codeMatch ? (codeMatch[1].trim() || null) : null
+    const code = codeMatch ? codeMatch[2] : null
+    const span = config.findAxisSpan(afterColour)
+    if (!span) {
+      return { colour: codeMatch ? colourFromCode : (remainder.trim() || null), code, axisValue: null, brand: null }
+    }
+    const axisValue = afterColour.slice(span.start, span.end).trim() || null
+    const brand = afterColour.slice(span.end).trim() || null
+    const colour = codeMatch ? colourFromCode : (afterColour.slice(0, span.start).trim() || null)
+    return { colour, code, axisValue, brand }
+  }
+
+  // Substrate-style (unchanged): axis is "rest of remainder from
+  // findAxisStart to the end" — no separate brand concept.
   if (codeMatch) {
-    return { colour: codeMatch[1].trim() || null, code: codeMatch[2], axisValue: codeMatch[3].trim() || null }
+    return { colour: codeMatch[1].trim() || null, code: codeMatch[2], axisValue: codeMatch[3].trim() || null, brand: null }
   }
   const idx = config.findAxisStart(remainder)
-  if (idx === -1) return { colour: remainder.trim() || null, code: null, axisValue: null }
-  return { colour: remainder.slice(0, idx).trim() || null, code: null, axisValue: remainder.slice(idx).trim() || null }
+  if (idx === -1) return { colour: remainder.trim() || null, code: null, axisValue: null, brand: null }
+  return { colour: remainder.slice(0, idx).trim() || null, code: null, axisValue: remainder.slice(idx).trim() || null, brand: null }
 }
 
 function normWord(w: string): string {
@@ -297,6 +348,7 @@ export function buildFamilyProposals(
     colour: string | null
     code: string | null
     axisValue: string | null
+    brand: string | null
     confidence: FamilyConfidence
     reasons: string[]
   }
@@ -308,7 +360,28 @@ export function buildFamilyProposals(
     const lineWordCount = Math.min(lcpByCategory.get(catKey) ?? 1, p.words.length)
     const line = p.words.slice(0, lineWordCount).join(' ')
     const remainder = p.words.slice(lineWordCount).join(' ')
-    const { colour, code, axisValue } = parseRemainder(remainder, config)
+    const parsed = parseRemainder(remainder, config)
+    const { colour, code, brand } = parsed
+    let axisValue = parsed.axisValue
+
+    // Roll-style only: some product lines carry an IDENTICAL axis value
+    // on every row in the category (e.g. every "Banner Mesh" row is
+    // "8oz") — the per-category longest-common-prefix naturally absorbs
+    // that token into `line`, leaving nothing in `remainder` for the
+    // above match to find. That's a structural non-failure (the axis is
+    // right there, in `line`, visible in the family name), not a parse
+    // miss — recheck `line` itself before concluding there's truly no
+    // axis token anywhere. brand is not extracted in this branch: it's
+    // shared/category-wide text already visible inside `line` itself,
+    // nothing hidden.
+    let axisFixedInLine = false
+    if (config.findAxisSpan && !axisValue) {
+      const lineSpan = config.findAxisSpan(line)
+      if (lineSpan) {
+        axisValue = line.slice(lineSpan.start, lineSpan.end).trim() || null
+        axisFixedInLine = true
+      }
+    }
 
     const reasons: string[] = []
     let confidence: FamilyConfidence = 'high'
@@ -325,6 +398,18 @@ export function buildFamilyProposals(
       reasons.push(`only ${catRowCount} row(s) in this category — not enough repetition to trust an automated line/colour-finish split; review manually`)
     }
 
+    // Real row: "Grommet" (Roll Materials) — no size token in the name
+    // AND no stored width on the source row, so `extractSize` has
+    // nothing to fall back to. This is a stronger warning than "no axis
+    // token" and forces LOW regardless of config — never invent a size,
+    // and never let a family/singleton with a genuinely unknown width
+    // ride along at medium confidence just because its axis or line
+    // looked fine.
+    if (confidence !== 'low' && p.width == null) {
+      confidence = 'low'
+      reasons.push('no size available — no width token in the name and no stored width on the source row; needs manual entry')
+    }
+
     // Real row: "Coroplast 4mm (COLOR)" — a literal unfinished ShopVOX
     // placeholder, not a real colour/finish value.
     if (code && code.toUpperCase() === 'COLOR') {
@@ -332,9 +417,29 @@ export function buildFamilyProposals(
       reasons.push('the "colour/finish" is a literal template placeholder, "(COLOR)", not a real value — looks like an unfinished ShopVOX record')
     }
 
+    if (axisFixedInLine) {
+      // Non-blocking — just tells Ruben WHY axisValue is set even though
+      // no per-row token was in the remainder, so this doesn't read as a
+      // mysterious contradiction of the reasoning right below it.
+      reasons.push(`${config.axisLabel.toLowerCase()} "${axisValue}" is constant for every row in this category — absorbed into the line, not a per-row miss`)
+    }
+
     if (!axisValue && confidence !== 'low') {
-      confidence = 'low'
-      reasons.push(`no ${config.axisLabel.toLowerCase()} token found`)
+      if (config.findAxisSpan) {
+        // Roll-style only: confirmed live, a real and legitimate chunk
+        // of the dataset (Pre-Mask Tape, some vinyl grades named only by
+        // brand/model) carries no weight/thickness token anywhere —
+        // that's honest, not a parser failure. Do NOT force a singleton
+        // and do NOT invent an axis value — group by line/brand alone
+        // (the grouping key below already does this once axisValue is
+        // '') and flag it for a second look rather than hiding it as a
+        // confident grouping.
+        if (confidence === 'high') confidence = 'medium'
+        reasons.push(`no ${config.axisLabel.toLowerCase()} token found — grouped by line${brand ? '/brand' : ''} alone`)
+      } else {
+        confidence = 'low'
+        reasons.push(`no ${config.axisLabel.toLowerCase()} token found`)
+      }
     }
 
     // Real row: every Coroplast row ("Coroplast 4mm White", "Coroplast
@@ -394,20 +499,26 @@ export function buildFamilyProposals(
     }
 
     if (confidence === 'high' && reasons.length === 0) {
-      reasons.push(colour ? `parsed cleanly: line "${line}", colour/finish "${colour}"${code ? ` (${code})` : ''}, ${config.axisLabel.toLowerCase()} "${axisValue}"` : `parsed cleanly: line "${line}", no colour/finish word, ${config.axisLabel.toLowerCase()} "${axisValue}"`)
+      const brandSuffix = brand ? `, brand/line "${brand}"` : ''
+      reasons.push(colour ? `parsed cleanly: line "${line}", colour/finish "${colour}"${code ? ` (${code})` : ''}, ${config.axisLabel.toLowerCase()} "${axisValue}"${brandSuffix}` : `parsed cleanly: line "${line}", no colour/finish word, ${config.axisLabel.toLowerCase()} "${axisValue}"${brandSuffix}`)
     }
 
-    return { prepared: p, line, colour, code, axisValue, confidence, reasons }
+    return { prepared: p, line, colour, code, axisValue, brand, confidence, reasons }
   })
 
   // LOW confidence rows are NEVER grouped by the parsed line/axis —
   // each becomes its own singleton family, same discipline as Build 1's
-  // migrate proposals for anything the parser isn't sure about.
+  // migrate proposals for anything the parser isn't sure about. Brand is
+  // folded into the grouping key (roll-style configs only — always ''
+  // for substrates, so this changes nothing for them): two vinyls
+  // identical except brand are different materials, confirmed by Ruben —
+  // never silently welded together because their line/axis happen to
+  // match.
   const families = new Map<string, Parsed[]>()
   for (const p of parsedRows) {
     const key = p.confidence === 'low'
       ? `SINGLETON::${p.prepared.row.id}`
-      : `${p.prepared.row.category_id ?? '__none__'}||${p.line.toLowerCase()}||${(p.axisValue ?? '').toLowerCase()}`
+      : `${p.prepared.row.category_id ?? '__none__'}||${p.line.toLowerCase()}||${(p.axisValue ?? '').toLowerCase()}||${(p.brand ?? '').toLowerCase()}`
     if (!families.has(key)) families.set(key, [])
     families.get(key)!.push(p)
   }
@@ -433,6 +544,7 @@ export function buildFamilyProposals(
       line: items[0].line,
       axisLabel: config.axisLabel,
       axisValue: items[0].axisValue,
+      brand: items[0].brand,
       categoryId: items[0].prepared.row.category_id,
       materialTypeId: items[0].prepared.row.material_type_id,
       confidence: items[0].confidence,
@@ -445,33 +557,84 @@ export function buildFamilyProposals(
   return proposals.sort((a, b) => b.sourceRowIds.length - a.sourceRowIds.length)
 }
 
-// ── WHAT A ROLL PASS (kiss-cut / colour vinyl) WOULD STILL NEED ─────
-// Deliberately NOT built here — per instruction, only the shape is
-// ready, nothing that would need tearing out to add it:
-//
-// 1. A ROLL_FAMILY_CONFIG: axisLabel "Mil", and a findAxisStart that
-//    recognizes vinyl's mil convention (e.g. "2Mil", "3Mil" — need to
-//    confirm the real text shape against actual vinyl material names
-//    before writing this regex, same "confirm against real data first"
-//    discipline this whole file follows; not assumed here).
-// 2. An extractSize for rolls. Sheets have a fixed two-dimensional size
-//    (H×W) captured as one token by stripSizeToken. A roll's "size" is
-//    structurally different — width is close to a colour/finish-level
-//    property (most vinyl colours only come in one or two standard
-//    widths, e.g. 24in/48in/54in), while length is often open-ended
-//    (sold by the foot) rather than a fixed second dimension. This
-//    likely means a roll's extractSize returns a WIDTH only (parallel
-//    to material_variants.width, already schema-ready from Build 1) and
-//    leaves length_increment/cut-to-length handling to the same
-//    mechanism Build 1 already built for the 8 Polycarbonate reel rows
-//    — not a new concept, but the exact regex/shape needs confirming
-//    against real vinyl material names first.
-// 3. Confirm whether vinyl's colour+code shape matches Acrylic's
-//    "ColourName (CODE)" (COLOUR_CODE_RE, kept generic/shared above) or
-//    needs its own pattern — vinyl often codes colours as e.g. "White
-//    (180C)" which likely matches as-is, but unconfirmed without real
-//    data.
-// 4. Re-run the same "top 10 families + full LOW/MEDIUM list" report
-//    this file's substrate pass produced, against real vinyl data,
-//    before building anything UI-facing for it — same gate Build 1b
-//    used for substrates.
+// ── Roll identity axis: weight (oz) or thickness (Mil) ───────────────
+// Confirmed live over all 368 NEW "Roll Materials" rows (org
+// 4ca12dff-97be-4472-8099-ab102a3af01a, 2026-08-22): 48 use oz
+// (fabric/banner/mesh-class), 224 use Mil (vinyl/film/laminate-class),
+// ZERO use both — two genuinely separate naming conventions, not one
+// axis spelled two ways. See known-issues/2026-08-22-roll-vinyl-
+// migrate-pass-proposal.md for the full investigation this implements.
+// The actual regex (and the "Mil must never match ML" guarantee) lives
+// in roll-axis-regex.js, not here — see that file's header for why, and
+// scripts/verify-roll-axis-regex.mjs for the proof.
+
+// Width — includes the bare quote-inch form (e.g. `54"`) from the
+// start: confirmed live exactly one row uses it ("Roodle Matte White
+// Removable 54" x 100"") without ever writing the word "in", and a
+// substrate-style regex that only recognized "in" would silently
+// misparse it as colour text (the exact THICKNESS_START_RE risk
+// discovered on the Substrates type earlier this project).
+const ROLL_WIDTH_X_LENGTH_RE = /(\d+(?:\.\d+)?)\s*(in|")\s*[x×]\s*(\d+(?:\.\d+)?)\s*(in|")/i
+const ROLL_WIDTH_RE = /(\d+(?:\.\d+)?)\s*(in|")/i
+
+// Cut-to-length (length_increment): checked directly against all 368
+// rows — no true continuous-cut-to-length product exists in this
+// dataset. 9 rows have DB width AND height both NULL (the Polycarbonate
+// trigger shape), but 8 of the 9 carry an explicit, discrete width IN
+// THE NAME (six stock widths of one "Banner Translucent" product) — a
+// normal multi-width family, not a reel. The 9th ("Grommet") is not a
+// sized roll product at all — no width signal of any kind, not
+// special-cased, just falls through to the last resort below and
+// surfaces as an honest LOW-confidence singleton. Because nothing in
+// the live data exercises it, ROLL_FAMILY_CONFIG does not attempt
+// length_increment detection — inventing a reel length for a row that
+// doesn't need one would be exactly the kind of guess this file's rules
+// forbid. If a genuine cut-to-length roll ever appears (DB width AND
+// height both NULL, no width/inch token anywhere in the name, AND a
+// price that's clearly length-scaled), it should be added the same way
+// Build 1 added it for Polycarbonate — detected explicitly, not
+// inferred from these three signals colliding by accident.
+
+export const ROLL_FAMILY_CONFIG: FamilyAxisConfig = {
+  axisLabel: 'Weight/Thickness',
+  findAxisStart: (remainder) => findRollAxisSpan(remainder)?.start ?? -1,
+  findAxisSpan: (remainder) => findRollAxisSpan(remainder),
+  extractSize: (row) => {
+    const wl = ROLL_WIDTH_X_LENGTH_RE.exec(row.name)
+    if (wl) {
+      // Two explicit dimensions in the name (e.g. "54in x 100in") — a
+      // discrete stock size, not cut-to-length. Reuses the existing
+      // height/width columns exactly as substrates' H×W does (no new
+      // column): width = the roll width, height = the second dimension
+      // as given. 40 rows in the live dataset carry this shape.
+      const nameWithoutSize = (row.name.slice(0, wl.index) + row.name.slice(wl.index! + wl[0].length)).replace(/\s{2,}/g, ' ').trim()
+      return { nameWithoutSize, sizeLabel: wl[0].trim(), height: parseFloat(wl[3]), width: parseFloat(wl[1]), lengthIncrement: null }
+    }
+    const w = ROLL_WIDTH_RE.exec(row.name)
+    if (w) {
+      const nameWithoutSize = (row.name.slice(0, w.index) + row.name.slice(w.index! + w[0].length)).replace(/\s{2,}/g, ' ').trim()
+      return { nameWithoutSize, sizeLabel: w[0].trim(), height: row.height, width: parseFloat(w[1]), lengthIncrement: null }
+    }
+    // No width token in the name — fall back to the row's own stored
+    // width (359/368 rows have one). Confirmed live: only ONE row in
+    // the whole 368 has neither a text token nor a stored width
+    // ("Grommet" — not a sized roll product, surfaces as its own LOW
+    // singleton via the "no width available" check below, same as any
+    // other unparseable row).
+    if (row.width != null) {
+      return { nameWithoutSize: row.name, sizeLabel: `${row.width}in (from ShopVOX record, no size in name)`, height: row.height, width: row.width, lengthIncrement: null }
+    }
+    return { nameWithoutSize: row.name, sizeLabel: null, height: row.height, width: null, lengthIncrement: null }
+  },
+}
+
+// Name -> config lookup for the type-aware migrate screen (page.tsx).
+// Deliberately small and flat — this is a migration tool with a limited
+// lifespan, not a product surface. A material type with no entry here
+// shows an explicit "no parser configured for this type yet" banner
+// (page.tsx / migrate-client.tsx) rather than silently reusing the
+// wrong config or rendering nothing.
+export const FAMILY_CONFIGS: Record<string, FamilyAxisConfig> = {
+  [SUBSTRATE_TYPE_NAME]: SUBSTRATE_FAMILY_CONFIG,
+  [ROLL_TYPE_NAME]: ROLL_FAMILY_CONFIG,
+}
