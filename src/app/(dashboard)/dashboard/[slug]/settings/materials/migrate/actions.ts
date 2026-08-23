@@ -176,7 +176,14 @@ export async function applyChangedFields(input: {
 }
 
 export type AddToExistingColourInput = {
-  existingColorId: string | null // null = create a new colour/finish
+  existingColorId: string | null // null = create a new colour/finish (or no colour/finish, see below)
+  // Explicit third target, distinct from "create a new colour/finish
+  // with a blank name" -- BUG FIX 2026-08-24: color_id NULL on the
+  // parent, no material_colors row created at all, matching
+  // accept_family_proposal's (182) own convention for a colour-less
+  // group exactly. Mutually exclusive with existingColorId being set;
+  // when true, name/code are ignored (must be null).
+  noColourFinish: boolean
   name: string | null
   code: string | null
   isStocked: boolean
@@ -200,20 +207,27 @@ export type AddToExistingMaterialInput = {
 
 // Folds an ENTIRE proposed family -- one row or many, any number of
 // colours -- into an EXISTING (already accepted) material, in one DB
-// transaction via add_variant_to_existing_material (migration 185,
-// which generalizes 183's single-row shape to a colours/variants array
-// -- 183 alone cannot take more than one row per call, confirmed by
-// reading it directly, not assumed). Same PostgREST-has-no-client-
-// transaction reasoning as acceptSubstrateProposal: every colour and
-// every variant in the payload either all land or none do.
+// transaction via add_variant_to_existing_material (185 generalized
+// 183's single-row shape to a colours/variants array; 186 added the
+// explicit no_colour_finish target -- 185's "existing_color_id null"
+// branch always inserted a material_colors row, even with a null name,
+// which is a different thing from no colour/finish at all and made a
+// genuinely colour-less family, confirmed live, impossible to add to an
+// existing material). Same PostgREST-has-no-client-transaction
+// reasoning as acceptSubstrateProposal: every colour and every variant
+// in the payload either all land or none do.
 export async function addVariantToExistingMaterial(input: AddToExistingMaterialInput) {
   const { allowed } = await checkPermission(input.orgId, 'materials.edit')
   if (!allowed) return { error: 'Not permitted to edit materials.' }
 
   if (input.colours.length === 0) return { error: 'At least one colour/finish group is required.' }
   for (const c of input.colours) {
-    if (!c.existingColorId && !c.name?.trim() && !c.code?.trim()) {
-      return { error: 'Pick an existing colour/finish or name the new one.' }
+    // Three valid targets, mutually exclusive: map to an existing
+    // colour/finish, explicitly no colour/finish, or a new one (which
+    // needs a name or code -- an unnamed, uncoded "new" colour is not a
+    // legal request, that's what noColourFinish is for).
+    if (!c.existingColorId && !c.noColourFinish && !c.name?.trim() && !c.code?.trim()) {
+      return { error: 'Pick an existing colour/finish, choose "No colour/finish", or name the new one.' }
     }
     if (c.variants.length === 0) return { error: `Colour/finish "${c.name ?? '(existing)'}" has no size variants.` }
     const defaultCount = c.variants.filter((v) => v.isDefault).length
@@ -227,6 +241,7 @@ export async function addVariantToExistingMaterial(input: AddToExistingMaterialI
     material_id: input.materialId,
     colours: input.colours.map((c) => ({
       existing_color_id: c.existingColorId,
+      no_colour_finish: c.noColourFinish,
       name: c.name,
       code: c.code,
       is_stocked: c.isStocked,

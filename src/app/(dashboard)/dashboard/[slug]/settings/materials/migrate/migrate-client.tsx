@@ -64,14 +64,28 @@ type EditableVariant = FamilyVariant & { isDefault: boolean; removed: boolean }
 // the grouping is right, only the word was wrong). Internal field names
 // and the material_colors table name stay "colour" throughout.
 //
-// existingColorId: shared by both actions this state now feeds --
-// "Accept as new material" ignores it entirely; "Add to an existing
-// material" reads it per colour group to decide whether this group maps
-// onto an already-existing material_colors row (map) or creates a new
-// one (null, the default). One editable-colours state now serves both
-// actions -- there is no separate "add to existing" form to keep in
-// sync with edits made here.
-type EditableColourFinish = { key: string; name: string; code: string; isStocked: boolean; removed: boolean; existingColorId: string | null; variants: EditableVariant[] }
+// existingColorId / noColourFinish: both shared by both actions this
+// state now feeds -- "Accept as new material" ignores them entirely (it
+// already treats a blank name as "no colour/finish", matching
+// accept_family_proposal). "Add to an existing material" reads them per
+// colour group to decide the target: an existing material_colors row
+// (existingColorId set), a brand-new one (both null/false, needs a
+// name/code), or explicitly NO colour/finish at all -- color_id NULL on
+// the parent, no material_colors row created (noColourFinish true).
+// These three are mutually exclusive and BUG FIX 2026-08-24: they must
+// stay that way -- the prior shape (existingColorId: null meaning
+// either "create new" or "no colour", disambiguated only by whether
+// name/code happened to be blank) made "no colour" impossible to submit
+// at all (validation required a name/code whenever existingColorId was
+// null) and, had it been sent anyway, would have hit
+// add_variant_to_existing_material's create-new branch and inserted a
+// material_colors row with a NULL name -- a materially different thing
+// from no colour/finish (migration 181's unique index buckets
+// COALESCE(color_id, '00000000-...') differently for a real, nameless
+// colour row vs. color_id actually NULL). One editable-colours state
+// still serves both actions -- there is no separate "add to existing"
+// form to keep in sync with edits made here.
+type EditableColourFinish = { key: string; name: string; code: string; isStocked: boolean; removed: boolean; existingColorId: string | null; noColourFinish: boolean; variants: EditableVariant[] }
 
 function pickDefaultIndex(variants: FamilyVariant[]): number {
   const noSizeIdx = variants.findIndex((v) => v.sizeLabel === null)
@@ -97,6 +111,11 @@ function buildEditableState(proposal: FamilyProposal): EditableColourFinish[] {
       isStocked: false,
       removed: false,
       existingColorId: null,
+      // Default to "No colour/finish" exactly when the proposal itself
+      // carries neither -- e.g. "Magnet Digital 30Mil Magnum 24in",
+      // line + axis + brand only, no colour token anywhere in the name.
+      // These are legitimate, confirmed live -- not a parse miss.
+      noColourFinish: !c.colourName && !c.code,
       variants: c.variants.map((v, vi) => ({ ...v, isDefault: vi === defaultIdx, removed: false })),
     }
   })
@@ -326,8 +345,16 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
     const remainingColours = activeColours.filter((c) => !c.removed && c.variants.some((v) => !v.removed))
     if (remainingColours.length === 0) { setMessage('Every colour/finish is removed — nothing to add.'); return }
     for (const c of remainingColours) {
-      if (!c.existingColorId && !c.name.trim() && !c.code.trim()) {
-        setMessage(`Name the new colour/finish "${c.name || c.code || '(untitled)'}", or map it to an existing one.`)
+      // Three valid targets: mapped to an existing colour, explicitly
+      // no colour/finish, or a new one (which needs a name or code).
+      // BUG FIX 2026-08-24: a colourless proposal ("Magnet Digital
+      // 30Mil Magnum 24in", no colour/finish token at all) used to be
+      // unrepresentable here -- existingColorId null with a blank
+      // name/code was rejected outright, even though it's the correct,
+      // legitimate shape for that family. noColourFinish is the
+      // explicit third option that closes this.
+      if (!c.existingColorId && !c.noColourFinish && !c.name.trim() && !c.code.trim()) {
+        setMessage(`Name the new colour/finish "${c.name || c.code || '(untitled)'}", map it to an existing one, or choose "No colour/finish".`)
         return
       }
     }
@@ -340,8 +367,9 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
     // accept_family_proposal already established.
     const colours: AddToExistingColourInput[] = remainingColours.map((c) => ({
       existingColorId: c.existingColorId,
-      name: c.existingColorId ? null : (c.name.trim() || null),
-      code: c.existingColorId ? null : (c.code.trim() || null),
+      noColourFinish: !c.existingColorId && c.noColourFinish,
+      name: !c.existingColorId && !c.noColourFinish ? (c.name.trim() || null) : null,
+      code: !c.existingColorId && !c.noColourFinish ? (c.code.trim() || null) : null,
       isStocked: c.isStocked,
       variants: c.variants
         .filter((v) => !v.removed)
@@ -698,9 +726,22 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
                                 </div>
                                 <select
                                   className="flex-1 rounded border border-gray-300 px-1.5 py-0.5 text-xs"
-                                  value={c.existingColorId ?? 'new'}
-                                  onChange={(e) => updateColour(ci, { existingColorId: e.target.value === 'new' ? null : e.target.value })}
+                                  value={c.existingColorId ?? (c.noColourFinish ? 'none' : 'new')}
+                                  onChange={(e) => {
+                                    const v = e.target.value
+                                    if (v === 'none') updateColour(ci, { existingColorId: null, noColourFinish: true })
+                                    else if (v === 'new') updateColour(ci, { existingColorId: null, noColourFinish: false })
+                                    else updateColour(ci, { existingColorId: v, noColourFinish: false })
+                                  }}
                                 >
+                                  {/* No colour/finish -- color_id NULL on the parent, no
+                                      material_colors row created. Legitimate and common: a
+                                      family with no colour/finish token in its name at all
+                                      (e.g. "Magnet Digital 30Mil Magnum 24in"). Distinct from
+                                      "+ New colour/finish" with a blank name/code, which is
+                                      rejected outright (see the validation above) rather than
+                                      silently creating a nameless material_colors row. */}
+                                  <option value="none">No colour/finish</option>
                                   <option value="new">+ New colour/finish</option>
                                   {coloursForSelectedParent.map((ec) => (
                                     <option key={ec.id} value={ec.id}>{ec.name ?? '(none)'}{ec.code ? ` (${ec.code})` : ''}</option>
