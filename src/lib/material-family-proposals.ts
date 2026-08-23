@@ -737,8 +737,35 @@ export function buildFamilyProposals(
 // substrate-style regex that only recognized "in" would silently
 // misparse it as colour text (the exact THICKNESS_START_RE risk
 // discovered on the Substrates type earlier this project).
-const ROLL_WIDTH_X_LENGTH_RE = /(\d+(?:\.\d+)?)\s*(in|")\s*[x×]\s*(\d+(?:\.\d+)?)\s*(in|")/i
+//
+// FIX 2026-08-23: the LENGTH side (second dimension) now also accepts
+// ft/yd/yds, not just in/" — width never does; every roll width
+// observed in the live dataset is stated in inches, only length is ever
+// sold in feet or yards. Before this fix, "24in x 10yds" only matched
+// "24in" (the length side required in/" too), leaving " x 10yds"
+// dangling in the text — which then leaked into `brand` (text after the
+// axis token) and split what is the SAME product at two roll lengths
+// into two families: "...2.5Mil Oracal 651" (10yds) vs "...2.5Mil
+// Oracal 651 x 50yds" (50yds), confirmed live. Same root cause flagged
+// on Magnet 30Mil ("48in x 25ft" / "48in x 50ft" splitting one product
+// into three families) — one fix closes both. Length is per-VARIANT
+// data (material_variants.height) — it was never meant to be part of
+// family identity, and stripping the WHOLE "<width> x <length>" token
+// before line/remainder computation is what keeps it out of both the
+// family name and brand structurally, not a separate guard.
+const ROLL_WIDTH_X_LENGTH_RE = /(\d+(?:\.\d+)?)\s*(in|")\s*[x×]\s*(\d+(?:\.\d+)?)\s*(in|"|ft|yds?)(?![a-zA-Z])/i
 const ROLL_WIDTH_RE = /(\d+(?:\.\d+)?)\s*(in|")/i
+
+// ft -> x12, yd/yds -> x36, in/" -> x1. Confirmed against live data:
+// 25ft -> 300in matches the "x 25ft" row; 50yds -> 1800in matches the
+// "x 50yds" row (both already-observed stored height values on their
+// sibling rows, not invented).
+function rollLengthToInches(value: number, unit: string): number {
+  const u = unit.toLowerCase()
+  if (u === 'ft') return value * 12
+  if (u === 'yd' || u === 'yds') return value * 36
+  return value // 'in' or '"'
+}
 
 // Cut-to-length (length_increment): checked directly against all 368
 // rows — no true continuous-cut-to-length product exists in this
@@ -765,13 +792,18 @@ export const ROLL_FAMILY_CONFIG: FamilyAxisConfig = {
   extractSize: (row) => {
     const wl = ROLL_WIDTH_X_LENGTH_RE.exec(row.name)
     if (wl) {
-      // Two explicit dimensions in the name (e.g. "54in x 100in") — a
-      // discrete stock size, not cut-to-length. Reuses the existing
-      // height/width columns exactly as substrates' H×W does (no new
-      // column): width = the roll width, height = the second dimension
-      // as given. 40 rows in the live dataset carry this shape.
+      // Two explicit dimensions in the name (e.g. "54in x 100in", or
+      // "24in x 10yds" / "48in x 25ft") — a discrete stock size, not
+      // cut-to-length. Reuses the existing height/width columns exactly
+      // as substrates' H×W does (no new column): width = the roll
+      // width (always inches), height = the second dimension, converted
+      // to inches regardless of which unit the name used — never left
+      // in ft/yd, so two rows of the same roll at different lengths
+      // compare on a consistent scale and land as size variants of one
+      // family, not separate families.
       const nameWithoutSize = (row.name.slice(0, wl.index) + row.name.slice(wl.index! + wl[0].length)).replace(/\s{2,}/g, ' ').trim()
-      return { nameWithoutSize, sizeLabel: wl[0].trim(), height: parseFloat(wl[3]), width: parseFloat(wl[1]), lengthIncrement: null }
+      const height = rollLengthToInches(parseFloat(wl[3]), wl[4])
+      return { nameWithoutSize, sizeLabel: wl[0].trim(), height, width: parseFloat(wl[1]), lengthIncrement: null }
     }
     const w = ROLL_WIDTH_RE.exec(row.name)
     if (w) {
