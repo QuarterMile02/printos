@@ -175,40 +175,49 @@ export async function applyChangedFields(input: {
   return { ok: true }
 }
 
-export type AddToExistingMaterialInput = {
-  orgId: string
-  orgSlug: string
-  materialId: string // the existing material being added to
-  colour: {
-    existingColorId: string | null // null = create a new colour/finish
-    name: string | null
-    code: string | null
-    isStocked: boolean
-  }
-  variant: {
+export type AddToExistingColourInput = {
+  existingColorId: string | null // null = create a new colour/finish
+  name: string | null
+  code: string | null
+  isStocked: boolean
+  variants: {
     height: number | null
     width: number | null
     lengthIncrement: number | null
     baseCost: number | null
     multiplier: number | null
     isDefault: boolean
-  }
-  sourceRowId: string // shopvox_materials.id being folded in
+    sourceRowId: string // shopvox_materials.id this variant was folded in from
+  }[]
 }
 
-// Folds ONE leftover shopvox_materials row into an EXISTING (already
-// accepted) material, as another colour/finish or another size on one
-// -- Ruben's actual workflow: fold leftovers into existing families
-// FIRST, only accept a row as its own material once confirmed it
-// belongs nowhere. One DB transaction via add_variant_to_existing_
-// material (migration 183), same PostgREST-has-no-client-transaction
-// reasoning as acceptSubstrateProposal.
+export type AddToExistingMaterialInput = {
+  orgId: string
+  orgSlug: string
+  materialId: string // the existing material being added to
+  colours: AddToExistingColourInput[]
+}
+
+// Folds an ENTIRE proposed family -- one row or many, any number of
+// colours -- into an EXISTING (already accepted) material, in one DB
+// transaction via add_variant_to_existing_material (migration 185,
+// which generalizes 183's single-row shape to a colours/variants array
+// -- 183 alone cannot take more than one row per call, confirmed by
+// reading it directly, not assumed). Same PostgREST-has-no-client-
+// transaction reasoning as acceptSubstrateProposal: every colour and
+// every variant in the payload either all land or none do.
 export async function addVariantToExistingMaterial(input: AddToExistingMaterialInput) {
   const { allowed } = await checkPermission(input.orgId, 'materials.edit')
   if (!allowed) return { error: 'Not permitted to edit materials.' }
 
-  if (!input.colour.existingColorId && !input.colour.name?.trim()) {
-    return { error: 'Pick an existing colour/finish or name the new one.' }
+  if (input.colours.length === 0) return { error: 'At least one colour/finish group is required.' }
+  for (const c of input.colours) {
+    if (!c.existingColorId && !c.name?.trim() && !c.code?.trim()) {
+      return { error: 'Pick an existing colour/finish or name the new one.' }
+    }
+    if (c.variants.length === 0) return { error: `Colour/finish "${c.name ?? '(existing)'}" has no size variants.` }
+    const defaultCount = c.variants.filter((v) => v.isDefault).length
+    if (defaultCount > 1) return { error: `Colour/finish "${c.name ?? '(existing)'}" has more than one default variant.` }
   }
 
   const sb = createServiceClient()
@@ -216,29 +225,33 @@ export async function addVariantToExistingMaterial(input: AddToExistingMaterialI
   const payload = {
     organization_id: input.orgId,
     material_id: input.materialId,
-    colour: {
-      existing_color_id: input.colour.existingColorId,
-      name: input.colour.name,
-      code: input.colour.code,
-      is_stocked: input.colour.isStocked,
-    },
-    variant: {
-      height: input.variant.height,
-      width: input.variant.width,
-      length_increment: input.variant.lengthIncrement,
-      base_cost: input.variant.baseCost,
-      multiplier: input.variant.multiplier,
-      is_default: input.variant.isDefault,
-    },
-    source_row_id: input.sourceRowId,
+    colours: input.colours.map((c) => ({
+      existing_color_id: c.existingColorId,
+      name: c.name,
+      code: c.code,
+      is_stocked: c.isStocked,
+      variants: c.variants.map((v) => ({
+        height: v.height,
+        width: v.width,
+        length_increment: v.lengthIncrement,
+        base_cost: v.baseCost,
+        // No fallback here -- material_variants.multiplier is NOT NULL,
+        // and a multiplier of 0 is ALSO refused (RPC-side, migration
+        // 185) rather than treated as a legal value. Send the raw
+        // value through, 0 and all, so that check actually fires.
+        multiplier: v.multiplier,
+        is_default: v.isDefault,
+        source_row_id: v.sourceRowId,
+      })),
+    })),
   }
 
-  const { data: variantId, error } = await sb.rpc('add_variant_to_existing_material', { payload })
+  const { data: materialId, error } = await sb.rpc('add_variant_to_existing_material', { payload })
   if (error) return { error: error.message }
 
   revalidatePath(`/dashboard/${input.orgSlug}/settings/materials/migrate`)
   revalidatePath(`/dashboard/${input.orgSlug}/settings/materials`)
-  return { variantId: variantId as string }
+  return { materialId: materialId as string }
 }
 
 // Dismiss / restore -- reversible, never a delete. dismissed_at set now

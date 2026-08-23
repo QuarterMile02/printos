@@ -8,7 +8,7 @@ import { FAMILY_CONFIGS } from '@/lib/material-family-proposals'
 import { suggestParentMaterials } from '@/lib/material-parent-suggestions'
 import {
   acceptSubstrateProposal, applyChangedFields, addVariantToExistingMaterial, dismissRows, restoreDismissedRow,
-  type AcceptColourInput, type AcceptVariantInput,
+  type AcceptColourInput, type AcceptVariantInput, type AddToExistingColourInput,
 } from './actions'
 
 type FullRow = ShopvoxMaterialRow & {
@@ -63,7 +63,15 @@ type EditableVariant = FamilyVariant & { isDefault: boolean; removed: boolean }
 // Brushed Gold, Painted 1 Side — finishes and prep states, not colours;
 // the grouping is right, only the word was wrong). Internal field names
 // and the material_colors table name stay "colour" throughout.
-type EditableColourFinish = { key: string; name: string; code: string; isStocked: boolean; removed: boolean; variants: EditableVariant[] }
+//
+// existingColorId: shared by both actions this state now feeds --
+// "Accept as new material" ignores it entirely; "Add to an existing
+// material" reads it per colour group to decide whether this group maps
+// onto an already-existing material_colors row (map) or creates a new
+// one (null, the default). One editable-colours state now serves both
+// actions -- there is no separate "add to existing" form to keep in
+// sync with edits made here.
+type EditableColourFinish = { key: string; name: string; code: string; isStocked: boolean; removed: boolean; existingColorId: string | null; variants: EditableVariant[] }
 
 function pickDefaultIndex(variants: FamilyVariant[]): number {
   const noSizeIdx = variants.findIndex((v) => v.sizeLabel === null)
@@ -88,6 +96,7 @@ function buildEditableState(proposal: FamilyProposal): EditableColourFinish[] {
       code: c.code ?? '',
       isStocked: false,
       removed: false,
+      existingColorId: null,
       variants: c.variants.map((v, vi) => ({ ...v, isDefault: vi === defaultIdx, removed: false })),
     }
   })
@@ -102,20 +111,16 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
 
-  // "Add to existing material" state -- separate from the Accept-as-new
-  // state above, since both actions are offered side by side on a
-  // singleton proposal and Ruben may look at both before deciding.
+  // "Add to existing material" state -- material picker only. Which
+  // colour/finish groups get created vs. mapped onto an existing one,
+  // and every variant's height/width/length increment, now live on the
+  // SAME `activeColours` state "Accept as new material" already edits
+  // (see EditableColourFinish.existingColorId) -- one shared editor for
+  // both actions, not two that could drift out of sync. Works
+  // identically for a singleton (one colour, one variant) or a
+  // multi-row family (any number of either) -- no row-count gate.
   const [parentSearch, setParentSearch] = useState('')
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null)
-  const [colourChoice, setColourChoice] = useState<'new' | string>('new')
-  const [newColourName, setNewColourName] = useState('')
-  const [newColourCode, setNewColourCode] = useState('')
-  const [addHeight, setAddHeight] = useState<number | null>(null)
-  const [addWidth, setAddWidth] = useState<number | null>(null)
-  const [addLengthIncrement, setAddLengthIncrement] = useState<number | null>(null)
-  const [addBaseCost, setAddBaseCost] = useState<number | null>(null)
-  const [addMultiplier, setAddMultiplier] = useState<number | null>(null)
-  const [addIsDefault, setAddIsDefault] = useState(false)
 
   const rowById = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows])
 
@@ -141,8 +146,14 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
   const selectedProposal = proposals.find((p) => p.key === selectedKey) ?? null
   const activeColours = editableColours ?? (selectedProposal ? buildEditableState(selectedProposal) : [])
   const defaultFamilyName = selectedProposal ? familyDisplayName(selectedProposal) : ''
-  const isSingleton = selectedProposal ? selectedProposal.sourceRowIds.length === 1 : false
-  const singletonRow = isSingleton && selectedProposal ? rowById.get(selectedProposal.sourceRowIds[0]) ?? null : null
+
+  // Total rows that would be added to the chosen parent -- every
+  // non-removed variant across every non-removed colour. Drives the "Or
+  // add to an existing material" submit button label so it's honest
+  // about a 1-row vs. a 12-row add, not always "Add to this material".
+  const totalActiveRowCount = activeColours
+    .filter((c) => !c.removed)
+    .reduce((sum, c) => sum + c.variants.filter((v) => !v.removed).length, 0)
 
   // The config that actually produced `proposals` — keyed by the
   // SELECTED type's name (not hardcoded to substrates), so suggested-
@@ -152,8 +163,13 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
   const selectedTypeName = types.find((t) => t.id === selectedTypeId)?.name ?? null
   const activeConfig = selectedTypeName ? FAMILY_CONFIGS[selectedTypeName] : undefined
 
+  // Suggested parents -- no row-count gate. Ranking is keyed on line/
+  // axisValue/categoryId, all family-level fields that exist for a
+  // 1-row or a 50-row proposal alike; suggestParentMaterials never
+  // looked at row count in the first place, the gate here was the only
+  // thing stopping a multi-row family from getting suggestions.
   const suggestions = useMemo(() => {
-    if (!selectedProposal || !isSingleton || !activeConfig) return []
+    if (!selectedProposal || !activeConfig) return []
     return suggestParentMaterials(
       {
         line: selectedProposal.line,
@@ -164,7 +180,7 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
       existingMaterials.map((m) => ({ id: m.id, name: m.name, categoryId: m.category_id })),
       activeConfig.findAxisStart,
     )
-  }, [selectedProposal, isSingleton, existingMaterials, categoryNames, activeConfig])
+  }, [selectedProposal, existingMaterials, categoryNames, activeConfig])
 
   const filteredExistingMaterials = useMemo(() => {
     const q = parentSearch.trim().toLowerCase()
@@ -182,27 +198,8 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
     setEditableColours(null)
     setFamilyNameOverride(null)
     setMessage(null)
-
-    // Prefill the "Add to existing material" fields from the singleton's
-    // own source row -- same per-source-row lookup the Accept fix uses.
-    // height/width/lengthIncrement come from the already-parsed
-    // FamilyVariant (correct for cut-to-length rows too); baseCost/
-    // multiplier come from the raw row, same as handleAccept below.
     setSelectedParentId(null)
     setParentSearch('')
-    setColourChoice('new')
-    setNewColourName('')
-    setNewColourCode('')
-    if (p.sourceRowIds.length === 1) {
-      const v = p.colours[0]?.variants[0]
-      const sourceRow = rowById.get(p.sourceRowIds[0])
-      setAddHeight(v?.height ?? null)
-      setAddWidth(v?.width ?? null)
-      setAddLengthIncrement(v?.lengthIncrement ?? null)
-      setAddBaseCost(sourceRow?.sheet_cost ?? sourceRow?.cost ?? null)
-      setAddMultiplier(sourceRow?.multiplier ?? null)
-      setAddIsDefault(false)
-    }
   }
 
   function updateColour(idx: number, patch: Partial<EditableColourFinish>) {
@@ -317,31 +314,55 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
     })
   }
 
+  // No row-count gate -- works identically for a singleton (one colour
+  // group, one variant) or a multi-row family (any number of either).
+  // Every row in the family is sent in ONE call to
+  // addVariantToExistingMaterial, which is itself one DB transaction
+  // (migration 185) -- either all of it lands or none does, never row
+  // by row.
   function handleAddToExisting() {
-    if (!selectedProposal || !isSingleton || !singletonRow) return
+    if (!selectedProposal) return
     if (!selectedParentId) { setMessage('Pick an existing material first.'); return }
-    if (colourChoice === 'new' && !newColourName.trim() && !newColourCode.trim()) {
-      setMessage('Name the new colour/finish, or pick an existing one.')
-      return
+    const remainingColours = activeColours.filter((c) => !c.removed && c.variants.some((v) => !v.removed))
+    if (remainingColours.length === 0) { setMessage('Every colour/finish is removed — nothing to add.'); return }
+    for (const c of remainingColours) {
+      if (!c.existingColorId && !c.name.trim() && !c.code.trim()) {
+        setMessage(`Name the new colour/finish "${c.name || c.code || '(untitled)'}", or map it to an existing one.`)
+        return
+      }
     }
 
+    // Each variant's cost and multiplier come from its OWN source row --
+    // same "never a shared/guessed value" rule handleAccept already
+    // follows, not a manually-typed field here either. A multiplier of
+    // 0 is sent through as-is, unmodified -- migration 185's RPC is what
+    // actually refuses it, same "let the real check fire" pattern
+    // accept_family_proposal already established.
+    const colours: AddToExistingColourInput[] = remainingColours.map((c) => ({
+      existingColorId: c.existingColorId,
+      name: c.existingColorId ? null : (c.name.trim() || null),
+      code: c.existingColorId ? null : (c.code.trim() || null),
+      isStocked: c.isStocked,
+      variants: c.variants
+        .filter((v) => !v.removed)
+        .map((v) => {
+          const sourceRow = rowById.get(v.sourceRowId)
+          return {
+            height: v.height, width: v.width, lengthIncrement: v.lengthIncrement, isDefault: v.isDefault,
+            baseCost: sourceRow?.sheet_cost ?? sourceRow?.cost ?? null,
+            multiplier: sourceRow?.multiplier ?? null,
+            sourceRowId: v.sourceRowId,
+          }
+        }),
+    }))
+    const rowCount = colours.reduce((sum, c) => sum + c.variants.length, 0)
+
     startTransition(async () => {
-      const result = await addVariantToExistingMaterial({
-        orgId, orgSlug,
-        materialId: selectedParentId,
-        colour: colourChoice === 'new'
-          ? { existingColorId: null, name: newColourName.trim() || null, code: newColourCode.trim() || null, isStocked: false }
-          : { existingColorId: colourChoice, name: null, code: null, isStocked: false },
-        variant: {
-          height: addHeight, width: addWidth, lengthIncrement: addLengthIncrement,
-          baseCost: addBaseCost, multiplier: addMultiplier, isDefault: addIsDefault,
-        },
-        sourceRowId: singletonRow.id,
-      })
+      const result = await addVariantToExistingMaterial({ orgId, orgSlug, materialId: selectedParentId, colours })
       if (result.error) setMessage(`Error: ${result.error}`)
       else {
         const parentName = existingMaterials.find((m) => m.id === selectedParentId)?.name ?? selectedParentId
-        setMessage(`Added "${singletonRow.name}" to "${parentName}".`)
+        setMessage(`Added ${rowCount} row${rowCount === 1 ? '' : 's'} to "${parentName}".`)
         setSelectedKey(null)
         setEditableColours(null)
       }
@@ -595,12 +616,17 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
                   </button>
                 </div>
 
-                {/* Add to existing material -- only offered for a true
-                    singleton (one source row, one colour, one size). A
-                    multi-row family already grouped several rows into
-                    one proposed material; "add to existing" targets the
-                    ~69-singleton-leftovers workflow specifically. */}
-                {isSingleton && singletonRow && (
+                {/* Add to existing material -- no row-count gate. Every
+                    non-removed colour/finish above gets its own mapping:
+                    either "+ New colour/finish" (create it fresh on the
+                    parent) or an existing material_colors row on the
+                    chosen parent to fold into. Every variant under every
+                    mapped colour goes into ONE call to
+                    addVariantToExistingMaterial (migration 185's
+                    colours[]→variants[] payload) -- all-or-nothing,
+                    whether this proposal is a singleton or a 12-row
+                    family. */}
+                {selectedProposal && (
                   <div className="mt-4 border-t border-gray-200 pt-3">
                     <div className="mb-2 text-xs font-semibold uppercase text-gray-500">Or add to an existing material</div>
 
@@ -648,51 +674,53 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
                       <div className="mt-2 space-y-2 rounded border border-gray-200 p-2">
                         <div className="text-xs font-medium text-gray-700">{existingMaterials.find((m) => m.id === selectedParentId)?.name}</div>
 
-                        <div>
-                          <div className="text-[10px] font-medium uppercase text-gray-500">Colour / Finish</div>
-                          <div className="mt-1 space-y-1">
-                            {coloursForSelectedParent.map((c) => (
-                              <label key={c.id} className="flex items-center gap-1.5 text-xs">
-                                <input type="radio" name="add-colour-choice" checked={colourChoice === c.id} onChange={() => setColourChoice(c.id)} />
-                                {c.name ?? '(none)'}{c.code ? ` (${c.code})` : ''}
-                              </label>
-                            ))}
-                            <label className="flex items-center gap-1.5 text-xs">
-                              <input type="radio" name="add-colour-choice" checked={colourChoice === 'new'} onChange={() => setColourChoice('new')} />
-                              + New colour/finish
-                            </label>
-                            {colourChoice === 'new' && (
-                              <div className="ml-5 flex gap-1.5">
-                                <input type="text" placeholder="Name" className="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs" value={newColourName} onChange={(e) => setNewColourName(e.target.value)} />
-                                <input type="text" placeholder="Code" className="w-16 rounded border border-gray-300 px-1.5 py-0.5 text-xs" value={newColourCode} onChange={(e) => setNewColourCode(e.target.value)} />
+                        {/* One mapping row per non-removed colour/finish
+                            group above -- ci indexes into `activeColours`
+                            directly so updateColour(ci, ...) hits the
+                            right group (the shared editor state also used
+                            by "Accept as new material"). Height/width/
+                            length-increment/base-cost/multiplier for
+                            every variant in the group are already shown
+                            and editable in that group's table above; this
+                            section only decides WHERE each group lands on
+                            the chosen parent. */}
+                        <div className="space-y-1.5">
+                          <div className="text-[10px] font-medium uppercase text-gray-500">Colour / Finish mapping</div>
+                          {activeColours.map((c, ci) => {
+                            if (c.removed) return null
+                            const remainingVariants = c.variants.filter((v) => !v.removed)
+                            if (remainingVariants.length === 0) return null
+                            return (
+                              <div key={c.key} className="flex items-center gap-2 text-xs">
+                                <div className="w-32 truncate text-gray-700" title={c.name || '(none)'}>
+                                  {c.name || '(none)'}{c.code ? ` (${c.code})` : ''}
+                                  <span className="ml-1 text-gray-400">· {remainingVariants.length} size{remainingVariants.length === 1 ? '' : 's'}</span>
+                                </div>
+                                <select
+                                  className="flex-1 rounded border border-gray-300 px-1.5 py-0.5 text-xs"
+                                  value={c.existingColorId ?? 'new'}
+                                  onChange={(e) => updateColour(ci, { existingColorId: e.target.value === 'new' ? null : e.target.value })}
+                                >
+                                  <option value="new">+ New colour/finish</option>
+                                  {coloursForSelectedParent.map((ec) => (
+                                    <option key={ec.id} value={ec.id}>{ec.name ?? '(none)'}{ec.code ? ` (${ec.code})` : ''}</option>
+                                  ))}
+                                </select>
                               </div>
-                            )}
-                          </div>
+                            )
+                          })}
                         </div>
 
-                        <table className="w-full text-xs">
-                          <thead><tr className="text-left text-gray-500"><th>Height</th><th>Width</th><th>Length incr.</th><th>Base cost</th><th>Multiplier</th></tr></thead>
-                          <tbody>
-                            <tr>
-                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addHeight ?? ''} onChange={(e) => setAddHeight(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
-                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addWidth ?? ''} onChange={(e) => setAddWidth(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
-                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addLengthIncrement ?? ''} onChange={(e) => setAddLengthIncrement(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
-                              <td><input type="number" className="w-20 rounded border border-gray-300 px-1 py-0.5" value={addBaseCost ?? ''} onChange={(e) => setAddBaseCost(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
-                              <td><input type="number" className="w-16 rounded border border-gray-300 px-1 py-0.5" value={addMultiplier ?? ''} onChange={(e) => setAddMultiplier(e.target.value === '' ? null : parseFloat(e.target.value))} /></td>
-                            </tr>
-                          </tbody>
-                        </table>
-                        <label className="flex items-center gap-1.5 text-xs text-gray-600">
-                          <input type="checkbox" checked={addIsDefault} onChange={(e) => setAddIsDefault(e.target.checked)} />
-                          Make this the default size for this colour/finish{colourChoice !== 'new' ? ' (moves the existing default)' : ''}
-                        </label>
+                        <div className="text-[10px] text-gray-400">
+                          Each variant&rsquo;s height/width/length increment/default are set in the colour groups above. Mapping to an existing colour/finish moves its default if a new default is checked there (per colour, not globally).
+                        </div>
 
                         <button
                           disabled={pending}
                           onClick={handleAddToExisting}
                           className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
                         >
-                          {pending ? 'Saving…' : 'Add to this material'}
+                          {pending ? 'Saving…' : `Add ${totalActiveRowCount} row${totalActiveRowCount === 1 ? '' : 's'} to this material`}
                         </button>
                       </div>
                     )}
