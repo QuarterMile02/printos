@@ -38,7 +38,23 @@ async function PageInner({ params }: PageProps) {
   const { allowed: canSeePricing, profile } = await checkPermission(org.id, 'quotes.see_pricing')
   const userRole = (profile as { role?: string } | undefined)?.role ?? 'member'
 
-  // Fetch products — try with category join, fall back without
+  // Fetch products — try with category join, fall back without.
+  //
+  // FIX 2026-08-24: the embed below now names its FK explicitly
+  // (`!products_category_id_fkey`). Two FKs from `products` to
+  // `product_categories` exist -- `category_id` (the one this list has
+  // always displayed) and `product_category_id` (added later, migration
+  // 067, currently only used for delete-guard usage counts elsewhere --
+  // see known-issues/2026-08-24-products-category-type-split-report.md).
+  // An unqualified `product_categories(name)` embed is ambiguous between
+  // the two and PostgREST refuses it outright (PGRST201, "more than one
+  // relationship was found") -- confirmed live, not assumed: this was
+  // failing on every single call, for every product, silently falling
+  // through to the no-category branch below. The products list has been
+  // showing NO category for any product, org-wide, the whole time both
+  // FKs have coexisted. Naming the FK fixes it without touching the
+  // fallback shape at all -- same two-query pattern, same defensive
+  // fallback, just no longer permanently triggered.
   type ProductDbRow = {
     id: string
     name: string
@@ -59,7 +75,7 @@ async function PageInner({ params }: PageProps) {
   const [withCatRes, countRes] = await Promise.all([
     supabase
       .from('products')
-      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, is_enabled, updated_at, migration_status, category:product_categories(name)')
+      .select('id, name, part_number, pricing_type, formula, product_type, price, status, active, is_enabled, updated_at, migration_status, category:product_categories!products_category_id_fkey(name)')
       .eq('organization_id', org.id)
       .order('name', { ascending: true })
       .limit(1000),

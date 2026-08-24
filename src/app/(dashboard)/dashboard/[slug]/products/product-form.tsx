@@ -647,7 +647,34 @@ export default function ProductForm({
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Product Type">
-                <select value={form.product_type_id ?? ''} onChange={(e) => setForm({ ...form, product_type_id: e.target.value || null })} className={inputClass}>
+                {/* FIX 2026-08-24 -- dual-write, deliberately a bridge not
+                    the destination: product_type_id is the real FK (this
+                    dropdown), but every read site that shows or acts on a
+                    product's type (products list, its filter,
+                    resolveJobDepartments) still reads the legacy
+                    product_type TEXT column -- confirmed live, see
+                    known-issues/2026-08-24-products-category-type-split-report.md.
+                    Writing only product_type_id (as this form did before)
+                    is what left every product created here with no type on
+                    the read side. Sets product_type from the SAME
+                    selection's real name, not a separate guess, so the two
+                    columns can never disagree for a product saved through
+                    this form. product_category_id below gets the identical
+                    treatment. TODO(follow-up, not this change): once every
+                    read site is migrated onto product_type_id/
+                    product_category_id, drop this dual-write and the
+                    legacy columns entirely -- two columns holding the same
+                    fact is exactly what caused this bug, and the fix
+                    should not become permanent. */}
+                <select
+                  value={form.product_type_id ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value || null
+                    const name = id ? (productTypes.find((t) => t.id === id)?.name ?? null) : null
+                    setForm({ ...form, product_type_id: id, product_type: name })
+                  }}
+                  className={inputClass}
+                >
                   <option value="">— Select a type —</option>
                   {productTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
@@ -661,7 +688,20 @@ export default function ProductForm({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Product Category">
-                <select value={form.product_category_id ?? ''} onChange={(e) => setForm({ ...form, product_category_id: e.target.value || null })} className={inputClass}>
+                {/* FIX 2026-08-24 -- same bridge-not-destination dual-write
+                    as Product Type above. category_id and product_category_id
+                    are both real FKs to the SAME product_categories table
+                    (migration 010 and migration 067 respectively), so this
+                    is a direct id copy, not a guess -- the two columns
+                    literally cannot disagree once both are set here. */}
+                <select
+                  value={form.product_category_id ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value || null
+                    setForm({ ...form, product_category_id: id, category_id: id })
+                  }}
+                  className={inputClass}
+                >
                   <option value="">— None —</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
