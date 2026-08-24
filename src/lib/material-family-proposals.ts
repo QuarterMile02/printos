@@ -823,13 +823,385 @@ export const ROLL_FAMILY_CONFIG: FamilyAxisConfig = {
   },
 }
 
+// ── Channel Letter identity: reversed naming, length-based coil, no
+// axis at all for Trim Cap ───────────────────────────────────────────
+// See known-issues/2026-08-23-channel-letter-materials-dryrun.md for
+// the full investigation this implements (54 rows, live-confirmed, not
+// assumed). Two structural mismatches with the generic
+// buildFamilyProposals pipeline used by substrates and rolls:
+//
+//   1. FamilyAxisConfig assumes colour precedes axis — this file's own
+//      doc comment above (`FamilyAxisConfig.findAxisSpan`) and the
+//      substrate branch of parseRemainder (`colour =
+//      remainder.slice(0, idx)`, `axisValue = remainder.slice(idx)`)
+//      both hard-code that order. Return Coil's axis token sits BEFORE
+//      colour ("Coil .040 Black 3.5in x 270ft" — axis, then colour,
+//      then size); Trim Cap's reversed rows ("Black / Trimp Cap") put
+//      colour before a literal " / " separator with the PRODUCT after
+//      it, not an axis at all. Neither fits.
+//   2. computeLcpWordCount is front-anchored (longest common PREFIX,
+//      word 0 first, this file above). The 18 reversed-shape Trim Cap
+//      rows each start with a different colour word — the category-
+//      wide LCP collapses to 0 words, and "Trim Cap"/"Trimp Cap" is
+//      never recovered as the shared line.
+//
+// Rather than bolt two more optional hooks onto FamilyAxisConfig for
+// one structurally different type, this is a DEDICATED builder,
+// bypassing buildFamilyProposals entirely. buildFamilyProposals itself
+// has zero diff from before this section was added — substrates and
+// rolls cannot regress by construction, not just by re-testing.
+export const CHANNEL_LETTER_TYPE_NAME = 'Channel Letter Materials'
+
+// Order-independent bare-decimal axis search — same token shape as
+// substrate's BARE_DECIMAL_THICKNESS_RE (Aluminum Solid's gauge
+// convention, e.g. ".040"), but findable ANYWHERE in the name, not
+// just at a fixed position — Return Coil's axis precedes colour.
+const CHANNEL_LETTER_AXIS_RE = /(?:^|\s)(\.\d{2,4})(?:\s|$)/
+
+function findChannelLetterAxis(name: string): { start: number; end: number; value: string } | null {
+  const m = CHANNEL_LETTER_AXIS_RE.exec(name)
+  if (!m) return null
+  const start = name.indexOf(m[1], m.index)
+  return { start, end: start + m[1].length, value: m[1] }
+}
+
+// The two confirmed product-line brand words trailing a bare width
+// token on Trim Cap's product-first rows ("Trim Cap Black 1in
+// Jewelite", "Trim Cap Silver Metallic (8886) 1in Gemini") — a fixed,
+// narrow list matching live data, same pattern as this file's other
+// confirmed-narrow regexes (e.g. THICKNESS_START_RE's Aluminum Solid
+// gauge case). Extend here if a real new brand word is confirmed live.
+const CHANNEL_LETTER_BRAND_WORDS = ['Jewelite', 'Gemini']
+
+// Return Coil's size token: "<width>in" optionally followed by
+// "x <length>ft" (e.g. "3.5in x 270ft", or just "3in" — see the
+// ambiguous-row handling in buildChannelLetterFamilyProposals below).
+const CHANNEL_LETTER_COIL_SIZE_RE = /(\d+(?:\.\d+)?)\s*in(?:\s*[x×]\s*(\d+(?:\.\d+)?)\s*ft)?/i
+
+function lcpWordCount(nameWordLists: string[][]): number {
+  if (nameWordLists.length === 0) return 0
+  let lcp = nameWordLists[0].map((w) => w.toLowerCase())
+  for (const words of nameWordLists.slice(1)) {
+    const w = words.map((x) => x.toLowerCase())
+    let n = 0
+    while (n < lcp.length && n < w.length && lcp[n] === w[n]) n++
+    lcp = lcp.slice(0, n)
+  }
+  return lcp.length
+}
+
+// Satisfies FamilyAxisConfig for suggestParentMaterials' (client-side)
+// re-derivation of an EXISTING material's line/axis split for ranking
+// "add to existing material" suggestions — see that function's own
+// comment. extractSize is never actually invoked at runtime:
+// buildChannelLetterFamilyProposals below does not go through
+// buildFamilyProposals/prepareRow at all — Return Coil's DB
+// width/height columns are swapped from the documented convention
+// (migration 173), which the shared extractSize contract has no way to
+// express (see the report's finding (d)), so it needs its own size
+// handling per branch instead. Implemented correctly anyway, not a
+// stub, so it isn't a trap if something new starts calling it.
+export const CHANNEL_LETTER_FAMILY_CONFIG: FamilyAxisConfig = {
+  axisLabel: 'Gauge',
+  findAxisStart: (remainder) => findChannelLetterAxis(remainder)?.start ?? -1,
+  extractSize: (row) => {
+    const axis = findChannelLetterAxis(row.name)
+    const afterAxis = axis ? row.name.slice(axis.end) : row.name
+    const m = CHANNEL_LETTER_COIL_SIZE_RE.exec(afterAxis)
+    if (m && m[2]) {
+      const nameWithoutSize = (afterAxis.slice(0, m.index) + afterAxis.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim()
+      return { nameWithoutSize, sizeLabel: m[0].trim(), height: parseFloat(m[2]) * 12, width: parseFloat(m[1]), lengthIncrement: null }
+    }
+    const w = ROLL_WIDTH_RE.exec(row.name)
+    if (w) return { nameWithoutSize: row.name.replace(w[0], '').trim(), sizeLabel: w[0].trim(), height: row.height, width: parseFloat(w[1]), lengthIncrement: null }
+    return { nameWithoutSize: row.name, sizeLabel: null, height: row.height, width: row.width, lengthIncrement: null }
+  },
+}
+
+// Dedicated proposal builder for Channel Letter Materials — see the
+// header comment above for why this bypasses buildFamilyProposals
+// rather than plugging in as another FamilyAxisConfig value. Mirrors
+// its discipline exactly (hard category partition, never drop a row,
+// LOW confidence is always a singleton, multiplier = 0 treated exactly
+// like NULL/missing, category <= 2 rows forced LOW — that last rule is
+// buildFamilyProposals' own, this file above, `catRowCount <= 2`, not
+// a new invention for this type) — just with parsing logic that fits
+// this type's reversed/order-independent naming instead of substrate/
+// roll's fixed left-to-right order.
+export function buildChannelLetterFamilyProposals(
+  rows: ShopvoxMaterialRow[],
+  categoryNames: Map<string, string>,
+): FamilyProposal[] {
+  const byCategory = new Map<string, ShopvoxMaterialRow[]>()
+  for (const r of rows) {
+    const key = r.category_id ?? '__none__'
+    if (!byCategory.has(key)) byCategory.set(key, [])
+    byCategory.get(key)!.push(r)
+  }
+
+  type Parsed = {
+    row: ShopvoxMaterialRow
+    line: string
+    colour: string | null
+    axisValue: string | null
+    brand: string | null
+    height: number | null
+    width: number | null
+    sizeLabel: string | null
+    confidence: FamilyConfidence
+    reasons: string[]
+  }
+  const parsed: Parsed[] = []
+
+  // multiplier = 0 treated EXACTLY like NULL/missing, refused — same
+  // discipline accept_family_proposal enforces at the DB layer,
+  // applied here at grouping time too so it's visible before Ruben
+  // ever clicks accept, not just when the RPC rejects it.
+  function multiplierReason(row: ShopvoxMaterialRow): string | null {
+    if (row.multiplier == null) return 'REFUSE: multiplier is missing -- treated as missing, never invented'
+    if (Number(row.multiplier) === 0) return 'REFUSE: multiplier is 0 -- treated as missing, never invented'
+    return null
+  }
+
+  for (const [, catRows] of byCategory) {
+    const catRowCount = catRows.length
+
+    // Category <= 2 rows: forced LOW. buildFamilyProposals' own rule
+    // (this file above, catRowCount <= 2) — not enough repetition to
+    // trust an automated split, applied here for consistency, same
+    // conservative default the rest of this file uses on sparse data.
+    if (catRowCount <= 2) {
+      for (const row of catRows) {
+        parsed.push({
+          row, line: row.name, colour: null, axisValue: null, brand: null,
+          height: row.height, width: row.width, sizeLabel: null,
+          confidence: 'low',
+          reasons: [`only ${catRowCount} row(s) in this category -- not enough repetition to trust an automated split; review manually`],
+        })
+      }
+      continue
+    }
+
+    // Reversed shape: literal " / " (with spaces) -- product AFTER
+    // colour. Bypasses LCP entirely for these rows (LCP is front-
+    // anchored and every reversed row starts with a different colour
+    // word — see this section's header comment).
+    const reversedRows = catRows.filter((r) => / \/ /.test(r.name))
+    const restRows = catRows.filter((r) => !/ \/ /.test(r.name))
+
+    for (const row of reversedRows) {
+      const slashIdx = row.name.indexOf(' / ')
+      const colour = row.name.slice(0, slashIdx).trim() || null
+      // Deliberately NOT typo-corrected: "Trimp Cap" and "Trim Cap"
+      // stay two different literal strings throughout, per instruction
+      // — see the report for the one row this visibly splits off.
+      const line = row.name.slice(slashIdx + 3).trim()
+      const reasons: string[] = []
+      let confidence: FamilyConfidence = 'high'
+
+      const multReason = multiplierReason(row)
+      if (multReason) { confidence = 'low'; reasons.push(multReason) }
+
+      // No size token in text for this shape — DB is the only source
+      // (finding (d)). A row with no DB size at all is forced LOW
+      // rather than guessed, same discipline as roll's "Grommet" row.
+      if (row.width == null && row.height == null) {
+        confidence = 'low'
+        reasons.push('no size available -- no width/height stored on the source row; needs manual entry')
+      }
+
+      if (confidence === 'high') reasons.push(`reversed "<colour> / <product>" shape, colour/finish "${colour}", product "${line}"`)
+
+      parsed.push({ row, line, colour, axisValue: null, brand: null, height: row.height, width: row.width, sizeLabel: null, confidence, reasons })
+    }
+
+    if (restRows.length === 0) continue
+
+    // Order-independent axis search on the FULL name (Return Coil's
+    // axis precedes colour, so there's no "remainder after colour" to
+    // search yet the way substrate/roll do).
+    const withAxis: { row: ShopvoxMaterialRow; axis: { start: number; end: number; value: string } }[] = []
+    const withoutAxis: ShopvoxMaterialRow[] = []
+    for (const row of restRows) {
+      const axis = findChannelLetterAxis(row.name)
+      if (axis) withAxis.push({ row, axis })
+      else withoutAxis.push(row)
+    }
+
+    for (const { row, axis } of withAxis) {
+      const line = row.name.slice(0, axis.start).trim()
+      const afterAxis = row.name.slice(axis.end).trim()
+      const reasons: string[] = []
+      let confidence: FamilyConfidence = 'high'
+
+      const multReason = multiplierReason(row)
+      if (multReason) { confidence = 'low'; reasons.push(multReason) }
+
+      const sizeMatch = CHANNEL_LETTER_COIL_SIZE_RE.exec(afterAxis)
+      let colour: string | null = null
+      let width: number | null = null
+      let height: number | null = null
+      let sizeLabel: string | null = null
+
+      if (sizeMatch && sizeMatch[2]) {
+        // Full "<width>in x <length>ft" token — normalize to this
+        // project's own width=cross-section-inches / height=length-
+        // inches convention (matching roll's own storage convention),
+        // derived from TEXT, not the DB columns — finding (d) confirmed
+        // Return Coil's DB width/height are swapped from that
+        // convention (DB width = length pre-converted to inches, DB
+        // height = the true cross-section width), so trusting the DB
+        // columns directly here would silently store the wrong values.
+        width = parseFloat(sizeMatch[1])
+        height = parseFloat(sizeMatch[2]) * 12
+        sizeLabel = sizeMatch[0].trim()
+        colour = (afterAxis.slice(0, sizeMatch.index) + afterAxis.slice(sizeMatch.index + sizeMatch[0].length)).replace(/\s{2,}/g, ' ').trim() || null
+      } else if (sizeMatch) {
+        // Width only, no "x ___ft" suffix in the text (confirmed live:
+        // exactly one row, "Coil .063 Mill 3in") — the DB height/width
+        // swap from finding (d) makes this row genuinely AMBIGUOUS, not
+        // just missing: the DB's stored 3240 could mean this row is
+        // also a 270ft coil (matching its siblings), or it could mean
+        // something else entirely. Never silently swap/guess the DB
+        // columns to resolve it — forced LOW for manual review, same
+        // "fail loudly" discipline as everywhere else in this file.
+        confidence = 'low'
+        width = parseFloat(sizeMatch[1])
+        sizeLabel = sizeMatch[0].trim()
+        colour = (afterAxis.slice(0, sizeMatch.index) + afterAxis.slice(sizeMatch.index + sizeMatch[0].length)).replace(/\s{2,}/g, ' ').trim() || null
+        reasons.push(`DB width/height convention is reversed for Return Coil (finding (d)) and this row has no "x ___ft" text token to resolve it unambiguously — needs manual entry, not guessed from the swapped DB columns`)
+      } else {
+        confidence = 'low'
+        reasons.push('no size token found in text after the gauge token; needs manual entry')
+      }
+
+      if (confidence === 'high') reasons.push(`Return Coil, gauge "${axis.value}" found order-independently (precedes colour in text), colour/finish "${colour}"`)
+
+      parsed.push({ row, line, colour, axisValue: axis.value, brand: null, height, width, sizeLabel, confidence, reasons })
+    }
+
+    if (withoutAxis.length > 0) {
+      // LCP over JUST this sub-partition (reversed-shape rows already
+      // excluded above) — this is what correctly recovers "Trim Cap" as
+      // the shared line across both the branded (Jewelite/Gemini) rows
+      // and the malformed "Trim Cap - 1"" row, without the reversed
+      // rows' colour-first words collapsing it to 0 (see header comment
+      // point 2).
+      const lineWordCount = Math.max(lcpWordCount(withoutAxis.map((r) => r.name.split(/\s+/).filter(Boolean))), 1)
+
+      for (const row of withoutAxis) {
+        const words = row.name.split(/\s+/).filter(Boolean)
+        const line = words.slice(0, lineWordCount).join(' ')
+        let remainder = words.slice(lineWordCount).join(' ')
+        const reasons: string[] = []
+        let confidence: FamilyConfidence = 'high'
+
+        const multReason = multiplierReason(row)
+        if (multReason) { confidence = 'low'; reasons.push(multReason) }
+
+        let brand: string | null = null
+        for (const b of CHANNEL_LETTER_BRAND_WORDS) {
+          const re = new RegExp(`\\b${b}\\b`, 'i')
+          if (re.test(remainder)) { brand = b; remainder = remainder.replace(re, '').replace(/\s{2,}/g, ' ').trim(); break }
+        }
+
+        const w = ROLL_WIDTH_RE.exec(remainder) // includes the quote-inch form, e.g. `1"` on the malformed "Trim Cap - 1"" row
+        let width: number | null = null
+        let sizeLabel: string | null = null
+        if (w) {
+          width = parseFloat(w[1])
+          sizeLabel = w[0].trim()
+          remainder = (remainder.slice(0, w.index) + remainder.slice(w.index + w[0].length)).replace(/\s{2,}/g, ' ').trim()
+        } else if (row.width != null) {
+          width = row.width // text-first, DB-fallback -- same pattern as roll/substrate
+        }
+
+        const colour = remainder.replace(/^[-\s]+|[-\s]+$/g, '').trim() || null
+
+        if (confidence !== 'low' && !brand && width == null) {
+          confidence = 'low'
+          reasons.push('no brand token and no size resolved from text or the source row -- malformed, needs manual entry')
+        } else if (confidence !== 'low' && !brand) {
+          // A size DID resolve (possibly the quote-inch form) but no
+          // brand distinguishes this row from a real product-first
+          // family, and — for the one live row this applies to — no
+          // colour or length either. Never merged on a guess.
+          confidence = 'low'
+          reasons.push(`size "${sizeLabel ?? width + 'in'}" resolved but no brand/product-line word distinguishes this row and no colour/finish remains ("${colour ?? '(none)'}") -- malformed, needs manual entry`)
+        }
+
+        if (confidence === 'high') reasons.push(`product-first shape, line "${line}", colour/finish "${colour}", brand/line "${brand}"`)
+
+        parsed.push({ row, line, colour, axisValue: null, brand, height: row.height, width, sizeLabel, confidence, reasons })
+      }
+    }
+  }
+
+  // Grouping key mirrors buildFamilyProposals exactly: LOW confidence
+  // is always its own singleton, everything else groups by
+  // (category, line, axisValue, brand) — all lowercased. categoryNames
+  // is accepted for interface parity with buildFamilyProposals'
+  // signature (kept for future use, e.g. a reasoning string that names
+  // the category) but this type's family/singleton decisions never
+  // depend on the category's own text, only its row count.
+  void categoryNames
+  const families = new Map<string, Parsed[]>()
+  for (const p of parsed) {
+    const key = p.confidence === 'low'
+      ? `SINGLETON::${p.row.id}`
+      : `${p.row.category_id ?? '__none__'}||${p.line.toLowerCase()}||${(p.axisValue ?? '').toLowerCase()}||${(p.brand ?? '').toLowerCase()}`
+    if (!families.has(key)) families.set(key, [])
+    families.get(key)!.push(p)
+  }
+
+  const proposals: FamilyProposal[] = []
+  for (const [key, items] of families) {
+    const colourGroups = new Map<string, FamilyColourGroup>()
+    for (const it of items) {
+      const cKey = it.colour ?? ''
+      if (!colourGroups.has(cKey)) colourGroups.set(cKey, { colourName: it.colour, code: null, variants: [] })
+      colourGroups.get(cKey)!.variants.push({
+        sourceRowId: it.row.id,
+        sourceName: it.row.name,
+        sizeLabel: it.sizeLabel,
+        height: it.height,
+        width: it.width,
+        lengthIncrement: null,
+      })
+    }
+
+    proposals.push({
+      key,
+      line: items[0].line,
+      axisLabel: 'Gauge',
+      axisValue: items[0].axisValue,
+      brand: items[0].brand,
+      categoryId: items[0].row.category_id,
+      materialTypeId: items[0].row.material_type_id,
+      confidence: items[0].confidence,
+      reasoning: [...new Set(items.flatMap((it) => it.reasons))].join(' | '),
+      sourceRowIds: items.map((it) => it.row.id),
+      colours: [...colourGroups.values()],
+    })
+  }
+
+  return proposals.sort((a, b) => b.sourceRowIds.length - a.sourceRowIds.length)
+}
+
 // Name -> config lookup for the type-aware migrate screen (page.tsx).
 // Deliberately small and flat — this is a migration tool with a limited
 // lifespan, not a product surface. A material type with no entry here
 // shows an explicit "no parser configured for this type yet" banner
 // (page.tsx / migrate-client.tsx) rather than silently reusing the
 // wrong config or rendering nothing.
+//
+// Channel Letter Materials is registered here too, even though its
+// PROPOSALS come from the dedicated buildChannelLetterFamilyProposals
+// above, not buildFamilyProposals — this map still gates
+// parserConfigured (page.tsx) and feeds CHANNEL_LETTER_FAMILY_CONFIG's
+// findAxisStart to suggestParentMaterials on the client.
 export const FAMILY_CONFIGS: Record<string, FamilyAxisConfig> = {
   [SUBSTRATE_TYPE_NAME]: SUBSTRATE_FAMILY_CONFIG,
   [ROLL_TYPE_NAME]: ROLL_FAMILY_CONFIG,
+  [CHANNEL_LETTER_TYPE_NAME]: CHANNEL_LETTER_FAMILY_CONFIG,
 }
