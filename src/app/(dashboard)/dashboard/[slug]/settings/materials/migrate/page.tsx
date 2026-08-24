@@ -3,7 +3,7 @@ import { notFound, unstable_rethrow } from 'next/navigation'
 import { dbOrThrow, dbAllOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import MigrateClient from './migrate-client'
-import { buildFamilyProposals, FAMILY_CONFIGS } from '@/lib/material-family-proposals'
+import { buildFamilyProposals, buildChannelLetterFamilyProposals, CHANNEL_LETTER_TYPE_NAME, FAMILY_CONFIGS } from '@/lib/material-family-proposals'
 import type { ShopvoxMaterialRow } from '@/lib/material-migrate-proposals'
 
 export const dynamic = 'force-dynamic'
@@ -111,7 +111,18 @@ async function PageInner({ params, searchParams }: PageProps) {
   // computed numbers, checked against each other, not one number
   // presented as if it were self-evidently correct.
   const newRows = typedRows.filter((r) => r.status === 'NEW')
-  const proposals = parserConfigured ? buildFamilyProposals(newRows, categoryNames, config) : []
+  // Channel Letter Materials uses its own dedicated builder -- its
+  // naming is reversed/order-independent and doesn't fit
+  // buildFamilyProposals' fixed left-to-right parse order (see
+  // material-family-proposals.ts's Channel Letter section header
+  // comment). Every other configured type is untouched -- same exact
+  // buildFamilyProposals(newRows, categoryNames, config) call as
+  // before this branch existed.
+  const proposals = !parserConfigured
+    ? []
+    : selectedType?.name === CHANNEL_LETTER_TYPE_NAME
+      ? buildChannelLetterFamilyProposals(newRows, categoryNames)
+      : buildFamilyProposals(newRows, categoryNames, config)
 
   // For CHANGED rows, load the linked material's current values so the
   // client can render a field-by-field diff (ShopVOX now vs. PrintOS
