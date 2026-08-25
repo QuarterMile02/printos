@@ -65,6 +65,56 @@ export async function renameFamily(input: { orgId: string; orgSlug: string; mate
   return { ok: true }
 }
 
+// Renames one material_colors row -- scoped to that colour, on that one
+// material, only. Not global: material_colors rows are already per-
+// material by schema (migration 174, material_id NOT NULL), so a rename
+// by id can never touch a same-named colour on a different material --
+// there's nothing extra to scope here, the id already pins it to one
+// material. Affects every variant of that colour on this family (they
+// all share the same color_id) -- the UI says so in the rename prompt
+// itself, since that's the one thing this action's own scope doesn't
+// make obvious on its own.
+//
+// Rejects a name that already exists on ANOTHER colour of the SAME
+// material -- move_variants_to_material (188) matches a target colour by
+// exact `name =` within one material; two colours sharing a name on one
+// material would make that match ambiguous the next time a variant moves
+// in. The duplicate check below uses the same exact match, not a
+// case-insensitive one, so it can't reject a name the RPC would treat as
+// genuinely different.
+export async function renameColour(input: { orgId: string; orgSlug: string; colourId: string; name: string }) {
+  const { allowed } = await checkPermission(input.orgId, 'materials.edit')
+  if (!allowed) return { error: 'Not permitted to edit materials.' }
+  const name = input.name.trim()
+  if (!name) return { error: 'Name cannot be blank.' }
+
+  const sb = createServiceClient()
+
+  const { data: colour, error: fetchErr } = await sb
+    .from('material_colors')
+    .select('id, material_id')
+    .eq('id', input.colourId)
+    .eq('organization_id', input.orgId)
+    .maybeSingle()
+  if (fetchErr) return { error: fetchErr.message }
+  if (!colour) return { error: 'Colour not found.' }
+
+  const { data: existing } = await sb
+    .from('material_colors')
+    .select('id')
+    .eq('material_id', colour.material_id)
+    .eq('name', name)
+    .neq('id', input.colourId)
+    .maybeSingle()
+  if (existing) return { error: `"${name}" already exists as a colour on this material -- pick a different name.` }
+
+  const { error } = await sb.from('material_colors').update({ name }).eq('id', input.colourId)
+  if (error) return { error: error.message }
+
+  revalidate(input.orgSlug)
+  return { ok: true }
+}
+
 export async function deactivateMaterials(input: { orgId: string; orgSlug: string; materialIds: string[] }) {
   const { allowed } = await checkPermission(input.orgId, 'materials.edit')
   if (!allowed) return { error: 'Not permitted to edit materials.' }
