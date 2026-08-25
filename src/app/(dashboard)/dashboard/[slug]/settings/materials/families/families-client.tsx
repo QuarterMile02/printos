@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import {
-  moveVariants, createFamilyAndMoveVariants, renameFamily, deactivateMaterials,
+  moveVariants, createFamilyAndMoveVariants, renameFamily, renameColour, deactivateMaterials,
   reactivateMaterials, deleteMaterials, bulkEditVariants, bulkEditMaterials,
 } from './actions'
 
@@ -378,6 +378,25 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
     runAction(() => renameFamily({ orgId, orgSlug, materialId, name: next.trim() }), 'Renamed.')
   }
 
+  // "Rename colour" -- an action on the ticked selection, matching
+  // "Rename family"'s existing window.prompt pattern rather than an
+  // inline-editable row label, which would be a new interaction style
+  // this screen doesn't use anywhere else. Enabled only when the ticked
+  // rows in this family pane all share exactly one real colour (below).
+  // The prompt text itself carries the two things the UI needs to say:
+  // this only renames the colour on THIS family (color_id already scopes
+  // that structurally -- material_colors is per-material, so there's
+  // nothing else to leak into), and it changes every variant of that
+  // colour here, since they all point at the same material_colors row.
+  function handleRenameColour(colourId: string, currentName: string) {
+    const next = window.prompt(
+      `Rename colour "${currentName}"? This renames it for every variant of this colour in this family only -- not for any other material.`,
+      currentName,
+    )
+    if (next === null || !next.trim() || next.trim() === currentName) return
+    runAction(() => renameColour({ orgId, orgSlug, colourId, name: next.trim() }), 'Colour renamed.')
+  }
+
   function handleDeactivate(materialIds: string[]) {
     if (materialIds.length === 0) return
     runAction(() => deactivateMaterials({ orgId, orgSlug, materialIds }), `Deactivated ${materialIds.length}.`)
@@ -569,8 +588,17 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
     // A real family -- the pane itself IS one material.
     const mat = materialsById.get(bucketKey)
     if (!mat) return []
+    // "Rename colour" needs the ticked rows to all share exactly one real
+    // colour -- read straight off the raw VariantRow (color_id), not the
+    // PaneRow, same as tickedMaterialIds above.
+    const tickedColourIds = [...new Set(tickedIds.map((id) => variantsById.get(id)?.color_id).filter((x): x is string => !!x))]
     return [
       { label: 'Rename family', onClick: () => handleRename(bucketKey, mat.name) },
+      {
+        label: 'Rename colour',
+        onClick: () => handleRenameColour(tickedColourIds[0], colourById.get(tickedColourIds[0])?.name ?? ''),
+        disabled: tickedColourIds.length !== 1,
+      },
       { label: 'Open detail page', onClick: () => window.open(`/dashboard/${orgSlug}/settings/materials/${bucketKey}`, '_blank') },
       { label: 'Deactivate', danger: true, onClick: () => handleDeactivate([bucketKey]) },
     ]
@@ -604,13 +632,27 @@ type PaneRow = {
 }
 
 // checkbox | Material | Height | Width | Base | Cost/u | Mult | Sell/u(or Delete?)
-const ROW_GRID = 'grid-cols-[22px_1fr_40px_40px_60px_56px_46px_60px]'
+// Height/Width were 40px each with a 4px gap -- confirmed by rendering
+// this exact grid that at that width the visible whitespace between
+// "HEIGHT" and "WIDTH" was the 4px gap alone (both words nearly fill
+// their own 40px cell), reading as one run-together word. Widened to
+// 56/52px with a 6px gap; verified the fix the same way, side by side.
+const ROW_GRID = 'grid-cols-[22px_1fr_56px_52px_60px_56px_46px_60px]'
 
+// Family bucket groups by SIZE (height x width), not colour -- grouped
+// this way, a missing colour at one size is visible (Coil .040 has Blue
+// at 3240x5.3 and not at 3240x3.5, which grouping by colour hid
+// completely). This also makes the row's own label -- the colour name --
+// genuinely distinguishing again: it is no longer a repeat of the group
+// header it sits under, it is the one thing that differs between rows
+// in the same size group.
 function groupKeyOf(r: PaneRow, isFamilyBucket: boolean): string {
-  return isFamilyBucket ? (r.colourName ?? ' none') : (r.typeId ?? ' uncategorized')
+  if (isFamilyBucket) return r.height != null && r.width != null ? `${r.height}x${r.width}` : '__nosize__'
+  return r.typeId ?? '__uncategorized__'
 }
 function groupLabelOf(r: PaneRow, isFamilyBucket: boolean): string {
-  return isFamilyBucket ? (r.colourName ?? 'No colour') : r.typeName
+  if (isFamilyBucket) return r.height != null && r.width != null ? `${trimNum(r.height)} × ${trimNum(r.width)}` : 'No size'
+  return r.typeName
 }
 
 function Pane({
@@ -675,24 +717,34 @@ function Pane({
   const t = filterText.toLowerCase()
   const shown = rows.filter((r) => !t || r.materialName.toLowerCase().includes(t) || (r.colourName?.toLowerCase().includes(t) ?? false))
 
-  // Fix 3 grouping + Fix 5 sort. Family bucket: group by colour, sort
-  // each group by height then width ascending (nulls last -- the shop
-  // convention is height-first, per Fix 1). Multi-material bucket: group
-  // by material type, sort each group by material name A-Z.
-  const groupMap = new Map<string, { label: string; rows: PaneRow[] }>()
+  // Grouping + sort. Family bucket: group by SIZE (height x width) --
+  // groups themselves sort height then width ascending (nulls last, the
+  // shop convention is height-first), and rows WITHIN a size group sort
+  // by colour A-Z, since the colour is what varies inside one size and
+  // the whole point of grouping this way is to make a missing colour at
+  // a given size visible. Multi-material bucket: unchanged -- group by
+  // material type (A-Z), rows within a group sort by material name A-Z.
+  const groupMap = new Map<string, { label: string; height: number | null; width: number | null; rows: PaneRow[] }>()
   for (const r of shown) {
     const key = groupKeyOf(r, isFamilyBucket)
-    if (!groupMap.has(key)) groupMap.set(key, { label: groupLabelOf(r, isFamilyBucket), rows: [] })
+    if (!groupMap.has(key)) groupMap.set(key, { label: groupLabelOf(r, isFamilyBucket), height: r.height, width: r.width, rows: [] })
     groupMap.get(key)!.rows.push(r)
   }
   for (const g of groupMap.values()) {
     if (isFamilyBucket) {
-      g.rows.sort((a, b) => (a.height ?? Infinity) - (b.height ?? Infinity) || (a.width ?? Infinity) - (b.width ?? Infinity))
+      g.rows.sort((a, b) => (a.colourName ?? '').localeCompare(b.colourName ?? ''))
     } else {
       g.rows.sort((a, b) => a.materialName.localeCompare(b.materialName))
     }
   }
-  const groupEntries = [...groupMap.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label))
+  const groupEntries = [...groupMap.entries()].sort((a, b) => {
+    if (isFamilyBucket) {
+      const ah = a[1].height ?? Infinity, bh = b[1].height ?? Infinity
+      if (ah !== bh) return ah - bh
+      return (a[1].width ?? Infinity) - (b[1].width ?? Infinity)
+    }
+    return a[1].label.localeCompare(b[1].label)
+  })
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-md border border-gray-200 bg-white shadow-sm">
@@ -752,7 +804,7 @@ function Pane({
               -- a combined "H x W" string wrapped onto two lines for a
               4-digit roll length and made two real, different sizes
               (Coil .040 at 3240x3.5 and 3240x5.3) look like duplicates. */}
-          <div className={`shrink-0 grid ${ROW_GRID} items-center gap-1 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400`}>
+          <div className={`shrink-0 grid ${ROW_GRID} items-center gap-1.5 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400`}>
             <span />
             <span>Material</span>
             <span className="text-right" title="height, first -- shop convention">Height</span>
@@ -790,7 +842,7 @@ function Pane({
                     const fullName = r.colourName ? `${r.materialName} · ${r.colourName}` : r.materialName
                     const label = isFamilyBucket ? (r.colourName ?? '—') : fullName
                     return (
-                      <label key={r.variantId} className={`grid ${ROW_GRID} items-center gap-1 border-b border-gray-100 px-3 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
+                      <label key={r.variantId} className={`grid ${ROW_GRID} items-center gap-1.5 border-b border-gray-100 px-3 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
                         <input type="checkbox" checked={ticked.has(r.variantId)} disabled={blocked} onChange={(e) => toggle(r.variantId, e.target.checked)} className="cursor-pointer accent-qm-lime disabled:cursor-not-allowed" />
                         <Link href={`/dashboard/${orgSlug}/settings/materials/${r.materialId}`} target="_blank" title={fullName} onClick={(e) => e.stopPropagation()} className="min-w-0 truncate text-sm text-qm-black hover:underline">{label}</Link>
                         <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.height != null ? trimNum(r.height) : '—'}</span>
