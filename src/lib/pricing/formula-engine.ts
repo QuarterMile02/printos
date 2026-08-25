@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { computeLineItem } from './compute-line-item'
+import { dbAllOrThrow } from '@/lib/db'
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -110,7 +111,7 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   const laborIds = recipeItems.filter(r => r.labor_rate_id).map(r => r.labor_rate_id!)
   const machineIds = recipeItems.filter(r => r.machine_rate_id).map(r => r.machine_rate_id!)
 
-  const rateMap = new Map<string, { name: string; cost: number; price: number; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null }>()
+  const rateMap = new Map<string, { name: string; cost: number; price: number; production_rate: number | null; units: string | null; setup_charge: number | null; other_charge: number | null; variant_id?: string; variant_selection?: string }>()
 
   // material_id -> quantity-break tiers, sorted ascending by from_qty
   const materialTierMap = new Map<string, { from_qty: number; to_qty: number | null; cost: number; price: number }[]>()
@@ -118,8 +119,72 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
   if (matIds.length > 0) {
     const { data, error: matErr } = await service.from('materials').select('id, name, cost, price, selling_units').in('id', matIds)
     console.log('[pricing] materials loaded:', data?.length, 'error:', matErr?.message)
-    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; selling_units: string | null }[])
-      rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units, setup_charge: null, other_charge: null })
+
+    // Stage A: prefer a material_variants row over the flat materials.cost/price
+    // when one can be selected with confidence. See
+    // known-issues/2026-08-24-stageA-variant-pricing-investigation.md question 3
+    // for the selection rule. Every live recipe material still has zero
+    // variants as of this writing, so this branch is currently unreachable in
+    // production -- it is correctness-readiness for when recipes get
+    // repointed at variant-having materials, not a live price change.
+    // PostgREST silently truncates any unbounded select at 1000 rows -- a
+    // single material (e.g. "Vinyl Intermediate 2.5Mil Oracal 651") already
+    // has 52 live variants, and a recipe spanning a few dozen variant-having
+    // families would blow past 1000 rows with no error, silently dropping
+    // the tail. Page through explicitly rather than trust a single select.
+    const variantRows = await dbAllOrThrow<SelectableVariant>((from, to) =>
+      service
+        .from('material_variants')
+        .select('id, material_id, width, height, fixed_side, is_default, cost_per_unit, sell_per_unit, sort_order')
+        .in('material_id', matIds)
+        .range(from, to)
+    )
+    const variantsByMaterial = new Map<string, SelectableVariant[]>()
+    for (const v of variantRows) {
+      const arr = variantsByMaterial.get(v.material_id) ?? []
+      arr.push(v)
+      variantsByMaterial.set(v.material_id, arr)
+    }
+
+    for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; selling_units: string | null }[]) {
+      const picked = selectMaterialVariant(variantsByMaterial.get(r.id) ?? [], input.width_inches)
+      // A selected variant with a null or non-positive cost_per_unit must NOT
+      // silently become a free (or discrepant) material -- COALESCE-to-zero
+      // here is the same class of bug we already ruled out for a missing
+      // multiplier: never invent a number, fail safe instead. Zero is
+      // disqualifying, not just null -- a $0 cost_per_unit is exactly as
+      // wrong as a missing one (a material genuinely costing nothing to
+      // stock isn't a real state this schema represents).
+      //
+      // sell_per_unit gets the identical guard, deliberately, not just for
+      // symmetry: it isn't purely cosmetic -- computeLineItem's `price`
+      // feeds basePriceCents for any item marked include_in_base_price,
+      // which in turn sizes percentage_of_base line items (formula-engine.ts
+      // step 6 below). A null/zero sell_per_unit would silently zero out
+      // that base contribution the same way a bad cost_per_unit zeros out
+      // the charged cost. It also keeps (cost, price) coming from one
+      // source per material -- either both from the picked variant, or both
+      // from materials.cost/price -- never a trusted variant cost paired
+      // with an untrusted flat price or vice versa.
+      const variantUsable = picked
+        && picked.cost_per_unit != null && Number(picked.cost_per_unit) > 0
+        && picked.sell_per_unit != null && Number(picked.sell_per_unit) > 0
+
+      if (variantUsable) {
+        rateMap.set(r.id, {
+          name: r.name,
+          cost: Number(picked.cost_per_unit),
+          price: Number(picked.sell_per_unit),
+          production_rate: null, units: r.selling_units, setup_charge: null, other_charge: null,
+          variant_id: picked.id, variant_selection: picked._reason,
+        })
+      } else {
+        if (picked) {
+          console.warn(`[pricing] variant ${picked.id} selected for material ${r.id} ("${r.name}") but cost_per_unit/sell_per_unit is null or non-positive -- falling back to materials.cost/price`)
+        }
+        rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units, setup_charge: null, other_charge: null })
+      }
+    }
 
     const { data: tierRows } = await service
       .from('material_pricing_tiers')
@@ -375,6 +440,64 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     discount_percent: discountPercent,
     discount_type: discountType ?? (product.volume_discount_id || product.range_discount_id ? 'none_matched' : 'no_discount_assigned'),
   }
+}
+
+// ── Variant selection (Stage A) ──────────────────────────────────────
+//
+// Picks the material_variants row to price from, given a material's
+// variants and the product's requested width. Returns null whenever no
+// single variant can be chosen with confidence -- the caller falls back
+// to the material's own flat cost/price in that case, unchanged from
+// pre-Stage-A behavior. Never throws: an ambiguous or empty variant set
+// is a *safe fallback*, not an error, because this sits directly in the
+// path of a customer-facing quote price (quote-detail-client.tsx) and
+// must never abort a price calculation.
+//
+// Rule, in order (see question 3 of the investigation report for the
+// live counts behind each branch):
+//   0 variants          -> null (fall back to materials.cost/price)
+//   1 variant            -> use it
+//   >1, width known      -> narrowest variant whose width still fits,
+//                           mirroring smart-material-engine.ts's
+//                           selectMaterial (src/lib/material-selection/
+//                           smart-material-engine.ts:137-143). Works
+//                           regardless of how many colours the material
+//                           has -- it compares widths, not colours.
+//   >1, no width match,
+//     exactly 1 default  -> use it
+//   >1, no width match,
+//     >1 default         -> NOT a data error. is_default is scoped per
+//                           (material, colour) by migration 181's
+//                           partial unique index, so a multi-colour
+//                           material legitimately has one default per
+//                           colour. Colour is not known at pricing time
+//                           (see part-1 report question 3) -- do not
+//                           guess it. Fall back to null.
+export type SelectableVariant = {
+  id: string; material_id: string; width: number | null; height: number | null
+  fixed_side: string | null; is_default: boolean | null
+  cost_per_unit: number | null; sell_per_unit: number | null; sort_order: number | null
+}
+
+export function selectMaterialVariant(
+  variants: SelectableVariant[],
+  widthIn: number,
+): (SelectableVariant & { _reason: string }) | null {
+  if (variants.length === 0) return null
+  if (variants.length === 1) return { ...variants[0], _reason: 'only_variant' }
+
+  if (widthIn > 0) {
+    const fitting = variants
+      .filter(v => v.width != null && Number(v.width) >= widthIn)
+      .sort((a, b) => Number(a.width) - Number(b.width))
+    if (fitting.length > 0) return { ...fitting[0], _reason: 'narrowest_fit' }
+  }
+
+  const defaults = variants.filter(v => v.is_default === true)
+  if (defaults.length === 1) return { ...defaults[0], _reason: 'single_default' }
+
+  // >1 default (multi-colour) or 0 default, and no width match -- do not guess.
+  return null
 }
 
 // ── Material pricing tier lookup ─────────────────────────────────────
