@@ -203,11 +203,21 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
       return ratio >= 20
     })
 
+    // The family's OWN materials.cost, not a variant's. This is the
+    // pricing engine's last-resort fallback when no variant can be
+    // confidently picked (a null/zero cost_per_unit disqualifies the
+    // variant) -- and every family create_material_family_from_variants
+    // (migration 188) produces starts here at cost = 0. A $0 fallback
+    // prices the whole product line at $0 with no error, so this is
+    // flagged the same way a variant's zero/missing cost is.
+    const familyCostZero = mat != null && Number(mat.cost ?? 0) === 0
+
     if (zeroCost > 0) chips.push({ text: `${zeroCost} zero/missing cost`, tone: 'c' })
+    if (familyCostZero) chips.push({ text: 'family cost is $0', tone: 'c' })
     if (spread >= 3) chips.push({ text: `${spread.toFixed(1)}× cost spread`, tone: 'c' })
     if (mixedMultiplier) chips.push({ text: 'mixed multiplier', tone: 'w' })
     if (narrowAndLong) chips.push({ text: `${formula} → should be Length`, tone: 'w' })
-    if (zeroCost === 0 && spread < 3 && !mixedMultiplier && !narrowAndLong) chips.push({ text: 'consistent', tone: 'g' })
+    if (zeroCost === 0 && !familyCostZero && spread < 3 && !mixedMultiplier && !narrowAndLong) chips.push({ text: 'consistent', tone: 'g' })
 
     return chips
   }

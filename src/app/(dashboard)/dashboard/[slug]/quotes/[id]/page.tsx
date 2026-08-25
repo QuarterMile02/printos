@@ -11,6 +11,7 @@ import { renderPageError } from '@/lib/page-error'
 import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
 import DepositReceivedCard from '@/components/payments/deposit-received-card'
+import { findZeroCostMaterialLines } from '@/lib/pricing/zero-cost-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -324,6 +325,15 @@ async function QuoteDetailPageInner({ params }: PageProps) {
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
   const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
+  // Zero-cost guard (display, non-blocking) — any line item priced at $0
+  // whose product's current recipe resolves to a materials.cost = 0
+  // material. See src/lib/pricing/zero-cost-guard.ts. The same check
+  // blocks send/PDF generation server-side; this is just the visible
+  // flag at the moment Ruben is looking at the quote.
+  const zeroCostLines = await findZeroCostMaterialLines(service, id)
+  const zeroCostByLineId: Record<string, string[]> = {}
+  for (const l of zeroCostLines) zeroCostByLineId[l.lineItemId] = l.materialNames
+
   // Resolve org role for owner/admin gating
   const currentUserId = (await supabase.auth.getUser()).data.user?.id ?? ''
   const membershipRow = await dbOrThrow(
@@ -545,6 +555,7 @@ async function QuoteDetailPageInner({ params }: PageProps) {
         initialContactPhone={quoteContactPhone}
         isOwnerOrAdmin={isOwnerOrAdmin}
         taxRate={quoteTaxRate}
+        zeroCostByLineId={zeroCostByLineId}
       />
 
       {quote.customer_id && (
