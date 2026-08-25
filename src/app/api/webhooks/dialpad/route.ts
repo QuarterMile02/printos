@@ -18,12 +18,18 @@ export async function POST(request: NextRequest) {
   const rawBody = await request.text()
 
   // ── Signature verification ──────────────────────────────────────────────────
+  // Was fail-OPEN (see webhooks/ghl for the identical issue and the
+  // handoff doc) -- an unset DIALPAD_WEBHOOK_SECRET skipped verification
+  // instead of refusing the request. Fail closed, matching
+  // shipping/webhook and cron/invoice-iif-export.
   const secret = process.env.DIALPAD_WEBHOOK_SECRET
-  if (secret) {
-    const sig = request.headers.get('x-dialpad-signature')
-    if (!sig || !verifySignature(rawBody, sig, secret)) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
+  if (!secret) {
+    console.error('[dialpad-webhook] DIALPAD_WEBHOOK_SECRET is not set')
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
+  }
+  const sig = request.headers.get('x-dialpad-signature')
+  if (!sig || !verifySignature(rawBody, sig, secret)) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────
