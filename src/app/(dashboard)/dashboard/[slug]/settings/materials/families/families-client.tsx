@@ -209,9 +209,19 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
   }
 
   // ── Row shape for one slot's current bucket ───────────────────────
+  // Cost and sell are each shown as a PAIR: the writable column next to
+  // the generated per-unit rate it produces. baseCost/multiplier are the
+  // two columns this screen can actually edit; costPerUnit/sellPerUnit
+  // are material_variants' generated columns (173) -- read-only here,
+  // shown so the two scales sit side by side instead of one masquerading
+  // as the other. This is the whole diagnosis for the wrong-pricing-axis
+  // case (the Velcro example): baseCost=21.00 next to costPerUnit=6.72 on
+  // a 0.5in x 900in roll is what makes the mismatch visible at a glance;
+  // a single "Cost" column showing only one of the two never would.
   type Row = {
     variantId: string; materialId: string; name: string; size: string
-    cost: number | null; mult: number; price: number | null
+    baseCost: number | null; costPerUnit: number | null
+    mult: number; sellPerUnit: number | null
     badCost: boolean; status?: DeleteStatus
   }
 
@@ -247,7 +257,8 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
     const size = v.height != null && v.width != null ? `${trimNum(v.height)} × ${trimNum(v.width)}` : '—'
     return {
       variantId, materialId: v.material_id, name, size,
-      cost: v.cost_per_unit, mult: v.multiplier, price: v.sell_per_unit,
+      baseCost: v.base_cost, costPerUnit: v.cost_per_unit,
+      mult: v.multiplier, sellPerUnit: v.sell_per_unit,
       badCost: v.cost_per_unit == null || v.cost_per_unit === 0,
     }
   }
@@ -564,7 +575,8 @@ const CHIP_TONE: Record<Chip['tone'], string> = {
 
 type PaneRow = {
   variantId: string; materialId: string; name: string; size: string
-  cost: number | null; mult: number; price: number | null
+  baseCost: number | null; costPerUnit: number | null
+  mult: number; sellPerUnit: number | null
   badCost: boolean; status?: DeleteStatus
 }
 
@@ -643,13 +655,24 @@ function Pane({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-[24px_1fr_72px_60px_50px_78px] items-center gap-2 border-b border-gray-100 bg-gray-50 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          {/* Cost and sell are each a PAIR of columns: the writable value
+              (Base, Mult) next to the generated per-unit rate it produces
+              (Cost/u, Sell/u) -- deliberately never one column doing
+              double duty for two different scales. Seeing Base=21.00
+              next to Cost/u=6.72 on a 0.5in x 900in roll is the whole
+              wrong-pricing-axis diagnosis this screen exists to surface;
+              a single "Cost" column showing only one of the two never
+              would. No separate Price column -- Sell/u fills that role,
+              paired with Mult instead of floating alone; price is
+              derivable and cost is what's being audited here. */}
+          <div className="grid grid-cols-[22px_1fr_54px_64px_60px_50px_64px] items-center gap-1.5 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">
             <span />
             <span>Material</span>
             <span className="text-right">Size</span>
-            <span className="text-right">Cost</span>
-            <span className="text-right">Mult</span>
-            <span className="text-right">{dead ? 'Delete?' : 'Price'}</span>
+            <span className="text-right" title="base_cost -- writable">Base</span>
+            <span className="text-right" title="cost_per_unit -- generated">Cost/u</span>
+            <span className="text-right" title="multiplier -- writable">Mult</span>
+            <span className="text-right">{dead ? 'Delete?' : 'Sell/u'}</span>
           </div>
           <div className="h-[376px] overflow-y-auto">
             {shown.length === 0 ? (
@@ -659,15 +682,16 @@ function Pane({
             ) : shown.map((r) => {
               const blocked = dead && r.status === 'block'
               return (
-                <label key={r.variantId} className={`grid grid-cols-[24px_1fr_72px_60px_50px_78px] items-center gap-2 border-b border-gray-100 px-3.5 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
+                <label key={r.variantId} className={`grid grid-cols-[22px_1fr_54px_64px_60px_50px_64px] items-center gap-1.5 border-b border-gray-100 px-3 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
                   <input type="checkbox" checked={ticked.has(r.variantId)} disabled={blocked} onChange={(e) => toggle(r.variantId, e.target.checked)} className="cursor-pointer accent-qm-lime disabled:cursor-not-allowed" />
                   <Link href={`/dashboard/${orgSlug}/settings/materials/${r.materialId}`} target="_blank" onClick={(e) => e.stopPropagation()} className="min-w-0 truncate text-sm text-qm-black hover:underline">{r.name}</Link>
-                  <span className="text-right font-mono text-[12.5px] tabular-nums text-gray-500">{r.size}</span>
-                  <span className={`text-right font-mono text-[12.5px] tabular-nums ${r.badCost ? 'font-semibold text-red-600' : 'text-gray-500'}`}>{r.cost != null ? r.cost.toFixed(4) : '—'}</span>
-                  <span className="text-right font-mono text-[12.5px] tabular-nums text-gray-500">{r.mult.toFixed(4)}</span>
+                  <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.size}</span>
+                  <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.baseCost != null ? r.baseCost.toFixed(4) : '—'}</span>
+                  <span className={`text-right font-mono text-[12px] tabular-nums ${r.badCost ? 'font-semibold text-red-600' : 'text-gray-500'}`}>{r.costPerUnit != null ? r.costPerUnit.toFixed(4) : '—'}</span>
+                  <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.mult.toFixed(4)}</span>
                   {dead
                     ? <StatusBadge status={r.status ?? 'safe'} />
-                    : <span className="text-right font-mono text-[12.5px] tabular-nums text-gray-500">{r.price != null ? r.price.toFixed(4) : '—'}</span>}
+                    : <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.sellPerUnit != null ? r.sellPerUnit.toFixed(4) : '—'}</span>}
                 </label>
               )
             })}
