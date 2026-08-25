@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { computeLineItem } from './compute-line-item'
+import { dbAllOrThrow } from '@/lib/db'
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -126,12 +127,20 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
     // variants as of this writing, so this branch is currently unreachable in
     // production -- it is correctness-readiness for when recipes get
     // repointed at variant-having materials, not a live price change.
-    const { data: variantRows } = await service
-      .from('material_variants')
-      .select('id, material_id, width, height, fixed_side, is_default, cost_per_unit, sell_per_unit, sort_order')
-      .in('material_id', matIds)
+    // PostgREST silently truncates any unbounded select at 1000 rows -- a
+    // single material (e.g. "Vinyl Intermediate 2.5Mil Oracal 651") already
+    // has 52 live variants, and a recipe spanning a few dozen variant-having
+    // families would blow past 1000 rows with no error, silently dropping
+    // the tail. Page through explicitly rather than trust a single select.
+    const variantRows = await dbAllOrThrow<SelectableVariant>((from, to) =>
+      service
+        .from('material_variants')
+        .select('id, material_id, width, height, fixed_side, is_default, cost_per_unit, sell_per_unit, sort_order')
+        .in('material_id', matIds)
+        .range(from, to)
+    )
     const variantsByMaterial = new Map<string, SelectableVariant[]>()
-    for (const v of (variantRows ?? []) as SelectableVariant[]) {
+    for (const v of variantRows) {
       const arr = variantsByMaterial.get(v.material_id) ?? []
       arr.push(v)
       variantsByMaterial.set(v.material_id, arr)
@@ -139,15 +148,40 @@ export async function calculateProductPrice(input: PricingInput): Promise<Pricin
 
     for (const r of (data ?? []) as { id: string; name: string; cost: number | null; price: number | null; selling_units: string | null }[]) {
       const picked = selectMaterialVariant(variantsByMaterial.get(r.id) ?? [], input.width_inches)
-      if (picked) {
+      // A selected variant with a null or non-positive cost_per_unit must NOT
+      // silently become a free (or discrepant) material -- COALESCE-to-zero
+      // here is the same class of bug we already ruled out for a missing
+      // multiplier: never invent a number, fail safe instead. Zero is
+      // disqualifying, not just null -- a $0 cost_per_unit is exactly as
+      // wrong as a missing one (a material genuinely costing nothing to
+      // stock isn't a real state this schema represents).
+      //
+      // sell_per_unit gets the identical guard, deliberately, not just for
+      // symmetry: it isn't purely cosmetic -- computeLineItem's `price`
+      // feeds basePriceCents for any item marked include_in_base_price,
+      // which in turn sizes percentage_of_base line items (formula-engine.ts
+      // step 6 below). A null/zero sell_per_unit would silently zero out
+      // that base contribution the same way a bad cost_per_unit zeros out
+      // the charged cost. It also keeps (cost, price) coming from one
+      // source per material -- either both from the picked variant, or both
+      // from materials.cost/price -- never a trusted variant cost paired
+      // with an untrusted flat price or vice versa.
+      const variantUsable = picked
+        && picked.cost_per_unit != null && Number(picked.cost_per_unit) > 0
+        && picked.sell_per_unit != null && Number(picked.sell_per_unit) > 0
+
+      if (variantUsable) {
         rateMap.set(r.id, {
           name: r.name,
-          cost: Number(picked.cost_per_unit ?? 0),
-          price: Number(picked.sell_per_unit ?? 0),
+          cost: Number(picked.cost_per_unit),
+          price: Number(picked.sell_per_unit),
           production_rate: null, units: r.selling_units, setup_charge: null, other_charge: null,
           variant_id: picked.id, variant_selection: picked._reason,
         })
       } else {
+        if (picked) {
+          console.warn(`[pricing] variant ${picked.id} selected for material ${r.id} ("${r.name}") but cost_per_unit/sell_per_unit is null or non-positive -- falling back to materials.cost/price`)
+        }
         rateMap.set(r.id, { name: r.name, cost: Number(r.cost ?? 0), price: Number(r.price ?? 0), production_rate: null, units: r.selling_units, setup_charge: null, other_charge: null })
       }
     }
