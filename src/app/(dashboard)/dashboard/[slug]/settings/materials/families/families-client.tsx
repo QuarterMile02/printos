@@ -46,6 +46,10 @@ type DeleteStatus = 'safe' | 'hold' | 'block'
 
 const PEN_STORAGE_PREFIX = 'printos:material-families-pen:'
 
+function trimNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 10000) / 10000)
+}
+
 // ── Component ────────────────────────────────────────────────────────
 
 export default function FamiliesClient({ orgId, orgSlug, types, materials, variants, colours, recipeRefCounts, vendorRefCounts }: Props) {
@@ -218,11 +222,22 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
   // case (the Velcro example): baseCost=21.00 next to costPerUnit=6.72 on
   // a 0.5in x 900in roll is what makes the mismatch visible at a glance;
   // a single "Cost" column showing only one of the two never would.
+  //
+  // height/width are kept as raw numbers, not a formatted "H x W" string
+  // -- two right-aligned columns that never wrap (a 4-digit roll length
+  // like Coil .040's 3240 broke the old single-string Size column onto
+  // two lines), and Fix 5's sort needs the raw numbers anyway.
+  //
+  // materialName/colourName/typeName are carried on every row (not just
+  // shown when the bucket needs them) because grouping and sorting need
+  // them regardless of what the row's own label ends up displaying.
   type Row = {
-    variantId: string; materialId: string; name: string; size: string
+    variantId: string; materialId: string; materialName: string; colourName: string | null
+    height: number | null; width: number | null
     baseCost: number | null; costPerUnit: number | null
     mult: number; sellPerUnit: number | null
     badCost: boolean; status?: DeleteStatus
+    typeId: string | null; typeName: string
   }
 
   function rowsFor(bucketKey: string): Row[] {
@@ -253,13 +268,14 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
     const mat = materialsById.get(v.material_id)
     if (!mat) return null
     const colour = v.color_id ? colourById.get(v.color_id) : null
-    const name = colour ? `${mat.name} · ${colour.name}` : mat.name
-    const size = v.height != null && v.width != null ? `${trimNum(v.height)} × ${trimNum(v.width)}` : '—'
+    const typeName = (mat.material_type_id && typeById.get(mat.material_type_id)?.name) || 'Uncategorized'
     return {
-      variantId, materialId: v.material_id, name, size,
+      variantId, materialId: v.material_id, materialName: mat.name, colourName: colour?.name ?? null,
+      height: v.height, width: v.width,
       baseCost: v.base_cost, costPerUnit: v.cost_per_unit,
       mult: v.multiplier, sellPerUnit: v.sell_per_unit,
       badCost: v.cost_per_unit == null || v.cost_per_unit === 0,
+      typeId: mat.material_type_id, typeName,
     }
   }
 
@@ -269,10 +285,6 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
     if (key === LOOSE) return looseChips()
     if (key === DISABLED) return disabledChips()
     return []
-  }
-
-  function trimNum(n: number): string {
-    return Number.isInteger(n) ? String(n) : String(Math.round(n * 10000) / 10000)
   }
 
   // ── Mover ──────────────────────────────────────────────────────────
@@ -427,8 +439,15 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
   const selectedCount = ticked.L.size + ticked.R.size
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div>
+    // Full viewport height minus the dashboard's own 56px top bar, same
+    // pattern products/[id]/migrate/migrate-client.tsx already uses for
+    // this exact problem. shrink-0 sections (header, banner, bulk-edit
+    // strip) take whatever height their content needs; the bench row is
+    // flex-1 so the panes get everything left over, and each pane's own
+    // row area is flex-1 again internally -- more rows visible on a
+    // large screen matters more than any column tightening (Fix 4).
+    <div className="flex flex-col overflow-hidden p-6" style={{ height: 'calc(100vh - 56px)' }}>
+      <div className="shrink-0">
         <h1 className="text-2xl font-extrabold text-qm-black">Material Families</h1>
         <p className="mt-1 max-w-2xl text-sm text-gray-500">
           Two slots. Load any bucket into either one — a family, the holding pen, everything not in
@@ -438,15 +457,16 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
       </div>
 
       {banner && (
-        <div className={`rounded-md border px-3 py-2 text-sm font-medium ${banner.kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>
+        <div className={`mt-4 shrink-0 rounded-md border px-3 py-2 text-sm font-medium ${banner.kind === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>
           {banner.text}
           <button className="ml-3 text-xs underline" onClick={() => setBanner(null)}>dismiss</button>
         </div>
       )}
 
-      <div className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-[1fr_100px_1fr]">
+      <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 md:grid-cols-[1fr_100px_1fr]">
         <Pane
           side="L" bucketKey={slot.L} orgSlug={orgSlug}
+          isFamilyBucket={materialsById.has(slot.L)}
           options={optionsFor('L')} onSelect={(k) => selectBucket('L', k)}
           filterText={filter.L} onFilter={(t) => setFilter((c) => ({ ...c, L: t }))}
           rows={rowsFor(slot.L)} ticked={ticked.L} onTicked={(s) => setTickedFor('L', s)}
@@ -455,7 +475,7 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
           acts={actsFor('L', slot.L)}
         />
 
-        <div className="flex flex-row items-center justify-center gap-2 md:flex-col md:gap-2.5">
+        <div className="flex shrink-0 flex-row items-center justify-center gap-2 md:flex-col md:gap-2.5">
           <button
             className="rounded-md border border-qm-black bg-qm-black px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30"
             disabled={ticked.L.size === 0 || pending}
@@ -478,6 +498,7 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
 
         <Pane
           side="R" bucketKey={slot.R} orgSlug={orgSlug}
+          isFamilyBucket={materialsById.has(slot.R)}
           options={optionsFor('R')} onSelect={(k) => selectBucket('R', k)}
           filterText={filter.R} onFilter={(t) => setFilter((c) => ({ ...c, R: t }))}
           rows={rowsFor(slot.R)} ticked={ticked.R} onTicked={(s) => setTickedFor('R', s)}
@@ -487,7 +508,7 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
         />
       </div>
 
-      <div className="flex flex-wrap items-end gap-4 rounded-md border border-gray-200 bg-white p-3.5 shadow-sm">
+      <div className="mt-4 flex shrink-0 flex-wrap items-end gap-4 rounded-md border border-gray-200 bg-white p-3.5 shadow-sm">
         <Field label="Base cost">
           <input value={bulkCost} onChange={(e) => setBulkCost(e.target.value)} placeholder="unchanged" className="w-28 rounded border border-gray-300 px-2 py-1.5 font-mono text-sm" />
         </Field>
@@ -574,19 +595,32 @@ const CHIP_TONE: Record<Chip['tone'], string> = {
 }
 
 type PaneRow = {
-  variantId: string; materialId: string; name: string; size: string
+  variantId: string; materialId: string; materialName: string; colourName: string | null
+  height: number | null; width: number | null
   baseCost: number | null; costPerUnit: number | null
   mult: number; sellPerUnit: number | null
   badCost: boolean; status?: DeleteStatus
+  typeId: string | null; typeName: string
+}
+
+// checkbox | Material | Height | Width | Base | Cost/u | Mult | Sell/u(or Delete?)
+const ROW_GRID = 'grid-cols-[22px_1fr_40px_40px_60px_56px_46px_60px]'
+
+function groupKeyOf(r: PaneRow, isFamilyBucket: boolean): string {
+  return isFamilyBucket ? (r.colourName ?? ' none') : (r.typeId ?? ' uncategorized')
+}
+function groupLabelOf(r: PaneRow, isFamilyBucket: boolean): string {
+  return isFamilyBucket ? (r.colourName ?? 'No colour') : r.typeName
 }
 
 function Pane({
-  side, bucketKey, orgSlug, options, onSelect, filterText, onFilter, rows, ticked, onTicked,
+  side, bucketKey, orgSlug, isFamilyBucket, options, onSelect, filterText, onFilter, rows, ticked, onTicked,
   chips, newDraft, onNewDraft, types, acts,
 }: {
   side: SideKey
   bucketKey: string
   orgSlug: string
+  isFamilyBucket: boolean
   options: { key: string; label: string; group: string }[]
   onSelect: (key: string) => void
   filterText: string
@@ -600,15 +634,37 @@ function Pane({
   types: MaterialType[]
   acts: { label: string; danger?: boolean; onClick: () => void; disabled?: boolean }[]
 }) {
-  const groups = new Map<string, { key: string; label: string }[]>()
+  const selectGroups = new Map<string, { key: string; label: string }[]>()
   for (const o of options) {
-    const arr = groups.get(o.group) ?? []
+    const arr = selectGroups.get(o.group) ?? []
     arr.push(o)
-    groups.set(o.group, arr)
+    selectGroups.set(o.group, arr)
   }
 
   const dead = bucketKey === DISABLED
-  const shown = rows.filter((r) => !filterText || r.name.toLowerCase().includes(filterText.toLowerCase()))
+
+  // Fix 3: default expanded for a family (browsing one material's own
+  // variants), COLLAPSED for a multi-material bucket -- 1,789 disabled
+  // rows in a flat list is unusable; collapsed-by-default makes it a
+  // short list of types opened one at a time. Reset ONLY when the bucket
+  // SELECTION changes, not on every rows-prop update (e.g. after a move
+  // elsewhere revalidates) -- otherwise a mutation would silently
+  // re-collapse whatever the user had open.
+  const allGroupKeys = useMemo(() => new Set(rows.map((r) => groupKeyOf(r, isFamilyBucket))), [rows, isFamilyBucket])
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => (isFamilyBucket ? new Set() : new Set(allGroupKeys)))
+  useEffect(() => {
+    setCollapsed(isFamilyBucket ? new Set() : new Set(allGroupKeys))
+    // Only bucketKey should retrigger this -- see comment above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bucketKey])
+
+  function toggleGroup(key: string) {
+    setCollapsed((cur) => {
+      const next = new Set(cur)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
 
   function toggle(variantId: string, checked: boolean) {
     const next = new Set(ticked)
@@ -616,12 +672,34 @@ function Pane({
     onTicked(next)
   }
 
+  const t = filterText.toLowerCase()
+  const shown = rows.filter((r) => !t || r.materialName.toLowerCase().includes(t) || (r.colourName?.toLowerCase().includes(t) ?? false))
+
+  // Fix 3 grouping + Fix 5 sort. Family bucket: group by colour, sort
+  // each group by height then width ascending (nulls last -- the shop
+  // convention is height-first, per Fix 1). Multi-material bucket: group
+  // by material type, sort each group by material name A-Z.
+  const groupMap = new Map<string, { label: string; rows: PaneRow[] }>()
+  for (const r of shown) {
+    const key = groupKeyOf(r, isFamilyBucket)
+    if (!groupMap.has(key)) groupMap.set(key, { label: groupLabelOf(r, isFamilyBucket), rows: [] })
+    groupMap.get(key)!.rows.push(r)
+  }
+  for (const g of groupMap.values()) {
+    if (isFamilyBucket) {
+      g.rows.sort((a, b) => (a.height ?? Infinity) - (b.height ?? Infinity) || (a.width ?? Infinity) - (b.width ?? Infinity))
+    } else {
+      g.rows.sort((a, b) => a.materialName.localeCompare(b.materialName))
+    }
+  }
+  const groupEntries = [...groupMap.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label))
+
   return (
-    <div className="flex min-w-0 flex-col rounded-md border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-100 p-3">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-md border border-gray-200 bg-white shadow-sm">
+      <div className="shrink-0 border-b border-gray-100 p-3">
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{side === 'L' ? 'Left slot' : 'Right slot'}</p>
         <select value={bucketKey} onChange={(e) => onSelect(e.target.value)} className="w-full rounded border border-gray-300 bg-gray-50 px-2.5 py-1.5 text-sm font-semibold text-qm-black">
-          {[...groups.entries()].map(([g, opts]) => (
+          {[...selectGroups.entries()].map(([g, opts]) => (
             <optgroup key={g} label={g}>
               {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
             </optgroup>
@@ -635,12 +713,17 @@ function Pane({
           </div>
         )}
         {bucketKey !== NEW_FAMILY && (
-          <input value={filterText} onChange={(e) => onFilter(e.target.value)} placeholder="Filter…" className="mt-2 w-full rounded border border-gray-300 px-2.5 py-1 text-sm" />
+          <div className="mt-2 flex items-center gap-2">
+            <input value={filterText} onChange={(e) => onFilter(e.target.value)} placeholder="Filter…" className="flex-1 rounded border border-gray-300 px-2.5 py-1 text-sm" />
+            <button onClick={() => setCollapsed(new Set(allGroupKeys))} className="shrink-0 text-[11px] text-gray-400 hover:text-gray-600 hover:underline">Collapse all</button>
+            <span className="text-gray-300">·</span>
+            <button onClick={() => setCollapsed(new Set())} className="shrink-0 text-[11px] text-gray-400 hover:text-gray-600 hover:underline">Expand all</button>
+          </div>
         )}
       </div>
 
       {bucketKey === NEW_FAMILY && newDraft ? (
-        <div className="flex flex-1 flex-col gap-2 p-4">
+        <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
           <label className="text-xs font-medium text-gray-500">Family name</label>
           <input value={newDraft.name} onChange={(e) => onNewDraft({ ...newDraft, name: e.target.value })} placeholder="e.g. Polycarbonate .220in – 1/4&quot;" className="rounded border border-gray-300 px-2 py-1.5 text-sm" />
           <label className="mt-1 text-xs font-medium text-gray-500">Material type (optional)</label>
@@ -664,35 +747,64 @@ function Pane({
               a single "Cost" column showing only one of the two never
               would. No separate Price column -- Sell/u fills that role,
               paired with Mult instead of floating alone; price is
-              derivable and cost is what's being audited here. */}
-          <div className="grid grid-cols-[22px_1fr_54px_64px_60px_50px_64px] items-center gap-1.5 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">
+              derivable and cost is what's being audited here. Height and
+              width are their own columns, height first (shop convention)
+              -- a combined "H x W" string wrapped onto two lines for a
+              4-digit roll length and made two real, different sizes
+              (Coil .040 at 3240x3.5 and 3240x5.3) look like duplicates. */}
+          <div className={`shrink-0 grid ${ROW_GRID} items-center gap-1 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400`}>
             <span />
             <span>Material</span>
-            <span className="text-right">Size</span>
+            <span className="text-right" title="height, first -- shop convention">Height</span>
+            <span className="text-right">Width</span>
             <span className="text-right" title="base_cost -- writable">Base</span>
             <span className="text-right" title="cost_per_unit -- generated">Cost/u</span>
             <span className="text-right" title="multiplier -- writable">Mult</span>
             <span className="text-right">{dead ? 'Delete?' : 'Sell/u'}</span>
           </div>
-          <div className="h-[376px] overflow-y-auto">
-            {shown.length === 0 ? (
+          <div className="min-h-[240px] flex-1 overflow-y-auto">
+            {groupEntries.length === 0 ? (
               <p className="p-6 text-center text-sm text-gray-400">
                 {bucketKey === PEN ? 'Pen is empty. Tick variants in a family and move them here.' : filterText ? 'Nothing matches that filter.' : 'Nothing here.'}
               </p>
-            ) : shown.map((r) => {
-              const blocked = dead && r.status === 'block'
+            ) : groupEntries.map(([key, group]) => {
+              const isCollapsed = collapsed.has(key)
               return (
-                <label key={r.variantId} className={`grid grid-cols-[22px_1fr_54px_64px_60px_50px_64px] items-center gap-1.5 border-b border-gray-100 px-3 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
-                  <input type="checkbox" checked={ticked.has(r.variantId)} disabled={blocked} onChange={(e) => toggle(r.variantId, e.target.checked)} className="cursor-pointer accent-qm-lime disabled:cursor-not-allowed" />
-                  <Link href={`/dashboard/${orgSlug}/settings/materials/${r.materialId}`} target="_blank" onClick={(e) => e.stopPropagation()} className="min-w-0 truncate text-sm text-qm-black hover:underline">{r.name}</Link>
-                  <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.size}</span>
-                  <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.baseCost != null ? r.baseCost.toFixed(4) : '—'}</span>
-                  <span className={`text-right font-mono text-[12px] tabular-nums ${r.badCost ? 'font-semibold text-red-600' : 'text-gray-500'}`}>{r.costPerUnit != null ? r.costPerUnit.toFixed(4) : '—'}</span>
-                  <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.mult.toFixed(4)}</span>
-                  {dead
-                    ? <StatusBadge status={r.status ?? 'safe'} />
-                    : <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.sellPerUnit != null ? r.sellPerUnit.toFixed(4) : '—'}</span>}
-                </label>
+                <div key={key}>
+                  {/* Sticky within the scroll container, not a <label> --
+                      collapse is a view state, never a selection. No
+                      checkbox here at all, so ticking a collapsed group's
+                      header can never tick its rows. */}
+                  <button
+                    type="button" onClick={() => toggleGroup(key)}
+                    className="sticky top-0 z-[1] flex w-full items-center justify-between gap-2 border-b border-gray-200 bg-gray-100 px-3 py-1 text-left text-[11px] font-semibold text-gray-600 hover:bg-gray-200"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 truncate">
+                      <span className={`inline-block shrink-0 text-[9px] transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>▶</span>
+                      <span className="truncate">{group.label}</span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[10.5px] text-gray-400">{group.rows.length}</span>
+                  </button>
+                  {!isCollapsed && group.rows.map((r) => {
+                    const blocked = dead && r.status === 'block'
+                    const fullName = r.colourName ? `${r.materialName} · ${r.colourName}` : r.materialName
+                    const label = isFamilyBucket ? (r.colourName ?? '—') : fullName
+                    return (
+                      <label key={r.variantId} className={`grid ${ROW_GRID} items-center gap-1 border-b border-gray-100 px-3 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
+                        <input type="checkbox" checked={ticked.has(r.variantId)} disabled={blocked} onChange={(e) => toggle(r.variantId, e.target.checked)} className="cursor-pointer accent-qm-lime disabled:cursor-not-allowed" />
+                        <Link href={`/dashboard/${orgSlug}/settings/materials/${r.materialId}`} target="_blank" title={fullName} onClick={(e) => e.stopPropagation()} className="min-w-0 truncate text-sm text-qm-black hover:underline">{label}</Link>
+                        <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.height != null ? trimNum(r.height) : '—'}</span>
+                        <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.width != null ? trimNum(r.width) : '—'}</span>
+                        <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.baseCost != null ? r.baseCost.toFixed(4) : '—'}</span>
+                        <span className={`text-right font-mono text-[12px] tabular-nums ${r.badCost ? 'font-semibold text-red-600' : 'text-gray-500'}`}>{r.costPerUnit != null ? r.costPerUnit.toFixed(4) : '—'}</span>
+                        <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.mult.toFixed(4)}</span>
+                        {dead
+                          ? <StatusBadge status={r.status ?? 'safe'} />
+                          : <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.sellPerUnit != null ? r.sellPerUnit.toFixed(4) : '—'}</span>}
+                      </label>
+                    )
+                  })}
+                </div>
               )
             })}
           </div>
@@ -700,7 +812,7 @@ function Pane({
       )}
 
       {acts.length > 0 && (
-        <div className="flex min-h-[46px] flex-wrap gap-1.5 rounded-b-md border-t border-gray-100 bg-gray-50 p-2.5">
+        <div className="flex min-h-[46px] shrink-0 flex-wrap gap-1.5 rounded-b-md border-t border-gray-100 bg-gray-50 p-2.5">
           {acts.map((a) => (
             <button
               key={a.label} onClick={a.onClick} disabled={a.disabled}
