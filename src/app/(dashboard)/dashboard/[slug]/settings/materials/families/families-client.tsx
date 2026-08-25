@@ -607,7 +607,7 @@ type PaneRow = {
 const ROW_GRID = 'grid-cols-[22px_1fr_40px_40px_60px_56px_46px_60px]'
 
 function groupKeyOf(r: PaneRow, isFamilyBucket: boolean): string {
-  return isFamilyBucket ? (r.colourName ?? ' none') : (r.typeId ?? ' uncategorized')
+  return isFamilyBucket ? (r.colourName ?? 'none') : (r.typeId ?? 'uncategorized')
 }
 function groupLabelOf(r: PaneRow, isFamilyBucket: boolean): string {
   return isFamilyBucket ? (r.colourName ?? 'No colour') : r.typeName
