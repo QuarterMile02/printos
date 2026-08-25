@@ -10,6 +10,7 @@ DECLARE
   v_source_color_code text;
   v_source_color_stocked boolean;
   v_target_color_id uuid;
+  v_new_is_default boolean;
   v_touched_materials uuid[] := '{}';
   v_source_material_id uuid;
 BEGIN
@@ -26,15 +27,29 @@ BEGIN
   -- convention exactly: a colourless variant never gets a material_colors
   -- row invented for it just because it moved.
   --
-  -- A moved variant that was is_default=true claims the target bucket's
-  -- default flag, clearing whatever was there first -- same pattern
-  -- add_variant_to_existing_material (186) already uses. This can never
-  -- leave two is_default=true rows in one (material, colour) bucket:
-  -- idx_material_variants_one_default_per_color (migration 181) would
-  -- reject that outright, and the explicit clear here prevents ever
-  -- hitting that constraint. If two variants moved in the same call both
-  -- claim the same target (material, colour) bucket's default, the one
-  -- processed later in p_variant_ids wins -- deterministic, not an error.
+  -- is_default is the ONLY field that can change value on a move -- every
+  -- other column (cost, multiplier, price, width, height, length_increment,
+  -- fixed_side, ...) moves completely unchanged. Ruben's decision, and the
+  -- rule below implements it exactly: if the target (material, colour)
+  -- bucket already has a default, an incoming default-flagged variant
+  -- arrives with is_default FORCED to false -- the target's existing
+  -- default wins, is never displaced by a move. Only when the target
+  -- bucket has no default at all does the incoming variant keep whatever
+  -- is_default value it already had. This can never leave two
+  -- is_default=true rows in one bucket -- idx_material_variants_one_
+  -- default_per_color (migration 181) would reject that outright, and
+  -- this rule never tries to create the conflict in the first place.
+  --
+  -- WHY the target wins rather than the incoming variant (the opposite of
+  -- this function's first draft): is_default is read live by Stage A's
+  -- selectMaterialVariant (src/lib/pricing/formula-engine.ts) as a
+  -- pricing input for every OTHER product recipe already pointed at this
+  -- target family. Letting an incoming move silently flip which variant
+  -- prices those other recipes would change a price in a family the user
+  -- wasn't editing, as a side effect of an unrelated move into it. Once
+  -- the nester exists, is_default is expected to stop being a pricing
+  -- input -- revisit this rule at that point, it's only load-bearing
+  -- while is_default still drives a live price.
   --
   -- A source material left with zero variants is DEACTIVATED, never
   -- deleted -- material_vendors.material_id is ON DELETE CASCADE
@@ -97,13 +112,15 @@ BEGIN
       END IF;
     END IF;
 
-    IF v_variant.is_default THEN
-      UPDATE public.material_variants
-         SET is_default = false
+    -- v_new_is_default: see the rule and its reasoning above the loop.
+    -- true only when the variant was already the default AND the target
+    -- bucket has no default of its own to defer to.
+    v_new_is_default := v_variant.is_default AND NOT EXISTS (
+      SELECT 1 FROM public.material_variants
        WHERE material_id = p_target_material_id
          AND color_id IS NOT DISTINCT FROM v_target_color_id
-         AND is_default = true;
-    END IF;
+         AND is_default = true
+    );
 
     v_source_material_id := v_variant.material_id;
 
@@ -118,9 +135,12 @@ BEGIN
     -- new parent material automatically; setting them here would just be
     -- immediately overwritten, and duplicating that logic risks drifting
     -- from the trigger's own if either is ever changed independently.
+    -- is_default is the only other column this UPDATE touches -- every
+    -- remaining column keeps its existing value untouched, unlisted.
     UPDATE public.material_variants
        SET material_id = p_target_material_id,
-           color_id = v_target_color_id
+           color_id = v_target_color_id,
+           is_default = v_new_is_default
      WHERE id = v_variant_id;
 
     IF NOT (v_source_material_id = ANY(v_touched_materials)) THEN
@@ -155,9 +175,50 @@ BEGIN
   -- material, then hand it straight to move_variants_to_material for the
   -- actual moving/colour-remap/source-deactivation work -- one code path
   -- for both destinations, not two copies of the same logic to drift
-  -- apart later. p_type_id is genuinely optional (materials.material_type_id
-  -- has no NOT NULL constraint); when given, it must already exist for
-  -- this organization -- never silently created.
+  -- apart later.
+  --
+  -- Exactly what the new materials row gets, field by field:
+  --   organization_id    derived from the variants being moved in (below),
+  --                       never a caller-supplied value -- see the
+  --                       cross-org check below.
+  --   material_type_id   p_type_id as given. Genuinely optional
+  --                       (materials.material_type_id has no NOT NULL
+  --                       constraint); when given, must already exist for
+  --                       this organization -- never silently created.
+  --   multiplier          left NULL. Deliberately NOT inherited from the
+  --                       variants being moved in: they can have
+  --                       genuinely different multipliers (that's real,
+  --                       existing data, not an error), so picking any
+  --                       one of them to promote onto the material row
+  --                       would be exactly the kind of invented number
+  --                       migration 187 exists to refuse -- a 0 here
+  --                       would recreate that bug from the other
+  --                       direction, and picking a non-zero value with no
+  --                       single correct source is no better. NULL is
+  --                       honest, matches accept_family_proposal's (182)
+  --                       own reasoning for this same column ("materials.
+  --                       multiplier is nullable... left NULL, honestly,
+  --                       rather than invented"), and is safe: this
+  --                       column is never read by calculateProductPrice
+  --                       (confirmed -- its materials select list is
+  --                       `id, name, cost, price, selling_units`, no
+  --                       multiplier at all). Pricing for this family
+  --                       comes from its variants' own multiplier column,
+  --                       not this one.
+  --   cost, price          left at the table default (0, NOT NULL
+  --                       columns) -- explicit in the INSERT below rather
+  --                       than silently relying on the default, so the
+  --                       choice is visible here rather than implicit.
+  --                       Never read by calculateProductPrice for a
+  --                       material with real variants, which this always
+  --                       has the moment this function returns (it always
+  --                       moves at least one variant in, per the
+  --                       non-empty check below).
+  --   formula             left unset (table default 'Area'). Not read by
+  --                       calculateProductPrice at all -- that engine
+  --                       reads a recipe item's own system_formula (or
+  --                       the parent PRODUCT's formula), never
+  --                       materials.formula.
 
   IF p_variant_ids IS NULL OR array_length(p_variant_ids, 1) IS NULL THEN
     RAISE EXCEPTION 'create_material_family_from_variants: no variant ids provided';
@@ -186,8 +247,11 @@ BEGIN
     END IF;
   END IF;
 
-  INSERT INTO public.materials (organization_id, name, material_type_id, length_uom, active)
-  VALUES (v_org_id, btrim(p_name), p_type_id, 'in', true)
+  -- multiplier and formula are deliberately absent from this column list --
+  -- see the field-by-field comment above. cost/price are listed explicitly
+  -- as 0 (their table default) so the choice is visible here, not implicit.
+  INSERT INTO public.materials (organization_id, name, material_type_id, length_uom, cost, price, active)
+  VALUES (v_org_id, btrim(p_name), p_type_id, 'in', 0, 0, true)
   RETURNING id INTO v_new_material_id;
 
   PERFORM public.move_variants_to_material(p_variant_ids, v_new_material_id);
