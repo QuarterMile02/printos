@@ -9,21 +9,20 @@
 //   GHL_ORG_SLUG        — PrintOS org slug to attach records to (default: quarter-mile-inc)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { timingSafeEqual } from 'crypto'
+import { createHash, timingSafeEqual } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 
 // Constant-time compare -- never `===`, which short-circuits on the first
-// mismatched byte and leaks the secret's length/prefix via timing. Pads
-// instead of early-returning on length mismatch, so a wrong-length header
-// takes the same code path as a right-length one -- the length check
-// itself must not be a timing side channel.
+// mismatched byte and leaks the secret's length/prefix via timing. Hashes
+// both values with SHA-256 first, then timingSafeEqual's the two 32-byte
+// digests -- always equal-length by construction, so timingSafeEqual
+// itself never sees a length mismatch (no `&&` short-circuit hiding it,
+// no zero-padding that would make "abc" and "abc\0" collide) and can
+// never throw.
 function constantTimeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a)
-  const bufB = Buffer.from(b)
-  const maxLen = Math.max(bufA.length, bufB.length, 1)
-  const paddedA = Buffer.concat([bufA], maxLen)
-  const paddedB = Buffer.concat([bufB], maxLen)
-  return bufA.length === bufB.length && timingSafeEqual(paddedA, paddedB)
+  const digestA = createHash('sha256').update(a).digest()
+  const digestB = createHash('sha256').update(b).digest()
+  return timingSafeEqual(digestA, digestB)
 }
 
 export async function POST(req: NextRequest) {
