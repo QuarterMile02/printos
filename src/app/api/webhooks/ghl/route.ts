@@ -1,38 +1,76 @@
 // Required env vars (add to Vercel):
-//   GHL_WEBHOOK_SECRET  — if set, x-ghl-signature header is validated (HMAC-SHA256)
+//   GHL_WEBHOOK_SECRET  — PHASE 1: observed and logged only, NOT enforced yet.
+//                         Compared (constant-time) against the
+//                         x-ghl-shared-secret header GHL sends. Every request
+//                         is still accepted regardless of the result -- see
+//                         known-issues/2026-08-25-ghl-webhook-shared-secret-and-test-customer-investigation.md
+//                         for the full 3-phase rollout this is phase 1 of.
 //   GHL_LOCATION_ID     — GHL location ID for this org (future use with GHL API client)
 //   GHL_ORG_SLUG        — PrintOS org slug to attach records to (default: quarter-mile-inc)
 
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { timingSafeEqual } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 
-function verifySignature(rawBody: string, header: string | null, secret: string): boolean {
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
-  const candidate = header?.startsWith('sha256=') ? header.slice(7) : (header ?? '')
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(candidate.padEnd(expected.length, ' ')))
+// Constant-time compare -- never `===`, which short-circuits on the first
+// mismatched byte and leaks the secret's length/prefix via timing. Pads
+// instead of early-returning on length mismatch, so a wrong-length header
+// takes the same code path as a right-length one -- the length check
+// itself must not be a timing side channel.
+function constantTimeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  const maxLen = Math.max(bufA.length, bufB.length, 1)
+  const paddedA = Buffer.concat([bufA], maxLen)
+  const paddedB = Buffer.concat([bufB], maxLen)
+  return bufA.length === bufB.length && timingSafeEqual(paddedA, paddedB)
 }
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
-  console.log('[ghl-webhook] incoming payload:', rawBody)
 
-  // ── Signature verification ─────────────────────────────────────────────────
-  const secret = process.env.GHL_WEBHOOK_SECRET
-  if (secret) {
-    const sig = req.headers.get('x-ghl-signature')
-    if (!sig || !verifySignature(rawBody, sig, secret)) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
-  }
+  // ── PHASE 1 — shared-secret auth: observe only, never reject ────────────────
+  // GHL_WEBHOOK_SECRET is unset in production right now and Esteban hasn't
+  // configured the x-ghl-shared-secret header yet -- rejecting here would
+  // break the live GHL -> PrintOS lead sync the moment this deploys.
+  // Deliberately does NOT inherit PR #21's "500 if secret unset" behavior;
+  // that's phase 3, once these logs confirm the header is actually matching.
+  //
+  // Logs ONLY booleans. Never the secret, the header value, or any part of
+  // either, at any log level, in any branch.
+  const expectedSecret = process.env.GHL_WEBHOOK_SECRET
+  const presentedHeader = req.headers.get('x-ghl-shared-secret')
+  const secretConfigured = !!expectedSecret
+  const headerPresent = !!presentedHeader
+  const headerMatches = secretConfigured && headerPresent
+    ? constantTimeEqual(presentedHeader!, expectedSecret!)
+    : false
+  // Grep target for "is GHL posting at all, and does Esteban's header
+  // match?" -- one line per inbound request, fires unconditionally, before
+  // any parsing or the (still nonexistent) rejection.
+  console.log(`[ghl-webhook] request received -- secretConfigured=${secretConfigured} headerPresent=${headerPresent} headerMatches=${headerMatches}`)
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   let payload: Record<string, any>
   try {
     payload = JSON.parse(rawBody)
   } catch {
+    console.log('[ghl-webhook] payload shape:', JSON.stringify({ byteLength: rawBody.length, parseError: true }))
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  // Shape-only log — replaces the old unredacted full-raw-body log (this
+  // route used to log every incoming customer's name/email/phone in the
+  // clear, on every request, forever). Structure only: key names,
+  // presence booleans, byte length. Never a value.
+  console.log('[ghl-webhook] payload shape:', JSON.stringify({
+    byteLength: rawBody.length,
+    topLevelKeys: Object.keys(payload ?? {}),
+    hasContact: !!payload?.contact,
+    contactKeys: payload?.contact ? Object.keys(payload.contact) : [],
+    hasCustomData: !!payload?.customData,
+    customDataKeys: payload?.customData ? Object.keys(payload.customData) : [],
+  }))
 
   // Returns the first non-empty string among candidates. Used instead of
   // trusting a single object (e.g. payload.contact) for every field --
