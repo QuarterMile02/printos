@@ -5,6 +5,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import QuoteDocument, { type QuotePdfData, type QuotePdfLineItem, type OrgProfile } from '@/lib/pdf/quote-document'
 import { formatQuoteNumber } from '@/app/(dashboard)/dashboard/[slug]/quotes/format'
 import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
+import { findZeroCostMaterialLines, zeroCostBlockMessage } from '@/lib/pricing/zero-cost-guard'
 import React from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,15 @@ export async function GET(
     const { allowed } = await checkPermission(quoteOrg.organization_id, 'quotes.export_pdf')
     if (!allowed) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // 2b. Zero-cost guard (blocking) — refuse to generate a customer-
+    // facing PDF for a quote with any $0-priced line caused by a $0-cost
+    // material. The quote itself stays fully editable; this only blocks
+    // the document leaving the building.
+    const zeroCostLines = await findZeroCostMaterialLines(service, id)
+    if (zeroCostLines.length > 0) {
+      return NextResponse.json({ error: zeroCostBlockMessage(zeroCostLines) }, { status: 422 })
     }
 
     // 3. Full quote data

@@ -9,6 +9,7 @@ import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { fetchAssetsAsAttachments, type EmailAttachment } from '@/lib/assets'
 import { getUserSenderIdentity, SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
+import { findZeroCostMaterialLines, zeroCostBlockMessage } from '@/lib/pricing/zero-cost-guard'
 
 function toE164(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -378,6 +379,13 @@ export async function sendQuoteToCustomer(
     .single() as { data: { id: string; quote_number: number; title: string; description: string | null; status: QuoteStatus; customer_id: string | null } | null; error: unknown }
 
   if (!quote) return { error: 'Quote not found.' }
+
+  // Zero-cost guard (blocking) — refuse to send a quote with any $0-priced
+  // line caused by a $0-cost material. Covers both delivery methods this
+  // function handles (email + SMS). The quote itself stays fully
+  // editable; this only blocks it going out to the customer.
+  const zeroCostLines = await findZeroCostMaterialLines(service, quoteId)
+  if (zeroCostLines.length > 0) return { error: zeroCostBlockMessage(zeroCostLines) }
 
   let customerEmail: string | null = null
   let customerPhone: string | null = null
@@ -990,6 +998,13 @@ export async function sendQuoteEmailCustom(
       error: unknown
     }
   if (!quote) return { error: 'Quote not found.' }
+
+  // Zero-cost guard (blocking) — same check as sendQuoteToCustomer /
+  // the PDF route. This is the actual UI-wired "Send Email" path
+  // (SendEmailModal), a separate implementation from sendQuoteToCustomer,
+  // so it needs its own copy of the check rather than inheriting it.
+  const zeroCostLines = await findZeroCostMaterialLines(ctx.service, quoteId)
+  if (zeroCostLines.length > 0) return { error: zeroCostBlockMessage(zeroCostLines) }
 
   if (!process.env.RESEND_API_KEY) {
     return { error: 'Email delivery not configured — RESEND_API_KEY is missing.' }

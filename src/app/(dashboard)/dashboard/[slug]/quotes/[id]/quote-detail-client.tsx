@@ -137,6 +137,14 @@ type Props = {
   // customer reassignment (QuoteCustomerPicker) does a router.refresh()
   // rather than trying to keep this in sync client-side.
   taxRate: number
+  // Line item id -> zero-cost material name(s) responsible, for any line
+  // whose stored unit_price is $0 and whose product's CURRENT recipe
+  // resolves to a materials.cost = 0 material. Computed server-side
+  // (findZeroCostMaterialLines) since it needs a recipe/materials lookup
+  // this component doesn't otherwise have. Display-only here — never
+  // blocks editing; see the same check enforced (blocking) at send/PDF
+  // time server-side.
+  zeroCostByLineId?: Record<string, string[]>
 }
 
 function lineTotalCents(qty: number, unitPriceCents: number, discountPct: number): number {
@@ -193,6 +201,7 @@ export default function QuoteDetailClient({
   initialCustomerId, initialContactId, initialContactName, initialContactEmail, initialContactPhone,
   isOwnerOrAdmin = false,
   taxRate,
+  zeroCostByLineId = {},
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -1503,6 +1512,14 @@ export default function QuoteDetailClient({
                           onBlur={() => commitItem(item.id, { unit_price: item.unit_price })}
                           className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm tabular-nums text-right focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
                         />
+                        {zeroCostByLineId[item.id] && (
+                          <div
+                            className="mt-1 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700"
+                            title={`Priced at $0 -- zero-cost material: ${zeroCostByLineId[item.id].join(', ')}`}
+                          >
+                            $0 · {zeroCostByLineId[item.id].join(', ')}
+                          </div>
+                        )}
                       </td>
                       )}
                       {canSeePricing && (
@@ -1615,7 +1632,19 @@ export default function QuoteDetailClient({
                         <td className="px-4 py-3 text-sm text-gray-600">
                           {item.material_name ?? <span className="text-gray-300">&mdash;</span>}
                         </td>
-                        {canSeePricing && <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">${formatCents(item.unit_price)}</td>}
+                        {canSeePricing && (
+                          <td className="px-4 py-3 text-sm text-gray-900 text-right tabular-nums">
+                            ${formatCents(item.unit_price)}
+                            {zeroCostByLineId[item.id] && (
+                              <div
+                                className="mt-1 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700"
+                                title={`Priced at $0 -- zero-cost material: ${zeroCostByLineId[item.id].join(', ')}`}
+                              >
+                                $0 · {zeroCostByLineId[item.id].join(', ')}
+                              </div>
+                            )}
+                          </td>
+                        )}
                         {canSeePricing && <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">${formatCents(item.total_price)}</td>}
                       </tr>
                       {chips && (

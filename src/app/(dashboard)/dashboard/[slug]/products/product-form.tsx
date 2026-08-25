@@ -1045,7 +1045,17 @@ export default function ProductForm({
                                 <svg className="h-4 w-4 inline" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a1 1 0 000 2h1v12H7a1 1 0 100 2h6a1 1 0 100-2h-1V4h1a1 1 0 100-2H7z" /></svg>
                               </span>
                             </td>
-                            <td className="px-3 py-2 text-sm font-medium text-qm-black">{row.display_name}</td>
+                            <td className="px-3 py-2 text-sm font-medium text-qm-black">
+                              {row.display_name}
+                              {row.material_id && Number(materialMap.get(row.material_id)?.cost ?? 0) === 0 && (
+                                <span
+                                  className="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700"
+                                  title="This material's cost is $0 -- the product will price this line at $0 with no error."
+                                >
+                                  $0 cost
+                                </span>
+                              )}
+                            </td>
                             <td className="px-3 py-2">
                               <input
                                 type="text"
@@ -1495,7 +1505,17 @@ export default function ProductForm({
                       }}
                       className="w-full text-left px-5 py-2.5 hover:bg-qm-surface transition-colors"
                     >
-                      <div className="text-sm font-medium text-qm-black">{r.name}</div>
+                      <div className="text-sm font-medium text-qm-black">
+                        {r.name}
+                        {searchCategory === 'Material' && Number(r.cost ?? 0) === 0 && (
+                          <span
+                            className="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700"
+                            title="This material's cost is $0 -- the product will price this line at $0 with no error."
+                          >
+                            $0 cost
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-qm-gray">
                         ${Number(r.cost).toFixed(2)} cost · ${Number(r.price).toFixed(2)} price
                       </div>
