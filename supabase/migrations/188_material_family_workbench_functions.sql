@@ -4,6 +4,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   v_target_org_id uuid;
+  v_target_length_uom text;
   v_variant_id uuid;
   v_variant record;
   v_source_color_name text;
@@ -67,18 +68,41 @@ BEGIN
   -- variant from org A and a target material from org B, both
   -- individually visible to them under RLS, and move data between two
   -- orgs they belong to -- this check refuses that regardless of RLS.
+  --
+  -- length_uom is checked and refused on mismatch, NOT re-derived like
+  -- organization_id is. Both are re-derived by the same trigger
+  -- (sync_material_variant_before_write, 173) the instant material_id
+  -- changes, but they are not the same kind of value. organization_id is
+  -- an identity label: this function already REQUIRES the variant's org
+  -- and the target's org to match before it ever reaches the UPDATE (the
+  -- check above), so the trigger re-deriving it is a no-op write of the
+  -- value that was already guaranteed identical -- nothing about scoping
+  -- actually changes. length_uom has no such prior guarantee, and it is
+  -- not a label -- it is a live input to a GENERATED column:
+  --   sqft = (width/12) * material_length_to_feet(height, length_uom)
+  --   cost_per_unit = total_cost / sqft
+  -- (173_material_variants_table.sql:186-206). material_length_to_feet
+  -- converts in/ft/yd by a real factor (÷12, ×1, ×3). If this function
+  -- let the trigger silently rewrite a variant's length_uom to the
+  -- target's, sqft would silently recompute against a different unit and
+  -- cost_per_unit would rescale with it -- by 3x for a yd<->in move --
+  -- while every other column, per the rule above, is supposed to move
+  -- completely unchanged. Refusing instead of converting is deliberate:
+  -- the workbench can surface this conflict and let a human decide, which
+  -- a silent 3x cost change cannot.
 
   IF p_variant_ids IS NULL OR array_length(p_variant_ids, 1) IS NULL THEN
     RAISE EXCEPTION 'move_variants_to_material: no variant ids provided';
   END IF;
 
-  SELECT organization_id INTO v_target_org_id FROM public.materials WHERE id = p_target_material_id;
+  SELECT organization_id, length_uom INTO v_target_org_id, v_target_length_uom
+    FROM public.materials WHERE id = p_target_material_id;
   IF v_target_org_id IS NULL THEN
     RAISE EXCEPTION 'move_variants_to_material: target material % does not exist', p_target_material_id;
   END IF;
 
   FOREACH v_variant_id IN ARRAY p_variant_ids LOOP
-    SELECT id, material_id, color_id, organization_id, is_default
+    SELECT id, material_id, color_id, organization_id, is_default, length_uom
       INTO v_variant
       FROM public.material_variants
      WHERE id = v_variant_id;
@@ -89,6 +113,11 @@ BEGIN
 
     IF v_variant.organization_id IS DISTINCT FROM v_target_org_id THEN
       RAISE EXCEPTION 'move_variants_to_material: variant % belongs to a different organization than target material %', v_variant_id, p_target_material_id;
+    END IF;
+
+    IF v_variant.length_uom IS DISTINCT FROM v_target_length_uom THEN
+      RAISE EXCEPTION 'move_variants_to_material: variant % has length_uom % but target material % has length_uom % -- refusing to move it. sqft (and therefore cost_per_unit) is generated from length_uom, so this move would silently rescale its cost -- by 3x for a yd<->in mismatch -- rather than leave it unchanged like every other column',
+        v_variant_id, v_variant.length_uom, p_target_material_id, v_target_length_uom;
     END IF;
 
     IF v_variant.color_id IS NULL THEN
@@ -135,6 +164,14 @@ BEGIN
     -- new parent material automatically; setting them here would just be
     -- immediately overwritten, and duplicating that logic risks drifting
     -- from the trigger's own if either is ever changed independently.
+    -- This re-derivation is a genuine no-op for BOTH columns by the time
+    -- execution reaches here, but for two different reasons: organization_id
+    -- was already required to match (the check above), and length_uom was
+    -- already required to match (the check above the loop) -- neither
+    -- check exists to make this UPDATE line correct in isolation; they
+    -- exist because a mismatch on either would be a real, live bug (a
+    -- cross-org write, or a silently rescaled cost_per_unit) that this
+    -- function refuses before ever reaching this UPDATE.
     -- is_default is the only other column this UPDATE touches -- every
     -- remaining column keeps its existing value untouched, unlisted.
     UPDATE public.material_variants
@@ -168,6 +205,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
   v_org_id uuid;
+  v_length_uom text;
   v_first_variant_id uuid;
   v_new_material_id uuid;
 BEGIN
@@ -185,6 +223,24 @@ BEGIN
   --                       (materials.material_type_id has no NOT NULL
   --                       constraint); when given, must already exist for
   --                       this organization -- never silently created.
+  --   length_uom          derived from the variants being moved in (below)
+  --                       -- NOT hardcoded 'in'. length_uom is not a label
+  --                       like organization_id; it is a live input to
+  --                       material_variants' generated sqft column
+  --                       (sqft = width_ft * material_length_to_feet(height,
+  --                       length_uom), 173_material_variants_table.sql:
+  --                       186-206), which cost_per_unit is itself derived
+  --                       from. Hardcoding 'in' here and letting
+  --                       sync_material_variant_before_write (173)
+  --                       silently rewrite each moved-in variant's
+  --                       length_uom to match would rescale its sqft --
+  --                       and therefore its cost_per_unit -- by 3x for a
+  --                       yd variant moved into a hardcoded-'in' family,
+  --                       even though every other column is supposed to
+  --                       move completely unchanged. If the variants being
+  --                       moved in don't all share one length_uom, this
+  --                       function refuses rather than pick one -- see the
+  --                       check below.
   --   multiplier          left NULL. Deliberately NOT inherited from the
   --                       variants being moved in: they can have
   --                       genuinely different multipliers (that's real,
@@ -247,11 +303,21 @@ BEGIN
     END IF;
   END IF;
 
+  -- length_uom: derive from the variants being moved in, never hardcode.
+  -- See the field-by-field comment above for why this matters (sqft/
+  -- cost_per_unit are generated from it). If they don't all agree on one
+  -- length_uom, refuse -- do not pick one, same "never invent" principle
+  -- as the multiplier decision below.
+  IF (SELECT count(DISTINCT length_uom) FROM public.material_variants WHERE id = ANY(p_variant_ids)) <> 1 THEN
+    RAISE EXCEPTION 'create_material_family_from_variants: the variants being moved in do not all share one length_uom -- refusing to invent one for the new family';
+  END IF;
+  SELECT length_uom INTO v_length_uom FROM public.material_variants WHERE id = v_first_variant_id;
+
   -- multiplier and formula are deliberately absent from this column list --
   -- see the field-by-field comment above. cost/price are listed explicitly
   -- as 0 (their table default) so the choice is visible here, not implicit.
   INSERT INTO public.materials (organization_id, name, material_type_id, length_uom, cost, price, active)
-  VALUES (v_org_id, btrim(p_name), p_type_id, 'in', 0, 0, true)
+  VALUES (v_org_id, btrim(p_name), p_type_id, v_length_uom, 0, 0, true)
   RETURNING id INTO v_new_material_id;
 
   PERFORM public.move_variants_to_material(p_variant_ids, v_new_material_id);
