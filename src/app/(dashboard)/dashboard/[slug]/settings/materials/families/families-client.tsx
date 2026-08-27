@@ -19,6 +19,10 @@ type VariantRow = {
   width: number | null; height: number | null; base_cost: number | null
   multiplier: number; cost_per_unit: number | null; sell_per_unit: number | null
   is_default: boolean; length_uom: string
+  // The ShopVOX row name this variant was created from (migration 189).
+  // NULL for a variant created before this column existed and not yet
+  // backfilled, or one that was never tied to a ShopVOX row at all.
+  source_name: string | null
 }
 type ColourRow = { id: string; material_id: string; name: string; code: string | null }
 type MaterialType = { id: string; name: string }
@@ -248,6 +252,7 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
     mult: number; sellPerUnit: number | null
     badCost: boolean; status?: DeleteStatus
     typeId: string | null; typeName: string
+    sourceName: string | null
   }
 
   function rowsFor(bucketKey: string): Row[] {
@@ -286,6 +291,7 @@ export default function FamiliesClient({ orgId, orgSlug, types, materials, varia
       mult: v.multiplier, sellPerUnit: v.sell_per_unit,
       badCost: v.cost_per_unit == null || v.cost_per_unit === 0,
       typeId: mat.material_type_id, typeName,
+      sourceName: v.source_name,
     }
   }
 
@@ -639,6 +645,7 @@ type PaneRow = {
   mult: number; sellPerUnit: number | null
   badCost: boolean; status?: DeleteStatus
   typeId: string | null; typeName: string
+  sourceName: string | null
 }
 
 // checkbox | Material | Height | Width | Base | Cost/u | Mult | Sell/u(or Delete?)
@@ -866,10 +873,23 @@ function Pane({
                     // superset of it with something to strip. Never a bare
                     // dash as a row's only label.
                     const label = isFamilyBucket ? (r.colourName ?? r.materialName) : fullName
+                    // The verification Ruben needs to tell whether a row
+                    // belongs in the family it's now in: what it USED to
+                    // be called in ShopVOX, before any parsing/grouping/
+                    // moving happened. Only shown when it actually adds
+                    // information -- a source_name identical to the
+                    // label already on screen (e.g. a row that was never
+                    // renamed) would just repeat it.
+                    const showSource = r.sourceName != null && r.sourceName !== label
                     return (
                       <label key={r.variantId} className={`grid ${ROW_GRID} items-center gap-1.5 border-b border-gray-100 px-3 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
                         <input type="checkbox" checked={ticked.has(r.variantId)} disabled={blocked} onChange={(e) => toggle(r.variantId, e.target.checked)} className="cursor-pointer accent-qm-lime disabled:cursor-not-allowed" />
-                        <Link href={`/dashboard/${orgSlug}/settings/materials/${r.materialId}`} target="_blank" title={fullName} onClick={(e) => e.stopPropagation()} className="min-w-0 truncate text-sm text-qm-black hover:underline">{label}</Link>
+                        <div className="min-w-0">
+                          <Link href={`/dashboard/${orgSlug}/settings/materials/${r.materialId}`} target="_blank" title={fullName} onClick={(e) => e.stopPropagation()} className="block truncate text-sm text-qm-black hover:underline">{label}</Link>
+                          {showSource && (
+                            <div className="truncate text-[10.5px] text-gray-400" title={r.sourceName ?? undefined}>{r.sourceName}</div>
+                          )}
+                        </div>
                         <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.height != null ? trimNum(r.height) : '—'}</span>
                         <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.width != null ? trimNum(r.width) : '—'}</span>
                         <span className="text-right font-mono text-[12px] tabular-nums text-gray-500">{r.baseCost != null ? r.baseCost.toFixed(4) : '—'}</span>

@@ -296,6 +296,7 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
             height: v.height, width: v.width, lengthIncrement: v.lengthIncrement, isDefault: v.isDefault,
             baseCost: sourceRow?.sheet_cost ?? sourceRow?.cost ?? null,
             multiplier: sourceRow?.multiplier ?? null,
+            sourceName: sourceRow?.name ?? null,
           }
         })
       return { name: c.name.trim() || null, code: c.code.trim() || null, isStocked: c.isStocked, variants }
@@ -380,6 +381,7 @@ export default function MigrateClient({ orgId, orgSlug, types, newCountsByType, 
             baseCost: sourceRow?.sheet_cost ?? sourceRow?.cost ?? null,
             multiplier: sourceRow?.multiplier ?? null,
             sourceRowId: v.sourceRowId,
+            sourceName: sourceRow?.name ?? null,
           }
         }),
     }))
