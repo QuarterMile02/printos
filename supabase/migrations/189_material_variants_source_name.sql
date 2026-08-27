@@ -181,11 +181,18 @@ REVOKE ALL ON FUNCTION accept_family_proposal(jsonb) FROM anon;
 -- ------------------------------------------------------------
 -- STATEMENT 3 of 3 -- add_variant_to_existing_material: write
 -- source_name at creation time. CREATE OR REPLACE against 186's body
--- (the current live one, with the no_colour_finish target) -- nothing
--- else changed, including its anon-only revoke shape (not widened to
--- PUBLIC here -- that gap is 187's header comment's own flagged, still-
--- open, separate decision for this function, out of scope for this
--- migration).
+-- (the current live one, with the no_colour_finish target).
+--
+-- CORRECTED after this migration was already run: the REVOKE ALL ...
+-- FROM PUBLIC line below was originally omitted here (left as 186's
+-- anon-only revoke, treating the PUBLIC gap 187's header comment flags
+-- as a separate, out-of-scope decision for this function). That was
+-- wrong to leave out, not just incomplete: functions GRANT EXECUTE TO
+-- PUBLIC by default, anon is a member of PUBLIC, so an anon-only revoke
+-- never actually removed anon's access -- CREATE OR REPLACE preserved
+-- that gap through this migration same as it did through 185/186. Ruben
+-- ran the missing REVOKE by hand in the SQL editor; the line below
+-- brings the file back in sync with what is actually live.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION add_variant_to_existing_material(payload jsonb)
 RETURNS uuid
@@ -316,12 +323,13 @@ $$;
 GRANT EXECUTE ON FUNCTION add_variant_to_existing_material(jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION add_variant_to_existing_material(jsonb) TO service_role;
 REVOKE ALL ON FUNCTION add_variant_to_existing_material(jsonb) FROM anon;
+REVOKE ALL ON FUNCTION add_variant_to_existing_material(jsonb) FROM PUBLIC;
 
 -- Verification for statement 3:
 -- select proname from pg_proc where proname = 'add_variant_to_existing_material' and pronamespace = 'public'::regnamespace;
 -- Expected: one row (CREATE OR REPLACE keeps the same function identity).
 -- select grantee, privilege_type from information_schema.role_routine_grants where routine_name = 'add_variant_to_existing_material';
--- Expected: authenticated and service_role rows with EXECUTE, no anon row.
+-- Expected: authenticated and service_role rows with EXECUTE. No anon row, no PUBLIC row.
 
 -- ------------------------------------------------------------
 -- Functional smoke tests, statements 2 and 3.
