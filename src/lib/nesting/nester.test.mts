@@ -198,6 +198,7 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       length_increment: 12,
     }))
     approx(out.consumed_sqft, 8, 'consumed -- stays at 48 x 24 / 144, not 48 x 36')
+    assertInvariant(out, out.consumed_sqft, 'test 7b')
   })
 
   test('7c. length_increment rounding -- just over a boundary (24.01") rounds up to 36"', () => {
@@ -207,6 +208,7 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       length_increment: 12,
     }))
     approx(out.consumed_sqft, 12, 'consumed -- 48 x 36 / 144')
+    assertInvariant(out, out.consumed_sqft, 'test 7c')
   })
 
   test('8. long stock, fixed_side=width -- same shape as a roll, no invented "length" fixed_side', () => {
@@ -302,6 +304,13 @@ describe('Additional edge cases', () => {
     }))
     assert.equal(out.fits, false)
     assert.match(out.reason ?? '', /seam/i)
+    // No assertInvariant here, deliberately: fits=false means
+    // consumed/product/offcut/remainder are all zeroResult's 0s, so
+    // 0+0+0===0 would pass no matter what the function actually did --
+    // there is no independently-derived "whole piece" value to check
+    // that sum against, unlike every fits=true case above. The
+    // meaningful assertions for a does-not-fit case are `fits` and
+    // `reason`, both checked above.
   })
 
   test('product larger than the piece on the FREE (bounded) axis only -- does not fit, no rescue exists', () => {
@@ -314,6 +323,10 @@ describe('Additional edge cases', () => {
     assert.equal(out.consumed_sqft, 0)
     assert.equal(out.product_sqft, 0)
     assert.equal(out.n_up, 0, 'never a nonsense n_up of 0 paired with real areas -- both are 0 together')
+    // No assertInvariant here either, same reason as the seam_direction=
+    // none case above: fits=false zeroes every area, so the invariant
+    // sum is vacuously 0+0+0===0 regardless of correctness, with no
+    // independently-derived whole-piece value to check it against.
   })
 
   test('quantity 0 -- fits, nothing consumed, no crash, no nonsense n_up-with-real-areas', () => {
@@ -336,6 +349,7 @@ describe('Additional edge cases', () => {
     }))
     assert.equal(out.fits, true)
     approx(out.product_sqft, 1, 'product')
+    assertInvariant(out, 32, 'quantity 1')
   })
 
   test('rotation WINS -- swapping which product side faces the band narrows it and cuts offcut', () => {
@@ -364,5 +378,6 @@ describe('Additional edge cases', () => {
     assert.equal(out.rotated, false)
     assert.equal(out.fits, true)
     approx(out.consumed_sqft, 48 * 45 / SQFT, 'consumed -- stuck with the wider band since rotation is forbidden')
+    assertInvariant(out, (48 * 96) / SQFT, 'rotation forbidden')
   })
 })
