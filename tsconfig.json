@@ -6,6 +6,15 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // Needed for src/lib/nesting/nester.test.mts to import
+    // './nester.ts' with an explicit extension -- Node's own ESM loader
+    // (which runs these tests via `node --test`, since the repo has no
+    // test runner to defer to) requires an explicit extension on every
+    // relative import; this option is what lets tsc accept that same
+    // import instead of erroring with TS5097. Safe alongside noEmit
+    // (TS requires exactly that pairing) and doesn't change what Next's
+    // own SWC-based build does with any file.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
