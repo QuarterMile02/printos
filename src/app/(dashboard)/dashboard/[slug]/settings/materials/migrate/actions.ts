@@ -11,6 +11,12 @@ export type AcceptVariantInput = {
   isDefault: boolean
   baseCost: number | null
   multiplier: number | null
+  // The ShopVOX row name this variant was built from -- written once,
+  // at creation, into material_variants.source_name (migration 189).
+  // Per-variant because shopvox_materials.migrated_to_material_id only
+  // points at the material and cannot survive a later move between
+  // families -- source_name travels with the variant instead.
+  sourceName: string | null
 }
 
 export type AcceptColourInput = {
@@ -123,6 +129,7 @@ export async function acceptSubstrateProposal(input: AcceptFamilyProposalInput) 
         // gets a chance to fire.
         multiplier: v.multiplier,
         sort_order: i,
+        source_name: v.sourceName,
       })),
     })),
     vendor_seed: input.vendorSeed
@@ -195,6 +202,10 @@ export type AddToExistingColourInput = {
     multiplier: number | null
     isDefault: boolean
     sourceRowId: string // shopvox_materials.id this variant was folded in from
+    // The ShopVOX row name this variant was folded in from -- same
+    // source_name column, same "written once, never overwritten by a
+    // later move" rule as AcceptVariantInput above.
+    sourceName: string | null
   }[]
 }
 
@@ -257,6 +268,7 @@ export async function addVariantToExistingMaterial(input: AddToExistingMaterialI
         multiplier: v.multiplier,
         is_default: v.isDefault,
         source_row_id: v.sourceRowId,
+        source_name: v.sourceName,
       })),
     })),
   }

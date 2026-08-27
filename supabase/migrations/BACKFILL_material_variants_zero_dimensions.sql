@@ -1,0 +1,60 @@
+-- ============================================================
+-- BACKFILL (not a numbered migration -- one-time data fix, no schema
+-- change): material_variants rows carrying a literal 0 for height or
+-- width, which should have been NULL.
+--
+-- WHY THIS MATTERS: sqft is a GENERATED column
+-- (173_material_variants_table.sql:186-206). A height or width of 0
+-- makes sqft compute to 0, and cost_per_unit (also generated, from
+-- sqft) follows it to 0 or NULL depending on the formula -- a real,
+-- silent $0 read, the same failure shape as every other "invented
+-- placeholder value" bug already found and fixed in this codebase
+-- (multiplier = 0, tax rate, etc.). A NULL height/width instead makes
+-- sqft NULL and cost_per_unit correctly falls back to base_cost --
+-- today's safe, intended behavior. This backfill converts every
+-- existing literal 0 to NULL; migration 189's material-family-
+-- proposals.ts fix (realOrNull) stops any NEW one from being written
+-- going forward.
+--
+-- COUNTS, verified live before this file was written (see this PR's
+-- description): 22 material_variants rows total carry a literal 0 on
+-- height or width (out of 1750). Two distinct shapes, both fixed the
+-- same way here, reported separately because they're different findings:
+--
+--   3 rows are a genuine "ShopVOX had one real dimension, the migration
+--   imported the other as 0" case -- height = 0, width a real number:
+--     Led Wire 2 Wire Paige 250Ft       (height=0, width=250)
+--     Led Wire RGB 4 Wire Paige 250Ft   (height=0, width=250)
+--     Strap 201 Stainless Steel .030 x 3/4in x 100ft Permaband 206
+--                                       (height=0, width=0.75)
+--
+--   19 rows have BOTH height AND width at literal 0 -- genuinely
+--   discrete/bulk items (batteries, adhesive, electrical wire/cable by
+--   spool) where neither dimension was ever meant to carry an area.
+--   Nothing was "discarded" for these -- ShopVOX itself has 0 for both,
+--   confirmed against their source shopvox_materials rows -- but they
+--   still violate the same "NULL, never 0" rule and are included here
+--   for the same GENERATED-column safety reason, not folded in silently:
+--   flagged as a separate, related finding, not the bug this PR set out
+--   to fix.
+--
+-- No row has width=0 with a real height (checked: 0 of those live).
+--
+-- Simple, no matching logic needed here (unlike the source_name
+-- backfill) -- this just corrects an invalid value on the row's own
+-- columns, independent of any shopvox_materials linkage.
+
+UPDATE public.material_variants SET height = NULL WHERE height = 0;
+UPDATE public.material_variants SET width  = NULL WHERE width  = 0;
+
+-- Verification:
+-- select count(*) from material_variants where height = 0 or width = 0;
+-- Expected: 0.
+-- select id, material_id, height, width from material_variants
+-- where id in (
+--   select mv.id from material_variants mv
+--   join materials m on m.id = mv.material_id
+--   where m.name in ('Led Wire 2 Wire Paige 250Ft', 'Led Wire RGB 4 Wire Paige 250Ft',
+--                     'Strap 201 Stainless Steel .030 x 3/4in x 100ft Permaband 206')
+-- );
+-- Expected: height NULL, width unchanged (250, 250, 0.75) on these three.

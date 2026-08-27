@@ -50,10 +50,10 @@ async function PageInner({ params }: PageProps) {
       id: string; material_id: string; color_id: string | null
       width: number | null; height: number | null; base_cost: number | null
       multiplier: number; cost_per_unit: number | null; sell_per_unit: number | null
-      is_default: boolean; length_uom: string
+      is_default: boolean; length_uom: string; source_name: string | null
     }>((from, to) =>
       supabase.from('material_variants')
-        .select('id, material_id, color_id, width, height, base_cost, multiplier, cost_per_unit, sell_per_unit, is_default, length_uom')
+        .select('id, material_id, color_id, width, height, base_cost, multiplier, cost_per_unit, sell_per_unit, is_default, length_uom, source_name')
         .eq('organization_id', org.id).range(from, to)
     ),
     dbAllOrThrow<{ id: string; material_id: string; name: string; code: string | null }>((from, to) =>

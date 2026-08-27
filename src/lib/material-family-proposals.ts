@@ -45,6 +45,20 @@ import { findRollAxisSpan } from './roll-axis-regex.js'
 export const SUBSTRATE_TYPE_NAME = 'Rigid Substrates- Sheets'
 export const ROLL_TYPE_NAME = 'Roll Materials'
 
+// A stored ShopVOX dimension of exactly 0 means "not entered," the same
+// as null -- ShopVOX's own convention, not ours. Used everywhere a
+// proposed variant's height/width comes from row.height/row.width so a
+// genuinely-missing dimension is never imported as a literal 0: 0 makes
+// material_variants.sqft (a GENERATED column) compute to 0, which then
+// breaks cost_per_unit. NULL makes sqft NULL and cost_per_unit falls
+// back to base_cost -- today's safe behavior. Applied to each dimension
+// INDEPENDENTLY -- a real width alongside a 0/missing height must still
+// import the real width, never discard both together (the bug this
+// closes: "ShopVOX has a width but height is 0" used to import neither).
+function realOrNull(n: number | null): number | null {
+  return n != null && n > 0 ? n : null
+}
+
 export type FamilyConfidence = 'high' | 'medium' | 'low'
 
 export type FamilyVariant = {
@@ -183,13 +197,14 @@ export const SUBSTRATE_FAMILY_CONFIG: FamilyAxisConfig = {
       // A normal WxH sheet size was found in the name — use the ROW'S
       // OWN stored height/width (already correctly populated from the
       // original scrape), not re-derived from the token text.
-      return { nameWithoutSize: nameNoSize, sizeLabel: token.raw, height: row.height, width: row.width, lengthIncrement: null }
+      return { nameWithoutSize: nameNoSize, sizeLabel: token.raw, height: realOrNull(row.height), width: realOrNull(row.width), lengthIncrement: null }
     }
     // No WxH token. Only trust a cut-to-length reading when the row
     // genuinely has NO stored dimensions of its own (Build 1's exact
     // gate) — a row that already has real width/height must keep them,
-    // never override real stored data with a text guess.
-    if (row.height == null && row.width == null) {
+    // never override real stored data with a text guess. A stored 0
+    // counts as "no dimension" here too, same as null.
+    if (realOrNull(row.height) == null && realOrNull(row.width) == null) {
       const width = extractCutToLengthWidth(nameNoSize)
       if (width != null) {
         return {
@@ -202,8 +217,9 @@ export const SUBSTRATE_FAMILY_CONFIG: FamilyAxisConfig = {
       }
     }
     // No size token of any kind — the "default" variant, using the
-    // row's own dimensions as-is (null/null if it genuinely has neither).
-    return { nameWithoutSize: nameNoSize, sizeLabel: null, height: row.height, width: row.width, lengthIncrement: null }
+    // row's own dimensions (a stored 0 becomes null here too, whichever
+    // dimension it hits, independently of the other).
+    return { nameWithoutSize: nameNoSize, sizeLabel: null, height: realOrNull(row.height), width: realOrNull(row.width), lengthIncrement: null }
   },
 }
 
@@ -808,18 +824,19 @@ export const ROLL_FAMILY_CONFIG: FamilyAxisConfig = {
     const w = ROLL_WIDTH_RE.exec(row.name)
     if (w) {
       const nameWithoutSize = (row.name.slice(0, w.index) + row.name.slice(w.index! + w[0].length)).replace(/\s{2,}/g, ' ').trim()
-      return { nameWithoutSize, sizeLabel: w[0].trim(), height: row.height, width: parseFloat(w[1]), lengthIncrement: null }
+      return { nameWithoutSize, sizeLabel: w[0].trim(), height: realOrNull(row.height), width: parseFloat(w[1]), lengthIncrement: null }
     }
     // No width token in the name — fall back to the row's own stored
     // width (359/368 rows have one). Confirmed live: only ONE row in
     // the whole 368 has neither a text token nor a stored width
     // ("Grommet" — not a sized roll product, surfaces as its own LOW
     // singleton via the "no width available" check below, same as any
-    // other unparseable row).
-    if (row.width != null) {
-      return { nameWithoutSize: row.name, sizeLabel: `${row.width}in (from ShopVOX record, no size in name)`, height: row.height, width: row.width, lengthIncrement: null }
+    // other unparseable row). A stored 0 counts as "no width" here too.
+    const storedWidth = realOrNull(row.width)
+    if (storedWidth != null) {
+      return { nameWithoutSize: row.name, sizeLabel: `${storedWidth}in (from ShopVOX record, no size in name)`, height: realOrNull(row.height), width: storedWidth, lengthIncrement: null }
     }
-    return { nameWithoutSize: row.name, sizeLabel: null, height: row.height, width: null, lengthIncrement: null }
+    return { nameWithoutSize: row.name, sizeLabel: null, height: realOrNull(row.height), width: null, lengthIncrement: null }
   },
 }
 
@@ -913,8 +930,8 @@ export const CHANNEL_LETTER_FAMILY_CONFIG: FamilyAxisConfig = {
       return { nameWithoutSize, sizeLabel: m[0].trim(), height: parseFloat(m[2]) * 12, width: parseFloat(m[1]), lengthIncrement: null }
     }
     const w = ROLL_WIDTH_RE.exec(row.name)
-    if (w) return { nameWithoutSize: row.name.replace(w[0], '').trim(), sizeLabel: w[0].trim(), height: row.height, width: parseFloat(w[1]), lengthIncrement: null }
-    return { nameWithoutSize: row.name, sizeLabel: null, height: row.height, width: row.width, lengthIncrement: null }
+    if (w) return { nameWithoutSize: row.name.replace(w[0], '').trim(), sizeLabel: w[0].trim(), height: realOrNull(row.height), width: parseFloat(w[1]), lengthIncrement: null }
+    return { nameWithoutSize: row.name, sizeLabel: null, height: realOrNull(row.height), width: realOrNull(row.width), lengthIncrement: null }
   },
 }
 
@@ -974,7 +991,7 @@ export function buildChannelLetterFamilyProposals(
       for (const row of catRows) {
         parsed.push({
           row, line: row.name, colour: null, axisValue: null, brand: null,
-          height: row.height, width: row.width, sizeLabel: null,
+          height: realOrNull(row.height), width: realOrNull(row.width), sizeLabel: null,
           confidence: 'low',
           reasons: [`only ${catRowCount} row(s) in this category -- not enough repetition to trust an automated split; review manually`],
         })
@@ -1005,14 +1022,14 @@ export function buildChannelLetterFamilyProposals(
       // No size token in text for this shape — DB is the only source
       // (finding (d)). A row with no DB size at all is forced LOW
       // rather than guessed, same discipline as roll's "Grommet" row.
-      if (row.width == null && row.height == null) {
+      if (realOrNull(row.width) == null && realOrNull(row.height) == null) {
         confidence = 'low'
         reasons.push('no size available -- no width/height stored on the source row; needs manual entry')
       }
 
       if (confidence === 'high') reasons.push(`reversed "<colour> / <product>" shape, colour/finish "${colour}", product "${line}"`)
 
-      parsed.push({ row, line, colour, axisValue: null, brand: null, height: row.height, width: row.width, sizeLabel: null, confidence, reasons })
+      parsed.push({ row, line, colour, axisValue: null, brand: null, height: realOrNull(row.height), width: realOrNull(row.width), sizeLabel: null, confidence, reasons })
     }
 
     if (restRows.length === 0) continue
@@ -1112,8 +1129,8 @@ export function buildChannelLetterFamilyProposals(
           width = parseFloat(w[1])
           sizeLabel = w[0].trim()
           remainder = (remainder.slice(0, w.index) + remainder.slice(w.index + w[0].length)).replace(/\s{2,}/g, ' ').trim()
-        } else if (row.width != null) {
-          width = row.width // text-first, DB-fallback -- same pattern as roll/substrate
+        } else if (realOrNull(row.width) != null) {
+          width = realOrNull(row.width) // text-first, DB-fallback -- same pattern as roll/substrate
         }
 
         const colour = remainder.replace(/^[-\s]+|[-\s]+$/g, '').trim() || null
@@ -1132,7 +1149,7 @@ export function buildChannelLetterFamilyProposals(
 
         if (confidence === 'high') reasons.push(`product-first shape, line "${line}", colour/finish "${colour}", brand/line "${brand}"`)
 
-        parsed.push({ row, line, colour, axisValue: null, brand, height: row.height, width, sizeLabel, confidence, reasons })
+        parsed.push({ row, line, colour, axisValue: null, brand, height: realOrNull(row.height), width, sizeLabel, confidence, reasons })
       }
     }
   }
