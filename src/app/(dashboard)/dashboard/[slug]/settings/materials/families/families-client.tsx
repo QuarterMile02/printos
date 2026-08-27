@@ -850,7 +850,22 @@ function Pane({
                   {!isCollapsed && group.rows.map((r) => {
                     const blocked = dead && r.status === 'block'
                     const fullName = r.colourName ? `${r.materialName} · ${r.colourName}` : r.materialName
-                    const label = isFamilyBucket ? (r.colourName ?? '—') : fullName
+                    // A family-bucket row with no colour had nothing else to
+                    // fall back to, so it rendered as a bare em dash -- its
+                    // ENTIRE label, unreadable and indistinguishable from
+                    // every other colourless row (live case: Trim Tap, 12
+                    // variants, one with color_id/height/width all null,
+                    // showing as a lone "—" under the "No size" group).
+                    // Fall back to the variant's own identity instead: the
+                    // material name with a redundant "<family> - " prefix
+                    // stripped if the name actually carries one, otherwise
+                    // the full material name. In today's data this always
+                    // hits the "otherwise" branch -- rowsFor scopes a family
+                    // bucket's rows to one material_id, so materialName IS
+                    // the family's own name for every row here, never a
+                    // superset of it with something to strip. Never a bare
+                    // dash as a row's only label.
+                    const label = isFamilyBucket ? (r.colourName ?? r.materialName) : fullName
                     return (
                       <label key={r.variantId} className={`grid ${ROW_GRID} items-center gap-1.5 border-b border-gray-100 px-3 py-1.5 last:border-0 hover:bg-gray-50 ${ticked.has(r.variantId) ? 'bg-blue-50' : ''} ${blocked ? '' : 'cursor-pointer'}`}>
                         <input type="checkbox" checked={ticked.has(r.variantId)} disabled={blocked} onChange={(e) => toggle(r.variantId, e.target.checked)} className="cursor-pointer accent-qm-lime disabled:cursor-not-allowed" />
