@@ -53,6 +53,9 @@ export type NesterInput = {
   seam_direction: SeamDirection
 }
 
+// THE COUNTING CONVENTION -- read this before touching any field below:
+// fields ending in _total already have `quantity` applied; everything
+// else describes ONE instance's geometry and does not scale with it.
 export type NesterOutput = {
   fits: boolean
   // Populated whenever fits=false (why not), and also for a handful of
@@ -63,8 +66,9 @@ export type NesterOutput = {
   // "n-up": how many copies fit stacked along the FIXED axis within one
   // band/panel -- the industry sense of the term (how many copies one
   // pass of the material yields), not "how many were actually produced"
-  // (that's quantity, capped/expanded across `across` bands -- see down
-  // below). 0 when fits=false.
+  // (that's quantity, capped/expanded across `across_total` bands -- see
+  // down below). 0 when fits=false. Per-instance -- does not scale with
+  // quantity.
   n_up: number
   rotated: boolean
 
@@ -72,19 +76,21 @@ export type NesterOutput = {
   // without re-deriving the geometry: `down` = copies stacked along the
   // fixed axis within one band (== n_up when the product fits without
   // paneling; forced to 1 when paneled, since one oversized copy already
-  // claims the entire fixed-axis capacity across its panels). `across`
-  // = how many bands/independent copies were laid out along the free
-  // axis to reach `quantity` (each paneled copy needs its own full run,
-  // so across == quantity whenever paneled).
+  // claims the entire fixed-axis capacity across its panels). Per-
+  // instance -- does not scale with quantity.
   down: number
-  across: number
+  // How many bands/independent copies were laid out along the free axis
+  // to reach `quantity` (each paneled copy needs its own full run, so
+  // across_total == quantity whenever paneled). _total: already reflects
+  // the whole job's quantity, not one instance.
+  across_total: number
 
   // panels/seams describe ONE product instance's own geometry -- how
   // many stock-piece-lengths had to be joined because the product's own
   // measurement along the fixed axis exceeds the stock's fixed capacity.
   // panels >= 1 always; seams = panels - 1. Never scales with quantity
   // (each instance needing paneling repeats the SAME panel/seam count;
-  // that repetition is folded into the aggregate areas below, not into
+  // that repetition is folded into the _total fields below, not into
   // this count). Always 1/0 for fixed_side 'both' and 'none' -- neither
   // ever seams.
   panels: number
@@ -101,22 +107,25 @@ export type NesterOutput = {
   // Derivation, exactly from the geometry already computed for paneling
   // (no new geometry invented): each joint runs along the FREE axis --
   // perpendicular to the axis being extended by adding another panel --
-  // with a length equal to that orientation's own free-axis extent
-  // (`consumedFreeExtent` in evaluateFixedOrientation: the product's
-  // own free-axis measurement, length-increment-rounded the same way
-  // the seam-overlap AREA calculation two lines below it already uses
-  // that exact value for). One instance needing `seams` joints has
-  // `seams * consumedFreeExtent` inches of seam; the whole job has
+  // with a length equal to the product's own RAW free-axis measurement
+  // (`productWidthOnFree` in evaluateFixedOrientation), NOT
+  // `consumedFreeExtent` (the length_increment-rounded figure the
+  // seam-overlap AREA calculation two lines below it uses). Deliberately
+  // different sources: a seam consumes tape and labor along the joint
+  // that PHYSICALLY exists; length_increment describes how the substrate
+  // is bought (billed up to the next increment), which is unrelated to
+  // how much tape one joint needs. One instance needing `seams` joints
+  // has `seams * productWidthOnFree` inches of seam; the whole job has
   // `quantity` independent instances, each paneled the same way, so the
   // total is that per-instance figure times quantity.
-  seam_length_in: number
+  seam_length_in_total: number
 
   // Aggregate areas across ALL `quantity` copies actually placed
   // (0 when quantity is 0 or fits is false).
-  consumed_sqft: number
-  product_sqft: number
-  offcut_sqft: number
-  remainder_sqft: number
+  consumed_sqft_total: number
+  product_sqft_total: number
+  offcut_sqft_total: number
+  remainder_sqft_total: number
 }
 
 const SQIN_PER_SQFT = 144
@@ -152,14 +161,14 @@ function zeroResult(reason: string): NesterOutput {
     n_up: 0,
     rotated: false,
     down: 0,
-    across: 0,
+    across_total: 0,
     panels: 0,
     seams: 0,
-    seam_length_in: 0,
-    consumed_sqft: 0,
-    product_sqft: 0,
-    offcut_sqft: 0,
-    remainder_sqft: 0,
+    seam_length_in_total: 0,
+    consumed_sqft_total: 0,
+    product_sqft_total: 0,
+    offcut_sqft_total: 0,
+    remainder_sqft_total: 0,
   }
 }
 
@@ -248,11 +257,17 @@ function evaluateFixedOrientation(args: {
   const across = quantity // paneled: every copy needs its own full run, nothing shared
 
   // Each of the `seams` joints in ONE instance runs along the free axis
-  // for `consumedFreeExtent` inches (see NesterOutput.seam_length_in's
-  // own comment for the full derivation) -- `quantity` instances each
-  // repeat the same joints independently, so the job total scales the
-  // same way consumedSqft/productSqft above already do.
-  const seamLengthIn = seams * consumedFreeExtent * quantity
+  // for the product's own RAW free-axis measurement -- productWidthOnFree,
+  // NOT consumedFreeExtent. A seam consumes tape and labor along the joint
+  // that physically exists; length_increment describes how the substrate
+  // is BOUGHT (billed up to the next increment) and has nothing to do
+  // with how much tape a joint actually needs. consumedFreeExtent
+  // (rounded) stays reserved for extraFromSeams/consumedSqftPerInstance
+  // above -- that IS substrate area, correctly billed at the rounded
+  // figure. `quantity` instances each repeat the same physical joints
+  // independently, so the job total scales the same way
+  // consumedSqft/productSqft above already do.
+  const seamLengthIn = seams * productWidthOnFree * quantity
 
   return {
     rotated, down: 1, across, panels, seams, seamLengthIn,
@@ -276,9 +291,9 @@ export function nestMaterial(input: NesterInput): NesterOutput {
   if (input.fixed_side === 'none') {
     return {
       fits: true, reason: quantity === 0 ? 'quantity is 0 -- nothing consumed' : null,
-      n_up: quantity, rotated: false, down: quantity, across: quantity > 0 ? 1 : 0,
-      panels: 1, seams: 0, seam_length_in: 0,
-      consumed_sqft: 0, product_sqft: 0, offcut_sqft: 0, remainder_sqft: 0,
+      n_up: quantity, rotated: false, down: quantity, across_total: quantity > 0 ? 1 : 0,
+      panels: 1, seams: 0, seam_length_in_total: 0,
+      consumed_sqft_total: 0, product_sqft_total: 0, offcut_sqft_total: 0, remainder_sqft_total: 0,
     }
   }
 
@@ -313,10 +328,10 @@ export function nestMaterial(input: NesterInput): NesterOutput {
 
     return {
       fits: true, reason: quantity === 0 ? 'quantity is 0 -- nothing consumed' : null,
-      n_up: perWhole, rotated, down: rowsChosen, across: colsChosen * wholePiecesNeeded,
-      panels: 1, seams: 0, seam_length_in: 0,
-      consumed_sqft: consumedSqft, product_sqft: productSqft,
-      offcut_sqft: consumedSqft - productSqft, remainder_sqft: 0,
+      n_up: perWhole, rotated, down: rowsChosen, across_total: colsChosen * wholePiecesNeeded,
+      panels: 1, seams: 0, seam_length_in_total: 0,
+      consumed_sqft_total: consumedSqft, product_sqft_total: productSqft,
+      offcut_sqft_total: consumedSqft - productSqft, remainder_sqft_total: 0,
     }
   }
 
@@ -380,13 +395,13 @@ export function nestMaterial(input: NesterInput): NesterOutput {
     n_up: chosen.down,
     rotated: chosen.rotated,
     down: chosen.down,
-    across: chosen.across,
+    across_total: chosen.across,
     panels: chosen.panels,
     seams: chosen.seams,
-    seam_length_in: chosen.seamLengthIn,
-    consumed_sqft: chosen.consumedSqft,
-    product_sqft: chosen.productSqft,
-    offcut_sqft: Math.max(0, chosen.consumedSqft - chosen.productSqft),
-    remainder_sqft: remainderSqft,
+    seam_length_in_total: chosen.seamLengthIn,
+    consumed_sqft_total: chosen.consumedSqft,
+    product_sqft_total: chosen.productSqft,
+    offcut_sqft_total: Math.max(0, chosen.consumedSqft - chosen.productSqft),
+    remainder_sqft_total: remainderSqft,
   }
 }

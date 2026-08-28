@@ -47,10 +47,10 @@ function baseInput(overrides: Partial<NesterInput>): NesterInput {
 // stands in for "the whole piece", since a roll's piece is exactly
 // however much was cut, no more.
 function assertInvariant(out: ReturnType<typeof nestMaterial>, wholePieceSqft: number, label: string) {
-  const sum = out.product_sqft + out.offcut_sqft + out.remainder_sqft
+  const sum = out.product_sqft_total + out.offcut_sqft_total + out.remainder_sqft_total
   assert.ok(
     Math.abs(sum - wholePieceSqft) < 1e-6,
-    `${label}: product(${out.product_sqft}) + offcut(${out.offcut_sqft}) + remainder(${out.remainder_sqft}) = ${sum}, expected ${wholePieceSqft}`,
+    `${label}: product(${out.product_sqft_total}) + offcut(${out.offcut_sqft_total}) + remainder(${out.remainder_sqft_total}) = ${sum}, expected ${wholePieceSqft}`,
   )
 }
 
@@ -65,10 +65,10 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       product_height: 12, product_width: 12, quantity: 1,
     }))
     assert.equal(out.fits, true)
-    approx(out.consumed_sqft, 4, 'consumed')
-    approx(out.product_sqft, 1, 'product')
-    approx(out.offcut_sqft, 3, 'offcut')
-    approx(out.remainder_sqft, 28, 'remainder')
+    approx(out.consumed_sqft_total, 4, 'consumed')
+    approx(out.product_sqft_total, 1, 'product')
+    approx(out.offcut_sqft_total, 3, 'offcut')
+    approx(out.remainder_sqft_total, 28, 'remainder')
     assertInvariant(out, 32, 'test 1')
   })
 
@@ -79,10 +79,10 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
     }))
     assert.equal(out.fits, true)
     assert.equal(out.rotated, false, 'must not rotate -- rotating increases offcut here')
-    approx(out.consumed_sqft, 48 * 20 / SQFT, 'consumed')
-    approx(out.product_sqft, 30 * 20 / SQFT, 'product')
-    approx(out.offcut_sqft, 48 * 20 / SQFT - 30 * 20 / SQFT, 'offcut')
-    approx(out.remainder_sqft, (48 * 96 - 48 * 20) / SQFT, 'remainder')
+    approx(out.consumed_sqft_total, 48 * 20 / SQFT, 'consumed')
+    approx(out.product_sqft_total, 30 * 20 / SQFT, 'product')
+    approx(out.offcut_sqft_total, 48 * 20 / SQFT - 30 * 20 / SQFT, 'offcut')
+    approx(out.remainder_sqft_total, (48 * 96 - 48 * 20) / SQFT, 'remainder')
     assertInvariant(out, 32, 'test 2a')
   })
 
@@ -92,7 +92,7 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       product_height: 30, product_width: 20, quantity: 1, may_rotate: false,
     }))
     assert.equal(out.rotated, false)
-    approx(out.offcut_sqft, 2.5, 'offcut')
+    approx(out.offcut_sqft_total, 2.5, 'offcut')
     assertInvariant(out, 32, 'test 2b')
   })
 
@@ -101,10 +101,10 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       fixed_side: 'height', stock_height: 48, stock_width: 96,
       product_height: 40, product_width: 40, quantity: 1,
     }))
-    approx(out.consumed_sqft, 13.3333, 'consumed')
-    approx(out.product_sqft, 11.1111, 'product')
-    approx(out.offcut_sqft, 2.2222, 'offcut')
-    approx(out.remainder_sqft, 18.6667, 'remainder')
+    approx(out.consumed_sqft_total, 13.3333, 'consumed')
+    approx(out.product_sqft_total, 11.1111, 'product')
+    approx(out.offcut_sqft_total, 2.2222, 'offcut')
+    approx(out.remainder_sqft_total, 18.6667, 'remainder')
     assert.equal(out.panels, 1)
     assert.equal(out.seams, 0)
     assertInvariant(out, 32, 'test 3a')
@@ -115,13 +115,13 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       fixed_side: 'width', stock_width: 48, stock_height: null,
       product_height: 40, product_width: 40, quantity: 1,
     }))
-    approx(out.consumed_sqft, 13.3333, 'consumed')
-    approx(out.product_sqft, 11.1111, 'product')
-    approx(out.offcut_sqft, 2.2222, 'offcut')
-    approx(out.remainder_sqft, 0, 'remainder -- a roll never tracks one')
+    approx(out.consumed_sqft_total, 13.3333, 'consumed')
+    approx(out.product_sqft_total, 11.1111, 'product')
+    approx(out.offcut_sqft_total, 2.2222, 'offcut')
+    approx(out.remainder_sqft_total, 0, 'remainder -- a roll never tracks one')
     assert.equal(out.panels, 1)
     assert.equal(out.seams, 0)
-    assertInvariant(out, out.consumed_sqft, 'test 3b') // roll: "the piece" is exactly what was cut, so this is self-consistency, matching the doc's own method for roll cases
+    assertInvariant(out, out.consumed_sqft_total, 'test 3b') // roll: "the piece" is exactly what was cut, so this is self-consistency, matching the doc's own method for roll cases
   })
 
   test('4a. fewest seams beats lowest cost -- width=24 roll needs 2 panels for a width-40 product', () => {
@@ -129,12 +129,12 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       fixed_side: 'width', stock_width: 24, stock_height: null,
       product_height: 1, product_width: 40, quantity: 1,
     }))
-    approx(out.consumed_sqft, 0.3333, 'consumed')
-    approx(out.product_sqft, 0.2778, 'product')
-    approx(out.offcut_sqft, 0.0556, 'offcut')
+    approx(out.consumed_sqft_total, 0.3333, 'consumed')
+    approx(out.product_sqft_total, 0.2778, 'product')
+    approx(out.offcut_sqft_total, 0.0556, 'offcut')
     assert.equal(out.panels, 2)
     assert.equal(out.seams, 1)
-    assertInvariant(out, out.consumed_sqft, 'test 4a')
+    assertInvariant(out, out.consumed_sqft_total, 'test 4a')
   })
 
   test('4b. width=48 roll needs only 1 panel for the same width-40 product', () => {
@@ -142,14 +142,14 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       fixed_side: 'width', stock_width: 48, stock_height: null,
       product_height: 1, product_width: 40, quantity: 1,
     }))
-    approx(out.consumed_sqft, 0.3333, 'consumed')
-    approx(out.product_sqft, 0.2778, 'product')
-    approx(out.offcut_sqft, 0.0556, 'offcut')
+    approx(out.consumed_sqft_total, 0.3333, 'consumed')
+    approx(out.product_sqft_total, 0.2778, 'product')
+    approx(out.offcut_sqft_total, 0.0556, 'offcut')
     assert.equal(out.panels, 1)
     assert.equal(out.seams, 0)
     // The geometry is numerically IDENTICAL to 4a -- the whole point of
     // this case. Cost never enters this function at all.
-    assertInvariant(out, out.consumed_sqft, 'test 4b')
+    assertInvariant(out, out.consumed_sqft_total, 'test 4b')
   })
 
   test('5. paneled product taller than the roll -- width=48 roll, product width=100 (along the rolls fixed axis), height=1', () => {
@@ -159,13 +159,13 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
     }))
     assert.equal(out.panels, 3)
     assert.equal(out.seams, 2)
-    approx(out.consumed_sqft, 1.0, 'consumed')
-    approx(out.product_sqft, 0.6944, 'product')
-    approx(out.offcut_sqft, 0.3056, 'offcut')
+    approx(out.consumed_sqft_total, 1.0, 'consumed')
+    approx(out.product_sqft_total, 0.6944, 'product')
+    approx(out.offcut_sqft_total, 0.3056, 'offcut')
     // 3 panels -> exactly 2 joints. Fixed axis here is the roll's width
     // (being extended by paneling); the joint runs along the FREE axis,
     // product_height (1). 2 joints x 1in x 1 instance.
-    approx(out.seam_length_in, 2, 'two joints, each product_height (1in) long')
+    approx(out.seam_length_in_total, 2, 'two joints, each product_height (1in) long')
     assertInvariant(out, 1.0, 'test 5')
   })
 
@@ -178,10 +178,10 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       fixed_side: 'height', stock_height: 48, stock_width: 96,
       product_height: 12, product_width: 12, quantity: 1,
     }))
-    approx(out.consumed_sqft, 4, 'consumed')
-    approx(out.product_sqft, 1, 'product')
-    approx(out.offcut_sqft, 3, 'offcut')
-    approx(out.remainder_sqft, 28, 'remainder')
+    approx(out.consumed_sqft_total, 4, 'consumed')
+    approx(out.product_sqft_total, 1, 'product')
+    approx(out.offcut_sqft_total, 3, 'offcut')
+    approx(out.remainder_sqft_total, 28, 'remainder')
     assertInvariant(out, 32, 'test 6')
   })
 
@@ -191,7 +191,7 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       product_height: 17, product_width: 1, quantity: 1,
       length_increment: 12,
     }))
-    approx(out.consumed_sqft, 8, 'consumed -- 48 x 24 / 144')
+    approx(out.consumed_sqft_total, 8, 'consumed -- 48 x 24 / 144')
     assertInvariant(out, 8, 'test 7a')
   })
 
@@ -201,8 +201,8 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       product_height: 24, product_width: 1, quantity: 1,
       length_increment: 12,
     }))
-    approx(out.consumed_sqft, 8, 'consumed -- stays at 48 x 24 / 144, not 48 x 36')
-    assertInvariant(out, out.consumed_sqft, 'test 7b')
+    approx(out.consumed_sqft_total, 8, 'consumed -- stays at 48 x 24 / 144, not 48 x 36')
+    assertInvariant(out, out.consumed_sqft_total, 'test 7b')
   })
 
   test('7c. length_increment rounding -- just over a boundary (24.01") rounds up to 36"', () => {
@@ -211,8 +211,8 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       product_height: 24.01, product_width: 1, quantity: 1,
       length_increment: 12,
     }))
-    approx(out.consumed_sqft, 12, 'consumed -- 48 x 36 / 144')
-    assertInvariant(out, out.consumed_sqft, 'test 7c')
+    approx(out.consumed_sqft_total, 12, 'consumed -- 48 x 36 / 144')
+    assertInvariant(out, out.consumed_sqft_total, 'test 7c')
   })
 
   test('8. long stock, fixed_side=width -- same shape as a roll, no invented "length" fixed_side', () => {
@@ -225,7 +225,7 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
     }))
     assert.equal(out.fits, true)
     assert.equal(out.panels, 1)
-    approx(out.consumed_sqft, 1.5 * 36 / SQFT, 'consumed')
+    approx(out.consumed_sqft_total, 1.5 * 36 / SQFT, 'consumed')
     assertInvariant(out, 1.5 * 36 / SQFT, 'test 8')
   })
 
@@ -240,10 +240,10 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       fixed_side: 'both', stock_height: 120, stock_width: 120,
       product_height: 12, product_width: 12, quantity: 60,
     }))
-    approx(out.consumed_sqft, 100, 'consumed -- the whole box, even though only 60 are needed')
-    approx(out.product_sqft, 60, 'product')
-    approx(out.offcut_sqft, 40, 'offcut')
-    approx(out.remainder_sqft, 0, 'remainder -- always 0 under both')
+    approx(out.consumed_sqft_total, 100, 'consumed -- the whole box, even though only 60 are needed')
+    approx(out.product_sqft_total, 60, 'product')
+    approx(out.offcut_sqft_total, 40, 'offcut')
+    approx(out.remainder_sqft_total, 0, 'remainder -- always 0 under both')
     assertInvariant(out, 100, 'test 9')
   })
 
@@ -254,8 +254,8 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       seam_overlap_width: 1,
     }))
     assert.equal(out.seams, 2)
-    approx(out.consumed_sqft, 1.0139, 'consumed -- base 1.0 + 2 seams x 1in overlap x 1in height / 144')
-    assertInvariant(out, out.consumed_sqft, 'test 10')
+    approx(out.consumed_sqft_total, 1.0139, 'consumed -- base 1.0 + 2 seams x 1in overlap x 1in height / 144')
+    assertInvariant(out, out.consumed_sqft_total, 'test 10')
   })
 
   test('11. recipe override reaches the nester -- a different seam_overlap_width changes the answer', () => {
@@ -268,9 +268,9 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
       product_height: 1, product_width: 100, quantity: 1,
       seam_overlap_width: 2,
     }))
-    approx(out.consumed_sqft, 1.0278, 'consumed -- base 1.0 + 2 seams x 2in overlap x 1in height / 144')
-    assert.notEqual(out.consumed_sqft, 1.0139, 'must differ from test 10s 1-inch-overlap answer')
-    assertInvariant(out, out.consumed_sqft, 'test 11')
+    approx(out.consumed_sqft_total, 1.0278, 'consumed -- base 1.0 + 2 seams x 2in overlap x 1in height / 144')
+    assert.notEqual(out.consumed_sqft_total, 1.0139, 'must differ from test 10s 1-inch-overlap answer')
+    assertInvariant(out, out.consumed_sqft_total, 'test 11')
   })
 })
 
@@ -281,10 +281,10 @@ describe('Additional edge cases', () => {
       product_height: 48, product_width: 96, quantity: 1,
     }))
     assert.equal(out.fits, true)
-    approx(out.consumed_sqft, 32, 'consumed')
-    approx(out.product_sqft, 32, 'product')
-    approx(out.offcut_sqft, 0, 'offcut')
-    approx(out.remainder_sqft, 0, 'remainder')
+    approx(out.consumed_sqft_total, 32, 'consumed')
+    approx(out.product_sqft_total, 32, 'product')
+    approx(out.offcut_sqft_total, 0, 'offcut')
+    approx(out.remainder_sqft_total, 0, 'remainder')
     assertInvariant(out, 32, 'exact fit')
   })
 
@@ -301,8 +301,8 @@ describe('Additional edge cases', () => {
     // NOT being extended by adding another panel) -- here that's
     // product_width (10), since the fixed axis (height, 60) is the one
     // exceeding the stock and being paneled. 1 joint x 10in x 1 instance.
-    approx(out.seam_length_in, 10, 'one joint, its length equal to product_width -- the dimension the joint runs along')
-    assertInvariant(out, out.consumed_sqft, 'oversize on fixed axis, no bounded single piece any more once paneled')
+    approx(out.seam_length_in_total, 10, 'one joint, its length equal to product_width -- the dimension the joint runs along')
+    assertInvariant(out, out.consumed_sqft_total, 'oversize on fixed axis, no bounded single piece any more once paneled')
   })
 
   test('product larger than the piece on the FIXED axis only -- refused when seam_direction=none', () => {
@@ -329,8 +329,8 @@ describe('Additional edge cases', () => {
       may_rotate: false,
     }))
     assert.equal(out.fits, false)
-    assert.equal(out.consumed_sqft, 0)
-    assert.equal(out.product_sqft, 0)
+    assert.equal(out.consumed_sqft_total, 0)
+    assert.equal(out.product_sqft_total, 0)
     assert.equal(out.n_up, 0, 'never a nonsense n_up of 0 paired with real areas -- both are 0 together')
     // No assertInvariant here either, same reason as the seam_direction=
     // none case above: fits=false zeroes every area, so the invariant
@@ -344,10 +344,10 @@ describe('Additional edge cases', () => {
       product_height: 12, product_width: 12, quantity: 0,
     }))
     assert.equal(out.fits, true)
-    assert.equal(out.consumed_sqft, 0)
-    assert.equal(out.product_sqft, 0)
-    assert.equal(out.offcut_sqft, 0)
-    approx(out.remainder_sqft, 32, 'the whole untouched sheet')
+    assert.equal(out.consumed_sqft_total, 0)
+    assert.equal(out.product_sqft_total, 0)
+    assert.equal(out.offcut_sqft_total, 0)
+    approx(out.remainder_sqft_total, 32, 'the whole untouched sheet')
     assertInvariant(out, 32, 'quantity 0')
   })
 
@@ -357,7 +357,7 @@ describe('Additional edge cases', () => {
       product_height: 12, product_width: 12, quantity: 1,
     }))
     assert.equal(out.fits, true)
-    approx(out.product_sqft, 1, 'product')
+    approx(out.product_sqft_total, 1, 'product')
     assertInvariant(out, 32, 'quantity 1')
   })
 
@@ -374,8 +374,8 @@ describe('Additional edge cases', () => {
     }))
     assert.equal(out.fits, true)
     assert.equal(out.rotated, true)
-    approx(out.consumed_sqft, 48 * 40 / SQFT, 'consumed -- narrower band wins')
-    approx(out.offcut_sqft, (48 * 40 - 40 * 45) / SQFT, 'offcut')
+    approx(out.consumed_sqft_total, 48 * 40 / SQFT, 'consumed -- narrower band wins')
+    approx(out.offcut_sqft_total, (48 * 40 - 40 * 45) / SQFT, 'offcut')
     assertInvariant(out, (48 * 96) / SQFT, 'rotation wins')
   })
 
@@ -386,7 +386,7 @@ describe('Additional edge cases', () => {
     }))
     assert.equal(out.rotated, false)
     assert.equal(out.fits, true)
-    approx(out.consumed_sqft, 48 * 45 / SQFT, 'consumed -- stuck with the wider band since rotation is forbidden')
+    approx(out.consumed_sqft_total, 48 * 45 / SQFT, 'consumed -- stuck with the wider band since rotation is forbidden')
     assertInvariant(out, (48 * 96) / SQFT, 'rotation forbidden')
   })
 
@@ -400,27 +400,27 @@ describe('Additional edge cases', () => {
       product_height: 12, product_width: 12, quantity: 1,
     }))
     assert.equal(sheetNoPanel.seams, 0)
-    assert.equal(sheetNoPanel.seam_length_in, 0)
+    assert.equal(sheetNoPanel.seam_length_in_total, 0)
 
     const rollNoPanel = nestMaterial(baseInput({
       fixed_side: 'width', stock_width: 48, stock_height: null,
       product_height: 1, product_width: 40, quantity: 1,
     }))
     assert.equal(rollNoPanel.seams, 0)
-    assert.equal(rollNoPanel.seam_length_in, 0)
+    assert.equal(rollNoPanel.seam_length_in_total, 0)
 
     const both = nestMaterial(baseInput({
       fixed_side: 'both', stock_height: 120, stock_width: 120,
       product_height: 12, product_width: 12, quantity: 60,
     }))
     assert.equal(both.seams, 0)
-    assert.equal(both.seam_length_in, 0)
+    assert.equal(both.seam_length_in_total, 0)
 
     const none = nestMaterial(baseInput({
       fixed_side: 'none', product_height: 1, product_width: 1, quantity: 25,
     }))
     assert.equal(none.seams, 0)
-    assert.equal(none.seam_length_in, 0)
+    assert.equal(none.seam_length_in_total, 0)
   })
 
   test('seam_length_in scales with quantity the same way the other outputs do', () => {
@@ -436,13 +436,49 @@ describe('Additional edge cases', () => {
     }))
     assert.equal(qty1.seams, 1)
     assert.equal(qty3.seams, 1, 'panels/seams describe ONE instance -- unchanged by quantity')
-    approx(qty1.seam_length_in, 10, 'qty 1: one joint, 10in')
-    approx(qty3.seam_length_in, 30, 'qty 3: three independent instances, each still one 10in joint')
-    approx(qty3.seam_length_in, qty1.seam_length_in * 3, 'scales linearly with quantity')
+    approx(qty1.seam_length_in_total, 10, 'qty 1: one joint, 10in')
+    approx(qty3.seam_length_in_total, 30, 'qty 3: three independent instances, each still one 10in joint')
+    approx(qty3.seam_length_in_total, qty1.seam_length_in_total * 3, 'scales linearly with quantity')
     // Cross-check against a field already known to scale with quantity
     // the same way -- product_sqft -- so "scales with quantity" is
     // verified against this function's own established behavior, not
     // just asserted as a number that happens to look right.
-    approx(qty3.product_sqft, qty1.product_sqft * 3, 'product_sqft scales the same way, for comparison')
+    approx(qty3.product_sqft_total, qty1.product_sqft_total * 3, 'product_sqft scales the same way, for comparison')
+  })
+
+  test('seam_length_in_total is the PHYSICAL joint length, not the billed/rounded one', () => {
+    // Same 2-panel shape as the paneling tests above, but with a
+    // length_increment that actually rounds product_width (10) up (to
+    // 12). A seam consumes tape and labor along the joint that
+    // physically exists -- length_increment describes how the substrate
+    // is BOUGHT and is unrelated to how much tape one joint needs.
+    const out = nestMaterial(baseInput({
+      fixed_side: 'height', stock_height: 48, stock_width: 96,
+      product_height: 60, product_width: 10, quantity: 1,
+      length_increment: 12, // rounds 10 -> 12 for BILLING purposes only
+      seam_direction: 'both',
+    }))
+    assert.equal(out.seams, 1)
+    approx(out.seam_length_in_total, 10, 'the joint is physically 10in long -- length_increment must not inflate it to 12')
+  })
+
+  test('consumed_sqft_total bills the ROUNDED extent while seam_length_in_total uses the RAW one -- both in the same case, so they can never be re-conflated without a test going red', () => {
+    const out = nestMaterial(baseInput({
+      fixed_side: 'height', stock_height: 48, stock_width: 96,
+      product_height: 60, product_width: 10, quantity: 1,
+      length_increment: 12,
+      seam_direction: 'both',
+    }))
+    assert.equal(out.panels, 2)
+    assert.equal(out.seams, 1)
+    // Substrate area IS billed at the rounded extent: 2 panels x 48 x
+    // 12(rounded from 10) / 144 = 8. If this ever silently used the raw
+    // 10 instead, this assertion (not the one below) is what would catch it.
+    approx(out.consumed_sqft_total, 8, 'consumed_sqft_total bills the ROUNDED free-axis extent (12), not the raw one (10)')
+    // Seam tape/labor is NOT billed at the rounded extent: 1 seam x the
+    // raw 10in. If this ever silently switched to the rounded 12
+    // instead, this assertion is what would catch it.
+    approx(out.seam_length_in_total, 10, 'seam_length_in_total uses the RAW free-axis extent (10), not the rounded one (12)')
+    assertInvariant(out, out.consumed_sqft_total, 'rounded-vs-raw paneled case')
   })
 })

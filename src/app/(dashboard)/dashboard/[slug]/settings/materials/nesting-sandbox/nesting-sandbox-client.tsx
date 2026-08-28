@@ -61,29 +61,32 @@ function fmtMoney(n: number): string {
 function wholePieceSqft(v: VariantOption, out: NesterOutput): { value: number; independent: boolean } {
   const isRoll = v.fixedSide === 'width'
   if (isRoll || v.fixedSide === 'both' || v.fixedSide === 'none' || out.panels > 1) {
-    return { value: out.consumed_sqft, independent: false }
+    return { value: out.consumed_sqft_total, independent: false }
   }
   if (v.height == null || v.width == null) {
-    return { value: out.consumed_sqft, independent: false }
+    return { value: out.consumed_sqft_total, independent: false }
   }
   const stockHeightIn = lengthToInches(v.height, v.lengthUom)
   return { value: (stockHeightIn * v.width) / 144, independent: true }
 }
 
+// Fields ending _total already have quantity applied (whole job);
+// everything else describes one instance's geometry -- same rule
+// stated on NesterOutput itself (nester.ts).
 const OUTPUT_ROWS: { key: keyof NesterOutput; label: string; format: (out: NesterOutput) => string }[] = [
   { key: 'fits', label: 'Fits', format: (o) => (o.fits ? 'Yes' : 'No') },
   { key: 'reason', label: 'Reason', format: (o) => o.reason ?? '—' },
   { key: 'n_up', label: 'N-up (copies per band/panel)', format: (o) => String(o.n_up) },
   { key: 'rotated', label: 'Rotated', format: (o) => (o.rotated ? 'Yes' : 'No') },
   { key: 'down', label: 'Down (stacked along the fixed axis)', format: (o) => String(o.down) },
-  { key: 'across', label: 'Across (bands along the free axis)', format: (o) => String(o.across) },
+  { key: 'across_total', label: 'Across (bands along the free axis, whole job)', format: (o) => String(o.across_total) },
   { key: 'panels', label: 'Panels', format: (o) => String(o.panels) },
   { key: 'seams', label: 'Seams', format: (o) => String(o.seams) },
-  { key: 'seam_length_in', label: 'Seam length (total, inches)', format: (o) => o.seam_length_in.toFixed(2) },
-  { key: 'consumed_sqft', label: 'Consumed (sqft)', format: (o) => fmtSqft(o.consumed_sqft) },
-  { key: 'product_sqft', label: 'Product (sqft)', format: (o) => fmtSqft(o.product_sqft) },
-  { key: 'offcut_sqft', label: 'Offcut (sqft)', format: (o) => fmtSqft(o.offcut_sqft) },
-  { key: 'remainder_sqft', label: 'Remainder (sqft)', format: (o) => fmtSqft(o.remainder_sqft) },
+  { key: 'seam_length_in_total', label: 'Seam length (whole job, inches)', format: (o) => o.seam_length_in_total.toFixed(2) },
+  { key: 'consumed_sqft_total', label: 'Consumed (whole job, sqft)', format: (o) => fmtSqft(o.consumed_sqft_total) },
+  { key: 'product_sqft_total', label: 'Product (whole job, sqft)', format: (o) => fmtSqft(o.product_sqft_total) },
+  { key: 'offcut_sqft_total', label: 'Offcut (whole job, sqft)', format: (o) => fmtSqft(o.offcut_sqft_total) },
+  { key: 'remainder_sqft_total', label: 'Remainder (whole job, sqft)', format: (o) => fmtSqft(o.remainder_sqft_total) },
 ]
 
 export default function NestingSandboxClient({ variants }: { variants: VariantOption[] }) {
@@ -92,6 +95,7 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
   const [productHeight, setProductHeight] = useState('12')
   const [productWidth, setProductWidth] = useState('12')
   const [quantity, setQuantity] = useState('1')
+  const [seamOverlapWidth, setSeamOverlapWidth] = useState('0')
   // null = "no manual override yet -- use the direction-derived default."
   // Reset whenever the selected variant changes so a previous manual
   // toggle never silently carries over onto a different material --
@@ -120,14 +124,23 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
   const directionForcesNoRotate = !!selected?.direction?.trim()
   const mayRotate = directionForcesNoRotate ? false : (mayRotateOverride ?? true)
 
-  const result: NesterOutput | null = useMemo(() => {
+  // No seam_direction input in this sandbox -- no seam_direction column
+  // exists on materials/material_variants today. 'both' is the least
+  // restrictive value nestMaterial accepts, so a paneled result shows
+  // real geometry here instead of an artificial refusal that has nothing
+  // to do with what's actually being tested. seam_overlap_width, unlike
+  // seam_direction, IS a real, already-existing, already-tested
+  // nestMaterial input (tests 10/11) -- just one nothing in the app has
+  // ever supplied a non-zero value for, since no product-recipe field
+  // exists to source it from yet. Exposing it here doesn't change that;
+  // it lets it be run and felt for the first time.
+  function buildInput(overlap: number) {
     if (!selected) return null
     const ph = parseFloat(productHeight)
     const pw = parseFloat(productWidth)
     const qty = parseInt(quantity, 10)
     if (!(ph > 0) || !(pw > 0) || !Number.isFinite(qty)) return null
-
-    return nestMaterial({
+    return {
       stock_height: selected.height != null ? lengthToInches(selected.height, selected.lengthUom) : null,
       stock_width: selected.width,
       fixed_side: selected.fixedSide,
@@ -138,20 +151,35 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
       spacing: 0,
       edge_margin: 0,
       may_rotate: mayRotate,
-      // No seam_overlap_width / seam_direction inputs in this sandbox --
-      // seam_overlap_width has no product-recipe source yet (kept out of
-      // this PR entirely, per instruction), and no seam_direction column
-      // exists on materials/material_variants today. 'both' is the least
-      // restrictive value nestMaterial accepts, so a paneled result shows
-      // real geometry here instead of an artificial refusal that has
-      // nothing to do with what's actually being tested.
-      seam_overlap_width: 0,
-      seam_direction: 'both',
-    })
-  }, [selected, productHeight, productWidth, quantity, mayRotate])
+      seam_overlap_width: overlap,
+      seam_direction: 'both' as const,
+    }
+  }
+
+  const result: NesterOutput | null = useMemo(() => {
+    const overlap = parseFloat(seamOverlapWidth)
+    const input = buildInput(Number.isFinite(overlap) && overlap > 0 ? overlap : 0)
+    return input ? nestMaterial(input) : null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, productHeight, productWidth, quantity, mayRotate, seamOverlapWidth])
+
+  // The overlap's own effect, isolated: re-run the exact same job with
+  // seam_overlap_width forced to 0 and diff consumed_sqft_total against
+  // the real result. This measures nestMaterial's ACTUAL behavior rather
+  // than re-deriving the overlap formula by hand here -- correct even if
+  // that formula ever changes, and it's 0 whenever there's no paneling
+  // (seams=0) or no overlap entered, exactly as it should be.
+  const overlapExtraSqft = useMemo(() => {
+    if (!result || !result.fits || result.seams === 0) return 0
+    const withoutOverlapInput = buildInput(0)
+    if (!withoutOverlapInput) return 0
+    const withoutOverlap = nestMaterial(withoutOverlapInput)
+    return Math.max(0, result.consumed_sqft_total - withoutOverlap.consumed_sqft_total)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result])
 
   const invariant = selected && result && result.fits ? wholePieceSqft(selected, result) : null
-  const invariantSum = result ? result.product_sqft + result.offcut_sqft + result.remainder_sqft : null
+  const invariantSum = result ? result.product_sqft_total + result.offcut_sqft_total + result.remainder_sqft_total : null
   const invariantPasses = invariant != null && invariantSum != null && Math.abs(invariantSum - invariant.value) < 1e-6
 
   return (
@@ -230,6 +258,17 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
               className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
             />
           </label>
+          <label className="block">
+            <span className="text-xs font-medium text-qm-gray">Seam overlap (in)</span>
+            <input
+              type="number" min={0} step="0.01" value={seamOverlapWidth}
+              onChange={(e) => setSeamOverlapWidth(e.target.value)}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            />
+            <p className="mt-1 text-xs text-qm-gray">
+              Only matters when the product needs paneling (seams &gt; 0). No product-recipe field sources this yet — defaults to 0.
+            </p>
+          </label>
 
           <div>
             <label className={`flex items-center gap-2 text-sm ${directionForcesNoRotate ? 'text-qm-gray' : 'text-qm-black'}`}>
@@ -276,6 +315,14 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
                     </dd>
                   </div>
                 ))}
+                {/* Not a NesterOutput field -- computed here by diffing
+                    against the same job with seam_overlap_width forced to
+                    0, so the overlap's own contribution is visible as its
+                    own line instead of buried inside consumed_sqft_total. */}
+                <div className="flex items-center justify-between bg-blue-50 px-4 py-2 text-sm">
+                  <dt className="font-medium text-qm-black">Extra from seam overlap (sqft)</dt>
+                  <dd className="font-mono tabular-nums font-semibold text-qm-black">{fmtSqft(overlapExtraSqft)}</dd>
+                </div>
               </dl>
             </div>
 
@@ -291,7 +338,7 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
               ) : (
                 <>
                   <p className="mt-2 font-mono text-sm text-qm-black">
-                    product ({fmtSqft(result.product_sqft)}) + offcut ({fmtSqft(result.offcut_sqft)}) + remainder ({fmtSqft(result.remainder_sqft)})
+                    product ({fmtSqft(result.product_sqft_total)}) + offcut ({fmtSqft(result.offcut_sqft_total)}) + remainder ({fmtSqft(result.remainder_sqft_total)})
                     {' = '}
                     {fmtSqft(invariantSum!)}
                     {' vs. whole piece '}
@@ -305,7 +352,7 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
                     </span>
                     {!invariant!.independent && (
                       <span className="text-xs text-qm-gray">
-                        self-consistent check — this shape (roll, fixed_side=both/none, or a paneled result) has no independently bounded &ldquo;whole piece&rdquo; size to check against; &ldquo;whole piece&rdquo; here is consumed_sqft itself.
+                        self-consistent check — this shape (roll, fixed_side=both/none, or a paneled result) has no independently bounded &ldquo;whole piece&rdquo; size to check against; &ldquo;whole piece&rdquo; here is consumed_sqft_total itself.
                       </span>
                     )}
                   </div>
@@ -322,15 +369,15 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
               ) : (
                 <dl className="mt-2 space-y-1 text-sm text-amber-900">
                   <div className="flex justify-between">
-                    <dt>{fmtSqft(result.consumed_sqft)} sqft × cost_per_unit ({selected.costPerUnit != null ? fmtMoney(selected.costPerUnit) : 'not set'})</dt>
+                    <dt>{fmtSqft(result.consumed_sqft_total)} sqft × cost_per_unit ({selected.costPerUnit != null ? fmtMoney(selected.costPerUnit) : 'not set'})</dt>
                     <dd className="font-mono font-semibold">
-                      {selected.costPerUnit != null ? fmtMoney(result.consumed_sqft * selected.costPerUnit) : '—'}
+                      {selected.costPerUnit != null ? fmtMoney(result.consumed_sqft_total * selected.costPerUnit) : '—'}
                     </dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt>{fmtSqft(result.consumed_sqft)} sqft × sell_per_unit ({selected.sellPerUnit != null ? fmtMoney(selected.sellPerUnit) : 'not set'})</dt>
+                    <dt>{fmtSqft(result.consumed_sqft_total)} sqft × sell_per_unit ({selected.sellPerUnit != null ? fmtMoney(selected.sellPerUnit) : 'not set'})</dt>
                     <dd className="font-mono font-semibold">
-                      {selected.sellPerUnit != null ? fmtMoney(result.consumed_sqft * selected.sellPerUnit) : '—'}
+                      {selected.sellPerUnit != null ? fmtMoney(result.consumed_sqft_total * selected.sellPerUnit) : '—'}
                     </dd>
                   </div>
                 </dl>
