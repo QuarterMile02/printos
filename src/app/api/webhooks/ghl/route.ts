@@ -1,10 +1,15 @@
 // Required env vars (add to Vercel):
-//   GHL_WEBHOOK_SECRET  — PHASE 1: observed and logged only, NOT enforced yet.
-//                         Compared (constant-time) against the
-//                         x-ghl-shared-secret header GHL sends. Every request
-//                         is still accepted regardless of the result -- see
+//   GHL_WEBHOOK_SECRET  — PHASE 3: ENFORCED. Compared (constant-time) against
+//                         the x-ghl-shared-secret header GHL sends. A missing
+//                         or mismatched header is rejected (401); an unset
+//                         secret fails closed (500) rather than falling back
+//                         to permissive Phase 1 behavior. Phase 2 (observe
+//                         only, header confirmed matching in production —
+//                         Vercel logs, 2026-08-27 12:17:36: secretConfigured=
+//                         true headerPresent=true headerMatches=true) is what
+//                         cleared this for enforcement. See
 //                         known-issues/2026-08-25-ghl-webhook-shared-secret-and-test-customer-investigation.md
-//                         for the full 3-phase rollout this is phase 1 of.
+//                         for the full 3-phase rollout.
 //   GHL_LOCATION_ID     — GHL location ID for this org (future use with GHL API client)
 //   GHL_ORG_SLUG        — PrintOS org slug to attach records to (default: quarter-mile-inc)
 
@@ -28,12 +33,18 @@ function constantTimeEqual(a: string, b: string): boolean {
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
 
-  // ── PHASE 1 — shared-secret auth: observe only, never reject ────────────────
-  // GHL_WEBHOOK_SECRET is unset in production right now and Esteban hasn't
-  // configured the x-ghl-shared-secret header yet -- rejecting here would
-  // break the live GHL -> PrintOS lead sync the moment this deploys.
-  // Deliberately does NOT inherit PR #21's "500 if secret unset" behavior;
-  // that's phase 3, once these logs confirm the header is actually matching.
+  // ── PHASE 3 — shared-secret auth: ENFORCED, fail closed ─────────────────────
+  // Phase 2 confirmed live in production (Vercel, 2026-08-27 12:17:36):
+  // secretConfigured=true headerPresent=true headerMatches=true. That's what
+  // clears this for enforcement -- reversing Phase 1's permissive "observe
+  // only, never reject" stance on purpose.
+  //
+  // Fail CLOSED on a missing secret, same reasoning as
+  // payment_gateway_settings: an unconfigured secret is never "allow", it's a
+  // 500. A missing or wrong header is a 401. Neither response tells the
+  // caller which specific thing was wrong -- both "no header" and "header
+  // present but mismatched" collapse into the same generic 401 below via
+  // headerMatches, and the 500/401 bodies never echo the header or secret.
   //
   // Logs ONLY booleans. Never the secret, the header value, or any part of
   // either, at any log level, in any branch.
@@ -46,8 +57,22 @@ export async function POST(req: NextRequest) {
     : false
   // Grep target for "is GHL posting at all, and does Esteban's header
   // match?" -- one line per inbound request, fires unconditionally, before
-  // any parsing or the (still nonexistent) rejection.
+  // any rejection below, so a rejected request is just as visible here as
+  // an accepted one.
   console.log(`[ghl-webhook] request received -- secretConfigured=${secretConfigured} headerPresent=${headerPresent} headerMatches=${headerMatches}`)
+
+  if (!secretConfigured) {
+    // Distinct from the 401 below on purpose: this is OUR misconfiguration,
+    // not the caller's bad credential -- a 500 says so, a 401 would not.
+    console.log('[ghl-webhook] refusing request: GHL_WEBHOOK_SECRET not configured')
+    return NextResponse.json({ error: 'webhook not configured' }, { status: 500 })
+  }
+  if (!headerMatches) {
+    // Covers both "no header" and "header present but wrong" -- headerMatches
+    // is already false for either case, so this one check and one generic
+    // response can never leak which of the two actually happened.
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
 
   // ── Parse body ─────────────────────────────────────────────────────────────
   let payload: Record<string, any>
