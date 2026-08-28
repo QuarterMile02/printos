@@ -90,6 +90,27 @@ export type NesterOutput = {
   panels: number
   seams: number
 
+  // Total linear inches of seam across the WHOLE job (every joint, on
+  // every one of `quantity` copies) -- not per piece, not per joint.
+  // A seam costs labor time per linear inch and consumes a second
+  // material (seam tape) per linear inch, both priced elsewhere in the
+  // recipe; a bare seam COUNT can't be multiplied by either rate, which
+  // is the gap this field closes. 0 whenever seams is 0 (down>=1, or
+  // fixed_side 'both'/'none' -- neither of those ever seams).
+  //
+  // Derivation, exactly from the geometry already computed for paneling
+  // (no new geometry invented): each joint runs along the FREE axis --
+  // perpendicular to the axis being extended by adding another panel --
+  // with a length equal to that orientation's own free-axis extent
+  // (`consumedFreeExtent` in evaluateFixedOrientation: the product's
+  // own free-axis measurement, length-increment-rounded the same way
+  // the seam-overlap AREA calculation two lines below it already uses
+  // that exact value for). One instance needing `seams` joints has
+  // `seams * consumedFreeExtent` inches of seam; the whole job has
+  // `quantity` independent instances, each paneled the same way, so the
+  // total is that per-instance figure times quantity.
+  seam_length_in: number
+
   // Aggregate areas across ALL `quantity` copies actually placed
   // (0 when quantity is 0 or fits is false).
   consumed_sqft: number
@@ -134,6 +155,7 @@ function zeroResult(reason: string): NesterOutput {
     across: 0,
     panels: 0,
     seams: 0,
+    seam_length_in: 0,
     consumed_sqft: 0,
     product_sqft: 0,
     offcut_sqft: 0,
@@ -147,6 +169,7 @@ type OrientationResult = {
   across: number
   panels: number
   seams: number
+  seamLengthIn: number
   consumedSqft: number
   productSqft: number
 }
@@ -192,7 +215,7 @@ function evaluateFixedOrientation(args: {
 
     const consumedSqft = (stockFixed * consumedFreeExtent) / SQIN_PER_SQFT
     return {
-      rotated, down, across, panels: 1, seams: 0,
+      rotated, down, across, panels: 1, seams: 0, seamLengthIn: 0,
       consumedSqft, productSqft: (quantity * productFixed * productWidthOnFree) / SQIN_PER_SQFT,
     }
   }
@@ -224,8 +247,15 @@ function evaluateFixedOrientation(args: {
   const productSqftPerInstance = (productFixed * productWidthOnFree) / SQIN_PER_SQFT
   const across = quantity // paneled: every copy needs its own full run, nothing shared
 
+  // Each of the `seams` joints in ONE instance runs along the free axis
+  // for `consumedFreeExtent` inches (see NesterOutput.seam_length_in's
+  // own comment for the full derivation) -- `quantity` instances each
+  // repeat the same joints independently, so the job total scales the
+  // same way consumedSqft/productSqft above already do.
+  const seamLengthIn = seams * consumedFreeExtent * quantity
+
   return {
-    rotated, down: 1, across, panels, seams,
+    rotated, down: 1, across, panels, seams, seamLengthIn,
     consumedSqft: consumedSqftPerInstance * quantity,
     productSqft: productSqftPerInstance * quantity,
   }
@@ -247,7 +277,7 @@ export function nestMaterial(input: NesterInput): NesterOutput {
     return {
       fits: true, reason: quantity === 0 ? 'quantity is 0 -- nothing consumed' : null,
       n_up: quantity, rotated: false, down: quantity, across: quantity > 0 ? 1 : 0,
-      panels: 1, seams: 0,
+      panels: 1, seams: 0, seam_length_in: 0,
       consumed_sqft: 0, product_sqft: 0, offcut_sqft: 0, remainder_sqft: 0,
     }
   }
@@ -284,7 +314,7 @@ export function nestMaterial(input: NesterInput): NesterOutput {
     return {
       fits: true, reason: quantity === 0 ? 'quantity is 0 -- nothing consumed' : null,
       n_up: perWhole, rotated, down: rowsChosen, across: colsChosen * wholePiecesNeeded,
-      panels: 1, seams: 0,
+      panels: 1, seams: 0, seam_length_in: 0,
       consumed_sqft: consumedSqft, product_sqft: productSqft,
       offcut_sqft: consumedSqft - productSqft, remainder_sqft: 0,
     }
@@ -353,6 +383,7 @@ export function nestMaterial(input: NesterInput): NesterOutput {
     across: chosen.across,
     panels: chosen.panels,
     seams: chosen.seams,
+    seam_length_in: chosen.seamLengthIn,
     consumed_sqft: chosen.consumedSqft,
     product_sqft: chosen.productSqft,
     offcut_sqft: Math.max(0, chosen.consumedSqft - chosen.productSqft),

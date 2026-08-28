@@ -162,6 +162,10 @@ describe('11 VERIFIED cases (known-issues/2026-08-24-stage2-nesting-model-VERIFI
     approx(out.consumed_sqft, 1.0, 'consumed')
     approx(out.product_sqft, 0.6944, 'product')
     approx(out.offcut_sqft, 0.3056, 'offcut')
+    // 3 panels -> exactly 2 joints. Fixed axis here is the roll's width
+    // (being extended by paneling); the joint runs along the FREE axis,
+    // product_height (1). 2 joints x 1in x 1 instance.
+    approx(out.seam_length_in, 2, 'two joints, each product_height (1in) long')
     assertInvariant(out, 1.0, 'test 5')
   })
 
@@ -293,6 +297,11 @@ describe('Additional edge cases', () => {
     assert.equal(out.fits, true)
     assert.equal(out.panels, 2, 'ceil(60/48) = 2 stacked sheet-heights, seamed')
     assert.equal(out.seams, 1)
+    // 2 panels -> exactly 1 joint. It runs along the FREE axis (the one
+    // NOT being extended by adding another panel) -- here that's
+    // product_width (10), since the fixed axis (height, 60) is the one
+    // exceeding the stock and being paneled. 1 joint x 10in x 1 instance.
+    approx(out.seam_length_in, 10, 'one joint, its length equal to product_width -- the dimension the joint runs along')
     assertInvariant(out, out.consumed_sqft, 'oversize on fixed axis, no bounded single piece any more once paneled')
   })
 
@@ -379,5 +388,61 @@ describe('Additional edge cases', () => {
     assert.equal(out.fits, true)
     approx(out.consumed_sqft, 48 * 45 / SQFT, 'consumed -- stuck with the wider band since rotation is forbidden')
     assertInvariant(out, (48 * 96) / SQFT, 'rotation forbidden')
+  })
+
+  test('seam_length_in is 0 whenever seams is 0', () => {
+    // A representative spread of every fixed_side shape that reports
+    // seams=0: a sheet that fits without paneling, a roll that fits
+    // without paneling, fixed_side=both, and fixed_side=none. None of
+    // these ever join panels, so none should report any seam length.
+    const sheetNoPanel = nestMaterial(baseInput({
+      fixed_side: 'height', stock_height: 48, stock_width: 96,
+      product_height: 12, product_width: 12, quantity: 1,
+    }))
+    assert.equal(sheetNoPanel.seams, 0)
+    assert.equal(sheetNoPanel.seam_length_in, 0)
+
+    const rollNoPanel = nestMaterial(baseInput({
+      fixed_side: 'width', stock_width: 48, stock_height: null,
+      product_height: 1, product_width: 40, quantity: 1,
+    }))
+    assert.equal(rollNoPanel.seams, 0)
+    assert.equal(rollNoPanel.seam_length_in, 0)
+
+    const both = nestMaterial(baseInput({
+      fixed_side: 'both', stock_height: 120, stock_width: 120,
+      product_height: 12, product_width: 12, quantity: 60,
+    }))
+    assert.equal(both.seams, 0)
+    assert.equal(both.seam_length_in, 0)
+
+    const none = nestMaterial(baseInput({
+      fixed_side: 'none', product_height: 1, product_width: 1, quantity: 25,
+    }))
+    assert.equal(none.seams, 0)
+    assert.equal(none.seam_length_in, 0)
+  })
+
+  test('seam_length_in scales with quantity the same way the other outputs do', () => {
+    const qty1 = nestMaterial(baseInput({
+      fixed_side: 'height', stock_height: 48, stock_width: 96,
+      product_height: 60, product_width: 10, quantity: 1, // same 2-panel shape as the paneling test above
+      seam_direction: 'both',
+    }))
+    const qty3 = nestMaterial(baseInput({
+      fixed_side: 'height', stock_height: 48, stock_width: 96,
+      product_height: 60, product_width: 10, quantity: 3,
+      seam_direction: 'both',
+    }))
+    assert.equal(qty1.seams, 1)
+    assert.equal(qty3.seams, 1, 'panels/seams describe ONE instance -- unchanged by quantity')
+    approx(qty1.seam_length_in, 10, 'qty 1: one joint, 10in')
+    approx(qty3.seam_length_in, 30, 'qty 3: three independent instances, each still one 10in joint')
+    approx(qty3.seam_length_in, qty1.seam_length_in * 3, 'scales linearly with quantity')
+    // Cross-check against a field already known to scale with quantity
+    // the same way -- product_sqft -- so "scales with quantity" is
+    // verified against this function's own established behavior, not
+    // just asserted as a number that happens to look right.
+    approx(qty3.product_sqft, qty1.product_sqft * 3, 'product_sqft scales the same way, for comparison')
   })
 })
