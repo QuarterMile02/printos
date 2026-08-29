@@ -705,13 +705,22 @@ export async function addQuoteLineItem(
       .maybeSingle()
     if (!quote) return { error: 'Quote not found.' }
 
-    // Compute line total in cents.
-    // Sqft pricing: W * H / 144 * Qty * UnitPrice; flat if no dimensions.
-    const hasDims = draft.width && draft.width > 0 && draft.height && draft.height > 0
-    const gross = hasDims
-      ? (draft.width! * draft.height! / 144) * draft.quantity * draft.unit_price
-      : draft.quantity * draft.unit_price
-    const total = Math.round(gross * (1 - draft.discount_percent / 100))
+    // Compute line total in cents: qty * unit_price, less the discount.
+    // Deliberately NO area factor. unit_price already carries it: this
+    // form's price comes from /api/pricing -> calculateProductPrice, which
+    // applies formulaMultiplier()'s Area case (w * h / 144) to every recipe
+    // item BEFORE it computes unitPriceCents (formula-engine.ts:51, :270,
+    // :300-309, :402), and which states its own line total as
+    // unitPriceCents * quantity (formula-engine.ts:432). Re-multiplying by
+    // w * h / 144 here double-counted area -- 6x on a 24x36 line, and a
+    // DIVISION on anything under 144 sq in. It also disagreed with the
+    // client across a single call: quote-detail-client.tsx:737-741 computes
+    // qty * unit_price for this very insert and renders that number. Now
+    // matches createQuote and updateQuoteLineItem, the only other two
+    // places a line total is computed.
+    // width/height are still recorded on the row below -- they are the
+    // line's stated dimensions, not a pricing input.
+    const total = Math.round(draft.quantity * draft.unit_price * (1 - draft.discount_percent / 100))
 
     // sort_order = max + 1
     const sortResult = await ctx.service
