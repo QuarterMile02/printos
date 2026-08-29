@@ -18,6 +18,11 @@ export type VariantOption = {
   multiplier: number
   costPerUnit: number | null
   sellPerUnit: number | null
+  // From the MATERIAL (materials.wastage_markup / materials.calculate_wastage
+  // -- confirmed live columns, 010_product_builder_FIXED.sql:100), not the
+  // variant. Raw, null and all -- nothing here defaults a missing markup.
+  wastageMarkup: number | null
+  calculateWastage: boolean
 }
 
 // Mirrors migration 173's material_length_to_feet() SQL function exactly
@@ -44,6 +49,14 @@ function fmtSqft(n: number): string {
 
 function fmtMoney(n: number): string {
   return `$${n.toFixed(2)}`
+}
+
+// Full precision for rate inputs (cost_per_unit, sell_per_unit,
+// wastage_markup, multiplier) -- never round a rate before multiplying
+// by it; this is for DISPLAYING the rate alongside the money math, not
+// for computing with.
+function fmtRate(n: number): string {
+  return n.toFixed(4)
 }
 
 // The nester's own OrientationResult defines "the whole piece" two
@@ -181,6 +194,42 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
   const invariant = selected && result && result.fits ? wholePieceSqft(selected, result) : null
   const invariantSum = result ? result.product_sqft_total + result.offcut_sqft_total + result.remainder_sqft_total : null
   const invariantPasses = invariant != null && invariantSum != null && Math.abs(invariantSum - invariant.value) < 1e-6
+
+  // THE LOCKED PRICING MODEL (do not reinterpret): product is charged at
+  // sell_per_unit; offcut ("waste") is charged at cost_per_unit x the
+  // material's wastage markup, only when calculate_wastage is on AND a
+  // real markup is set; remainder is never charged, it returns to
+  // stock. Every "not charged" case still shows the sqft being given
+  // away and says WHY in a visible warning -- never a silent 1.0
+  // fallback, never a hidden line. Computed from full-precision rate
+  // inputs throughout; only the final displayed numbers are rounded.
+  const pricing = useMemo(() => {
+    if (!selected || !result || !result.fits) return null
+    const hasCost = selected.costPerUnit != null
+    const hasSell = selected.sellPerUnit != null
+    const hasMarkup = selected.wastageMarkup != null && selected.wastageMarkup > 0
+
+    const payAmount = hasCost ? result.consumed_sqft_total * selected.costPerUnit! : null
+    const productAmount = hasSell ? result.product_sqft_total * selected.sellPerUnit! : null
+
+    let wasteAmount = 0
+    let wasteWarning: string | null = null
+    if (!selected.calculateWastage) {
+      wasteWarning = 'calculate_wastage is off for this material — waste not charged'
+    } else if (!hasMarkup) {
+      wasteWarning = 'wastage markup not set — waste not charged'
+    } else if (!hasCost) {
+      wasteWarning = 'cost_per_unit not set — waste not charged'
+    } else {
+      wasteAmount = result.offcut_sqft_total * selected.costPerUnit! * selected.wastageMarkup!
+    }
+
+    // remainder is always $0 -- a business rule, not a data gap.
+    const materialCharged = hasSell ? productAmount! + wasteAmount + 0 : null
+    const margin = materialCharged != null && payAmount != null ? materialCharged - payAmount : null
+
+    return { hasCost, hasSell, hasMarkup, payAmount, productAmount, wasteAmount, wasteWarning, materialCharged, margin }
+  }, [selected, result])
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-6">
@@ -360,29 +409,83 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
               )}
             </div>
 
-            <div className="rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 p-4">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-amber-800">Material cost only — no labor, no seam cost, not a quote</h2>
-              {selected.costPerUnit == null && selected.sellPerUnit == null ? (
-                <p className="mt-2 text-sm text-amber-800">
-                  This variant has no cost_per_unit or sell_per_unit (its sqft is likely NULL, so pricing falls back to base_cost elsewhere) — nothing to multiply here.
-                </p>
-              ) : (
-                <dl className="mt-2 space-y-1 text-sm text-amber-900">
-                  <div className="flex justify-between">
-                    <dt>{fmtSqft(result.consumed_sqft_total)} sqft × cost_per_unit ({selected.costPerUnit != null ? fmtMoney(selected.costPerUnit) : 'not set'})</dt>
-                    <dd className="font-mono font-semibold">
-                      {selected.costPerUnit != null ? fmtMoney(result.consumed_sqft_total * selected.costPerUnit) : '—'}
-                    </dd>
+            {pricing && (
+              <div className="rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 p-4">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-amber-800">Material cost only — no labor, no seam cost, not a quote</h2>
+
+                <h3 className="mt-3 text-[10.5px] font-bold uppercase tracking-wide text-amber-700">What we pay</h3>
+                <div className="mt-1 flex items-baseline justify-between gap-3 text-sm text-amber-900">
+                  <span>
+                    consumed {fmtSqft(result.consumed_sqft_total)} sqft × cost_per_unit{' '}
+                    {pricing.hasCost ? <>{fmtRate(selected.costPerUnit!)}</> : <span className="font-semibold text-red-700">not set</span>}
+                  </span>
+                  <span className="font-mono font-semibold whitespace-nowrap">
+                    {pricing.payAmount != null ? fmtMoney(pricing.payAmount) : <span className="text-red-700">— can&apos;t compute</span>}
+                  </span>
+                </div>
+
+                <h3 className="mt-4 text-[10.5px] font-bold uppercase tracking-wide text-amber-700">What we charge</h3>
+                <div className="mt-1 space-y-2 text-sm text-amber-900">
+                  {/* product -- sell_per_unit */}
+                  <div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span>
+                        product {fmtSqft(result.product_sqft_total)} sqft × sell_per_unit{' '}
+                        {pricing.hasSell ? <>{fmtRate(selected.sellPerUnit!)}</> : <span className="font-semibold text-red-700">not set</span>}
+                      </span>
+                      <span className="font-mono font-semibold whitespace-nowrap">
+                        {pricing.productAmount != null ? fmtMoney(pricing.productAmount) : <span className="text-red-700">— can&apos;t compute</span>}
+                      </span>
+                    </div>
+                    {pricing.hasCost && (
+                      <p className="pl-4 text-xs text-amber-700">
+                        sell_per_unit = cost_per_unit {fmtRate(selected.costPerUnit!)} × multiplier {fmtRate(selected.multiplier)}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex justify-between">
-                    <dt>{fmtSqft(result.consumed_sqft_total)} sqft × sell_per_unit ({selected.sellPerUnit != null ? fmtMoney(selected.sellPerUnit) : 'not set'})</dt>
-                    <dd className="font-mono font-semibold">
-                      {selected.sellPerUnit != null ? fmtMoney(result.consumed_sqft_total * selected.sellPerUnit) : '—'}
-                    </dd>
+
+                  {/* waste -- offcut x cost_per_unit x wastage markup, or a visible warning */}
+                  <div>
+                    {pricing.wasteWarning ? (
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span>
+                          waste {fmtSqft(result.offcut_sqft_total)} sqft — <span className="font-semibold text-red-700">{pricing.wasteWarning}</span>
+                        </span>
+                        <span className="font-mono font-semibold whitespace-nowrap">{fmtMoney(0)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span>
+                          waste {fmtSqft(result.offcut_sqft_total)} sqft × cost_per_unit {fmtRate(selected.costPerUnit!)} × wastage {fmtRate(selected.wastageMarkup!)}
+                        </span>
+                        <span className="font-mono font-semibold whitespace-nowrap">{fmtMoney(pricing.wasteAmount)}</span>
+                      </div>
+                    )}
                   </div>
-                </dl>
-              )}
-            </div>
+
+                  {/* remainder -- never charged, a policy, not a data gap */}
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span>remainder {fmtSqft(result.remainder_sqft_total)} sqft — not charged, returns to stock</span>
+                    <span className="font-mono font-semibold whitespace-nowrap">{fmtMoney(0)}</span>
+                  </div>
+
+                  <div className="space-y-1 border-t border-amber-300 pt-2">
+                    <div className="flex items-baseline justify-between gap-3 font-semibold">
+                      <span>material charged</span>
+                      <span className="font-mono whitespace-nowrap">
+                        {pricing.materialCharged != null ? fmtMoney(pricing.materialCharged) : <span className="text-red-700">— incomplete, see warnings above</span>}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span>margin over material cost</span>
+                      <span className="font-mono whitespace-nowrap">
+                        {pricing.margin != null ? fmtMoney(pricing.margin) : <span className="text-red-700">— incomplete, see warnings above</span>}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
