@@ -39,9 +39,17 @@ async function PageInner({ params }: PageProps) {
   if (!org) return <div className="p-8 text-red-600">Org not found</div>
 
   const [materials, variants, colours] = await Promise.all([
-    dbAllOrThrow<{ id: string; name: string; fixed_side: string | null }>((from, to) =>
+    // wastage_markup / calculate_wastage: confirmed live columns on
+    // materials (010_product_builder_FIXED.sql:100 -- wastage_markup
+    // numeric(8,4) DEFAULT 0, calculate_wastage boolean DEFAULT false;
+    // re-added idempotently by 047 for an unrelated reason, same
+    // columns). Verified against real data, not assumed: active
+    // materials today carry wastage_markup values of 2 and 1.5, plus a
+    // real population of NULL and 0 -- exactly the "don't silently
+    // default this" cases the sandbox's waste line has to handle.
+    dbAllOrThrow<{ id: string; name: string; fixed_side: string | null; wastage_markup: number | null; calculate_wastage: boolean | null }>((from, to) =>
       supabase.from('materials')
-        .select('id, name, fixed_side')
+        .select('id, name, fixed_side, wastage_markup, calculate_wastage')
         .eq('organization_id', org.id)
         .eq('active', true)
         .order('name')
@@ -98,6 +106,12 @@ async function PageInner({ params }: PageProps) {
         multiplier: v.multiplier,
         costPerUnit: v.cost_per_unit,
         sellPerUnit: v.sell_per_unit,
+        // From the MATERIAL, not the variant -- materials.wastage_markup
+        // / materials.calculate_wastage (see the query comment above).
+        // Passed through raw, null and all -- the client is the one that
+        // has to refuse to silently default a missing markup to 1.0.
+        wastageMarkup: mat.wastage_markup,
+        calculateWastage: mat.calculate_wastage ?? false,
       }
     })
     .filter((v): v is VariantOption => v !== null)
