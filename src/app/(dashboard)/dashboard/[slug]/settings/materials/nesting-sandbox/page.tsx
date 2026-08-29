@@ -47,9 +47,20 @@ async function PageInner({ params }: PageProps) {
     // materials today carry wastage_markup values of 2 and 1.5, plus a
     // real population of NULL and 0 -- exactly the "don't silently
     // default this" cases the sandbox's waste line has to handle.
-    dbAllOrThrow<{ id: string; name: string; fixed_side: string | null; wastage_markup: number | null; calculate_wastage: boolean | null }>((from, to) =>
+    // seam_overlap_width / seam_direction: migration 190, live and
+    // verified (per instruction) -- public.materials.seam_overlap_width
+    // numeric(8,4) NULL, public.materials.seam_direction text NULL,
+    // CHECK'd to ('horizontal','vertical','both','none'). Every row is
+    // currently NULL, no backfill -- fetched and passed through raw
+    // below, same "never invent a default server-side" discipline as
+    // wastage_markup/calculate_wastage.
+    dbAllOrThrow<{
+      id: string; name: string; fixed_side: string | null
+      wastage_markup: number | null; calculate_wastage: boolean | null
+      seam_overlap_width: number | null; seam_direction: string | null
+    }>((from, to) =>
       supabase.from('materials')
-        .select('id, name, fixed_side, wastage_markup, calculate_wastage')
+        .select('id, name, fixed_side, wastage_markup, calculate_wastage, seam_overlap_width, seam_direction')
         .eq('organization_id', org.id)
         .eq('active', true)
         .order('name')
@@ -112,6 +123,11 @@ async function PageInner({ params }: PageProps) {
         // has to refuse to silently default a missing markup to 1.0.
         wastageMarkup: mat.wastage_markup,
         calculateWastage: mat.calculate_wastage ?? false,
+        // Raw, null and all -- migration 190. Distinct from
+        // variant.direction (grain, rotation) above; this is which way
+        // SEAMS run, an unrelated concept read from the MATERIAL.
+        seamOverlapWidth: mat.seam_overlap_width,
+        seamDirection: mat.seam_direction,
       }
     })
     .filter((v): v is VariantOption => v !== null)

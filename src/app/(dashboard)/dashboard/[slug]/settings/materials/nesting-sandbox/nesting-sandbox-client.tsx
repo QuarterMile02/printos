@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { nestMaterial, type FixedSide, type NesterOutput } from '@/lib/nesting/nester'
+import { nestMaterial, type FixedSide, type NesterOutput, type SeamDirection } from '@/lib/nesting/nester'
 
 export type VariantOption = {
   id: string
@@ -23,7 +23,33 @@ export type VariantOption = {
   // variant. Raw, null and all -- nothing here defaults a missing markup.
   wastageMarkup: number | null
   calculateWastage: boolean
+  // From the MATERIAL (migration 190). Distinct from `direction` above,
+  // which is grain/rotation on the VARIANT -- these two are unrelated
+  // concepts that happen to sound similar. Raw, null and all.
+  seamOverlapWidth: number | null
+  seamDirection: string | null
 }
+
+const SEAM_DIRECTION_OPTIONS: { value: SeamDirection; label: string }[] = [
+  { value: 'horizontal', label: 'Seams run horizontal' },
+  { value: 'vertical', label: 'Seams run vertical' },
+  { value: 'both', label: 'Either direction' },
+  // Deliberately NOT "None" -- nester.ts's own seamDirection === 'none'
+  // check (the ONLY hard refusal in the whole function) treats this as
+  // "never seam this material," full stop, not "no preference." Labeling
+  // it "None" would read as the opposite of what it does.
+  { value: 'none', label: 'Never seam this material' },
+]
+
+function isSeamDirection(v: string | null): v is SeamDirection {
+  return v === 'horizontal' || v === 'vertical' || v === 'both' || v === 'none'
+}
+
+// The exact string nestMaterial returns (nester.ts) when seam_direction
+// is 'none' and the job needs paneling -- checked, not guessed, so this
+// sandbox can tell "this material is configured to never seam" apart
+// from every other "doesn't fit" reason and surface it differently.
+const SEAM_REFUSAL_REASON = 'product exceeds the fixed dimension and this material forbids seaming'
 
 // Mirrors migration 173's material_length_to_feet() SQL function exactly
 // (in -> /12, ft -> as-is, yd -> *3 to get feet), just landing on inches
@@ -109,6 +135,14 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
   const [productWidth, setProductWidth] = useState('12')
   const [quantity, setQuantity] = useState('1')
   const [seamOverlapWidth, setSeamOverlapWidth] = useState('0')
+  // Tracks whether seamOverlapWidth above is still the material's own
+  // value (or the "material has none, so 0" fallback) or something
+  // Ruben typed over it -- so the UI can say which one is on screen,
+  // not just show a number.
+  const [seamOverlapTouched, setSeamOverlapTouched] = useState(false)
+  // null = "no manual override yet -- use the material's own
+  // seam_direction, falling back to 'both' if it has none set."
+  const [seamDirectionOverride, setSeamDirectionOverride] = useState<SeamDirection | null>(null)
   // null = "no manual override yet -- use the direction-derived default."
   // Reset whenever the selected variant changes so a previous manual
   // toggle never silently carries over onto a different material --
@@ -120,6 +154,10 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
   if (selectedId !== lastSelectedId) {
     setLastSelectedId(selectedId)
     setMayRotateOverride(null)
+    setSeamDirectionOverride(null)
+    setSeamOverlapTouched(false)
+    const newlySelected = variants.find((v) => v.id === selectedId) ?? null
+    setSeamOverlapWidth(newlySelected?.seamOverlapWidth != null ? String(newlySelected.seamOverlapWidth) : '0')
   }
 
   const selected = variants.find((v) => v.id === selectedId) ?? null
@@ -134,19 +172,38 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
     )
   }, [variants, query])
 
+  // material_variants.direction is GRAIN -- whether a part may be
+  // rotated -- and is completely unrelated to materials.seam_direction
+  // (which way seams run). This reads variant.direction, exactly as
+  // before; it must never be conflated with the seam-direction logic
+  // below, which reads a different column on a different table.
   const directionForcesNoRotate = !!selected?.direction?.trim()
   const mayRotate = directionForcesNoRotate ? false : (mayRotateOverride ?? true)
 
-  // No seam_direction input in this sandbox -- no seam_direction column
-  // exists on materials/material_variants today. 'both' is the least
-  // restrictive value nestMaterial accepts, so a paneled result shows
-  // real geometry here instead of an artificial refusal that has nothing
-  // to do with what's actually being tested. seam_overlap_width, unlike
-  // seam_direction, IS a real, already-existing, already-tested
-  // nestMaterial input (tests 10/11) -- just one nothing in the app has
-  // ever supplied a non-zero value for, since no product-recipe field
-  // exists to source it from yet. Exposing it here doesn't change that;
-  // it lets it be run and felt for the first time.
+  // seam_overlap_width (migration 190): starts from the MATERIAL's own
+  // value (seamOverlapWidth state is seeded from it on selection, see
+  // the reset block above); NULL on the material means "using 0" is
+  // shown as a fallback, not silently presented as the material's real
+  // setting. Once Ruben types over it, seamOverlapTouched flips true and
+  // the note below says so explicitly.
+  const materialSeamOverlap = selected?.seamOverlapWidth ?? null
+  const seamOverlapNote = seamOverlapTouched
+    ? 'Manual override — testing a different value than this material has, not what it actually carries.'
+    : materialSeamOverlap != null
+      ? `This material's own seam_overlap_width: ${fmtRate(materialSeamOverlap)}in.`
+      : 'Not set on this material — using 0.'
+
+  // seam_direction (migration 190): the material's own value if it has
+  // one; 'both' (this sandbox's pre-190 hardcoded value) if it doesn't,
+  // clearly labeled as a fallback rather than the material's setting.
+  const materialSeamDirection = isSeamDirection(selected?.seamDirection ?? null) ? (selected!.seamDirection as SeamDirection) : null
+  const effectiveSeamDirection: SeamDirection = seamDirectionOverride ?? materialSeamDirection ?? 'both'
+  const seamDirectionNote = seamDirectionOverride != null
+    ? 'Manual override — testing a different setting than this material has.'
+    : materialSeamDirection != null
+      ? "This material's own seam_direction."
+      : 'Not set on this material — falling back to "Either direction."'
+
   function buildInput(overlap: number) {
     if (!selected) return null
     const ph = parseFloat(productHeight)
@@ -165,7 +222,7 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
       edge_margin: 0,
       may_rotate: mayRotate,
       seam_overlap_width: overlap,
-      seam_direction: 'both' as const,
+      seam_direction: effectiveSeamDirection,
     }
   }
 
@@ -174,7 +231,7 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
     const input = buildInput(Number.isFinite(overlap) && overlap > 0 ? overlap : 0)
     return input ? nestMaterial(input) : null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, productHeight, productWidth, quantity, mayRotate, seamOverlapWidth])
+  }, [selected, productHeight, productWidth, quantity, mayRotate, seamOverlapWidth, effectiveSeamDirection])
 
   // The overlap's own effect, isolated: re-run the exact same job with
   // seam_overlap_width forced to 0 and diff consumed_sqft_total against
@@ -311,11 +368,27 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
             <span className="text-xs font-medium text-qm-gray">Seam overlap (in)</span>
             <input
               type="number" min={0} step="0.01" value={seamOverlapWidth}
-              onChange={(e) => setSeamOverlapWidth(e.target.value)}
+              onChange={(e) => { setSeamOverlapWidth(e.target.value); setSeamOverlapTouched(true) }}
               className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
             />
-            <p className="mt-1 text-xs text-qm-gray">
-              Only matters when the product needs paneling (seams &gt; 0). No product-recipe field sources this yet — defaults to 0.
+            <p className={`mt-1 text-xs ${seamOverlapTouched ? 'text-blue-700' : materialSeamOverlap == null ? 'text-amber-700' : 'text-qm-gray'}`}>
+              {seamOverlapNote} Only matters when the product needs paneling (seams &gt; 0).
+            </p>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-medium text-qm-gray">Seam direction</span>
+            <select
+              value={effectiveSeamDirection}
+              onChange={(e) => setSeamDirectionOverride(e.target.value as SeamDirection)}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+            >
+              {SEAM_DIRECTION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <p className={`mt-1 text-xs ${seamDirectionOverride != null ? 'text-blue-700' : materialSeamDirection == null ? 'text-amber-700' : 'text-qm-gray'}`}>
+              {seamDirectionNote}
             </p>
           </label>
 
@@ -351,6 +424,20 @@ export default function NestingSandboxClient({ variants }: { variants: VariantOp
           </div>
         ) : (
           <>
+            {/* A different CLASS of answer from "doesn't fit" -- this
+                material is configured to never seam at all, not just too
+                small for this one job. Surfaced on its own, prominently,
+                before the ordinary output list, not buried as one row
+                among thirteen. */}
+            {!result.fits && result.reason === SEAM_REFUSAL_REASON && (
+              <div className="rounded-lg border-2 border-red-400 bg-red-50 p-4">
+                <h2 className="text-sm font-bold uppercase tracking-wide text-red-800">This material is set to never seam</h2>
+                <p className="mt-2 text-sm text-red-900">
+                  Seam direction is &ldquo;Never seam this material.&rdquo; This job needs paneling — the product exceeds the stock&apos;s fixed dimension, which can only be solved by joining pieces with a seam — so it cannot be made on this material as configured, at any size. This is a configuration refusal, not a &ldquo;too big for this piece&rdquo; problem: changing the seam direction setting (or the quantity/dimensions) would change this answer; nothing else will.
+                </p>
+              </div>
+            )}
+
             <div className="rounded-lg border border-gray-200 bg-white">
               <div className="border-b border-gray-100 px-4 py-3">
                 <h2 className="text-sm font-bold text-qm-black">Nester output</h2>
