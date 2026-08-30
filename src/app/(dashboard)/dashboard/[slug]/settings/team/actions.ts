@@ -104,12 +104,38 @@ export async function inviteMember(
   }
 
   // ── Step 1: create the auth user and send Supabase's invite email ─────
-  // No redirectTo: the link uses the project Site URL, matching
-  // scripts/seed-qmi-team.mjs, so this works in every environment without
-  // per-env configuration. The invited person sets their own password from
-  // that email; we never see, generate, or store one.
+  // The invited person sets their own password from that email; we never
+  // see, generate, or store one.
+  //
+  // redirectTo is EXPLICIT, built from NEXT_PUBLIC_APP_URL exactly as
+  // /forgot-password does (forgot-password/page.tsx:17). Omitting it makes
+  // the link fall back to whatever the Supabase dashboard's Site URL happens
+  // to be -- a setting nothing in this repo controls, tests, or can see, and
+  // one that silently sends every invited person to the wrong host if it
+  // drifts. scripts/seed-qmi-team.mjs omits it deliberately so a one-off
+  // script works in any environment; a production button should not inherit
+  // that trade-off.
+  //
+  // Two params, both load-bearing:
+  //   type=invite         -- mirrors forgot-password's ?type=recovery, and is
+  //                          what /api/auth/callback would branch on if it
+  //                          ever learns to handle invites (today it does not
+  //                          -- see `next` below).
+  //   next=/reset-password -- the callback's own fallback
+  //                          (`redirect(origin + next)`, callback/route.ts:9,21).
+  //                          Without it, `next` defaults to '/' and an invited
+  //                          user lands signed-in on the dashboard root with
+  //                          NO password set and nothing prompting them to set
+  //                          one -- they would be locked out at their next
+  //                          sign-in. /reset-password is a valid destination
+  //                          for an invite session, not just a recovery one:
+  //                          it enables its form on ANY session
+  //                          (`getSession()` -> setSessionReady) and calls
+  //                          supabase.auth.updateUser({ password }).
+  const inviteRedirectTo = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback?type=invite&next=/reset-password`
   const { data: invited, error: inviteErr } = await service.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName },
+    redirectTo: inviteRedirectTo,
   })
   const userId = invited?.user?.id
   if (inviteErr || !userId) {
