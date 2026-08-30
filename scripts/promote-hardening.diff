@@ -1,0 +1,437 @@
+diff --git a/scripts/lib/retry.mjs b/scripts/lib/retry.mjs
+new file mode 100644
+--- /dev/null
++++ b/scripts/lib/retry.mjs
+@@ -0,0 +1,79 @@
++// Shared retry-with-backoff for Supabase reads/writes over PostgREST.
++//
++// Built for the wide ShopVOX->native promotion run (~4,500 customers) where
++// transient network blips, 5xx, and 429s are expected to happen many times
++// over a long unattended run — same class of problem as the EPERM retry fix
++// in shopvox-capture.mjs's flushQueue (retry the transient thing, fail loudly
++// on the real thing), applied to Supabase calls instead of a file rename.
++//
++// Retries: a thrown network-level failure (DNS, socket reset, timeout, fetch
++// failure — thrown before any HTTP response came back), HTTP 429 (rate
++// limited), and HTTP 5xx (server/gateway errors). Does NOT retry a 4xx
++// PostgREST/Postgres error (schema mismatch, constraint violation, bad
++// input, auth) — those are real bugs. Retrying them would just burn 5
++// attempts arriving at the identical failure while hiding it behind a wall
++// of retry noise; they must surface immediately, same as today.
++//
++// Usage:
++//   import { withRetry } from './lib/retry.mjs'
++//   const { data, error } = await withRetry(
++//     () => sb.from('quotes').select('id').eq('organization_id', ORG),
++//     'quotes select'
++//   )
++//   // same {data, error, status, ...} shape supabase-js normally returns —
++//   // every existing call site's own `if (error) throw/exit` handling works
++//   // completely unchanged. withRetry only delays *returning* a terminal
++//   // (non-retryable, or retries-exhausted) result; it never swallows one.
++
++const RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000] // 5 retries, ~15.5s total before giving up
++const NETWORK_ERROR_PATTERN = /ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|socket hang up|network|fetch failed|failed to fetch|AbortError|FetchError|other side closed|UND_ERR/i
++
++function sleep(ms) {
++  return new Promise((resolve) => setTimeout(resolve, ms))
++}
++
++// supabase-js/postgrest-js resolves to {data, error, status, statusText, ...}
++// even on a PostgREST-level error — `status` is the real HTTP status code.
++// Only fall back to sniffing the error message when status isn't a number
++// (older client shape, or something upstream of postgrest-js swallowed it).
++function isRetryableResult(result) {
++  if (!result || !result.error) return false
++  const status = result.status
++  if (typeof status === 'number') {
++    if (status === 429) return true
++    if (status >= 500 && status < 600) return true
++    if (status >= 400 && status < 500) return false // real schema/constraint/auth error — never retry
++  }
++  return NETWORK_ERROR_PATTERN.test(result.error.message || '')
++}
++
++/**
++ * Runs `fn()` (a thunk returning a supabase-js query-builder promise that
++ * resolves to {data, error, status, ...}) with retry-with-backoff on
++ * transient failures. Returns the same {data, error, ...} shape on a
++ * terminal result — never throws for a PostgREST-level error, matching every
++ * existing call site's own handling. Only throws if `fn()` itself throws
++ * (a network failure with no response at all) on the final attempt.
++ *
++ * @param {() => Promise<any>} fn
++ * @param {string} label — used in the retry warning, e.g. "quotes upsert batch 3"
++ */
++export async function withRetry(fn, label) {
++  let lastThrown = null
++  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
++    try {
++      const result = await fn()
++      if (isRetryableResult(result) && attempt < RETRY_DELAYS_MS.length) {
++        const delay = RETRY_DELAYS_MS[attempt]
++        console.warn(`  [retry] ${label}: ${result.error.message} (status ${result.status ?? 'n/a'}) — attempt ${attempt + 1}/${RETRY_DELAYS_MS.length + 1}, retrying in ${delay}ms`)
++        await sleep(delay)
++        continue
++      }
++      return result
++    } catch (err) {
++      lastThrown = err
++      const retryableThrow = NETWORK_ERROR_PATTERN.test(err.message || '')
++      if (retryableThrow && attempt < RETRY_DELAYS_MS.length) {
++        const delay = RETRY_DELAYS_MS[attempt]
++        console.warn(`  [retry] ${label}: ${err.message} (thrown, no response) — attempt ${attempt + 1}/${RETRY_DELAYS_MS.length + 1}, retrying in ${delay}ms`)
++        await sleep(delay)
++        continue
++      }
++      throw err // not a network-shaped thrown error, or retries exhausted — fail loudly
++    }
++  }
++  throw lastThrown
++}
+
+diff --git a/scripts/lib/supabase-paginate.mjs b/scripts/lib/supabase-paginate.mjs
+--- a/scripts/lib/supabase-paginate.mjs
++++ b/scripts/lib/supabase-paginate.mjs
+@@
++import { withRetry } from './retry.mjs'
++
+ const PAGE_SIZE = 1000
+@@
+- * @param {import('@supabase/supabase-js').SupabaseClient} sb
++ * Each page is retried with backoff (see lib/retry.mjs) on a network
++ * failure, 429, or 5xx before the whole fetch gives up — added for the
++ * wide ~4,500-customer promotion run, where this is the single most-called
++ * read path. A schema/constraint/4xx error still throws immediately, same
++ * as before. Retrying per-page (not the whole multi-thousand-row fetch)
++ * means a transient blip near the end of a long paginated read doesn't cost
++ * re-fetching everything before it.
++ *
++ * @param {import('@supabase/supabase-js').SupabaseClient} sb
+  * @param {string} table
+  * @param {(query: any) => any} buildQuery
+  * @returns {Promise<any[]>}
+  */
+ export async function fetchAllRows(sb, table, buildQuery) {
+   const out = []
+   let from = 0
+   for (;;) {
+-    const { data, error } = await buildQuery(sb.from(table)).range(from, from + PAGE_SIZE - 1)
++    const { data, error } = await withRetry(
++      () => buildQuery(sb.from(table)).range(from, from + PAGE_SIZE - 1),
++      `${table} fetch offset ${from}`
++    )
+     if (error) throw new Error(`fetchAllRows(${table}) failed at offset ${from}: ${error.message}`)
+     out.push(...data)
+     if (data.length < PAGE_SIZE) break
+     from += PAGE_SIZE
+   }
+   return out
+ }
+
+diff --git a/scripts/promote-shopvox-to-native.mjs b/scripts/promote-shopvox-to-native.mjs
+--- a/scripts/promote-shopvox-to-native.mjs
++++ b/scripts/promote-shopvox-to-native.mjs
+@@ header docstring
+  * Usage:
+  *   node scripts/promote-shopvox-to-native.mjs --customer=<shopvox_customer_uuid> [--dry-run] [--apply]
++ *   node scripts/promote-shopvox-to-native.mjs --customers=<file> [--dry-run] [--apply] [--verbose] [--progress=<file>]
+  *
+  * --dry-run is the default. --apply is required to actually write anything.
+  * Passing both, or neither with --apply, is not possible — --apply must be
+  * explicit and alone overrides the default.
++ * --customer and --customers are mutually exclusive; exactly one is required.
++ *
++ * WIDE-RUN HARDENING (added 2026-08-25, for the ~4,500-customer run — not
++ * yet exercised against anything, built-only per instruction):
++ *
++ * - RETRY: every Supabase read and write goes through withRetry()
++ *   (scripts/lib/retry.mjs — fetchAllRows() carries its own copy). Retries
++ *   with exponential backoff (5 attempts, ~15.5s max) on a thrown network
++ *   failure, HTTP 429, or HTTP 5xx. Does NOT retry a 4xx PostgREST/Postgres
++ *   error (schema mismatch, constraint violation, bad input) — those are
++ *   real bugs and still fail immediately. Same shape as the EPERM retry fix
++ *   in shopvox-capture.mjs's flushQueue.
++ *
++ * - --customers=<file>: newline-delimited ShopVOX customer uuids (blank
++ *   lines / #-comments ignored, duplicates deduped, order preserved). Each
++ *   is promoted through the same per-customer logic --customer uses
++ *   (refactored into promoteOneCustomer()). One customer's failure is
++ *   caught, logged, tallied, and does NOT stop the run.
++ *
++ * - RESUMABILITY (--apply + --customers only): after a customer's promotion
++ *   finishes writing successfully, its shopvox uuid is appended to a
++ *   progress file (default scripts/state/promote-progress.txt, override
++ *   with --progress=<file>). A uuid already in that file is skipped on
++ *   re-run. A FAILED customer is never added, so it's retried automatically
++ *   next run. --dry-run + --customers always processes the full list and
++ *   never touches the progress file (cheap review, not "work done").
++ *
++ * - LOGGING: --customer mode is unchanged (always fully verbose). --customers
++ *   mode defaults to one summary line per customer + a final tally; pass
++ *   --verbose for the full per-table report on every customer too.
+  *
+ (... rest of docstring — generated-columns section etc. — unchanged ...)
+
+@@ imports / argv
+ import { createClient } from '@supabase/supabase-js'
+ import { randomUUID } from 'node:crypto'
+-import { readFileSync } from 'node:fs'
++import { readFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs'
+ import { join, dirname } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ import { fetchAllRows } from './lib/supabase-paginate.mjs'
++import { withRetry } from './lib/retry.mjs'
+
+ const __dir = dirname(fileURLToPath(import.meta.url))
+ const root = join(__dir, '..')
+ const ORGANIZATION_ID = '4ca12dff-97be-4472-8099-ab102a3af01a'
+
+ const argv = process.argv.slice(2)
+ function getFlag(name) { const a = argv.find((a) => a.startsWith(`--${name}=`)); return a ? a.slice(name.length + 3) : null }
+ const APPLY = argv.includes('--apply')
+ const DRY_RUN = !APPLY // --dry-run is the default; only --apply turns writes on
++const VERBOSE = argv.includes('--verbose') // --customers=<file> mode only
+ const CUSTOMER_SHOPVOX_ID = getFlag('customer')
+-if (!CUSTOMER_SHOPVOX_ID) { console.error('FATAL: --customer=<shopvox_customer_uuid> is required'); process.exit(1) }
++const CUSTOMERS_FILE = getFlag('customers')
++const PROGRESS_FILE = getFlag('progress') || join(root, 'scripts', 'state', 'promote-progress.txt')
++if (!CUSTOMER_SHOPVOX_ID && !CUSTOMERS_FILE) { console.error('FATAL: --customer=<shopvox_customer_uuid> or --customers=<file> is required'); process.exit(1) }
++if (CUSTOMER_SHOPVOX_ID && CUSTOMERS_FILE) { console.error('FATAL: pass --customer OR --customers, not both'); process.exit(1) }
+
+@@ report accumulator
+-// ── Report accumulator ──────────────────────────────────────────────────
+-const report = {
+-  customer: { shopvoxId: CUSTOMER_SHOPVOX_ID, nativeId: null, found: false },
+-  counts: {}, // table -> {toInsert, toUpdate, skipped}
+-  skipped: {}, // table -> [{shopvox_id, reason}]
+-  fallbacksApplied: {}, // table.field -> count
+-  unmappedFields: {}, // table -> [{field, note, nonEmptyCount}]
+-  precisionNotes: {}, // table.field -> {rounded: n, samples: [...]}
+-  chainLinks: { quoteToSo: { resolved: 0, unresolved: 0 }, soToInvoice: { resolved: 0, unresolved: 0 }, soToQuote: { resolved: 0, unresolved: 0 } },
+-  notPromotedKinds: {}, // kind -> count (credit_memo etc — no rule given)
+-  proposedDefaults: [], // things I decided without an explicit rule — flagged for confirmation
+-}
++// ── Report accumulator ──────────────────────────────────────────────────
++// A factory, not a fixed object: --customers=<file> mode calls
++// promoteOneCustomer() once per customer in the same process, and this
++// state must reset for each one — a module-level constant here would leak
++// counts/fallbacks/skips across customers instead of starting fresh.
++// `report` is reassigned at the top of promoteOneCustomer(); the addX
++// helpers below close over the `let` binding so they always see whichever
++// customer is currently being processed.
++function freshReport(shopvoxId) {
++  return {
++    customer: { shopvoxId, nativeId: null, found: false },
++    counts: {},
++    skipped: {},
++    fallbacksApplied: {},
++    unmappedFields: {},
++    precisionNotes: {},
++    chainLinks: { quoteToSo: { resolved: 0, unresolved: 0 }, soToInvoice: { resolved: 0, unresolved: 0 }, soToQuote: { resolved: 0, unresolved: 0 } },
++    notPromotedKinds: {},
++    proposedDefaults: [],
++  }
++}
++let report = freshReport(CUSTOMER_SHOPVOX_ID || null)
+ // (addUnmapped/addFallback/addSkip below unchanged — they close over `report`)
+
+@@ resolveCustomer
+-async function resolveCustomer() {
+-  const { data, error } = await sb.from('customers').select('id').eq('organization_id', ORGANIZATION_ID).eq('shopvox_id', CUSTOMER_SHOPVOX_ID).limit(2)
++async function resolveCustomer(customerShopvoxId) {
++  const { data, error } = await withRetry(
++    () => sb.from('customers').select('id').eq('organization_id', ORGANIZATION_ID).eq('shopvox_id', customerShopvoxId).limit(2),
++    'customers lookup'
++  )
+   if (error) throw new Error(`customer lookup failed: ${error.message}`)
+-  if (!data || data.length === 0) throw new Error(`no native customer found with shopvox_id=${CUSTOMER_SHOPVOX_ID} — cannot promote without a resolved customer link (rule 6)`)
+-  if (data.length > 1) throw new Error(`FATAL: ${data.length} native customers share shopvox_id=${CUSTOMER_SHOPVOX_ID} — should be impossible (verified 0 duplicates), refusing to guess`)
++  if (!data || data.length === 0) throw new Error(`no native customer found with shopvox_id=${customerShopvoxId} — cannot promote without a resolved customer link (rule 6)`)
++  if (data.length > 1) throw new Error(`FATAL: ${data.length} native customers share shopvox_id=${customerShopvoxId} — should be impossible (verified 0 duplicates), refusing to guess`)
+   report.customer.nativeId = data[0].id
+   report.customer.found = true
+   return data[0].id
+ }
+
+@@ fetchStaging
+-async function fetchStaging() {
++async function fetchStaging(customerShopvoxId) {
+   const transactions = await fetchAllRows(sb, 'shopvox_transactions', (q) =>
+     q.select('shopvox_id,kind,...')
+-      .eq('organization_id', ORGANIZATION_ID).eq('customer_shopvox_id', CUSTOMER_SHOPVOX_ID))
++      .eq('organization_id', ORGANIZATION_ID).eq('customer_shopvox_id', customerShopvoxId))
+
+   const jobs = await fetchAllRows(sb, 'shopvox_jobs', (q) =>
+     q.select('shopvox_id,number,...')
+-      .eq('organization_id', ORGANIZATION_ID).eq('customer_shopvox_id', CUSTOMER_SHOPVOX_ID))
++      .eq('organization_id', ORGANIZATION_ID).eq('customer_shopvox_id', customerShopvoxId))
+   ... (unchanged body) ...
+   const emails = await fetchAllRows(sb, 'shopvox_emails', (q) =>
+     q.select('id,shopvox_id,...')
+-      .eq('organization_id', ORGANIZATION_ID).eq('customer_shopvox_id', CUSTOMER_SHOPVOX_ID))
++      .eq('organization_id', ORGANIZATION_ID).eq('customer_shopvox_id', customerShopvoxId))
+
+@@ resolveIdMap
+   for (let i = 0; i < shopvoxIds.length; i += CHUNK) {
+     const chunk = shopvoxIds.slice(i, i + CHUNK)
+-    const { data, error } = await sb.from(table).select('id,shopvox_id,is_historical').eq('organization_id', ORGANIZATION_ID).in('shopvox_id', chunk)
++    const { data, error } = await withRetry(
++      () => sb.from(table).select('id,shopvox_id,is_historical').eq('organization_id', ORGANIZATION_ID).in('shopvox_id', chunk),
++      `${table} id resolution (offset ${i})`
++    )
+     if (error) throw new Error(`${table} id resolution failed: ${error.message}`)
+     for (const row of data) map.set(row.shopvox_id, row)
+   }
+
+@@ main() -> promoteOneCustomer()
+-// ── Main ──────────────────────────────────────────────────────────────
+-async function main() {
+-  console.log(`Mode: ${DRY_RUN ? 'DRY RUN (no writes)' : 'APPLY (writing)'}`)
+-  console.log(`Customer (shopvox): ${CUSTOMER_SHOPVOX_ID}`)
+-
+-  const customerId = await resolveCustomer()
+-  console.log(`Resolved native customer id: ${customerId}`)
+-
+-  const { txnByKind, jobs, ... } = await fetchStaging()
+-  console.log(`Staging fetched: ...`)
++// ── Main (per-customer) ─────────────────────────────────────────────────
++// Called once for --customer=<uuid>, and once per line for --customers=<file>.
++// verbose gates every console.log through the local log() — --customer mode
++// always passes verbose:true (unchanged output). Throws (never process.exit)
++// on a fatal error so the multi-customer driver can catch it and continue.
++async function promoteOneCustomer(customerShopvoxId, { verbose = true } = {}) {
++  report = freshReport(customerShopvoxId)
++  const log = verbose ? (...a) => console.log(...a) : () => {}
++
++  log(`Mode: ${DRY_RUN ? 'DRY RUN (no writes)' : 'APPLY (writing)'}`)
++  log(`Customer (shopvox): ${customerShopvoxId}`)
++
++  const customerId = await resolveCustomer(customerShopvoxId)
++  log(`Resolved native customer id: ${customerId}`)
++
++  const { txnByKind, jobs, ... } = await fetchStaging(customerShopvoxId)
++  log(`Staging fetched: ...`)
+   ... every remaining console.log(...) in this function's body renamed to log(...) —
+   ~40 call sites (ROWS THIS RUN WOULD WRITE, DISTINCT STATUS, CHAIN LINKS,
+   FALLBACKS, PRECISION, PAYMENT APPLICATIONS, DISCOUNT MAPPING, MIGRATION
+   E/F/G TABLES, UNMAPPED FIELDS, PROPOSED DEFAULTS, SKIPPED ROWS, NOT
+   PROMOTED) — no logic changed, only the log function used ...
+
+@@ dry-run return
+   if (DRY_RUN) {
+-    console.log('\n--dry-run: NOTHING WRITTEN. Pass --apply to write.')
+-    return
++    log('\n--dry-run: NOTHING WRITTEN. Pass --apply to write.')
++    return { shopvoxId: customerShopvoxId, customerId, counts: report.counts, dryRun: true }
+   }
+
+@@ apply loop
+-  // ── apply (not exercised this task) ──
+-  console.log('\nAPPLYING...')
++  // ── apply ──
++  log('\nAPPLYING...')
+   const writes = [ ...same 16 tables, unchanged... ]
+   for (const [table, rows] of writes) {
+     if (rows.length === 0) continue
+     const BATCH = table.includes('line_items') ? 100 : 50
+     for (let i = 0; i < rows.length; i += BATCH) {
+       const batch = rows.slice(i, i + BATCH)
+-      const { error } = await sb.from(table).upsert(batch, { onConflict: 'id' })
+-      if (error) { console.error(`FATAL: ${table} upsert failed at offset ${i}: ${error.message}`); process.exit(1) }
++      const { error } = await withRetry(() => sb.from(table).upsert(batch, { onConflict: 'id' }), `${table} upsert batch offset ${i}`)
++      if (error) throw new Error(`${table} upsert failed at offset ${i}: ${error.message}`)
+     }
+-    console.log(`  ✓ ${table}: ${rows.length} row(s) upserted`)
++    log(`  ✓ ${table}: ${rows.length} row(s) upserted`)
+   }
++
++  return { shopvoxId: customerShopvoxId, customerId, counts: report.counts, dryRun: false }
+ }
+-
+-main().catch((err) => { console.error('FATAL:', err.message); process.exit(1) })
++
++// ── Driver ────────────────────────────────────────────────────────────
++function readCustomersFile(path) {
++  const raw = readFileSync(path, 'utf8')
++  const seen = new Set()
++  const ids = []
++  for (const line of raw.split('\n')) {
++    const id = line.trim()
++    if (!id || id.startsWith('#') || seen.has(id)) continue
++    seen.add(id)
++    ids.push(id)
++  }
++  return ids
++}
++
++function loadProgress() {
++  if (!existsSync(PROGRESS_FILE)) return new Set()
++  return new Set(readFileSync(PROGRESS_FILE, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean))
++}
++
++function appendProgress(id) {
++  mkdirSync(dirname(PROGRESS_FILE), { recursive: true })
++  appendFileSync(PROGRESS_FILE, id + '\n')
++}
++
++function summarizeCounts(counts) {
++  return Object.entries(counts || {}).map(([table, c]) => `${table}=${c.total}`).join(' ')
++}
++
++async function main() {
++  if (CUSTOMER_SHOPVOX_ID) {
++    // single-customer mode — unchanged behavior: always fully verbose,
++    // exits 1 on the first failure, via the top-level .catch() below.
++    await promoteOneCustomer(CUSTOMER_SHOPVOX_ID, { verbose: true })
++    return
++  }
++
++  // --customers=<file> mode — the wide-run driver.
++  const ids = readCustomersFile(CUSTOMERS_FILE)
++  console.log(`Mode: ${DRY_RUN ? 'DRY RUN (no writes)' : 'APPLY (writing)'}`)
++  console.log(`Customers in list: ${ids.length}${VERBOSE ? ' (verbose: full per-customer report)' : ' (terse: one summary line per customer — pass --verbose for the full per-table report on each)'}`)
++
++  const done = APPLY ? loadProgress() : new Set()
++  if (APPLY) console.log(`Progress file: ${PROGRESS_FILE} (${done.size} already completed, will be skipped)`)
++
++  const tally = { succeeded: 0, failed: 0, skipped: 0 }
++  const failures = []
++  const startedAt = Date.now()
++
++  for (let i = 0; i < ids.length; i++) {
++    const id = ids[i]
++    const pos = `[${i + 1}/${ids.length}]`
++    if (APPLY && done.has(id)) {
++      console.log(`${pos} ${id}: SKIP — already completed per progress file`)
++      tally.skipped++
++      continue
++    }
++    try {
++      const summary = await promoteOneCustomer(id, { verbose: VERBOSE })
++      tally.succeeded++
++      console.log(`${pos} ${id}: OK — ${summarizeCounts(summary.counts)}`)
++      if (APPLY) appendProgress(id)
++    } catch (err) {
++      tally.failed++
++      failures.push({ id, message: err.message })
++      console.error(`${pos} ${id}: FAILED — ${err.message}`)
++      // one customer's failure does not stop the run
++    }
++  }
++
++  const elapsedMin = ((Date.now() - startedAt) / 60000).toFixed(1)
++  console.log('\n=== FINAL TALLY ===')
++  console.log(`  total in list: ${ids.length}`)
++  console.log(`  succeeded: ${tally.succeeded}`)
++  console.log(`  failed: ${tally.failed}`)
++  console.log(`  skipped (already done per progress file): ${tally.skipped}`)
++  console.log(`  elapsed: ${elapsedMin} min`)
++  if (failures.length) {
++    console.log('  failures (re-run the same --customers/--progress files to retry just these):')
++    for (const f of failures) console.log(`    ${f.id}: ${f.message}`)
++  }
++  if (tally.failed > 0) process.exitCode = 1
++}
++
++main().catch((err) => { console.error('FATAL:', err.message); process.exit(1) })
