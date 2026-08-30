@@ -59,3 +59,27 @@ data/
 
 supabase/.temp/
 .env*
+
+# --- Added Aug 30, 2026 — historical migration ---
+# The secondary session was never listed. It is a live Chromium profile
+# containing Default/Network/Cookies and Login Data — a working ShopVOX
+# login. It must never be committed.
+scripts/.shopvox-session-secondary/
+
+# Capture corpus — 12.4 GiB across 91,560 files. Never in git.
+scripts/capture/
+scripts/queue/
+scripts/chain-capture/
+scripts/customer-index/
+scripts/api-probe/
+scripts/pilot-sames/
+
+# Run state — machine-specific. promote-progress-full.txt in particular
+# must never travel: if another machine pulls it, a promotion run there
+# reads it and silently SKIPS all 2,542 customers as already done.
+scripts/state/
+
+# Large generated JSON
+scripts/shopvox-extract-orphans.json
+scripts/shopvox-material-tiers-output.json
+scripts/shopvox-materials-reconciliation-report.json
