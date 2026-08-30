@@ -1,5 +1,17 @@
 # 2026-08-19 — API auth sweep: confirmed-clean routes
 
+> **⚠ Coverage warning (added 2026-08-30). This sweep examined 21 of 68 routes under
+> `src/app/api/` — roughly 31%.** The title says "API auth sweep"; the scope was not the API.
+> The other 47 routes were never opened. Do not read this file, or the sweep it belongs to, as
+> evidence that a route is safe unless that route is named below. Routes known to have been
+> missed, and found later to have real gaps, include `POST /api/collection-calls`
+> (unauthenticated cross-org write until 2026-08-30), `POST /api/quotes/approve` and
+> `POST /api/quotes/rescue-archive` (cross-org writes gated only on the org-blind
+> `checkPermission`), and `GET /api/jobs/labels` (trusted `?org=` in its date-range mode).
+>
+> **One clearance below was wrong and has been corrected: `POST /api/test-sms`.** See that
+> section.
+
 ## Status
 
 **Reference only — no action needed.** Companion to the fixes in this PR (see PR description
@@ -22,13 +34,34 @@ The mutating routes additionally call `materialBelongsToOrg()` before touching a
 correct pattern (the same shape `require-org-access.ts` was written to bring to the routes
 that didn't have it) — no gap found.
 
-## `POST /api/test-sms`
+## ~~`POST /api/test-sms`~~ — **CLEARED IN ERROR. Route deleted 2026-08-30 (PR #56).**
 
-`src/app/api/test-sms/route.ts` hard-blocks itself outside development:
-`if (process.env.NODE_ENV === 'production') return 403`. It's a dev-only Twilio smoke-test
-tool with no org-scoped data involved (just sends a test SMS to a phone number in the request
-body via the shared Twilio account) — the production block is the correct control for what
-this route is. No gap found.
+**The original ruling, retained so the mistake is legible:**
+
+> `src/app/api/test-sms/route.ts` hard-blocks itself outside development:
+> `if (process.env.NODE_ENV === 'production') return 403`. It's a dev-only Twilio smoke-test
+> tool with no org-scoped data involved (just sends a test SMS to a phone number in the request
+> body via the shared Twilio account) — the production block is the correct control for what
+> this route is. No gap found.
+
+**Why that was wrong.** `NODE_ENV !== 'production'` is not an access control. Vercel preview
+deployments are non-production, publicly reachable at a guessable URL, and carry the same
+environment variables as production — including `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and
+`TWILIO_PHONE_NUMBER`. On every preview build this route was an **open, unauthenticated SMS
+relay**: no session check, no allowlist on the destination number, no rate limit, `To:` taken
+verbatim from the request body, billed to the shared Twilio account. It had zero callers. It
+was open for 11 days.
+
+"No org-scoped data involved" was true and irrelevant. The asset at risk was the Twilio
+account and the ability to send messages from the company's number to arbitrary recipients —
+neither of which is org-scoped data, and neither of which the production block protected.
+
+**The general lesson, which is the reason this section is kept rather than deleted:** an
+environment check is not a guard. Neither is "dev only", "internal tool", "no callers", "not
+linked in the UI", or "nobody knows the URL". A route is cleared only by an authentication
+check *in the route*, or by being a credential-bearing endpoint where the credential IS the
+request (see `auth/callback` and `shipping/webhook` below — both genuinely clean, for that
+reason). Anything cleared on environment or obscurity reasoning should be re-opened.
 
 ## The webhooks — one confirmed clean, two fixed in a separate held PR
 
