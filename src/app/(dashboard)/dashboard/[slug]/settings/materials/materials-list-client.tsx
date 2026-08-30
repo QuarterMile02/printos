@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { ColumnDef, FilterRule } from '@/components/data-table/types'
@@ -13,6 +13,7 @@ import { SettingsTabs, type SettingsTab } from '@/components/settings/settings-t
 import { SettingsSearchInput } from '@/components/settings/settings-search-input'
 import { MaterialCard } from './material-card'
 import { MATERIALS_PAGE_SIZE } from './constants'
+import { searchMaterials } from './actions-sr'
 
 // ── Row type ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,6 @@ export type MaterialCategoryOption = { id: string; name: string }
 
 const DB_SELECT = 'id, name, external_name, cost, price, selling_units, material_type_id, category_id, active'
 const PAGE_SIZE = MATERIALS_PAGE_SIZE
-const SEARCH_COLUMNS = ['name', 'external_name', 'part_number', 'sku']
 
 const DEFAULT_SORT = [{ column: 'name', direction: 'asc' as const }]
 
@@ -197,6 +197,12 @@ export default function MaterialsListClient({
     disabled: isViewReadOnly,
   })
 
+  // Trigram fuzzy search (search_materials_fuzzy, migration 127) — replaces
+  // the plain ILIKE-across-searchColumns path with the same fuzziness
+  // Customers/Vendors/Products use. Same field scope as before (name,
+  // external_name, part_number, sku), just misspelling-tolerant now.
+  const boundSearchFn = useCallback((term: string) => searchMaterials(orgId, term), [orgId])
+
   const { rows: liveRows, totalCount: liveTotalCount, loading, error } = useDataTableQuery<MaterialListRow>({
     tableKey: 'materials',
     orgId,
@@ -204,7 +210,7 @@ export default function MaterialsListClient({
     filterRules: effectiveFilterRules,
     sortRules: activeSortRules,
     search,
-    searchColumns: SEARCH_COLUMNS,
+    searchFn: boundSearchFn,
     page,
     pageSize: PAGE_SIZE,
     initialRows,

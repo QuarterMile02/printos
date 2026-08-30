@@ -41,3 +41,29 @@ export async function dbBestEffort<T>(
   }
   return data
 }
+
+// PostgREST truncates any unbounded select at 1000 rows, silently — no
+// error, no flag, just fewer rows than actually exist. Confirmed to have
+// already produced a wrong count once on this project (materials
+// migrate screen). Any query that could plausibly exceed 1000 rows for
+// a real org must page through with explicit .range() calls rather than
+// trust a single unbounded select — this is the one place that does it,
+// so every caller gets the same discipline instead of hand-rolling a
+// loop (and potentially getting the off-by-one wrong) at each call site.
+const PAGE_SIZE = 1000
+
+export async function dbAllOrThrow<T>(
+  buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: PostgrestError | null }>,
+): Promise<T[]> {
+  const all: T[] = []
+  let from = 0
+  for (;;) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1)
+    if (error) throw new DbError(error)
+    const rows = data ?? []
+    all.push(...rows)
+    if (rows.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return all
+}

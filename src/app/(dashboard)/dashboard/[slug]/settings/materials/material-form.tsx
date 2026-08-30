@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { saveMaterial } from './actions-sr'
+import UnitsOfBusinessSelect from './units-of-business-select'
+import MaterialSizeFields from './material-size-fields'
 
 type MaterialData = {
   id?: string
@@ -25,7 +27,9 @@ type MaterialData = {
   material_category?: string | null
   unit_width?: number | null
   unit_height?: number | null
+  unit_depth?: number | null
   unit_cost?: number | null
+  thickness?: number | null
   other_charge?: number | null
   per_li_unit?: boolean | null
   calculate_wastage?: boolean | null
@@ -48,6 +52,7 @@ type MaterialData = {
 type DiscountOption = { id: string; name: string }
 type MaterialTypeOption = { id: string; name: string }
 type MaterialCategoryOption = { id: string; name: string }
+type ProductTypeOption = { id: string; name: string }
 
 type Props = {
   material: MaterialData | null
@@ -57,6 +62,13 @@ type Props = {
   materialTypes: MaterialTypeOption[]
   materialCategories: MaterialCategoryOption[]
   discounts: DiscountOption[]
+  // Units of Business -- product_types is the real entity for this (see
+  // known-issues/2026-08-21-material-units-of-business.md): "a product
+  // belongs to ONE unit of business" already exists as products.product_type_id;
+  // a material can belong to MANY, via the new material_product_types
+  // junction table below.
+  productTypes: ProductTypeOption[]
+  selectedProductTypeIds: string[]
 }
 
 const UNITS = ['Each', 'Sqft', 'Roll', 'Sheet', 'Feet', 'Inch', 'Yard', 'Hr', 'Linear Ft']
@@ -72,6 +84,7 @@ const labelCls = 'block text-sm font-medium text-gray-700'
 
 export default function MaterialForm({
   material, orgId, orgSlug, canEditInventory, materialTypes, materialCategories, discounts,
+  productTypes, selectedProductTypeIds,
 }: Props) {
   const m = material
   const isEdit = !!m?.id
@@ -81,26 +94,44 @@ export default function MaterialForm({
       <input type="hidden" name="orgId" value={orgId} />
       <input type="hidden" name="orgSlug" value={orgSlug} />
 
-      {/* Names */}
+      {/* General -- names + the "always visible" flags. These 4 checkboxes
+          used to live at the bottom of the form (Active standalone, the
+          other 3 under Display & Accounting) -- moved here per Ruben's
+          spec so they're seen immediately, not after scrolling past
+          pricing/dimensions/charges. */}
       <div>
         <h3 className={sectionTitleCls}>General</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div><label className={labelCls}>Name *</label><input type="text" name="name" required defaultValue={m?.name ?? ''} className={inp()} /></div>
           <div><label className={labelCls}>Display Name</label><input type="text" name="external_name" defaultValue={m?.external_name ?? ''} className={inp()} /></div>
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-6">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="print_image_on_pdf" defaultChecked={m?.print_image_on_pdf === true} className="h-4 w-4 accent-qm-lime" />
+            Print Image on PDF
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="show_internal" defaultChecked={m?.show_internal === true} className="h-4 w-4 accent-qm-lime" />
+            Show Internal
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="display_description_in_li" defaultChecked={m?.display_description_in_li === true} className="h-4 w-4 accent-qm-lime" />
+            Display Description in Line Item
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="active" defaultChecked={m?.active !== false} className="h-4 w-4 rounded border-gray-300 accent-qm-lime" />
+            Active
+          </label>
+        </div>
       </div>
 
-      {/* Classification */}
+      {/* Classification -- Type moved out to MaterialSizeFields below: it
+          now lives right next to the fields it drives the labels of
+          (Material Size), not next to Category, so the type-driven
+          relabeling is visually obvious as you change it. */}
       <div>
         <h3 className={sectionTitleCls}>Classification</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Type</label>
-            <select name="material_type_id" defaultValue={m?.material_type_id ?? ''} className={inp()}>
-              <option value="">— None —</option>
-              {materialTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
           <div>
             <label className={labelCls}>Category</label>
             <select name="category_id" defaultValue={m?.category_id ?? ''} className={inp()}>
@@ -109,36 +140,22 @@ export default function MaterialForm({
             </select>
           </div>
         </div>
-      </div>
-
-      {/* Package Details */}
-      <div>
-        <h3 className={sectionTitleCls}>Package Details</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div><label className={labelCls}>Unit Width (in)</label><input type="number" name="unit_width" step="0.0001" defaultValue={m?.unit_width ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Unit Height (in)</label><input type="number" name="unit_height" step="0.0001" defaultValue={m?.unit_height ?? ''} className={inp()} /></div>
-          <div>
-            <label className={labelCls}>Unit Cost ($)</label>
-            <input type="number" name="unit_cost" step="0.0001" defaultValue={m?.unit_cost ?? ''} className={inp()} />
-            <p className="mt-1 text-xs text-gray-500">Cost per physical unit/package (e.g. cost per sheet, per roll)</p>
-          </div>
+        {/* Units of Business -- a material can belong to many (unlike a
+            product, which belongs to exactly one via product_type_id).
+            Drives the monthly QuickBooks material-cost allocation export
+            (not built yet -- this is just the classification data it'll
+            need). Dropdown + removable chips, not a checkbox grid --
+            same product_types list, same material_product_types junction. */}
+        <div className="mt-4">
+          <label className={labelCls}>Units of Business</label>
+          <UnitsOfBusinessSelect productTypes={productTypes} initialSelectedIds={selectedProductTypeIds} />
         </div>
       </div>
 
-      {/* Pricing */}
+      {/* Pricing -- units/formula ABOVE cost, per Ruben: how the material
+          is bought/sold and priced is decided before the actual numbers. */}
       <div>
         <h3 className={sectionTitleCls}>Pricing</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div><label className={labelCls}>Cost</label><input type="number" name="cost" step="0.0001" defaultValue={n(m?.cost).toFixed(4)} className={inp()} /></div>
-          <div><label className={labelCls}>Price</label><input type="number" name="price" step="0.0001" defaultValue={n(m?.price).toFixed(4)} className={inp()} /></div>
-          <div><label className={labelCls}>Multiplier</label><input type="number" name="multiplier" step="0.01" defaultValue={n(m?.multiplier, 2).toFixed(2)} className={inp()} /></div>
-          <div><label className={labelCls}>Sell/Buy Ratio</label><input type="number" name="sell_buy_ratio" step="0.01" defaultValue={n(m?.sell_buy_ratio, 1).toFixed(2)} className={inp()} /></div>
-        </div>
-      </div>
-
-      {/* Units / Formula */}
-      <div>
-        <h3 className={sectionTitleCls}>Units &amp; Formula</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <label className={labelCls}>Buying Units</label>
@@ -158,27 +175,88 @@ export default function MaterialForm({
               {FORMULAS.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
+          <div />
+        </div>
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div><label className={labelCls}>Cost</label><input type="number" name="cost" step="0.0001" defaultValue={n(m?.cost).toFixed(4)} className={inp()} /></div>
+          <div><label className={labelCls}>Price</label><input type="number" name="price" step="0.0001" defaultValue={n(m?.price).toFixed(4)} className={inp()} /></div>
+          <div><label className={labelCls}>Multiplier</label><input type="number" name="multiplier" step="0.01" defaultValue={n(m?.multiplier, 2).toFixed(2)} className={inp()} /></div>
+          <div><label className={labelCls}>Sell/Buy Ratio</label><input type="number" name="sell_buy_ratio" step="0.01" defaultValue={n(m?.sell_buy_ratio, 1).toFixed(2)} className={inp()} /></div>
+        </div>
+      </div>
+
+      {/* Wastage & Fixed Side -- grouped together: Fixed Side decides which
+          roll dimension is "fixed" for the waste-strip calculation that
+          Calculate Wastage turns on, and Wastage Markup is the multiplier
+          applied to that waste. */}
+      <div>
+        <h3 className={sectionTitleCls}>Wastage &amp; Fixed Side</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className={labelCls}>Wastage Markup (X)</label>
+            <input type="number" name="wastage_markup" step="0.01" defaultValue={n(m?.wastage_markup, 1).toFixed(2)} className={inp()} />
+            <p className="mt-1 text-xs text-gray-500">Multiplier, not a percent — 1 = cost only, 2 = cost doubled (100% wastage)</p>
+          </div>
           <div>
             <label className={labelCls}>Fixed Side</label>
             <select name="fixed_side" defaultValue={m?.fixed_side ?? ''} className={inp()}>
-              <option value="">—</option><option value="Width">Width</option><option value="Height">Height</option>
+              <option value="">None</option>
+              <option value="Width">Width</option>
+              <option value="Height">Height</option>
+            </select>
+          </div>
+          <div className="flex items-end pb-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" name="calculate_wastage" defaultChecked={m?.calculate_wastage === true} className="h-4 w-4 accent-qm-lime" />
+              Calculate Wastage
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Material Size -- Type-driven labels (Part 2 of the material form
+          redesign). Roll: Width x Length. Substrate: Height x Width x
+          Thickness. Unit: Height x Width x Depth/Thickness. Cost label
+          (Roll Cost/Sheet Cost/Unit Cost) follows the same Type, all three
+          reusing the same `sheet_cost` column -- this is the fix for
+          "Sheet Cost showing on a Roll material." See
+          known-issues/2026-08-21-material-form-redesign-part2-type-resolution.md. */}
+      <MaterialSizeFields
+        materialTypes={materialTypes}
+        initialTypeId={m?.material_type_id ?? null}
+        initialWidth={m?.width}
+        initialHeight={m?.height}
+        initialThickness={m?.thickness}
+        initialSheetCost={m?.sheet_cost}
+      />
+
+      {/* Packaging / Shipping -- unit_width/unit_height are the packaging
+          pair (Part 1 confirmed zero readers outside their own detail
+          view, so free to repurpose), plus the new unit_depth third
+          dimension. Weight/Weight UOM moved here out of Identification
+          (Part 1 finding D: one column pair, 258/1788 populated, no
+          readers, safe to move). */}
+      <div>
+        <h3 className={sectionTitleCls}>Packaging / Shipping</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div><label className={labelCls}>Height (in)</label><input type="number" name="unit_height" step="0.0001" defaultValue={m?.unit_height ?? ''} className={inp()} /></div>
+          <div><label className={labelCls}>Width/Length (in)</label><input type="number" name="unit_width" step="0.0001" defaultValue={m?.unit_width ?? ''} className={inp()} /></div>
+          <div><label className={labelCls}>Depth (in)</label><input type="number" name="unit_depth" step="0.0001" defaultValue={m?.unit_depth ?? ''} className={inp()} /></div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div><label className={labelCls}>Weight</label><input type="number" name="weight" step="0.0001" defaultValue={m?.weight ?? ''} className={inp()} /></div>
+          <div>
+            <label className={labelCls}>Weight UOM</label>
+            <select name="weight_uom" defaultValue={m?.weight_uom ?? ''} className={inp()}>
+              <option value="">—</option>
+              {WEIGHT_UOMS.map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
         </div>
       </div>
 
-      {/* Dimensions / Sheet */}
-      <div>
-        <h3 className={sectionTitleCls}>Dimensions &amp; Sheet</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div><label className={labelCls}>Width</label><input type="number" name="width" step="0.01" defaultValue={m?.width ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Height</label><input type="number" name="height" step="0.01" defaultValue={m?.height ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Sheet Cost</label><input type="number" name="sheet_cost" step="0.01" defaultValue={m?.sheet_cost ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Wastage Markup %</label><input type="number" name="wastage_markup" step="0.01" defaultValue={n(m?.wastage_markup).toFixed(2)} className={inp()} /></div>
-        </div>
-      </div>
-
-      {/* Charges + Pricing flags */}
+      {/* Charges + Pricing flags -- Calculate Wastage moved out to Wastage
+          & Fixed Side above. */}
       <div>
         <h3 className={sectionTitleCls}>Charges</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -203,30 +281,18 @@ export default function MaterialForm({
             Per LI Unit
           </label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="calculate_wastage" defaultChecked={m?.calculate_wastage === true} className="h-4 w-4 accent-qm-lime" />
-            Calculate Wastage
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input type="checkbox" name="include_in_base_price" defaultChecked={m?.include_in_base_price === true} className="h-4 w-4 accent-qm-lime" />
             Include in Base Price
           </label>
         </div>
       </div>
 
-      {/* Identification */}
+      {/* Identification -- Weight/Weight UOM moved to Packaging/Shipping. */}
       <div>
         <h3 className={sectionTitleCls}>Identification</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div><label className={labelCls}>Part Number</label><input type="text" name="part_number" defaultValue={m?.part_number ?? ''} className={inp()} /></div>
           <div><label className={labelCls}>SKU</label><input type="text" name="sku" defaultValue={m?.sku ?? ''} className={inp()} /></div>
-          <div><label className={labelCls}>Weight</label><input type="number" name="weight" step="0.0001" defaultValue={m?.weight ?? ''} className={inp()} /></div>
-          <div>
-            <label className={labelCls}>Weight UOM</label>
-            <select name="weight_uom" defaultValue={m?.weight_uom ?? ''} className={inp()}>
-              <option value="">—</option>
-              {WEIGHT_UOMS.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>
         </div>
       </div>
 
@@ -264,7 +330,8 @@ export default function MaterialForm({
         </div>
       )}
 
-      {/* Display & Accounting */}
+      {/* Display & Accounting -- the 3 flags that used to live here moved
+          up to General; this section keeps the rest. */}
       <div>
         <h3 className={sectionTitleCls}>Display &amp; Accounting</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -289,27 +356,7 @@ export default function MaterialForm({
           <label className={labelCls}>Description</label>
           <textarea name="description" rows={3} defaultValue={m?.description ?? ''} className={inp()} />
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-6">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="print_image_on_pdf" defaultChecked={m?.print_image_on_pdf === true} className="h-4 w-4 accent-qm-lime" />
-            Print Image on PDF
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="show_internal" defaultChecked={m?.show_internal === true} className="h-4 w-4 accent-qm-lime" />
-            Show Internal
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" name="display_description_in_li" defaultChecked={m?.display_description_in_li === true} className="h-4 w-4 accent-qm-lime" />
-            Display Description in Line Item
-          </label>
-        </div>
       </div>
-
-      {/* Active */}
-      <label className="flex items-center gap-2 text-sm cursor-pointer">
-        <input type="checkbox" name="active" defaultChecked={m?.active !== false} className="h-4 w-4 rounded border-gray-300 accent-qm-lime" />
-        Active
-      </label>
 
       <div className="flex gap-3 border-t border-gray-200 pt-4">
         <button type="submit" className="rounded-md bg-qm-lime px-4 py-2 text-sm font-semibold text-white hover:brightness-110">Save Material</button>

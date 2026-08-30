@@ -4,6 +4,7 @@ import { checkPermission } from '@/lib/check-permission'
 import { renderToBuffer } from '@react-pdf/renderer'
 import QuoteDocument, { type QuotePdfData, type QuotePdfLineItem, type OrgProfile } from '@/lib/pdf/quote-document'
 import { formatInvNumber } from '@/app/(dashboard)/dashboard/[slug]/invoices/format'
+import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
 import React from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -68,7 +69,6 @@ export async function GET(
     }
 
     // 5. Line items from the linked quote
-    // Two-step fetch: retry without modifier_values if the column doesn't exist yet.
     type RawLineItem = { id: string; description: string | null; quantity: number | null; unit_price: number | null; total_price: number | null; discount_percent: number | null; taxable: boolean | null; sort_order: number | null; modifier_values?: Record<string, boolean | number> | null }
     const lineItems: QuotePdfLineItem[] = []
     if (quoteId) {
@@ -79,16 +79,8 @@ export async function GET(
           .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order, modifier_values')
           .eq('quote_id', quoteId)
           .order('sort_order') as { data: RawLineItem[] | null; error: { message?: string } | null }
-        if (data) {
-          rawLineItems = data
-        } else if (error?.message?.includes('modifier_values')) {
-          const { data: legacy } = await service
-            .from('quote_line_items')
-            .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order')
-            .eq('quote_id', quoteId)
-            .order('sort_order') as { data: Omit<RawLineItem, 'modifier_values'>[] | null; error: unknown }
-          rawLineItems = (legacy ?? []).map((li) => ({ ...li, modifier_values: null }))
-        }
+        if (error) throw new Error(`Failed to load line items: ${error.message}`)
+        rawLineItems = data ?? []
       }
       for (const li of rawLineItems) {
         lineItems.push({
@@ -105,12 +97,12 @@ export async function GET(
     }
 
     // 6. Customer
-    type CustomerRow = { company_name: string | null; first_name: string; last_name: string; email: string | null; phone: string | null; street: string | null; city: string | null; state: string | null; zip: string | null }
+    type CustomerRow = { company_name: string | null; first_name: string; last_name: string; email: string | null; phone: string | null; street: string | null; city: string | null; state: string | null; zip: string | null; tax_rate: string | null; tax_exempt_code: string | null; tax_exempt_expires: string | null }
     let customer: CustomerRow | null = null
     if (inv.customer_id) {
       const { data } = await service
         .from('customers')
-        .select('company_name, first_name, last_name, email, phone, street, city, state, zip')
+        .select('company_name, first_name, last_name, email, phone, street, city, state, zip, tax_rate, tax_exempt_code, tax_exempt_expires')
         .eq('id', inv.customer_id)
         .maybeSingle() as { data: CustomerRow | null; error: unknown }
       customer = data
@@ -201,8 +193,17 @@ export async function GET(
       logo_url: null,
       tagline: 'Get it Done Right the First Time!',
       footer_note: null,
-      tax_rate: 0.0825,
     }
+
+    // 8b. Tax rate — resolved per customer (exemption -> customer rate ->
+    // org default), not hardcoded. Throws if the org has no default
+    // sales_taxes row, which the outer try/catch turns into a real error
+    // response rather than a silently-wrong PDF.
+    const { rate: taxRate } = await resolveTaxRateForCustomer(
+      service,
+      inv.organization_id,
+      inv.customer_id,
+    )
 
     // 9. Build PDF data
     const invNumber = formatInvNumber(inv.invoice_number, inv.created_at)
@@ -225,6 +226,7 @@ export async function GET(
       },
       lineItems,
       discountPercent: inv.discount_percent ?? 0,
+      taxRate,
       modifierLabels,
       org: orgProfile,
       ...(inv.amount_paid != null ? { amountPaid: inv.amount_paid } : {}),

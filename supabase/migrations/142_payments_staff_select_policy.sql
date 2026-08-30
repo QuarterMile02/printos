@@ -1,0 +1,42 @@
+-- ============================================================
+-- Migration 142: payments -- missing staff/org-member SELECT policy
+-- Applied: PENDING — run manually in the Supabase SQL Editor (Ruben),
+--   not auto-applied by Claude Code. See chat for context.
+--
+-- Paste ONLY the CREATE POLICY statement at the bottom -- not this
+-- whole file. Same lesson as migration 140/141: keep the actual
+-- pasted statement short and separate from the comment block.
+-- ============================================================
+--
+-- NOT part of the Customer Portal build plan -- a separate,
+-- pre-existing gap found while verifying step 6's payments policy
+-- (migration 141). Real, authenticated staff session (Ruben, owner of
+-- this org) queried payments after two real throwaway rows existed and
+-- saw ZERO, while service-role (bypasses RLS) correctly saw both.
+--
+-- Root cause: adding a new PERMISSIVE policy (141, portal contacts)
+-- cannot reduce what any other session sees -- Postgres ORs all
+-- applicable permissive policies together, and 141 only ever ran
+-- CREATE POLICY, never touched anything else. The only way staff
+-- visibility could be zero after that is if there was never a working
+-- org-member SELECT policy on payments to begin with. Consistent with
+-- payments' own CREATE TABLE never having been checked into migrations
+-- either (confirmed earlier this session) -- whatever RLS exists here
+-- was set up entirely outside version control, and apparently never
+-- included one. Almost certainly unnoticed until now because this org
+-- has had zero real payment rows before this verification pass -- the
+-- existing staff-facing route (api/customers/[id]/payments/route.ts)
+-- uses a real cookie-authenticated client, not service-role, so it
+-- would have been silently returning empty for every real user,
+-- indistinguishable from "no payments yet."
+--
+-- Same shape as the org-member SELECT policy on every other table in
+-- this plan (quotes/sales_orders/invoices).
+--
+-- Scope note: this fixes SELECT only, because that's the specific,
+-- confirmed gap. INSERT/UPDATE/DELETE from a real authenticated staff
+-- session were NOT tested here -- out of scope for what was actually
+-- diagnosed. If logging/editing a payment as staff turns out to have
+-- the same gap, that's a separate check, not assumed fixed by this.
+
+CREATE POLICY "org members can view payments" ON payments FOR SELECT USING (organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid()));

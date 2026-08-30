@@ -4,6 +4,8 @@ import { checkPermission } from '@/lib/check-permission'
 import { renderToBuffer } from '@react-pdf/renderer'
 import QuoteDocument, { type QuotePdfData, type QuotePdfLineItem, type OrgProfile } from '@/lib/pdf/quote-document'
 import { formatQuoteNumber } from '@/app/(dashboard)/dashboard/[slug]/quotes/format'
+import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
+import { findZeroCostMaterialLines, zeroCostBlockMessage } from '@/lib/pricing/zero-cost-guard'
 import React from 'react'
 
 export const dynamic = 'force-dynamic'
@@ -33,12 +35,22 @@ export async function GET(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    // 2b. Zero-cost guard (blocking) — refuse to generate a customer-
+    // facing PDF for a quote with any $0-priced line caused by a $0-cost
+    // material. The quote itself stays fully editable; this only blocks
+    // the document leaving the building.
+    const zeroCostLines = await findZeroCostMaterialLines(service, id)
+    if (zeroCostLines.length > 0) {
+      return NextResponse.json({ error: zeroCostBlockMessage(zeroCostLines) }, { status: 422 })
+    }
+
     // 3. Full quote data
     type QuoteCustomer = {
       id: string; company_name: string | null; first_name: string; last_name: string
       email: string | null; phone: string | null
       street: string | null; city: string | null; state: string | null; zip: string | null
       terms: string | null
+      tax_rate: string | null; tax_exempt_code: string | null; tax_exempt_expires: string | null
     }
     type QuoteRow = {
       id: string; quote_number: number; title: string; description: string | null
@@ -57,7 +69,8 @@ export async function GET(
         customer_id,
         customers (
           id, company_name, first_name, last_name, email, phone,
-          street, city, state, zip, terms
+          street, city, state, zip, terms,
+          tax_rate, tax_exempt_code, tax_exempt_expires
         )
       `)
       .eq('id', id)
@@ -68,7 +81,6 @@ export async function GET(
     const q = quoteRow
 
     // 4. Line items (show sell price only — never cost or markup)
-    // Two-step fetch: retry without modifier_values if the column doesn't exist yet.
     type RawLineItem = { id: string; description: string | null; quantity: number | null; unit_price: number | null; total_price: number | null; discount_percent: number | null; taxable: boolean | null; sort_order: number | null; modifier_values?: Record<string, boolean | number> | null }
     let rawLineItems: RawLineItem[] = []
     {
@@ -77,16 +89,8 @@ export async function GET(
         .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order, modifier_values')
         .eq('quote_id', id)
         .order('sort_order') as { data: RawLineItem[] | null; error: { message?: string } | null }
-      if (data) {
-        rawLineItems = data
-      } else if (error?.message?.includes('modifier_values')) {
-        const { data: legacy } = await service
-          .from('quote_line_items')
-          .select('id, description, quantity, unit_price, total_price, discount_percent, taxable, sort_order')
-          .eq('quote_id', id)
-          .order('sort_order') as { data: Omit<RawLineItem, 'modifier_values'>[] | null; error: unknown }
-        rawLineItems = (legacy ?? []).map((li) => ({ ...li, modifier_values: null }))
-      }
+      if (error) throw new Error(`Failed to load line items: ${error.message}`)
+      rawLineItems = data ?? []
     }
     const lineItems: QuotePdfLineItem[] = rawLineItems.map((li) => ({
       sort_order: li.sort_order ?? 0,
@@ -203,8 +207,17 @@ export async function GET(
       logo_url: null,
       tagline: 'Get it Done Right the First Time!',
       footer_note: null,
-      tax_rate: 0.0825,
     }
+
+    // 9b. Tax rate — resolved per customer (exemption -> customer rate ->
+    // org default), not hardcoded. Throws if the org has no default
+    // sales_taxes row, which the outer try/catch turns into a real error
+    // response rather than a silently-wrong PDF.
+    const { rate: taxRate } = await resolveTaxRateForCustomer(
+      service,
+      quoteOrg.organization_id,
+      q.customer_id,
+    )
 
     // 10. Build PDF data
     const cust = q.customers
@@ -227,6 +240,7 @@ export async function GET(
       },
       lineItems,
       discountPercent: q.discount_percent ?? 0,
+      taxRate,
       modifierLabels,
       org: orgProfile,
       ...(depositPercent > 0 ? { depositPercent, depositAmount } : {}),

@@ -37,23 +37,17 @@ async function PageInner({ params }: PageProps) {
   ) as AssetRow[] ?? []
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-8">
       <div className="mb-6 flex items-center gap-2 text-sm text-gray-500">
         <Link href={`/dashboard/${slug}`} className="hover:text-gray-700">{org.name}</Link>
         <span>/</span>
         <span className="text-gray-700">Assets</span>
       </div>
 
-      <div className="mb-4">
-        <h1 className="text-2xl font-extrabold text-qm-black">
-          Assets <span className="text-sm font-normal text-gray-400">({assets.length})</span>
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Upload files once, reuse them anywhere PrintOS sends something to a customer — quote emails,
-          proofs, invoices, and more.
-        </p>
-      </div>
-
+      {/* Header lives inside AssetsClient (not here, unlike Materials/etc.)
+          -- Assets' primary action is a stateful inline-input toggle, not
+          a navigation link, so SettingsPageHeader has to be rendered from
+          the client component that owns that state. See AssetsClient. */}
       <AssetsClient orgId={org.id} orgSlug={slug} initialCategories={categories} initialAssets={assets} />
     </div>
   )

@@ -8,6 +8,10 @@ import type { EmailTemplate } from '../actions'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import EntityAuditPanel from '../../_widgets/entity-audit-panel'
+import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
+import DepositReceivedCard from '@/components/payments/deposit-received-card'
+import { findZeroCostMaterialLines } from '@/lib/pricing/zero-cost-guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -158,26 +162,19 @@ async function QuoteDetailPageInner({ params }: PageProps) {
     modifier_values: Record<string, boolean | number> | null
   }
 
-  // modifier_values is a jsonb column added in migration 030. Fall back to
-  // a fetch without it if the column doesn't exist yet on the live DB.
-  let lineItems: LineItemRow[] | null = null
-  {
-    const { data, error } = await supabase
+  // modifier_values is a jsonb column added by migration 151 (formerly
+  // 030, which never actually applied). Used to silently retry without
+  // this column on a missing-column error -- that swallow is gone now;
+  // a schema error here should fail loudly like every other dbOrThrow
+  // fetch on this page, not quietly drop the customer's modifier
+  // selections from the page.
+  const lineItems: LineItemRow[] | null = await dbOrThrow(
+    supabase
       .from('quote_line_items')
       .select('id, product_id, description, width, height, quantity, unit_price, discount_percent, total_price, taxable, sort_order, modifier_values')
       .eq('quote_id', id)
-      .order('sort_order', { ascending: true }) as { data: LineItemRow[] | null; error: { message?: string } | null }
-    if (data) {
-      lineItems = data
-    } else if (error?.message?.includes('modifier_values')) {
-      const { data: legacy } = await supabase
-        .from('quote_line_items')
-        .select('id, product_id, description, width, height, quantity, unit_price, discount_percent, total_price, taxable, sort_order')
-        .eq('quote_id', id)
-        .order('sort_order', { ascending: true }) as { data: Omit<LineItemRow, 'modifier_values'>[] | null; error: unknown }
-      lineItems = (legacy ?? []).map((li) => ({ ...li, modifier_values: null }))
-    }
-  }
+      .order('sort_order', { ascending: true })
+  ) as LineItemRow[] | null
 
   // Products for the line item picker (edit mode).
   type ProductOption = { id: string; name: string; formula: string | null }
@@ -328,6 +325,15 @@ async function QuoteDetailPageInner({ params }: PageProps) {
   const { allowed: canSeePricing } = await checkPermission(org.id, 'quotes.see_pricing')
   const { allowed: canExportPdf }  = await checkPermission(org.id, 'quotes.export_pdf')
 
+  // Zero-cost guard (display, non-blocking) — any line item priced at $0
+  // whose product's current recipe resolves to a materials.cost = 0
+  // material. See src/lib/pricing/zero-cost-guard.ts. The same check
+  // blocks send/PDF generation server-side; this is just the visible
+  // flag at the moment Ruben is looking at the quote.
+  const zeroCostLines = await findZeroCostMaterialLines(service, id)
+  const zeroCostByLineId: Record<string, string[]> = {}
+  for (const l of zeroCostLines) zeroCostByLineId[l.lineItemId] = l.materialNames
+
   // Resolve org role for owner/admin gating
   const currentUserId = (await supabase.auth.getUser()).data.user?.id ?? ''
   const membershipRow = await dbOrThrow(
@@ -412,6 +418,43 @@ async function QuoteDetailPageInner({ params }: PageProps) {
         .order('is_default', { ascending: false }).order('created_at', { ascending: true }) as { data: ShipAddrRow[] | null; error: unknown }
       quoteShippingAddresses = saData ?? []
     } catch { /* migration 076 guard */ }
+  }
+
+  // Resolved fresh on every render (not cached) so a customer reassignment
+  // -- which triggers a router.refresh() from QuoteCustomerPicker -- always
+  // picks up that customer's own rate/exemption on the next render. Throws
+  // NoDefaultTaxRateError if the org has no default sales_taxes row
+  // configured, same "fail loudly, don't guess" contract as dbOrThrow above.
+  const { rate: quoteTaxRate } = await resolveTaxRateForCustomer(
+    createServiceClient(),
+    org.id,
+    quote.customer_id,
+  )
+
+  // Deposit received -- live query against payment_applications, no
+  // denormalized column on quotes (deliberate schema decision, this is
+  // the follow-up UI work for it). depositRequiredCents mirrors the PDF
+  // route's own down_payment_percent lookup so the two numbers agree.
+  const paymentMethods = (await dbOrThrow(
+    supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
+  ) ?? []) as { id: string; name: string; type: string }[]
+
+  const { data: depositAppsSum } = await supabase
+    .from('payment_applications')
+    .select('amount_applied')
+    .eq('quote_id', quote.id) as { data: { amount_applied: number }[] | null }
+  const depositReceivedCents = (depositAppsSum ?? []).reduce((sum, r) => sum + r.amount_applied, 0)
+
+  let depositRequiredCents = 0
+  if (quote.customers?.terms) {
+    const { data: tc } = await supabase
+      .from('term_codes')
+      .select('down_payment_percent')
+      .eq('organization_id', org.id)
+      .eq('name', quote.customers.terms)
+      .maybeSingle() as { data: { down_payment_percent: number | null } | null }
+    const pct = Number(tc?.down_payment_percent ?? 0)
+    if (pct > 0) depositRequiredCents = Math.round((quote.total ?? 0) * pct / 100)
   }
 
   return (
@@ -511,7 +554,34 @@ async function QuoteDetailPageInner({ params }: PageProps) {
         initialContactEmail={quoteContactEmail}
         initialContactPhone={quoteContactPhone}
         isOwnerOrAdmin={isOwnerOrAdmin}
+        taxRate={quoteTaxRate}
+        zeroCostByLineId={zeroCostByLineId}
       />
+
+      {quote.customer_id && (
+        <div className="mt-6 max-w-sm">
+          <DepositReceivedCard
+            orgId={org.id}
+            orgSlug={slug}
+            customerId={quote.customer_id}
+            target={{ type: 'quote', id: quote.id }}
+            depositReceivedCents={depositReceivedCents}
+            depositRequiredCents={depositRequiredCents}
+            paymentMethods={paymentMethods}
+          />
+        </div>
+      )}
+
+      <div className="mt-6">
+        <EntityAuditPanel
+          supabase={supabase}
+          orgId={org.id}
+          orgSlug={slug}
+          entityType="quote"
+          entityId={quote.id}
+          orderThreadId={quote.id}
+        />
+      </div>
     </div>
   )
 }

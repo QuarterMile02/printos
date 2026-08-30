@@ -8,6 +8,7 @@ import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { createInvoiceFromSO } from '@/app/(dashboard)/dashboard/[slug]/invoices/actions'
 import { dbOrThrow } from '@/lib/db'
+import { resolveOrderThreadIdFromJob } from '@/lib/order-thread-id'
 import { SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
 
 function toE164(phone: string | null | undefined): string | null {
@@ -91,13 +92,19 @@ export async function updateJobStatus(
 
   const service = createServiceClient()
 
-  // Read previous status + completed_at for stage events and timestamp logic
+  // Read previous status + completed_at for stage events and timestamp
+  // logic — source_quote_id/sales_order_id added to this same select (was
+  // just status/completed_at) to resolve order_thread_id without an extra
+  // round trip.
   const { data: prev } = await service
     .from('jobs')
-    .select('status, completed_at')
+    .select('status, completed_at, source_quote_id, sales_order_id')
     .eq('id', jobId)
     .eq('organization_id', orgId)
-    .maybeSingle() as { data: { status: JobStatus; completed_at: string | null } | null; error: unknown }
+    .maybeSingle() as {
+      data: { status: JobStatus; completed_at: string | null; source_quote_id: string | null; sales_order_id: string | null } | null
+      error: unknown
+    }
 
   const prevCompletedAt = prev?.completed_at ?? null
   const updatePayload: { status: JobStatus; completed_at?: string | null } = { status }
@@ -115,6 +122,11 @@ export async function updateJobStatus(
 
   if (updateError) return { error: updateError.message }
 
+  const orderThreadId = await resolveOrderThreadIdFromJob(service, {
+    source_quote_id: prev?.source_quote_id ?? null,
+    sales_order_id: prev?.sales_order_id ?? null,
+  })
+
   if (prev?.status && prev.status !== status) {
     await logActivity({
       org_id: orgId,
@@ -124,6 +136,7 @@ export async function updateJobStatus(
       action: 'stage_exited',
       from_value: prev.status,
       to_value: status,
+      order_thread_id: orderThreadId ?? undefined,
     })
   }
   await logActivity({
@@ -134,6 +147,7 @@ export async function updateJobStatus(
     action: 'stage_entered',
     from_value: prev?.status,
     to_value: status,
+    order_thread_id: orderThreadId ?? undefined,
   })
 
   // Auto-create invoice when job is marked complete and the linked SO is
@@ -305,15 +319,23 @@ export async function updateJobStatus(
           }
         }
 
-        // Log notification
+        // Log notification. Non-fatal by design: the email/SMS above has
+        // already been sent by this point, so a logging failure here
+        // (missing table, RLS, whatever) must never surface as an error
+        // on an action that actually succeeded from the customer's side.
         if (sentEmail || sentSms) {
           const method = sentEmail && sentSms ? 'both' : sentEmail ? 'email' : 'sms'
-          await service.from('job_notifications').insert({
-            job_id: jobId,
-            customer_id: job.customer_id,
-            method,
-            status: 'sent',
-          })
+          try {
+            const { error: logError } = await service.from('job_notifications').insert({
+              job_id: jobId,
+              customer_id: job.customer_id,
+              method,
+              status: 'sent',
+            })
+            if (logError) console.error('[job_notifications] Log insert failed (notification was still sent):', logError.message)
+          } catch (logError) {
+            console.error('[job_notifications] Log insert threw (notification was still sent):', logError)
+          }
           notifiedJobNumber = job.job_number
         }
       }
@@ -377,6 +399,18 @@ export async function updateJobDepartment(
 
   if (updateError) return { error: updateError.message }
 
+  // No existing job fetch in this function (unlike updateJobStatus) — one
+  // new query to resolve order_thread_id.
+  const { data: job } = await service
+    .from('jobs')
+    .select('source_quote_id, sales_order_id')
+    .eq('id', jobId)
+    .maybeSingle() as { data: { source_quote_id: string | null; sales_order_id: string | null } | null; error: unknown }
+  const orderThreadId = await resolveOrderThreadIdFromJob(service, {
+    source_quote_id: job?.source_quote_id ?? null,
+    sales_order_id: job?.sales_order_id ?? null,
+  })
+
   await logActivity({
     org_id: orgId,
     user_id: user.id,
@@ -384,6 +418,7 @@ export async function updateJobDepartment(
     entity_id: jobId,
     action: 'department_changed',
     to_value: department ?? 'unassigned',
+    order_thread_id: orderThreadId ?? undefined,
   })
 
   revalidatePath(`/dashboard/${orgSlug}/jobs`)
@@ -501,4 +536,42 @@ export async function updateJobPhaseDates(formData: FormData): Promise<void> {
     .eq('organization_id', orgId))
 
   revalidatePath(`/dashboard/${orgSlug}/jobs/${jobId}`)
+}
+
+export type JobSearchRow = {
+  id: string
+  job_number: number
+  title: string
+  due_date: string | null
+  department: string | null
+  flag: string | null
+  customer_id: string | null
+  sales_order_id: string | null
+  invoice_id: string | null
+  quote_line_item_id: string | null
+}
+
+// Trigram fuzzy search (migration 127's search_jobs_fuzzy) — replaces the
+// plain ILIKE-across-searchColumns path (SEARCH_COLUMNS = ['title']).
+// Scoped to `title` only, matching the existing search exactly — jobs has
+// no denormalized customer-name column to search by (customer_id is a bare
+// FK), so that stays out of scope here, same as before.
+export async function searchJobs(
+  orgId: string,
+  term: string,
+): Promise<JobSearchRow[]> {
+  const cleaned = term.trim()
+  if (cleaned.length < 2) return []
+
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_jobs_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: JobSearchRow[] | null; error: { message: string } | null }
+
+  if (error) {
+    console.error('[searchJobs]', error.message)
+    return []
+  }
+  return data ?? []
 }

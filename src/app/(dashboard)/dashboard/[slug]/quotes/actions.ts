@@ -3,12 +3,13 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { OrgRole, QuoteStatus } from '@/types/database'
-import { TAX_RATE } from './format'
+import { resolveTaxRateForCustomer } from '@/lib/tax-rate'
 import { getEmailTemplate, renderTemplate } from '@/app/actions/get-email-template'
 import { getSignatureHtmlForUser } from '@/app/actions/email-signature'
 import { logActivity } from '@/lib/logActivity'
 import { fetchAssetsAsAttachments, type EmailAttachment } from '@/lib/assets'
 import { getUserSenderIdentity, SYSTEM_FROM_EMAIL } from '@/lib/email-sender'
+import { findZeroCostMaterialLines, zeroCostBlockMessage } from '@/lib/pricing/zero-cost-guard'
 
 function toE164(phone: string | null | undefined): string | null {
   if (!phone) return null
@@ -39,78 +40,72 @@ export type QuoteSearchRow = {
   customers: { first_name: string; last_name: string; company_name: string | null } | null
 }
 
-// Search across title, customer name, quote number, and total (typed as a
-// dollar amount). Same proven approach as invoices/actions.ts's
-// searchInvoices — PostgREST's or() logic-tree parser does NOT accept
-// embedded-resource dot paths ("customers.first_name.ilike...") or column
-// casts ("quote_number::text.ilike...") as condition fragments; both were
-// confirmed to fail with "failed to parse logic tree" against the live DB
-// while building the Invoices version of this search. So customer-name
-// matching runs as a separate preliminary lookup against the customers
-// table (flat ILIKE, no dot path) whose matching ids feed a plain
-// customer_id.in.(...) condition, and quote-number matching uses an exact
-// integer equality instead of a cast substring search. Title stays a plain
-// flat ILIKE since it's a real column on quotes itself.
+type QuoteFuzzyRpcRow = {
+  id: string
+  quote_number: number
+  title: string
+  status: QuoteStatus
+  created_at: string
+  total: number | null
+  customer_id: string | null
+  customer_first_name: string | null
+  customer_last_name: string | null
+  customer_company_name: string | null
+}
+
+// Trigram fuzzy search (migration 127's search_quotes_fuzzy) — replaces
+// the previous two-round-trip TypeScript approach (a preliminary ILIKE-only
+// customer lookup feeding a customer_id.in.(...) condition into the main
+// quotes query), which existed only because PostgREST's or() logic-tree
+// parser can't express a nested-column ILIKE or a numeric cast in one call
+// (confirmed via "failed to parse logic tree" errors). A real SQL function
+// can freely JOIN and reference joined columns, so this collapses to one
+// round trip AND upgrades customer-name matching from exact-ILIKE-only to
+// the same 3-strategy fuzziness as title. The numeric exact-match
+// semantics are unchanged: dollar amount -> cents -> `total = ` equality,
+// bare integer -> `quote_number = ` equality — both computed inside the
+// RPC now instead of here, same values, same rounding.
 export async function searchQuotes(orgId: string, term: string): Promise<QuoteSearchRow[]> {
   const cleaned = term.trim()
   if (cleaned.length < 2) return []
 
-  const supabase = await createClient()
-
-  // Strip commas (thousands separators) before checking whether the term is
-  // a bare dollar amount, e.g. "1,234.56" -> "1234.56".
-  const commaless = cleaned.replace(/,/g, '')
-  const isDollarAmount = /^\d+(\.\d+)?$/.test(commaless)
-  const totalCentsMatch = isDollarAmount ? Math.round(parseFloat(commaless) * 100) : null
-  const isPlainInteger = /^\d+$/.test(commaless)
-  const quoteNumberMatch = isPlainInteger ? parseInt(commaless, 10) : null
-
-  // Strip characters that would break PostgREST's or() filter syntax.
-  const safeTerm = cleaned.replace(/[,()'"]/g, ' ').trim()
-
-  const conditions: string[] = []
-  if (safeTerm.length >= 2) {
-    conditions.push(`title.ilike.%${safeTerm}%`)
-  }
-  if (totalCentsMatch !== null) {
-    conditions.push(`total.eq.${totalCentsMatch}`)
-  }
-  if (quoteNumberMatch !== null) {
-    conditions.push(`quote_number.eq.${quoteNumberMatch}`)
-  }
-  if (safeTerm.length >= 2) {
-    const { data: customerRows } = await supabase
-      .from('customers')
-      .select('id')
-      .eq('organization_id', orgId)
-      .or(`first_name.ilike.%${safeTerm}%,last_name.ilike.%${safeTerm}%,company_name.ilike.%${safeTerm}%`)
-      .limit(50)
-    const customerIds = (customerRows ?? []).map((r) => (r as { id: string }).id)
-    if (customerIds.length > 0) {
-      conditions.push(`customer_id.in.(${customerIds.join(',')})`)
-    }
-  }
-  if (conditions.length === 0) return []
-
-  const { data, error } = await supabase
-    .from('quotes')
-    .select('id, quote_number, title, status, created_at, total, customer_id, customers(first_name, last_name, company_name)')
-    .eq('organization_id', orgId)
-    .or(conditions.join(','))
-    .order('quote_number', { ascending: false })
-    .limit(50)
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_quotes_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: QuoteFuzzyRpcRow[] | null; error: { message: string } | null }
 
   if (error) {
     console.error('[searchQuotes]', error.message)
     return []
   }
 
-  return (data ?? []) as QuoteSearchRow[]
+  // Reshape the RPC's flat customer_* columns back into the nested
+  // `customers` object QuoteSearchRow (and every consumer of it) expects —
+  // keeps quotes-list-client.tsx untouched.
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    quote_number: r.quote_number,
+    title: r.title,
+    status: r.status,
+    created_at: r.created_at,
+    total: r.total,
+    customer_id: r.customer_id,
+    customers: r.customer_id
+      ? {
+          first_name: r.customer_first_name ?? '',
+          last_name: r.customer_last_name ?? '',
+          company_name: r.customer_company_name,
+        }
+      : null,
+  }))
 }
 
 // Sums all line items for a quote and writes subtotal/tax_total/total
-// back to the quotes row in cents. Tax is applied only to taxable items
-// at the Laredo TX rate. Called after every line-item mutation.
+// back to the quotes row in cents. Tax is applied only to taxable items,
+// at whatever rate resolves for this quote's customer (exemption ->
+// customer-specific rate -> org default, see src/lib/tax-rate.ts).
+// Called after every line-item mutation.
 async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promise<void> {
   const { data: items } = await service
     .from('quote_line_items')
@@ -125,6 +120,11 @@ async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promi
       }[] | null
       error: unknown
     }
+  const { data: quoteRow } = await service
+    .from('quotes')
+    .select('organization_id, customer_id')
+    .eq('id', quoteId)
+    .maybeSingle() as { data: { organization_id: string; customer_id: string | null } | null; error: unknown }
 
   let subtotal = 0
   let taxableSubtotal = 0
@@ -135,7 +135,16 @@ async function recalcQuoteTotals(service: ServiceClient, quoteId: string): Promi
     subtotal += lineTotal
     if (i.taxable !== false) taxableSubtotal += lineTotal
   }
-  const tax = Math.round(taxableSubtotal * TAX_RATE)
+  if (!quoteRow) throw new Error(`recalcQuoteTotals: quote ${quoteId} not found`)
+  // Deliberately not caught here -- a quote whose org has no default sales
+  // tax configured should fail loudly on save, not silently total at a
+  // hardcoded rate. See NoDefaultTaxRateError.
+  const { rate: taxRate } = await resolveTaxRateForCustomer(
+    service,
+    quoteRow.organization_id,
+    quoteRow.customer_id,
+  )
+  const tax = Math.round(taxableSubtotal * taxRate)
   const total = subtotal + tax
 
   await service
@@ -216,14 +225,6 @@ async function runMaterialSelectionForJob(
 }
 
 export type DeliveryMethod = 'email' | 'sms' | 'both'
-
-// All non-legacy statuses are valid for direct manual update. The legacy
-// 'sent' and 'declined' values still exist in the enum but Phase 8 code
-// should not write them, so they're excluded here.
-const VALID_STATUSES: QuoteStatus[] = [
-  'draft', 'delivered', 'customer_review', 'approved', 'approve_with_changes',
-  'revise', 'ordered', 'hold', 'expired', 'lost', 'pending', 'no_charge',
-]
 
 type LineItemInput = {
   product_id?: string | null
@@ -339,59 +340,12 @@ export async function createQuote(
   return { quoteId: quote.id }
 }
 
-export async function updateQuoteStatus(
-  quoteId: string,
-  orgId: string,
-  orgSlug: string,
-  status: QuoteStatus
-): Promise<{ error?: string }> {
-  if (!VALID_STATUSES.includes(status)) return { error: 'Invalid status.' }
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated.' }
-
-  const { data: membership } = await supabase
-    .from('organization_members')
-    .select('role')
-    .eq('organization_id', orgId)
-    .eq('user_id', user.id)
-    .maybeSingle() as { data: { role: OrgRole } | null; error: unknown }
-
-  if (!membership) return { error: 'You are not a member of this organization.' }
-  if (membership.role === 'viewer') return { error: 'Viewers cannot update quotes.' }
-
-  const service = createServiceClient()
-
-  // Read previous status for activity log
-  const { data: prev } = await service
-    .from('quotes')
-    .select('status')
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-    .maybeSingle() as { data: { status: QuoteStatus } | null; error: unknown }
-
-  const { error: updateError } = await service
-    .from('quotes')
-    .update({ status })
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-
-  if (updateError) return { error: updateError.message }
-
-  await logActivity({
-    org_id: orgId,
-    user_id: user.id,
-    entity_type: 'quote',
-    entity_id: quoteId,
-    action: 'status_changed',
-    from_value: prev?.status,
-    to_value: status,
-  })
-
-  revalidatePath(`/dashboard/${orgSlug}/quotes`)
-  return {}
-}
+// updateQuoteStatus (direct manual status update) removed here --
+// confirmed dead code, zero callers anywhere in the app. Status changes
+// all go through the specific transition functions below
+// (sendQuoteEmailCustom, sendQuoteSmsAndDeliver, sendForReviewAndUpdate,
+// etc.), each with its own guard on the expected from-status; nothing
+// ever called this more generic one. (schema-drift-findings.md Section 8)
 
 export async function sendQuoteToCustomer(
   quoteId: string,
@@ -425,6 +379,13 @@ export async function sendQuoteToCustomer(
     .single() as { data: { id: string; quote_number: number; title: string; description: string | null; status: QuoteStatus; customer_id: string | null } | null; error: unknown }
 
   if (!quote) return { error: 'Quote not found.' }
+
+  // Zero-cost guard (blocking) — refuse to send a quote with any $0-priced
+  // line caused by a $0-cost material. Covers both delivery methods this
+  // function handles (email + SMS). The quote itself stays fully
+  // editable; this only blocks it going out to the customer.
+  const zeroCostLines = await findZeroCostMaterialLines(service, quoteId)
+  if (zeroCostLines.length > 0) return { error: zeroCostBlockMessage(zeroCostLines) }
 
   let customerEmail: string | null = null
   let customerPhone: string | null = null
@@ -744,13 +705,22 @@ export async function addQuoteLineItem(
       .maybeSingle()
     if (!quote) return { error: 'Quote not found.' }
 
-    // Compute line total in cents.
-    // Sqft pricing: W * H / 144 * Qty * UnitPrice; flat if no dimensions.
-    const hasDims = draft.width && draft.width > 0 && draft.height && draft.height > 0
-    const gross = hasDims
-      ? (draft.width! * draft.height! / 144) * draft.quantity * draft.unit_price
-      : draft.quantity * draft.unit_price
-    const total = Math.round(gross * (1 - draft.discount_percent / 100))
+    // Compute line total in cents: qty * unit_price, less the discount.
+    // Deliberately NO area factor. unit_price already carries it: this
+    // form's price comes from /api/pricing -> calculateProductPrice, which
+    // applies formulaMultiplier()'s Area case (w * h / 144) to every recipe
+    // item BEFORE it computes unitPriceCents (formula-engine.ts:51, :270,
+    // :300-309, :402), and which states its own line total as
+    // unitPriceCents * quantity (formula-engine.ts:432). Re-multiplying by
+    // w * h / 144 here double-counted area -- 6x on a 24x36 line, and a
+    // DIVISION on anything under 144 sq in. It also disagreed with the
+    // client across a single call: quote-detail-client.tsx:737-741 computes
+    // qty * unit_price for this very insert and renders that number. Now
+    // matches createQuote and updateQuoteLineItem, the only other two
+    // places a line total is computed.
+    // width/height are still recorded on the row below -- they are the
+    // line's stated dimensions, not a pricing input.
+    const total = Math.round(draft.quantity * draft.unit_price * (1 - draft.discount_percent / 100))
 
     // sort_order = max + 1
     const sortResult = await ctx.service
@@ -778,21 +748,11 @@ export async function addQuoteLineItem(
       baseRow.modifier_values = draft.modifier_values
     }
 
-    let insertResult = await ctx.service
+    const insertResult = await ctx.service
       .from('quote_line_items')
       .insert(baseRow)
       .select('id')
       .single()
-
-    // If modifier_values column doesn't exist, retry without it
-    if (insertResult.error?.message?.includes('modifier_values')) {
-      delete baseRow.modifier_values
-      insertResult = await ctx.service
-        .from('quote_line_items')
-        .insert(baseRow)
-        .select('id')
-        .single()
-    }
 
     if (insertResult.error) {
       console.error('[addQuoteLineItem] Insert failed:', insertResult.error.message)
@@ -897,7 +857,6 @@ export async function deleteQuoteLineItem(
 }
 
 // Send the quote SMS AND auto-transition draft → delivered.
-// Mirrors sendQuoteEmailAndDeliver but uses the SMS path.
 export async function sendQuoteSmsAndDeliver(
   quoteId: string,
   orgId: string,
@@ -927,6 +886,7 @@ export async function sendQuoteSmsAndDeliver(
     from_value: 'draft',
     to_value: 'delivered',
     metadata: { via: 'sms' },
+    order_thread_id: quoteId, // a quote is its own thread anchor
   })
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
@@ -934,46 +894,14 @@ export async function sendQuoteSmsAndDeliver(
   return {}
 }
 
-// Send the quote email AND auto-transition draft → delivered.
-// Reuses the existing sendQuoteToCustomer (email path) so we don't
-// duplicate the Resend integration.
-export async function sendQuoteEmailAndDeliver(
-  quoteId: string,
-  orgId: string,
-  orgSlug: string,
-): Promise<{ error?: string }> {
-  console.log('[sendQuoteEmailAndDeliver] Starting for quote:', quoteId)
-  const result = await sendQuoteToCustomer(quoteId, orgId, orgSlug, 'email')
-  console.log('[sendQuoteEmailAndDeliver] sendQuoteToCustomer result:', JSON.stringify(result))
-  if (result.error && !result.sent) return { error: result.error }
-
-  const ctx = await getServiceWithMembership(orgId)
-  if ('error' in ctx) return { error: ctx.error }
-
-  const { error } = await ctx.service
-    .from('quotes')
-    .update({ status: 'delivered' as QuoteStatus })
-    .eq('id', quoteId)
-    .eq('organization_id', orgId)
-    .eq('status', 'draft')
-
-  if (error) return { error: error.message }
-
-  await logActivity({
-    org_id: orgId,
-    user_id: ctx.user.id,
-    entity_type: 'quote',
-    entity_id: quoteId,
-    action: 'status_changed',
-    from_value: 'draft',
-    to_value: 'delivered',
-    metadata: { via: 'email' },
-  })
-
-  revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
-  revalidatePath(`/dashboard/${orgSlug}/quotes`)
-  return {}
-}
+// sendQuoteEmailAndDeliver (email version of sendQuoteSmsAndDeliver above)
+// removed here -- confirmed dead code: zero callers anywhere in the app.
+// It was written to wrap sendQuoteToCustomer and log the draft→delivered
+// transition, but the actual "Send Email" button (SendEmailModal →
+// sendQuoteEmailCustom below) never called it; that function has its own
+// separate delivery + status-transition logic, which is where the
+// logActivity call for this transition now actually lives (see the
+// comment on that block). (schema-drift-findings.md Section 9)
 
 // Send "for review" email and auto-transition delivered → customer_review.
 // For now this reuses the same email body — when QMI wants a different
@@ -1005,6 +933,7 @@ export async function sendForReviewAndUpdate(
     entity_id: quoteId,
     action: 'status_changed',
     to_value: 'customer_review',
+    order_thread_id: quoteId,
   })
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)
@@ -1078,6 +1007,13 @@ export async function sendQuoteEmailCustom(
       error: unknown
     }
   if (!quote) return { error: 'Quote not found.' }
+
+  // Zero-cost guard (blocking) — same check as sendQuoteToCustomer /
+  // the PDF route. This is the actual UI-wired "Send Email" path
+  // (SendEmailModal), a separate implementation from sendQuoteToCustomer,
+  // so it needs its own copy of the check rather than inheriting it.
+  const zeroCostLines = await findZeroCostMaterialLines(ctx.service, quoteId)
+  if (zeroCostLines.length > 0) return { error: zeroCostBlockMessage(zeroCostLines) }
 
   if (!process.env.RESEND_API_KEY) {
     return { error: 'Email delivery not configured — RESEND_API_KEY is missing.' }
@@ -1168,6 +1104,23 @@ export async function sendQuoteEmailCustom(
       .update({ status: 'delivered' as QuoteStatus })
       .eq('id', quoteId)
       .eq('organization_id', orgId)
+
+    // This is the actual UI-wired send path (SendEmailModal → this
+    // function) — sendQuoteEmailAndDeliver, which was written to log
+    // this same transition, had no callers and was never reached, so
+    // it was removed. Log it here instead. (schema-drift-findings.md
+    // Section 9)
+    await logActivity({
+      org_id: orgId,
+      user_id: ctx.user.id,
+      entity_type: 'quote',
+      entity_id: quoteId,
+      action: 'status_changed',
+      from_value: 'draft',
+      to_value: 'delivered',
+      metadata: { via: 'email' },
+      order_thread_id: quoteId,
+    })
   }
 
   revalidatePath(`/dashboard/${orgSlug}/quotes/${quoteId}`)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { logActivity } from '@/lib/logActivity'
 
 // POST /api/collection-calls
 // Body: { organization_id, customer_id, outcome, promise_date?, notes? }
@@ -40,5 +41,31 @@ export async function POST(request: NextRequest) {
     console.error('[api/collection-calls] insert failed:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  return NextResponse.json({ id: (data as { id: string } | null)?.id, ok: true })
+
+  // Gap closure (migration 132/133 follow-up): this write never reached
+  // activity_log before — collection calls were invisible to the
+  // Recent Activity widget and any future customer-level audit view.
+  // entity_type: 'customer' is correct here, not a placeholder — a
+  // collection call is a customer-relationship event, not tied to one
+  // invoice/order (collection_call_logs has no invoice_id/sales_order_id
+  // column, and CollectionCallForm never receives one). order_thread_id
+  // is deliberately left unset: there's no order to anchor it to, so it
+  // won't appear in the centralized order-thread view or the embedded
+  // per-entity panels (those are quote/sales_order/job/invoice only) —
+  // only in the org-wide Recent Activity feed. That's a real scope
+  // limit of the current data model, not an oversight here.
+  const callId = (data as { id: string } | null)?.id
+  if (callId) {
+    await logActivity({
+      org_id: orgId,
+      user_id: user.id,
+      entity_type: 'customer',
+      entity_id: customerId,
+      action: 'collection_call_logged',
+      to_value: outcome,
+      metadata: { collection_call_log_id: callId, promise_date: promiseDate || null, notes: notes || null },
+    })
+  }
+
+  return NextResponse.json({ id: callId, ok: true })
 }

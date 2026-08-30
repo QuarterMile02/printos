@@ -10,8 +10,8 @@ import {
 } from './actions'
 
 type SmsSettings = {
-  twilio_account_sid: string | null
-  twilio_auth_token: string | null
+  hasTwilioAccountSid: boolean
+  hasTwilioAuthToken: boolean
   twilio_phone_number: string | null
   country_code: string
   is_connected: boolean
@@ -64,8 +64,12 @@ export default function SmsClient({ orgId, orgSlug, initialSettings, initialTemp
   }
 
   // ── Twilio Config ──────────────────────────────────────────────────────────
-  const [sid, setSid] = useState(initialSettings.twilio_account_sid ?? '')
-  const [token, setToken] = useState(initialSettings.twilio_auth_token ?? '')
+  // Inputs always start blank -- a saved credential is never sent to the browser, only
+  // whether one exists (hasSid/hasToken), shown as a masked placeholder instead.
+  const [sid, setSid] = useState('')
+  const [token, setToken] = useState('')
+  const [hasSid, setHasSid] = useState(initialSettings.hasTwilioAccountSid ?? false)
+  const [hasToken, setHasToken] = useState(initialSettings.hasTwilioAuthToken ?? false)
   const [phone, setPhone] = useState(initialSettings.twilio_phone_number ?? '')
   const [country, setCountry] = useState(initialSettings.country_code ?? 'US')
   const [connected, setConnected] = useState(initialSettings.is_connected ?? false)
@@ -74,16 +78,20 @@ export default function SmsClient({ orgId, orgSlug, initialSettings, initialTemp
 
   async function handleSave() {
     setSaving(true)
-    const isNowConnected = !!(sid.trim() && token.trim() && phone.trim())
+    const isNowConnected = !!((sid.trim() || hasSid) && (token.trim() || hasToken) && phone.trim())
     const res = await upsertSmsSettings(orgId, orgSlug, {
-      twilio_account_sid: sid.trim() || null,
-      twilio_auth_token: token.trim() || null,
+      twilio_account_sid: sid.trim() || undefined,
+      twilio_auth_token: token.trim() || undefined,
       twilio_phone_number: phone.trim() || null,
       country_code: country,
       is_connected: isNowConnected,
     })
     setSaving(false)
     if (res.error) { showToast(`Error: ${res.error}`); return }
+    if (sid.trim()) setHasSid(true)
+    if (token.trim()) setHasToken(true)
+    setSid('')
+    setToken('')
     setConnected(isNowConnected)
     showToast(isNowConnected ? 'Connected' : 'Saved')
   }
@@ -95,6 +103,8 @@ export default function SmsClient({ orgId, orgSlug, initialSettings, initialTemp
     if (res.error) { showToast(`Error: ${res.error}`); return }
     setSid('')
     setToken('')
+    setHasSid(false)
+    setHasToken(false)
     setPhone('')
     setConnected(false)
     showToast('Disconnected')
@@ -200,7 +210,7 @@ export default function SmsClient({ orgId, orgSlug, initialSettings, initialTemp
               type="text"
               value={sid}
               onChange={(e) => setSid(e.target.value)}
-              placeholder={connected ? 'Re-enter to update' : 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+              placeholder={hasSid ? '•••••••• (saved — leave blank to keep)' : 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
             />
           </div>
@@ -212,7 +222,7 @@ export default function SmsClient({ orgId, orgSlug, initialSettings, initialTemp
               type="password"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder={connected ? 'Re-enter to update' : 'Your Twilio auth token'}
+              placeholder={hasToken ? '•••••••• (saved — leave blank to keep)' : 'Your Twilio auth token'}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
             />
           </div>

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useTransition } from 'react'
 import type { PricingType, ProductStatus } from '@/types/product-builder'
-import { copyProduct } from './actions'
+import { copyProduct, searchProducts, type ProductSearchRow } from './actions'
 import type { ColumnDef } from '@/components/data-table/types'
 import { useSavedView, applyFilterRules, applySortRules } from '@/components/data-table/use-saved-view'
 import { useColumnResize } from '@/components/data-table/use-column-resize'
@@ -50,6 +50,18 @@ const PRICING_TYPE_STYLES: Record<string, string> = {
   Basic:       'bg-sky-50 text-sky-700 border-sky-100',
   Grid:        'bg-purple-50 text-purple-700 border-purple-100',
   'Cost Plus': 'bg-amber-50 text-amber-800 border-amber-100',
+}
+
+// ProductSearchRow's fields are widened to plain `string | null` (a Postgres
+// RPC's RETURNS TABLE can't carry TS's branded PricingType/ProductStatus
+// unions) — this just narrows them back for display, values are identical.
+function toProductRow(r: ProductSearchRow): ProductRow {
+  return {
+    ...r,
+    pricing_type: r.pricing_type as PricingType | null,
+    status: r.status as ProductStatus | null,
+    migration_status: r.migration_status as MigrationStatus | null,
+  }
 }
 
 function formatPrice(cents: number | null): string {
@@ -132,6 +144,40 @@ export default function ProductsListClient({
   const [dept, setDept] = useState<string>('all')
   const [copyingId, setCopyingId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  // Search mode: when active (term.length >= 2), a real server-side fuzzy
+  // RPC (search_products_fuzzy, migration 127) replaces the local
+  // .includes() filter below — that filter only ever saw whatever subset
+  // of up to 1000 preloaded products happened to be in memory. Same
+  // debounced-input -> RPC call -> results-state pattern as Customers/
+  // Vendors' searchCustomers/searchVendors. While a search is active, tab/
+  // category/dept and saved-view filter rules are bypassed (matching
+  // Customers' precedent) — the RPC already scopes to org + term; only
+  // sort rules are re-applied client-side.
+  const [searchResults, setSearchResults] = useState<ProductRow[] | null>(null)
+  const [isSearching, setIsSearching] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchSeqRef = useRef(0)
+
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    const term = value.trim()
+    if (term.length < 2) {
+      setSearchResults(null)
+      setIsSearching(false)
+      return
+    }
+    setIsSearching(true)
+    const seq = ++searchSeqRef.current
+    debounceRef.current = setTimeout(async () => {
+      const results = await searchProducts(orgId, term)
+      if (searchSeqRef.current === seq) {
+        setSearchResults(results.map(toProductRow))
+        setIsSearching(false)
+      }
+    }, 300)
+  }
 
   // ── Saved-views hook ─────────────────────────────────────────────────────
   const {
@@ -257,8 +303,14 @@ export default function ProductsListClient({
   }), [products])
 
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase()
-    // 1. Quick filters: tab + search + dropdowns
+    // Search mode: server-side fuzzy results replace the local rows
+    // entirely (bypasses tab/category/dept/saved-view filters, matching
+    // Customers' precedent — the RPC already scopes to org + term); only
+    // sort rules are re-applied client-side.
+    if (searchResults !== null) {
+      return sortRules.length > 0 ? applySortRules(searchResults, sortRules, COLUMNS) : searchResults
+    }
+    // Browse mode: tab + category/dept dropdowns + saved-view filters + sort
     let rows = products.filter((p) => {
       if (tab === 'published' && p.status !== 'published') return false
       if (tab === 'draft'     && p.status !== 'draft')     return false
@@ -266,18 +318,12 @@ export default function ProductsListClient({
       if (tab === 'enabled'   && !p.is_enabled)             return false
       if (category !== 'all'  && p.category_name !== category) return false
       if (dept !== 'all'      && p.product_type !== dept)   return false
-      if (term) {
-        const hay = `${p.name} ${p.part_number ?? ''} ${p.category_name ?? ''} ${p.product_type ?? ''}`.toLowerCase()
-        if (!hay.includes(term)) return false
-      }
       return true
     })
-    // 2. Saved-view filter rules
     rows = applyFilterRules(rows, filterRules, COLUMNS)
-    // 3. Sort
     rows = applySortRules(rows, sortRules, COLUMNS)
     return rows
-  }, [products, tab, search, category, dept, filterRules, sortRules, COLUMNS])
+  }, [products, tab, category, dept, filterRules, sortRules, COLUMNS, searchResults])
 
   function handleCopy(id: string) {
     setCopyingId(id)
@@ -343,13 +389,20 @@ export default function ProductsListClient({
       {/* Search + Filters row */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[240px]">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-gray" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
+          {isSearching ? (
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-lime animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          ) : (
+            <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-qm-gray" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+          )}
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search by name, part number, category..."
             className="block w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
           />
@@ -407,7 +460,9 @@ export default function ProductsListClient({
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-12 text-center">
-          <p className="text-sm text-qm-gray">No products match your filters.</p>
+          <p className="text-sm text-qm-gray">
+            {searchResults !== null ? `No products match "${search}"` : 'No products match your filters.'}
+          </p>
         </div>
       ) : viewMode === 'card' ? (
         <>
@@ -417,7 +472,9 @@ export default function ProductsListClient({
             ))}
           </div>
           <div className="mt-2 text-xs text-qm-gray">
-            Showing {filtered.length} of {products.length} products
+            {searchResults !== null
+              ? `${filtered.length} result${filtered.length === 1 ? '' : 's'} from database`
+              : `Showing ${filtered.length} of ${products.length} products`}
           </div>
         </>
       ) : (
@@ -588,7 +645,9 @@ export default function ProductsListClient({
             </tbody>
           </table>
           <div className="border-t border-gray-100 bg-gray-50 px-6 py-2 text-xs text-qm-gray">
-            Showing {filtered.length} of {products.length} products
+            {searchResults !== null
+              ? `${filtered.length} result${filtered.length === 1 ? '' : 's'} from database`
+              : `Showing ${filtered.length} of ${products.length} products`}
           </div>
         </div>
       )}

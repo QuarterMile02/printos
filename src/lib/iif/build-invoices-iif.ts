@@ -6,9 +6,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // (src/app/api/cron/invoice-iif-export/route.ts) and the manual route stay
 // on exactly one implementation instead of two copies that can drift --
 // this exact class of file already needed a real bug fix once (commit
-// ddfdc7b, invalid TAX/SERV INVITEMTYPE values), so duplicating it into a
-// second file risked reintroducing that bug independently in one copy
-// after a future fix only lands in the other.
+// ddfdc7b removed the invalid TAX INVITEMTYPE correctly, but ALSO changed
+// SERV to SERVICE, which was backwards -- SERV is the correct QB IIF code;
+// that regression was live until 2026-08-16), so duplicating this logic
+// into a second file risked exactly that kind of fix landing in one copy
+// and not the other. src/app/api/invoices/[id]/export-iif/route.ts (the
+// single-invoice manual export, still a separate file, not yet
+// consolidated into this one) needs any future INVITEM/INVITEMTYPE fix
+// applied there too.
 
 type ServiceClient = SupabaseClient
 
@@ -193,9 +198,16 @@ export async function buildInvoicesIif(
   // does not support creating tax items via import (TAX is not a valid
   // INVITEMTYPE) — the "Sales Tax" item must already exist in QuickBooks,
   // and is referenced by name only on the SPL line below.
+  //
+  // INVITEMTYPE "SERV" (not "SERVICE") — confirmed against a real IIF
+  // import failure ("SERVICE is an invalid value for field INVITEMTYPE
+  // [15106]"). ddfdc7b previously "fixed" this exact line from SERV to
+  // SERVICE based on a misreading of the QB docs; that was backwards —
+  // SERV is the correct short code, matching QB's actual INVITEMTYPE
+  // vocabulary (SERV, INVT, NINV, OTHC, PART, SUBT, GRP, PAY, DISC).
   lines.push('!INVITEM\tNAME\tINVITEMTYPE\tACCNT\tPRICE\tCOST\tDESC')
   for (const name of allServiceItemNames) {
-    lines.push(`INVITEM\t${name}\tSERVICE\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
+    lines.push(`INVITEM\t${name}\tSERV\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
   }
 
   // ONE header block

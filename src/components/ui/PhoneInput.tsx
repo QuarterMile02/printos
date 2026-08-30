@@ -46,9 +46,10 @@ type Props = {
   required?: boolean
   name?: string
   className?: string
+  disabled?: boolean
 }
 
-export default function PhoneInput({ value, onChange, placeholder, required, name, className }: Props) {
+export default function PhoneInput({ value, onChange, placeholder, required, name, className, disabled }: Props) {
   const detected = detectCountry(value)
   const [country, setCountry] = useState<Country>(detected)
   const [localNum, setLocalNum] = useState(() => stripDial(value, detected.dial))
@@ -57,12 +58,23 @@ export default function PhoneInput({ value, onChange, placeholder, required, nam
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Sync state when value changes externally
-  useEffect(() => {
+  // Sync state when value changes externally. This used to be a
+  // useEffect keyed on [value], but that meant every controlled
+  // round-trip (type a digit -> onChange -> parent setState -> new
+  // value prop) cost an extra commit+re-render pass just to set the
+  // exact same country/localNum right back. React's own guidance for
+  // "adjusting state when a prop changes" is to do it directly during
+  // render, gated on a comparison against the previous prop value --
+  // React detects the setState call before committing and re-renders
+  // immediately, skipping the extra effect-triggered pass entirely.
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  const [prevValue, setPrevValue] = useState(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
     const det = detectCountry(value)
     setCountry(det)
     setLocalNum(stripDial(value, det.dial))
-  }, [value])
+  }
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -106,15 +118,16 @@ export default function PhoneInput({ value, onChange, placeholder, required, nam
   const combined = country.dial + localNum
 
   return (
-    <div className={`flex rounded-md border border-gray-300 focus-within:border-qm-lime focus-within:ring-1 focus-within:ring-qm-lime ${className ?? ''}`}>
+    <div className={`flex rounded-md border border-gray-300 focus-within:border-qm-lime focus-within:ring-1 focus-within:ring-qm-lime ${disabled ? 'bg-gray-50' : ''} ${className ?? ''}`}>
       {name && <input type="hidden" name={name} value={combined} />}
 
       {/* Country code trigger */}
       <div ref={dropdownRef} className="relative shrink-0">
         <button
           type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 border-r border-gray-300 hover:bg-gray-50 rounded-l-md whitespace-nowrap focus:outline-none"
+          onClick={() => { if (!disabled) setOpen((o) => !o) }}
+          disabled={disabled}
+          className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 border-r border-gray-300 hover:bg-gray-50 rounded-l-md whitespace-nowrap focus:outline-none disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent"
         >
           <span>{country.flag}</span>
           <span className="text-gray-500">{country.dial}</span>
@@ -165,7 +178,8 @@ export default function PhoneInput({ value, onChange, placeholder, required, nam
         onChange={(e) => handleNumChange(e.target.value)}
         placeholder={placeholder ?? '1234567890'}
         required={required}
-        className="flex-1 min-w-0 rounded-r-md px-3 py-2 text-sm focus:outline-none bg-transparent"
+        disabled={disabled}
+        className="flex-1 min-w-0 rounded-r-md px-3 py-2 text-sm focus:outline-none bg-transparent disabled:text-gray-400 disabled:cursor-not-allowed"
       />
     </div>
   )

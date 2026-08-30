@@ -1,0 +1,26 @@
+-- ============================================================
+-- Migration 151: quote_line_items.modifier_values -- the column
+-- migration 030 was supposed to add and never did ("Built But Not
+-- Connected" audit finding #1).
+-- Applied: PENDING — run manually in the Supabase SQL Editor (Ruben),
+--   not auto-applied by Claude Code.
+-- ============================================================
+--
+-- Paste ONLY the ALTER TABLE statement at the bottom.
+--
+-- Confirmed live via information_schema.columns: quote_line_items does
+-- NOT have this column today. The application has known this for a
+-- while and coded around it instead of failing -- quotes/actions.ts:
+-- 724-726 and quotes/[id]/page.tsx:162-179 both string-match the
+-- Postgres "column does not exist" error and silently retry without
+-- modifier_values, discarding whatever the customer/rep selected. Both
+-- of those swallows are being removed in this same pass (see the app
+-- code diff, not this file) -- once this column exists, that failure
+-- mode goes away entirely rather than needing the workaround.
+--
+-- Type/shape taken directly from what the app already writes, not
+-- guessed: quotes/actions.ts:655 types the field as
+-- `Record<string, boolean | number>`, and migration 030's own
+-- (never-applied) statement was `jsonb DEFAULT '{}'` -- both agree.
+
+ALTER TABLE quote_line_items ADD COLUMN IF NOT EXISTS modifier_values jsonb DEFAULT '{}';

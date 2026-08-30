@@ -198,12 +198,22 @@ export async function POST(request: NextRequest) {
         //    MachineRate) regardless of catalog match. FK columns are set
         //    when a name match exists, custom_item_name preserves the
         //    source ShopVOX name on every row.
-        //    Labor/machine ALSO write to product_option_rates so the
-        //    per-product migrate UI's labor/machine sections stay populated.
+        //
+        //    Used to ALSO write labor/machine rows into product_option_rates
+        //    (so the Migrate page's labor/machine sections had something to
+        //    display) -- removed. formula-engine.ts no longer reads that
+        //    table at all (it was summing it into the price alongside this
+        //    same data, double-charging every affected product -- see
+        //    known-issues/2026-08-19-product-option-rates-double-pricing.md),
+        //    so writing to it here would just be dead data accumulating for
+        //    no purpose. The Migrate page's own labor/machine display is a
+        //    separate, not-yet-made change (same known-issues doc) --
+        //    until that lands, a product re-imported through this route
+        //    will show its labor/machine rates in product_default_items
+        //    (correct for pricing) but the Migrate page's Labor/Machine
+        //    columns will appear empty (display-only gap, not a pricing
+        //    one) until that page reads from the same table.
         const defaultItemRows: Array<Record<string, unknown>> = []
-        const optionRateRows: Array<Record<string, unknown>> = []
-        const seenLabor = new Set<string>()
-        const seenMachine = new Set<string>()
         for (const it of (sv.default_items ?? [])) {
           const key = lc(it.name)
           // Normalize: browser extractor writes `item_type`, Playwright
@@ -255,22 +265,6 @@ export async function POST(request: NextRequest) {
               overrides_material_category_id: null,
               sort_order: defaultItemRows.length,
             })
-            if (match && !seenLabor.has(match.id)) {
-              seenLabor.add(match.id)
-              optionRateRows.push({
-                product_id: p.id,
-                rate_type: 'labor_rate',
-                rate_id: match.id,
-                category: match.category,
-                formula: it.formula ?? 'Area',
-                multiplier: it.multiplier ?? 1,
-                charge_per_li_unit: !!it.per_li,
-                include_in_base_price: false,
-                modifier_formula: it.modifier?.expression ?? null,
-                workflow_step: true,
-                sort_order: optionRateRows.length,
-              })
-            }
           } else if (kind === 'MachineRate') {
             const match = machineByName.get(key)
             defaultItemRows.push({
@@ -294,22 +288,6 @@ export async function POST(request: NextRequest) {
               overrides_material_category_id: null,
               sort_order: defaultItemRows.length,
             })
-            if (match && !seenMachine.has(match.id)) {
-              seenMachine.add(match.id)
-              optionRateRows.push({
-                product_id: p.id,
-                rate_type: 'machine_rate',
-                rate_id: match.id,
-                category: match.category,
-                formula: it.formula ?? 'Area',
-                multiplier: it.multiplier ?? 1,
-                charge_per_li_unit: !!it.per_li,
-                include_in_base_price: false,
-                modifier_formula: it.modifier?.expression ?? null,
-                workflow_step: true,
-                sort_order: optionRateRows.length,
-              })
-            }
           }
         }
 
@@ -343,13 +321,8 @@ export async function POST(request: NextRequest) {
           if (diInsRes.error) throw new Error(`product_default_items insert: ${diInsRes.error.message}`)
         }
 
-        // product_option_rates
-        const orDelRes = await service.from('product_option_rates').delete().eq('product_id', p.id)
-        if (orDelRes.error) throw new Error(`product_option_rates delete: ${orDelRes.error.message}`)
-        if (optionRateRows.length > 0) {
-          const orInsRes = await service.from('product_option_rates').insert(optionRateRows)
-          if (orInsRes.error) throw new Error(`product_option_rates insert: ${orInsRes.error.message}`)
-        }
+        // product_option_rates -- deliberately not written to anymore (see
+        // the comment above where optionRateRows used to be built).
 
         // product_dropdown_menus (+ items) — existing menus/items get wiped.
         const { data: existing } = await service

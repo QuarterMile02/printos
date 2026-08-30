@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { upsertOrgProfile, upsertBusinessHours } from './actions'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type OrgProfile = {
   legal_name: string
@@ -425,8 +426,7 @@ export default function AccountClient({ orgId, orgSlug, orgName, initialProfile,
               placeholder="Quarter Mile Inc." className={inputCls} />
           </Field>
           <Field label="Phone">
-            <input type="tel" value={p.phone} onChange={(e) => set('phone', e.target.value)}
-              placeholder="(956) 724-4000" className={inputCls} />
+            <PhoneInput value={p.phone} onChange={(val) => set('phone', val)} />
           </Field>
           <Field label="Email">
             <input type="email" value={p.email} onChange={(e) => set('email', e.target.value)}

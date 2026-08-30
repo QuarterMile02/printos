@@ -41,6 +41,10 @@ type Props = {
   initialData: CustomerData
   portalTiers?: PortalTierOption[]
   shippingMethods?: ShippingMethodOption[]
+  // Gated by portal_tiers.manage (Owner / Sales-Manager / Accounting-Manager
+  // only) — when false, the Pricing Tier field is fully hidden, not just
+  // read-only, since portalTiers itself is never populated for anyone else.
+  canManagePortalTiers?: boolean
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -117,6 +121,7 @@ function ColHeader({ label, onEdit }: { label: string; onEdit: () => void }) {
 export default function CustomerDetailClient({
   customerId, orgId, orgSlug, initialData,
   portalTiers = [], shippingMethods = [],
+  canManagePortalTiers = false,
 }: Props) {
   const [data, setData] = useState<CustomerData>(initialData)
 
@@ -295,6 +300,7 @@ export default function CustomerDetailClient({
                     onSelect={(addr) => setAddrDraft((prev) => ({
                       ...prev,
                       street: addr.street || prev.street,
+                      street2: addr.street2 || prev.street2,
                       city: addr.city || prev.city,
                       state: addr.state || prev.state,
                       zip: addr.zip || prev.zip,
@@ -302,7 +308,7 @@ export default function CustomerDetailClient({
                     }))}
                   />
                 </div>
-                <div><Label>Street 2</Label><input type="text" value={addrDraft.street2 ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, street2: e.target.value || null })} className={ic} placeholder="Suite 100" /></div>
+                <div><Label>Apt, Suite, etc.</Label><input type="text" value={addrDraft.street2 ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, street2: e.target.value || null })} className={ic} placeholder="Suite 100" /></div>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-1"><Label>City</Label><input type="text" value={addrDraft.city ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, city: e.target.value || null })} className={ic} /></div>
                   <div><Label>State</Label><input type="text" value={addrDraft.state ?? ''} onChange={(e) => setAddrDraft({ ...addrDraft, state: e.target.value || null })} className={ic} maxLength={2} placeholder="TX" /></div>
@@ -528,19 +534,21 @@ export default function CustomerDetailClient({
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${portalDraft.portal_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
-            <div>
-              <Label>Pricing Tier</Label>
-              <select
-                value={portalDraft.portal_tier_id ?? ''}
-                onChange={(e) => setPortalDraft((d) => ({ ...d, portal_tier_id: e.target.value || null }))}
-                className={sc}
-              >
-                <option value="">— No tier assigned —</option>
-                {portalTiers.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
+            {canManagePortalTiers && (
+              <div>
+                <Label>Pricing Tier</Label>
+                <select
+                  value={portalDraft.portal_tier_id ?? ''}
+                  onChange={(e) => setPortalDraft((d) => ({ ...d, portal_tier_id: e.target.value || null }))}
+                  className={sc}
+                >
+                  <option value="">— No tier assigned —</option>
+                  {portalTiers.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -664,14 +672,16 @@ export default function CustomerDetailClient({
                     </span>
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-xs text-qm-gray mb-0.5">Tier</dt>
-                  <dd className="font-medium text-sm">
-                    {data.portal_tier_id
-                      ? (portalTiers.find((t) => t.id === data.portal_tier_id)?.name ?? <Dash />)
-                      : <Dash />}
-                  </dd>
-                </div>
+                {canManagePortalTiers && (
+                  <div>
+                    <dt className="text-xs text-qm-gray mb-0.5">Tier</dt>
+                    <dd className="font-medium text-sm">
+                      {data.portal_tier_id
+                        ? (portalTiers.find((t) => t.id === data.portal_tier_id)?.name ?? <Dash />)
+                        : <Dash />}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
 

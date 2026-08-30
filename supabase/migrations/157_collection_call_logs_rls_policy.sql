@@ -1,0 +1,23 @@
+-- ============================================================
+-- Migration 157: collection_call_logs -- add the missing org-member
+-- RLS policy (RLS on, zero policies since the table was created --
+-- migration 048).
+-- Applied: PROPOSED, NOT run.
+-- ============================================================
+--
+-- Fails closed today: the service-role write path (api/collection-
+-- calls/route.ts) and the payment-promise-tracker dashboard widget
+-- both work fine (service-role bypasses RLS). The Collections report's
+-- "last call" column (reports/collections/page.tsx) reads via the
+-- authenticated client and comes back permanently empty -- known from
+-- the original "Built But Not Connected" audit, still open.
+--
+-- collection_call_logs has its own organization_id column directly
+-- (no join needed, unlike product_option_rates). FOR ALL, matching
+-- the convention already used for tables in this same position
+-- (service-role remains the real writer; this policy exists so the
+-- authenticated-client reads that already assume org-scoped RLS
+-- start actually working) -- same shape as migration 150's
+-- product_option_rates policy and migration 148's portal_tiers.
+
+CREATE POLICY "org members can manage collection call logs" ON collection_call_logs FOR ALL USING (organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid())) WITH CHECK (organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid()));

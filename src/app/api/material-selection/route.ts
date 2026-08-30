@@ -15,6 +15,7 @@ import {
   getProductMaterialCategories,
   type MaterialSelectionResult,
 } from '@/lib/material-selection/smart-material-engine'
+import { userBelongsToOrg } from '@/lib/require-org-access'
 
 type Body = {
   product_id?: string
@@ -29,6 +30,14 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as Body
     if (!body.product_id || !body.org_id) {
       return NextResponse.json({ error: 'product_id and org_id are required' }, { status: 400 })
+    }
+
+    // org_id was trusted straight from the body with no auth at all --
+    // anyone who knew (or guessed) a valid org_id + product_id got back
+    // real material/rate selection data for that org. Require the caller
+    // actually belong to the org before doing anything else.
+    if (!(await userBelongsToOrg(body.org_id))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const service = createServiceClient()

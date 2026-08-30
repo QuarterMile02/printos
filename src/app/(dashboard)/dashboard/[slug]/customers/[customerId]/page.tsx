@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { checkPermission } from '@/lib/check-permission'
 import { notFound, unstable_rethrow } from 'next/navigation'
 import CustomerDetailClient from './customer-detail-client'
 import CustomerContactsSection from './customer-contacts'
@@ -86,15 +87,22 @@ async function CustomerDetailPageInner({ params }: PageProps) {
 
   type PortalTierOption = { id: string; name: string }
   let portalTiers: PortalTierOption[] = []
-  try {
-    const { data: ptData } = await supabase
+  const { allowed: canManagePortalTiers } = await checkPermission(org.id, 'portal_tiers.manage')
+  if (canManagePortalTiers) {
+    // Service client — portal_tiers has RLS enabled with zero policies, so
+    // a normal cookie-bound client can never see any row here regardless of
+    // the checkPermission() result above. Only fetched at all when the
+    // caller is authorized, so the field stays fully absent (not just
+    // empty) for everyone else.
+    const service = createServiceClient()
+    const { data: ptData } = await service
       .from('portal_tiers')
       .select('id, name')
       .eq('organization_id', org.id)
       .eq('is_active', true)
       .order('name') as { data: PortalTierOption[] | null; error: unknown }
     portalTiers = ptData ?? []
-  } catch { /* migration 097 not yet applied */ }
+  }
 
   const membership = await dbOrThrow(
     supabase
@@ -111,11 +119,13 @@ async function CustomerDetailPageInner({ params }: PageProps) {
     email: string | null; email2: string | null; phone: string | null
     phone2: string | null; phone_ext: string | null; title: string | null
     is_primary: boolean | null; is_ap_contact: boolean | null; is_active: boolean | null
+    is_staff_contact: boolean; portal_user_id: string | null
+    portal_invited_at: string | null; portal_invite_expires_at: string | null
   }
   const contactRows = await dbOrThrow(
     supabase
       .from('customer_contacts')
-      .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active')
+      .select('id, full_name, first_name, last_name, email, email2, phone, phone2, phone_ext, title, is_primary, is_ap_contact, is_active, is_staff_contact, portal_user_id, portal_invited_at, portal_invite_expires_at')
       .eq('customer_id', customerId)
       .eq('organization_id', org.id)
       .order('is_primary', { ascending: false })
@@ -357,6 +367,7 @@ async function CustomerDetailPageInner({ params }: PageProps) {
           }}
           portalTiers={portalTiers}
           shippingMethods={shippingMethods}
+          canManagePortalTiers={canManagePortalTiers}
         />
       </CustomerDetailsCollapsible>
       </div>

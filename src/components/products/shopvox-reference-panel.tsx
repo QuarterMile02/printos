@@ -14,6 +14,14 @@ function pick(...vals: any[]): string {
   return ''
 }
 
+// Read-only ShopVOX mirror -- checkboxes here are a review/import checklist
+// (crossing an item off once it's been copied into the PrintOS recipe), not
+// pricing controls. Deliberately does NOT price anything: Ruben's decision
+// is that this panel is a reference view only, with "Check Reference Price"
+// (added in PR #23) removed entirely -- all real pricing now lives on the
+// Quote Preview tab, calculated through the actual PrintOS pricing engine
+// (calculateProductPrice), not a parallel implementation here. See
+// known-issues/2026-08-21-quote-preview-real-pricing.md.
 export default function ShopVOXReferencePanel({ shopvoxData }: Props) {
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   function toggle(key: string) {

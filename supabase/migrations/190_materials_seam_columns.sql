@@ -1,0 +1,85 @@
+ALTER TABLE public.materials
+  ADD COLUMN seam_overlap_width numeric(8,4),
+  ADD COLUMN seam_direction text CONSTRAINT materials_seam_direction_check CHECK (seam_direction IN ('horizontal', 'vertical', 'both', 'none'));
+
+-- ============================================================
+-- Migration 190: materials.seam_overlap_width, materials.seam_direction.
+-- Applied: PROPOSED, NOT run. Ruben pastes and runs this himself.
+-- ============================================================
+--
+-- No leading comment on this file on purpose -- a comment on line 1 has
+-- already silently no-opped two migrations on this project (140, 152).
+-- Every explanatory note lives after the executable statement above.
+--
+-- seam_overlap_width numeric(8,4), NULL, no default. How much two
+-- pieces overlap at a seam, in inches -- the same seam_overlap_width
+-- concept nestMaterial (src/lib/nesting/nester.ts) already takes as an
+-- input and has since its first PR (tests 10/11). NULL means nobody has
+-- set it yet. 0 is a REAL, meaningful value -- butt-joined, no overlap
+-- at all (Dream Scape wallpaper is the live example named for this
+-- migration) -- so 0 and NULL must stay distinguishable. No DEFAULT 0:
+-- a numeric column with no DEFAULT clause is NULL on every existing row
+-- and on every new row that doesn't set it explicitly, which is exactly
+-- the "nobody has set this yet" state this migration must not disturb.
+--
+-- seam_direction text, NULL, no default, CHECK-constrained. "Which way
+-- seams should run on this material" (Ruben's own words: "horizontal or
+-- vertical preference"). The four values in the CHECK constraint above
+-- are copied EXACTLY from SeamDirection in src/lib/nesting/nester.ts
+-- (`export type SeamDirection = 'horizontal' | 'vertical' | 'both' |
+-- 'none'`) -- read before writing this migration, not guessed, and not
+-- widened: the union already covers 'horizontal' and 'vertical', so
+-- there was nothing to stop and ask about. A CHECK constraint on a
+-- nullable column allows NULL through automatically (`seam_direction IN
+-- (...)` evaluates to NULL, not FALSE, when seam_direction itself is
+-- NULL, and a CHECK only rejects an explicit FALSE) -- confirmed this is
+-- what the verification block below actually checks for, not assumed.
+--
+-- NO BACKFILL. Every existing row gets NULL on both columns, exactly
+-- like every ADD COLUMN with no DEFAULT does automatically. Setting a
+-- real value per material is a separate, manual decision -- not this
+-- migration's job.
+--
+-- NO NEW REVOKE NEEDED, stated explicitly so it's visible as considered
+-- rather than forgotten: this adds two columns to an existing table, not
+-- a new table or function. materials already carries its own RLS policy
+-- and table-level grants; a new column on an already-grants-covered
+-- table needs nothing further, the same reasoning migration 189 already
+-- used for material_variants.source_name.
+--
+-- NOT TOUCHED: remnant_usable, calculate_wastage, wastage_markup,
+-- formula, or anything on material_variants. This migration's blast
+-- radius is exactly two new, nullable, non-defaulted columns on
+-- materials and nothing else.
+--
+-- NO APPLICATION CODE CHANGED alongside this migration, on purpose --
+-- the Nesting Sandbox still hardcodes seam_overlap_width: 0 and
+-- seam_direction: 'both'; wiring it up to these columns is a separate
+-- PR, after this one has actually been run and verified live.
+
+-- ------------------------------------------------------------
+-- VERIFICATION -- run this after the migration. Checks
+-- information_schema.columns and pg_constraint directly; does not rely
+-- on the SQL editor's own "Success" message.
+-- ------------------------------------------------------------
+-- select column_name, data_type, numeric_precision, numeric_scale, is_nullable, column_default
+-- from information_schema.columns
+-- where table_schema = 'public' and table_name = 'materials'
+--   and column_name in ('seam_overlap_width', 'seam_direction')
+-- order by column_name;
+-- Expected: 2 rows.
+--   seam_direction     | text    | (null) | (null) | YES | (null)
+--   seam_overlap_width | numeric | 8      | 4      | YES | (null)
+-- is_nullable = 'YES' and column_default = null on BOTH rows -- if
+-- either shows a non-null column_default, a DEFAULT was added that
+-- should not have been.
+--
+-- select conname, pg_get_constraintdef(oid) as definition
+-- from pg_constraint
+-- where conrelid = 'public.materials'::regclass
+--   and conname = 'materials_seam_direction_check';
+-- Expected: one row --
+--   materials_seam_direction_check | CHECK ((seam_direction = ANY (ARRAY['horizontal'::text, 'vertical'::text, 'both'::text, 'none'::text])))
+--
+-- select count(*) from public.materials where seam_overlap_width is not null or seam_direction is not null;
+-- Expected: 0 -- confirms no backfill happened, every row is untouched.

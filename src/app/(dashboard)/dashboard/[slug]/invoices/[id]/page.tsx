@@ -1,10 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { formatInvNumber, formatCents, INV_STATUS_STYLES, INV_STATUS_LABELS } from '../format'
-import { recordPayment } from '../actions'
+import { getInvoiceEditedSinceUnpost } from './actions'
+import InvoiceCustomerPicker from './invoice-customer-picker'
+import InvoiceEditPanel from './invoice-edit-panel'
+import RecordPaymentForm from '@/components/payments/record-payment-form'
 import { checkPermission } from '@/lib/check-permission'
 import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
+import EntityAuditPanel from '../../_widgets/entity-audit-panel'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +34,13 @@ async function PageInner({ params }: PageProps) {
   const invRow = await dbOrThrow(
     supabase
       .from('invoices')
-      .select('id, invoice_number, status, subtotal, tax_total, total, amount_paid, balance_due, due_date, notes, sales_order_id, customer_id, created_at, customers(first_name, last_name, company_name, email)')
+      .select(
+        'id, invoice_number, status, subtotal, tax_total, total, amount_paid, balance_due, due_date, notes, ' +
+        'sales_order_id, customer_id, contact_id, is_posted, posted_at, title, install_address, ' +
+        'billing_company_name, billing_street, billing_street2, billing_city, billing_state, billing_zip, ' +
+        'shipping_name, shipping_street, shipping_street2, shipping_city, shipping_state, shipping_zip, ' +
+        'created_at, customers(first_name, last_name, company_name, email)'
+      )
       .eq('id', id)
       .eq('organization_id', org.id)
       .maybeSingle()
@@ -39,30 +49,61 @@ async function PageInner({ params }: PageProps) {
     id: string; invoice_number: number; status: string
     subtotal: number; tax_total: number; total: number; amount_paid: number; balance_due: number
     due_date: string | null; notes: string | null; sales_order_id: string | null
-    customer_id: string | null; created_at: string
+    customer_id: string | null; contact_id: string | null; is_posted: boolean; posted_at: string | null
+    title: string | null; install_address: string | null
+    billing_company_name: string | null; billing_street: string | null; billing_street2: string | null
+    billing_city: string | null; billing_state: string | null; billing_zip: string | null
+    shipping_name: string | null; shipping_street: string | null; shipping_street2: string | null
+    shipping_city: string | null; shipping_state: string | null; shipping_zip: string | null
+    created_at: string
     customers: { first_name: string; last_name: string; company_name: string | null; email: string | null } | null
   } | null
   if (!inv) return <div className="p-8 text-red-600">Invoice not found</div>
 
   const { allowed: canExportPdf } = await checkPermission(org.id, 'quotes.export_pdf')
 
-  // SO reference
+  // Owner/admin role — matches assertInvoiceEditor's gate in actions.ts.
+  const memberRow = await dbOrThrow(
+    supabase
+      .from('organization_members').select('role')
+      .eq('organization_id', org.id)
+      .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+  ) as { role: string } | null
+  const canEdit = ['owner', 'admin'].includes(memberRow?.role ?? '')
+
+  // Contact (migration 132) — same shape as SO/quote/job's contact_id lookups.
+  let contactName: string | null = null
+  if (inv.contact_id) {
+    const ccRow = await dbOrThrow(
+      supabase.from('customer_contacts').select('full_name').eq('id', inv.contact_id).maybeSingle()
+    ) as { full_name: string } | null
+    contactName = ccRow?.full_name ?? null
+  }
+
+  const editedSinceUnpost = inv.is_posted ? false : await getInvoiceEditedSinceUnpost(inv.id)
+
+  // SO reference + order_thread_id (same "quote_id ?? sales_order_id" anchor
+  // as resolveOrderThreadId in actions.ts — one query covers both the SO
+  // number display and the link into the centralized order-history view).
   let soNum: number | null = null
+  let orderThreadId: string | null = null
   if (inv.sales_order_id) {
     const so = await dbOrThrow(
-      supabase.from('sales_orders').select('so_number').eq('id', inv.sales_order_id).maybeSingle()
-    )
-    soNum = (so as { so_number: number } | null)?.so_number ?? null
+      supabase.from('sales_orders').select('so_number, quote_id').eq('id', inv.sales_order_id).maybeSingle()
+    ) as { so_number: number; quote_id: string | null } | null
+    soNum = so?.so_number ?? null
+    orderThreadId = so?.quote_id ?? inv.sales_order_id
   }
 
   // Line items from the linked quote (via SO → quote)
   type LineItem = { description: string; quantity: number; unit_price: number; total_price: number }
   let lineItems: LineItem[] = []
-  if (inv.sales_order_id) {
-    const soRow = await dbOrThrow(
-      supabase.from('sales_orders').select('quote_id').eq('id', inv.sales_order_id).maybeSingle()
-    )
-    const quoteId = (soRow as { quote_id: string | null } | null)?.quote_id
+  if (orderThreadId) {
+    // orderThreadId is the quote_id when the SO came from a quote — only
+    // meaningful as a quote_line_items lookup in that case, not when it
+    // fell back to sales_order_id (no quote).
+    const quoteId = orderThreadId !== inv.sales_order_id ? orderThreadId : null
     if (quoteId) {
       const li = await dbOrThrow(
         supabase.from('quote_line_items').select('description, quantity, unit_price, total_price').eq('quote_id', quoteId).order('sort_order')
@@ -72,6 +113,18 @@ async function PageInner({ params }: PageProps) {
   }
 
   const invNum = formatInvNumber(inv.invoice_number, inv.created_at)
+
+  const paymentMethods = (await dbOrThrow(
+    supabase.from('payment_methods').select('id, name, type').eq('organization_id', org.id).order('sort_order')
+  ) ?? []) as { id: string; name: string; type: string }[]
+
+  const applications = (await dbOrThrow(
+    supabase
+      .from('payment_applications')
+      .select('id, payment_id, amount_applied, payments(payment_number, payment_method)')
+      .eq('invoice_id', inv.id)
+      .order('applied_at')
+  ) ?? []) as { id: string; payment_id: string; amount_applied: number; payments: { payment_number: number; payment_method: string } | null }[]
 
   return (
     <div className="p-8 max-w-4xl">
@@ -89,12 +142,17 @@ async function PageInner({ params }: PageProps) {
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-extrabold text-gray-900">{invNum}</h1>
-            {inv.customers && (
-              <p className="mt-1 text-sm text-gray-600">
-                {inv.customers.first_name} {inv.customers.last_name}
-                {inv.customers.company_name && <span className="text-gray-400"> &mdash; {inv.customers.company_name}</span>}
-              </p>
-            )}
+            <InvoiceCustomerPicker
+              invoiceId={inv.id}
+              orgId={org.id}
+              orgSlug={slug}
+              initialCustomerId={inv.customer_id}
+              initialCustomerName={inv.customers ? `${inv.customers.first_name} ${inv.customers.last_name}`.trim() : null}
+              initialCompanyName={inv.customers?.company_name ?? null}
+              initialContactId={inv.contact_id}
+              initialContactName={contactName}
+              canReassign={canEdit && !inv.is_posted}
+            />
           </div>
           <div className="flex items-center gap-3">
             <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${INV_STATUS_STYLES[inv.status] ?? 'bg-gray-100 text-gray-700'}`}>
@@ -140,7 +198,43 @@ async function PageInner({ params }: PageProps) {
               <span className="text-gray-700">{new Date(inv.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
             </div>
           )}
+          {orderThreadId && (
+            <div>
+              <Link href={`/dashboard/${slug}/orders/${orderThreadId}`} className="text-gray-500 hover:text-qm-fuchsia hover:underline">
+                View full order history →
+              </Link>
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Unpost / Edit / Repost */}
+      <div className="mt-6">
+        <InvoiceEditPanel
+          invoiceId={inv.id}
+          orgId={org.id}
+          orgSlug={slug}
+          isPosted={inv.is_posted}
+          canEdit={canEdit}
+          editedSinceUnpost={editedSinceUnpost}
+          initial={{
+            title: inv.title,
+            notes: inv.notes,
+            install_address: inv.install_address,
+            billing_company_name: inv.billing_company_name,
+            billing_street: inv.billing_street,
+            billing_street2: inv.billing_street2,
+            billing_city: inv.billing_city,
+            billing_state: inv.billing_state,
+            billing_zip: inv.billing_zip,
+            shipping_name: inv.shipping_name,
+            shipping_street: inv.shipping_street,
+            shipping_street2: inv.shipping_street2,
+            shipping_city: inv.shipping_city,
+            shipping_state: inv.shipping_state,
+            shipping_zip: inv.shipping_zip,
+          }}
+        />
       </div>
 
       {/* Line items */}
@@ -200,7 +294,7 @@ async function PageInner({ params }: PageProps) {
               <span className="font-medium text-gray-900">${formatCents(inv.total)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Amount Paid</span>
+              <span className="text-gray-500">Applied</span>
               <span className="font-medium text-green-700">${formatCents(inv.amount_paid)}</span>
             </div>
             <div className="flex justify-between border-t border-gray-100 pt-3">
@@ -210,31 +304,35 @@ async function PageInner({ params }: PageProps) {
               </span>
             </div>
           </div>
+          {applications.length > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-3 space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Payments Applied</p>
+              {applications.map((a) => (
+                <Link
+                  key={a.id}
+                  href={`/dashboard/${slug}/payments/${a.payment_id}`}
+                  className="flex justify-between text-sm hover:text-qm-fuchsia"
+                >
+                  <span className="text-gray-600">#{a.payments?.payment_number} — {a.payments?.payment_method}</span>
+                  <span className="tabular-nums text-gray-900">${formatCents(a.amount_applied)}</span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
 
-        {inv.balance_due > 0 && (
+        {inv.balance_due > 0 && inv.customer_id && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
             <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Record Payment</h2>
-            <form action={recordPayment}>
-              <input type="hidden" name="invoiceId" value={inv.id} />
-              <input type="hidden" name="orgSlug" value={slug} />
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Amount ($)</label>
-                <input
-                  type="number"
-                  name="amount"
-                  step="0.01"
-                  min="0.01"
-                  max={(inv.balance_due / 100).toFixed(2)}
-                  defaultValue={(inv.balance_due / 100).toFixed(2)}
-                  required
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm tabular-nums focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                />
-              </div>
-              <button type="submit" className="mt-3 rounded-md bg-qm-fuchsia px-4 py-2 text-sm font-semibold text-white hover:brightness-110">
-                Record Payment
-              </button>
-            </form>
+            <RecordPaymentForm
+              orgId={org.id}
+              orgSlug={slug}
+              customerId={inv.customer_id}
+              target={{ type: 'invoice', id: inv.id }}
+              defaultAmountCents={inv.balance_due}
+              paymentMethods={paymentMethods}
+              revalidatePath={`/dashboard/${slug}/invoices/${inv.id}`}
+            />
           </div>
         )}
       </div>
@@ -245,6 +343,17 @@ async function PageInner({ params }: PageProps) {
           <p className="text-sm text-gray-700 whitespace-pre-wrap">{inv.notes}</p>
         </div>
       )}
+
+      <div className="mt-6">
+        <EntityAuditPanel
+          supabase={supabase}
+          orgId={org.id}
+          orgSlug={slug}
+          entityType="invoice"
+          entityId={inv.id}
+          orderThreadId={orderThreadId}
+        />
+      </div>
     </div>
   )
 }

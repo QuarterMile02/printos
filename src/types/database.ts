@@ -267,6 +267,12 @@ export interface Database {
           is_primary: boolean | null
           is_ap_contact: boolean | null
           is_active: boolean | null
+          is_staff_contact: boolean
+          portal_user_id: string | null
+          portal_invited_at: string | null
+          portal_invite_token: string | null
+          portal_invite_expires_at: string | null
+          portal_last_login_at: string | null
           created_at: string
           updated_at: string
         }
@@ -286,6 +292,12 @@ export interface Database {
           is_primary?: boolean | null
           is_ap_contact?: boolean | null
           is_active?: boolean | null
+          is_staff_contact?: boolean
+          portal_user_id?: string | null
+          portal_invited_at?: string | null
+          portal_invite_token?: string | null
+          portal_invite_expires_at?: string | null
+          portal_last_login_at?: string | null
           created_at?: string
           updated_at?: string
         }

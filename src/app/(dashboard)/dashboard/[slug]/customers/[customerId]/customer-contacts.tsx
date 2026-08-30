@@ -1,13 +1,16 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { saveContact, deleteContact, setPrimaryContact, type ContactInput } from '../actions'
+import { saveContact, deleteContact, setPrimaryContact, sendPortalInvite, revokePortalAccess, type ContactInput } from '../actions'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type ContactRow = {
   id: string; full_name: string; first_name: string | null; last_name: string | null
   email: string | null; email2: string | null; phone: string | null
   phone2: string | null; phone_ext: string | null; title: string | null
   is_primary: boolean | null; is_ap_contact: boolean | null; is_active: boolean | null
+  is_staff_contact?: boolean; portal_user_id?: string | null
+  portal_invited_at?: string | null; portal_invite_expires_at?: string | null
 }
 
 type Props = {
@@ -64,17 +67,26 @@ function ContactForm({
           <label className="block text-xs font-medium text-gray-600 mb-1">Email 2</label>
           <input type="email" value={draft.email2 ?? ''} onChange={(e) => onChange({ ...draft, email2: e.target.value || null })} className={ic} />
         </div>
-        <div>
+        {/* Phone spans 2 of 3 columns, next to Ext — a bare 1/3-width column
+            (fine for the old plain text input) truncates PhoneInput's
+            flag+dial-code+number layout, confirmed live. */}
+        <div className="col-span-2">
           <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-          <input type="text" value={draft.phone ?? ''} onChange={(e) => onChange({ ...draft, phone: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Phone 2</label>
-          <input type="text" value={draft.phone2 ?? ''} onChange={(e) => onChange({ ...draft, phone2: e.target.value || null })} placeholder="e.g. 9561234567 or +52 956 123 4567" className={ic} />
+          <PhoneInput
+            value={draft.phone ?? ''}
+            onChange={(val) => onChange({ ...draft, phone: val.replace(/\D/g, '').length > 3 ? val : null })}
+          />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Ext</label>
           <input type="text" value={draft.phone_ext ?? ''} onChange={(e) => onChange({ ...draft, phone_ext: e.target.value || null })} className={ic} maxLength={10} />
+        </div>
+        <div className="col-span-3">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Phone 2</label>
+          <PhoneInput
+            value={draft.phone2 ?? ''}
+            onChange={(val) => onChange({ ...draft, phone2: val.replace(/\D/g, '').length > 3 ? val : null })}
+          />
         </div>
         <div className="col-span-3 flex items-center gap-6">
           <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
@@ -116,6 +128,71 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
   const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null)
   const [primaryError, setPrimaryError] = useState<string | null>(null)
   const [primaryPending, startPrimaryTransition] = useTransition()
+
+  // Portal invite — local-only overlay for immediate feedback. Doesn't touch
+  // the real portal_user_id/portal_invited_at fields (server is the source of
+  // truth for those); just tracks "an invite/link action just succeeded for
+  // this row" so the badge updates without a full page reload.
+  const [invitingId, setInvitingId] = useState<string | null>(null)
+  // Tracked separately from invitingId -- invitingId clears as soon as the
+  // request settles (so the button re-enables), but the error needs to stay
+  // attached to its row until the next attempt, not disappear the instant
+  // invitingId clears.
+  const [inviteErrorId, setInviteErrorId] = useState<string | null>(null)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [invitePending, startInviteTransition] = useTransition()
+  const [inviteStatus, setInviteStatus] = useState<Record<string, 'invited' | 'linked'>>({})
+
+  function handleInvite(c: ContactRow) {
+    setInvitingId(c.id)
+    setInviteError(null)
+    setInviteErrorId(null)
+    startInviteTransition(async () => {
+      const res = await sendPortalInvite(c.id, customerId, orgId, orgSlug)
+      setInvitingId(null)
+      if (res.error) { setInviteError(res.error); setInviteErrorId(c.id); return }
+      setInviteStatus((s) => ({ ...s, [c.id]: res.linkedExisting ? 'linked' : 'invited' }))
+    })
+  }
+
+  // True if this contact currently has portal access, whether that came
+  // from the server-loaded row (portal_user_id set) or from a fresh
+  // invite/link that just succeeded this session (inviteStatus, before a
+  // reload would reflect the real portal_user_id locally). Both the badge
+  // and the Revoke-vs-Invite button choice key off this single check so
+  // they can never disagree with each other.
+  function hasPortalAccess(c: ContactRow) {
+    return !c.is_staff_contact && (!!c.portal_user_id || inviteStatus[c.id] === 'linked')
+  }
+
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [confirmingRevokeId, setConfirmingRevokeId] = useState<string | null>(null)
+  const [revokeErrorId, setRevokeErrorId] = useState<string | null>(null)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
+  const [revokePending, startRevokeTransition] = useTransition()
+
+  function handleRevoke(c: ContactRow) {
+    setRevokingId(c.id)
+    setRevokeError(null)
+    setRevokeErrorId(null)
+    startRevokeTransition(async () => {
+      const res = await revokePortalAccess(c.id, customerId, orgId, orgSlug)
+      setRevokingId(null)
+      setConfirmingRevokeId(null)
+      if (res.error) { setRevokeError(res.error); setRevokeErrorId(c.id); return }
+      // Scoped to exactly this row -- clear it locally so "Invite to
+      // Portal" reappears immediately, without touching any other
+      // contact row (e.g. this same person on a different customer).
+      setContacts((cs) => cs.map((row): ContactRow => row.id !== c.id ? row : {
+        ...row, portal_user_id: null, portal_invited_at: null, portal_invite_expires_at: null,
+      }))
+      setInviteStatus((s) => {
+        const next = { ...s }
+        delete next[c.id]
+        return next
+      })
+    })
+  }
 
   function startEdit(c: ContactRow) {
     setEditingId(c.id)
@@ -266,6 +343,17 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                     {c.is_ap_contact && (
                       <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">AP Contact</span>
                     )}
+                    {c.is_staff_contact ? (
+                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500" title="QMI staff address — not portal-eligible">Internal</span>
+                    ) : hasPortalAccess(c) ? (
+                      <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+                        {inviteStatus[c.id] === 'linked' ? 'Portal Access Linked' : 'Portal Active'}
+                      </span>
+                    ) : (c.portal_invited_at || inviteStatus[c.id] === 'invited') ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        Invite Pending{c.portal_invite_expires_at && new Date(c.portal_invite_expires_at) < new Date() ? ' (expired)' : ''}
+                      </span>
+                    ) : null}
                   </div>
                   {c.title && <p className="text-xs text-qm-gray">{c.title}</p>}
                   {c.email && (
@@ -287,8 +375,56 @@ export default function CustomerContactsSection({ customerId, orgId, orgSlug, in
                   {primaryError && settingPrimaryId === c.id && (
                     <p className="text-xs text-red-600 mt-1">{primaryError}</p>
                   )}
+                  {inviteError && inviteErrorId === c.id && (
+                    <p className="text-xs text-red-600 mt-1">{inviteError}</p>
+                  )}
+                  {revokeError && revokeErrorId === c.id && (
+                    <p className="text-xs text-red-600 mt-1">{revokeError}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {hasPortalAccess(c) ? (
+                    confirmingRevokeId === c.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-500">Revoke access?</span>
+                        <button
+                          onClick={() => handleRevoke(c)}
+                          disabled={revokePending && revokingId === c.id}
+                          className="text-xs font-medium text-red-600 hover:underline disabled:opacity-40"
+                        >
+                          {revokePending && revokingId === c.id ? '…' : 'Yes'}
+                        </button>
+                        <button
+                          onClick={() => setConfirmingRevokeId(null)}
+                          disabled={revokePending && revokingId === c.id}
+                          className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-40"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmingRevokeId(c.id)}
+                        className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+                        title="Revoke this customer's portal access -- only removes access to this customer, not any other login this person may have"
+                      >
+                        Revoke Portal Access
+                      </button>
+                    )
+                  ) : (
+                    !c.is_staff_contact && c.email && (
+                      <button
+                        onClick={() => handleInvite(c)}
+                        disabled={invitePending && invitingId === c.id}
+                        className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-qm-lime-light hover:text-qm-lime-dark hover:border-qm-lime transition-colors disabled:opacity-40"
+                        title={c.portal_invited_at || inviteStatus[c.id] === 'invited' ? 'Resend portal invite' : 'Invite to Customer Portal'}
+                      >
+                        {invitePending && invitingId === c.id
+                          ? '…'
+                          : (c.portal_invited_at || inviteStatus[c.id] === 'invited') ? 'Resend Invite' : 'Invite to Portal'}
+                      </button>
+                    )
+                  )}
                   {!c.is_primary && (
                     <button
                       onClick={() => handleSetPrimary(c.id)}

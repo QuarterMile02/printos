@@ -46,10 +46,31 @@ async function PageInner({ params }: PageProps) {
     )
   }
 
-  let settingsRow = null
+  let settingsRow: {
+    twilio_phone_number?: string | null
+    country_code?: string
+    is_connected?: boolean
+    hasTwilioAccountSid?: boolean
+    hasTwilioAuthToken?: boolean
+  } | null = null
   let templates: unknown[] = []
 
-  try { const { data } = await supabase.from('sms_settings').select('*').eq('organization_id', org.id).maybeSingle(); settingsRow = data } catch {}
+  try {
+    const { data } = await supabase.from('sms_settings').select('*').eq('organization_id', org.id).maybeSingle()
+    const row = data as { twilio_account_sid?: string | null; twilio_auth_token?: string | null; twilio_phone_number?: string | null; country_code?: string; is_connected?: boolean } | null
+    // Never send the decrypted (or even encrypted) credential values to the browser --
+    // only whether each one already has a saved value, so the form can render a masked
+    // placeholder instead of the real secret.
+    if (row) {
+      settingsRow = {
+        twilio_phone_number: row.twilio_phone_number,
+        country_code: row.country_code,
+        is_connected: row.is_connected,
+        hasTwilioAccountSid: Boolean(row.twilio_account_sid),
+        hasTwilioAuthToken: Boolean(row.twilio_auth_token),
+      }
+    }
+  } catch {}
   try { const { data } = await supabase.from('sms_templates').select('*').eq('organization_id', org.id).order('sort_order'); templates = data ?? [] } catch {}
 
   return (

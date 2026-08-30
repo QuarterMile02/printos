@@ -1,0 +1,84 @@
+-- ============================================================
+-- Migration 170: two new numeric columns on materials for Part 2 of the
+-- material form redesign (Material Size + Packaging/Shipping sections).
+-- PROPOSED ONLY -- not applied by Claude Code. Ruben pastes each
+-- statement below into the Supabase SQL Editor ONE AT A TIME, running the
+-- verification query immediately under it before moving to the next.
+-- ============================================================
+--
+-- Why these two, and not more:
+--
+-- MATERIAL SIZE (Roll / Substrate / Unit, driven by materials.material_type_id
+-- -> material_types.name -- see known-issues/2026-08-21-material-form-
+-- redesign-part2-type-resolution.md for why that's the real "Type" field,
+-- correcting Part 1's finding A):
+--   - Roll:      Width x Length          -- Width = existing `width`,
+--                                           Length = existing `height`
+--                                           (relabeled, same column, same
+--                                           precedent as the Sheet Cost
+--                                           relabel below -- a roll's
+--                                           length was always stored in
+--                                           `height`, just mislabeled)
+--   - Substrate: Height x Width x Thickness -- Height = `height`,
+--                                               Width = `width`,
+--                                               Thickness = NEW `thickness`
+--   - Unit:      Height x Width x Depth/Thickness -- same as Substrate,
+--                                               reusing the same NEW
+--                                               `thickness` column with a
+--                                               different label
+--   - Cost: Roll Cost / Sheet Cost / Unit Cost all reuse the existing
+--     `sheet_cost` column -- only the label is type-driven. This is the
+--     literal fix for "Sheet Cost showing on a Roll material": the column
+--     was never wrong, only the label never varied by type. No new cost
+--     column needed.
+--   => Exactly ONE new column needed for Material Size: `thickness`.
+--
+-- PACKAGING / SHIPPING (Height x Width/Length x Depth, plus Weight moved
+-- here out of Identification per Part 1 finding D -- one column pair,
+-- 258/1788 populated, zero readers outside its own section):
+--   - Height = existing `unit_height`, Width/Length = existing `unit_width`
+--     (Part 1 confirmed this pair has zero readers outside its own detail
+--     view, so free to repurpose as the packaging pair it always
+--     conceptually was)
+--   - Depth = NEW `unit_depth` -- the third packaging dimension, matching
+--     the existing `unit_` prefix convention
+--   - Weight / Weight UOM: existing `weight` / `weight_uom` columns, just
+--     moved to a different form section. No column change.
+--   => Exactly ONE new column needed for Packaging/Shipping: `unit_depth`.
+--
+-- Neither new column has a corresponding ShopVOX CSV export header --
+-- confirmed against the real sample export (data/Material_Export_List_4526.csv,
+-- 48 headers, no Length/Thickness/Depth column of any kind). These will be
+-- manually-entered-only fields, same as unit_width/unit_height already are
+-- today. See the import-boundary note in the same known-issues doc.
+
+-- ------------------------------------------------------------
+-- STATEMENT 1 of 2 -- paste this alone, run it, then run the verification
+-- query immediately below before moving to statement 2.
+-- ------------------------------------------------------------
+ALTER TABLE public.materials
+  ADD COLUMN IF NOT EXISTS thickness numeric(10,4);
+
+-- Verification for statement 1 -- confirm the column exists with the
+-- right type (not just "Success. No rows returned"):
+--
+-- select column_name, data_type, numeric_precision, numeric_scale, is_nullable
+-- from information_schema.columns
+-- where table_schema = 'public' and table_name = 'materials' and column_name = 'thickness';
+--
+-- Expected: one row -- thickness | numeric | 10 | 4 | YES
+
+-- ------------------------------------------------------------
+-- STATEMENT 2 of 2 -- paste this alone, run it, then run the verification
+-- query immediately below.
+-- ------------------------------------------------------------
+ALTER TABLE public.materials
+  ADD COLUMN IF NOT EXISTS unit_depth numeric(10,4);
+
+-- Verification for statement 2:
+--
+-- select column_name, data_type, numeric_precision, numeric_scale, is_nullable
+-- from information_schema.columns
+-- where table_schema = 'public' and table_name = 'materials' and column_name = 'unit_depth';
+--
+-- Expected: one row -- unit_depth | numeric | 10 | 4 | YES

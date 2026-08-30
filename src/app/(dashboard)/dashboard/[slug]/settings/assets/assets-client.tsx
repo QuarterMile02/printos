@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { uploadAsset, deleteAsset, renameAssetCategory, createAssetCategory, getAssetUrl } from './actions'
+import { SettingsPageHeader } from '@/components/settings/settings-page-header'
 import { SettingsTabs } from '@/components/settings/settings-tabs'
 import { SettingsSearchInput } from '@/components/settings/settings-search-input'
 
@@ -35,6 +36,14 @@ function fileIcon(mimeType: string): string {
   return '📎'
 }
 
+// Structure now matches Materials/settings pages generally: SettingsPageHeader
+// + SettingsTabs + SettingsSearchInput rendered directly (not nested inside a
+// bordered card), same as materials-list-client.tsx. The header lives here
+// rather than in page.tsx (unlike Materials) because Assets' primary action
+// -- "Add New Category" -- toggles an inline input rather than navigating
+// anywhere, so it needs the client state this component owns; see
+// SettingsPageHeader's primaryActionSlot for how that's wired without
+// forking the shared header component.
 export default function AssetsClient({ orgId, orgSlug, initialCategories, initialAssets }: Props) {
   const [categories, setCategories] = useState(initialCategories)
   const [assets, setAssets] = useState(initialAssets)
@@ -169,25 +178,19 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg ${toast.startsWith('Error') ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
           {toast}
         </div>
       )}
 
-      {/* Categories -- unlimited, freely add/rename (see createAssetCategory's
-          header comment; migration 112's 3 seeded categories were a
-          starting point, never an enforced cap). Tabs/search now come from
-          the shared settings/ components (SettingsTabs = the Quotes/7-page
-          underline convention, confirmed canonical -- NOT the filled-pill
-          style this page briefly used). Header keeps ONE button only; the
-          single "Edit" toggle (no per-tab pencil icons -- one entry point
-          for the whole section) sits trailing the tabs row instead. */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Categories</h2>
-          {addingCategory ? (
+      <SettingsPageHeader
+        title="Assets"
+        count={assets.length}
+        description="Upload files once, reuse them anywhere PrintOS sends something to a customer — quote emails, proofs, invoices, and more."
+        primaryActionSlot={
+          addingCategory ? (
             <input
               autoFocus
               value={newCategoryDraft}
@@ -212,69 +215,76 @@ export default function AssetsClient({ orgId, orgSlug, initialCategories, initia
               </svg>
               Add New Category
             </button>
+          )
+        }
+      />
+
+      {/* Category tabs -- unlimited, freely add/rename (see
+          createAssetCategory's header comment; migration 112's 3 seeded
+          categories were a starting point, never an enforced cap).
+          Rendered bare via SettingsTabs, same as Materials' status tabs --
+          not nested inside a card. The single "Edit" toggle (no per-tab
+          pencil icons) sits trailing the tabs row instead of in the header,
+          since the header is reserved for the single add action. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SettingsTabs
+          tabs={[
+            { key: 'all', label: 'All', count: assets.length },
+            ...visibleCategories.map((cat) => ({
+              key: cat.id,
+              label: cat.name,
+              count: assets.filter((a) => a.category_id === cat.id).length,
+            })),
+          ]}
+          active={activeCategoryId}
+          onChange={setActiveCategoryId}
+        />
+        <button
+          type="button"
+          onClick={() => setManageOpen((v) => !v)}
+          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+            manageOpen ? 'border-qm-lime text-qm-lime bg-qm-lime/5' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          {manageOpen ? 'Done' : 'Edit'}
+        </button>
+      </div>
+      {searchTerm && visibleCategories.length === 0 && (
+        <p className="text-xs text-gray-400">No categories match &quot;{categorySearch}&quot;</p>
+      )}
+
+      {manageOpen && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <p className="mb-2 text-xs text-gray-500">Rename a category below — changes save automatically.</p>
+          {categories.length === 0 ? (
+            <p className="text-xs text-gray-400">No categories yet.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {categories.map((cat) => (
+                <input
+                  key={cat.id}
+                  value={renameDrafts[cat.id] ?? cat.name}
+                  onChange={(e) => setRenameDrafts((d) => ({ ...d, [cat.id]: e.target.value }))}
+                  onBlur={(e) => saveRename(cat.id, e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                  className="block w-full max-w-xs rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
+                />
+              ))}
+            </div>
           )}
         </div>
+      )}
 
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <SettingsTabs
-            tabs={[
-              { key: 'all', label: 'All', count: assets.length },
-              ...visibleCategories.map((cat) => ({
-                key: cat.id,
-                label: cat.name,
-                count: assets.filter((a) => a.category_id === cat.id).length,
-              })),
-            ]}
-            active={activeCategoryId}
-            onChange={setActiveCategoryId}
-          />
-          <button
-            type="button"
-            onClick={() => setManageOpen((v) => !v)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-              manageOpen ? 'border-qm-lime text-qm-lime bg-qm-lime/5' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-            }`}
-          >
-            {manageOpen ? 'Done' : 'Edit'}
-          </button>
-        </div>
-        {searchTerm && visibleCategories.length === 0 && (
-          <p className="-mt-2 mb-4 text-xs text-gray-400">No categories match &quot;{categorySearch}&quot;</p>
-        )}
-
-        {manageOpen && (
-          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <p className="mb-2 text-xs text-gray-500">Rename a category below — changes save automatically.</p>
-            {categories.length === 0 ? (
-              <p className="text-xs text-gray-400">No categories yet.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {categories.map((cat) => (
-                  <input
-                    key={cat.id}
-                    value={renameDrafts[cat.id] ?? cat.name}
-                    onChange={(e) => setRenameDrafts((d) => ({ ...d, [cat.id]: e.target.value }))}
-                    onBlur={(e) => saveRename(cat.id, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                    className="block w-full max-w-xs rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:border-qm-lime focus:outline-none focus:ring-1 focus:ring-qm-lime"
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Search -- below the tabs (kept from the Email Templates order
-            correction; that part was never in dispute). Narrows which tabs
-            are shown by name, since Assets has no underlying row-table
-            separate from the categories themselves for it to filter. */}
-        <SettingsSearchInput
-          value={categorySearch}
-          onChange={setCategorySearch}
-          placeholder="Search categories..."
-          className="max-w-xs"
-        />
-      </div>
+      {/* Search -- below the tabs, matching Materials' row order (tabs
+          first, search second). Narrows which tabs are shown by name,
+          since Assets has no underlying row-table separate from the
+          categories themselves for it to filter. */}
+      <SettingsSearchInput
+        value={categorySearch}
+        onChange={setCategorySearch}
+        placeholder="Search categories..."
+        className="max-w-xs flex-none"
+      />
 
       {/* Upload */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">

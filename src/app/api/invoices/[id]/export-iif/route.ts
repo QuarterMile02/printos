@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { checkPermission } from '@/lib/check-permission'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,6 +86,18 @@ export async function GET(
     const inv = invRow as InvoiceRow | null
     if (!inv) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    }
+
+    // 1b. Auth + org scoping — this route had NEITHER (confirmed live: an
+    // unauthenticated request returned real invoice/customer data). Same
+    // gate as the sibling pdf/route.ts: resolve the invoice first (need its
+    // organization_id to check against), then require the requesting user
+    // be a member of THAT org with the QB-export permission. Denies both
+    // "not logged in" and "logged in but wrong org" — checkPermission
+    // covers both (no session -> allowed:false before any org lookup).
+    const { allowed } = await checkPermission(inv.organization_id, 'invoices.qb_export')
+    if (!allowed) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // 2. Org profile (for filename) + account mappings
@@ -182,9 +195,16 @@ export async function GET(
     // does not support creating tax items via import (TAX is not a valid
     // INVITEMTYPE) — the "Sales Tax" item must already exist in QuickBooks,
     // and is referenced by name only on the SPL line below.
+    //
+    // INVITEMTYPE "SERV" (not "SERVICE") — confirmed against a real IIF
+    // import failure ("SERVICE is an invalid value for field INVITEMTYPE
+    // [15106]"). ddfdc7b previously "fixed" this exact line from SERV to
+    // SERVICE based on a misreading of the QB docs; that was backwards —
+    // SERV is the correct short code, matching QB's actual INVITEMTYPE
+    // vocabulary (SERV, INVT, NINV, OTHC, PART, SUBT, GRP, PAY, DISC).
     lines.push('!INVITEM\tNAME\tINVITEMTYPE\tACCNT\tPRICE\tCOST\tDESC')
     for (const name of serviceItemNames) {
-      lines.push(`INVITEM\t${name}\tSERVICE\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
+      lines.push(`INVITEM\t${name}\tSERV\t${DEFAULT_INCOME_ACCOUNT}\t0\t0\t${name}`)
     }
 
     // Headers

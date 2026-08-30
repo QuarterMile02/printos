@@ -29,15 +29,38 @@ export async function createVendor(
   const { allowed } = await checkPermission(orgId, 'customers.create')
   if (!allowed) return { error: 'You do not have permission to create vendors.' }
 
+  const g = (key: string) => t(formData.get(key) as string | null)
+
   const service = createServiceClient()
   const { error } = await service.from('vendors').insert({
     organization_id: orgId,
     name,
-    primary_contact: t(formData.get('primary_contact') as string | null),
-    primary_email: t(formData.get('primary_email') as string | null),
-    primary_phone: t(formData.get('primary_phone') as string | null),
-    website: t(formData.get('website') as string | null),
-    background_info: t(formData.get('notes') as string | null),
+    legal_name: g('legal_name'),
+    primary_contact: g('primary_contact'),
+    primary_email: g('primary_email'),
+    primary_phone: g('primary_phone'),
+    website: g('website'),
+    // Checkbox: present in FormData (any value) only when checked --
+    // absence means unchecked, not "field omitted."
+    is_active: formData.get('is_active') !== null,
+    street: g('street'),
+    city: g('city'),
+    state: g('state'),
+    zip: g('zip'),
+    country: g('country'),
+    secondary_street: g('secondary_street'),
+    secondary_city: g('secondary_city'),
+    secondary_state: g('secondary_state'),
+    secondary_zip: g('secondary_zip'),
+    account_id: g('account_id'),
+    tax_id: g('tax_id'),
+    tax: g('tax'),
+    terms: g('terms'),
+    payment_method: g('payment_method'),
+    catalog_url: g('catalog_url'),
+    categories: g('categories'),
+    hours_of_operation: g('hours_of_operation'),
+    background_info: g('notes'),
   })
   if (error) return { error: error.message }
 
@@ -154,32 +177,4 @@ export async function deactivateVendor(
   revalidatePath(`/dashboard/${orgSlug}/vendors/${vendorId}`)
   revalidatePath(`/dashboard/${orgSlug}/vendors`)
   return {}
-}
-
-export async function loadMoreVendors(
-  orgId: string,
-  search: string,
-  offset: number,
-  activeOnly?: boolean,
-): Promise<VendorListRow[]> {
-  const service = createServiceClient()
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query: any = service
-    .from('vendors')
-    .select('id, name, primary_contact, primary_phone, primary_email, city, state, is_active, created_at')
-    .eq('organization_id', orgId)
-    .order('name', { ascending: true })
-
-  if (search.trim()) {
-    const q = search.trim()
-    query = query.or(
-      `name.ilike.%${q}%,primary_contact.ilike.%${q}%,primary_email.ilike.%${q}%,primary_phone.ilike.%${q}%,city.ilike.%${q}%`
-    )
-  }
-  if (activeOnly !== undefined) query = query.eq('is_active', activeOnly)
-
-  query = query.range(offset, offset + 49)
-  const { data } = await query
-  return (data ?? []) as VendorListRow[]
 }

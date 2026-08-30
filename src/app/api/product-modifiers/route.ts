@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { userBelongsToOrg } from '@/lib/require-org-access'
 
 export async function GET(request: NextRequest) {
   const productId = request.nextUrl.searchParams.get('productId')
   const orgId = request.nextUrl.searchParams.get('orgId')
   if (!productId || !orgId) {
     return NextResponse.json([])
+  }
+
+  // orgId came straight off the query string with no auth check --
+  // required membership before touching the DB rather than trusting it.
+  if (!(await userBelongsToOrg(orgId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const service = createServiceClient()

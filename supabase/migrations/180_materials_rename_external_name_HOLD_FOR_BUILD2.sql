@@ -1,0 +1,44 @@
+-- ============================================================
+-- Migration 180: materials.external_name -> customer_display_name (RENAME)
+-- ============================================================
+--
+-- ****************************************************************
+-- *** DO NOT RUN UNTIL BUILD 2 SHIPS. ***
+-- ****************************************************************
+--
+-- `external_name` is read/written in 24 files today (confirmed via a
+-- full-repo grep, Build 1): material-form.tsx, actions-sr.ts,
+-- materials-list-client.tsx, material-card.tsx, [id]/page.tsx,
+-- api/export/materials/route.ts, material-import-mapper.ts, and others.
+-- Running this before Build 2 updates every one of those call sites
+-- breaks material create/edit, the materials list, and the CSV export
+-- immediately -- they will all error on "column external_name does not
+-- exist".
+--
+-- Numbered 180 -- deliberately AFTER 179, the last table in this build --
+-- specifically so it can never sort or get pasted alongside the safe
+-- additive-only statements in 171-179. It was originally statement 1 of
+-- migration 171; split out into its own file here so a plain
+-- comment-strip of 171 (or any tool that just concatenates 171-179)
+-- cannot accidentally bundle this rename in with the safe columns.
+--
+-- Split out per explicit instruction, 2026-08-21. Nothing else about
+-- this migration's content changed from its original form in 171.
+--
+-- Run this ONLY after Build 2 has landed and its code reads/writes
+-- customer_display_name instead of external_name. Once that's true,
+-- paste the one statement below and run the verification query under it.
+
+-- ------------------------------------------------------------
+-- STATEMENT 1 of 1 -- HOLD FOR BUILD 2. Do not paste until Build 2 ships.
+-- ------------------------------------------------------------
+ALTER TABLE public.materials
+  RENAME COLUMN external_name TO customer_display_name;
+
+-- Verification:
+--
+-- select column_name from information_schema.columns
+-- where table_schema = 'public' and table_name = 'materials'
+--   and column_name in ('external_name', 'customer_display_name');
+--
+-- Expected: one row -- customer_display_name (external_name gone).

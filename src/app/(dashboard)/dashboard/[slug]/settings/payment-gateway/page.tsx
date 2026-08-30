@@ -4,6 +4,22 @@ import { dbOrThrow } from '@/lib/db'
 import { renderPageError } from '@/lib/page-error'
 import PaymentGatewayClient, { type Props as ClientProps } from './payment-gateway-client'
 
+// payment_gateway_settings (per-org, AES-256-GCM encrypted since Session
+// 12) is the ONLY source of Authorize.net credentials -- the locked
+// franchise decision is that each org configures its own gateway here,
+// not via .env. AUTHORIZENET_API_LOGIN_ID/AUTHORIZENET_TRANSACTION_KEY
+// env vars (added before this page existed) were removed for exactly
+// this reason.
+//
+// For whoever builds the actual charge route (explicitly deferred, not
+// this session): there must be NO env-var fallback when an org hasn't
+// configured a gateway here. Unlike EasyPost (acceptable to fall back
+// for orgs that haven't connected shipping), a payment-gateway fallback
+// means a misconfigured franchise silently charges customer cards onto
+// QMI's own merchant account. Missing/incomplete config must fail
+// loudly with "gateway not configured" -- never fall back to a
+// different org's credentials or a shared env var.
+
 export const dynamic = 'force-dynamic'
 
 type PageProps = { params: Promise<{ slug: string }> }

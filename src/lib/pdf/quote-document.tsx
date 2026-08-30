@@ -22,7 +22,6 @@ export interface OrgProfile {
   logo_url: string | null
   tagline: string | null
   footer_note: string | null
-  tax_rate?: number | null
 }
 
 export type QuotePdfLineItem = {
@@ -55,6 +54,7 @@ export type QuotePdfData = {
   }
   lineItems: QuotePdfLineItem[]
   discountPercent: number       // quote-level discount %
+  taxRate: number                // fraction, e.g. 0.0825 — resolved per src/lib/tax-rate.ts (exemption -> customer rate -> org default), NOT a hardcoded constant
   modifierLabels: Record<string, string>  // modifier_id / lookup_name → display label
   org: OrgProfile
   depositPercent?: number       // e.g. 60 for 60/40 terms
@@ -170,7 +170,7 @@ export default function QuoteDocument({
   documentNumber?: string
   options?: QuoteDocumentOptions
 }) {
-  const { quoteNumber, date, expiresAt, title, customer, lineItems, discountPercent, terms, notes, modifierLabels, org, depositPercent, depositAmount, amountPaid, balanceDue } = data
+  const { quoteNumber, date, expiresAt, title, customer, lineItems, discountPercent, taxRate, terms, notes, modifierLabels, org, depositPercent, depositAmount, amountPaid, balanceDue } = data
   const displayNumber = documentNumber ?? quoteNumber
 
   const showSignatureLine = options.showSignatureLine !== false
@@ -185,8 +185,6 @@ export default function QuoteDocument({
     org.zip,
   ].filter(Boolean).join(', ')
 
-  const TAX_RATE = 0.0825
-
   // Totals
   const subtotalCents = lineItems.reduce((sum, li) => sum + li.total_price, 0)
   const discountCents = discountPercent > 0 ? Math.round(subtotalCents * discountPercent / 100) : 0
@@ -196,7 +194,7 @@ export default function QuoteDocument({
       .filter(li => li.taxable)
       .reduce((sum, li) => sum + li.total_price, 0) *
     (1 - discountPercent / 100) *
-    TAX_RATE
+    taxRate
   )
   const grandTotal = afterDiscount + taxCents
 
@@ -205,7 +203,7 @@ export default function QuoteDocument({
     terms ??
     '60% deposit due upon approval.\n40% balance due on completion.'
 
-  const taxLabel = `Tax (${(TAX_RATE * 100).toFixed(2).replace(/\.?0+$/, '')}%)`
+  const taxLabel = `Tax (${(taxRate * 100).toFixed(2).replace(/\.?0+$/, '')}%)`
 
   return (
     <Document title={`${documentType} ${displayNumber}`} author={orgName}>

@@ -95,6 +95,9 @@ async function PageInner({ params, searchParams }: PageProps) {
         secondaryActions={[
           { label: 'Export CSV', href: `/api/export/materials?orgId=${org.id}`, external: true },
           { label: 'Import CSV', href: `/dashboard/${slug}/settings/materials/import` },
+          { label: 'Migrate from ShopVOX', href: `/dashboard/${slug}/settings/materials/migrate` },
+          { label: 'Family Workbench', href: `/dashboard/${slug}/settings/materials/families` },
+          { label: 'Nesting Sandbox', href: `/dashboard/${slug}/settings/materials/nesting-sandbox` },
         ]}
       />
 

@@ -1,0 +1,487 @@
+<title>Material Families Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#F6F6F3; --surface:#FFFFFF; --surface-2:#F1F1EC; --surface-3:#E8E8E2;
+  --ink:#15181B; --ink-2:#4A4F55; --ink-3:#787E85;
+  --line:#DDDDD6; --line-2:#C8C8C0;
+  --accent:#0E5C86; --accent-ink:#FFFFFF; --accent-soft:#E2EEF5;
+  --ok:#15703F; --ok-soft:#E1F0E7;
+  --warn:#9A6100; --warn-soft:#F8EEDA;
+  --crit:#A3271F; --crit-soft:#F8E5E3;
+  --note:#5B4A86; --note-soft:#EDE9F6;
+  --shadow:0 1px 2px rgba(20,24,28,.06),0 4px 14px rgba(20,24,28,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#131517; --surface:#1B1E21; --surface-2:#22262A; --surface-3:#2B3035;
+    --ink:#EDEEEC; --ink-2:#B2B7BC; --ink-3:#868C93;
+    --line:#31363B; --line-2:#434A50;
+    --accent:#4FA6D4; --accent-ink:#0B1B24; --accent-soft:#173241;
+    --ok:#5FC189; --ok-soft:#17301F;
+    --warn:#DDA53C; --warn-soft:#332713;
+    --crit:#E88178; --crit-soft:#361D1A;
+    --note:#AA9BD6; --note-soft:#241F36;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#131517; --surface:#1B1E21; --surface-2:#22262A; --surface-3:#2B3035;
+  --ink:#EDEEEC; --ink-2:#B2B7BC; --ink-3:#868C93;
+  --line:#31363B; --line-2:#434A50;
+  --accent:#4FA6D4; --accent-ink:#0B1B24; --accent-soft:#173241;
+  --ok:#5FC189; --ok-soft:#17301F;
+  --warn:#DDA53C; --warn-soft:#332713;
+  --crit:#E88178; --crit-soft:#361D1A;
+  --note:#AA9BD6; --note-soft:#241F36;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1400px;margin:0 auto;padding:28px 22px 72px}
+
+.eyebrow{
+  font-family:"Barlow Condensed",system-ui,sans-serif;font-weight:600;
+  letter-spacing:.11em;text-transform:uppercase;font-size:13px;
+  color:var(--ink-3);margin:0 0 4px;
+}
+h1{font-size:31px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px;text-wrap:balance}
+.lede{margin:0;color:var(--ink-2);max-width:64ch}
+
+.mockbar{
+  display:flex;gap:10px;background:var(--note-soft);border:1px solid var(--line);
+  border-left:3px solid var(--note);padding:11px 14px;border-radius:5px;
+  margin:18px 0 22px;color:var(--ink-2);font-size:14px;
+}
+.mockbar strong{color:var(--note)}
+
+/* ---------- workbench ---------- */
+.bench{display:grid;grid-template-columns:1fr 86px 1fr;align-items:stretch}
+@media (max-width:940px){
+  .bench{grid-template-columns:1fr;gap:14px}
+  .mover{flex-direction:row!important;justify-content:center;padding:4px 0!important}
+}
+
+.pane{
+  background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  box-shadow:var(--shadow);display:flex;flex-direction:column;min-width:0;
+}
+.pane-head{padding:12px 14px 11px;border-bottom:1px solid var(--line)}
+.pane-label{
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;letter-spacing:.11em;
+  text-transform:uppercase;font-size:12px;color:var(--ink-3);margin:0 0 7px;
+}
+select.bucket{
+  width:100%;background:var(--surface-2);border:1px solid var(--line-2);
+  border-radius:5px;padding:7px 10px;font-family:inherit;font-size:15px;
+  font-weight:600;color:var(--ink);cursor:pointer;
+}
+select.bucket:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;min-height:20px}
+.chip{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:500;
+  padding:2px 7px;border-radius:3px;white-space:nowrap;
+}
+.chip.n{background:var(--surface-3);color:var(--ink-2)}
+.chip.w{background:var(--warn-soft);color:var(--warn)}
+.chip.c{background:var(--crit-soft);color:var(--crit)}
+.chip.g{background:var(--ok-soft);color:var(--ok)}
+.chip.p{background:var(--note-soft);color:var(--note)}
+
+.filter{
+  display:block;width:100%;margin-top:9px;background:var(--surface);
+  border:1px solid var(--line-2);border-radius:5px;padding:6px 10px;
+  font-family:inherit;font-size:14px;color:var(--ink);
+}
+.filter::placeholder{color:var(--ink-3)}
+.filter:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+.rows{overflow-y:auto;height:376px}
+.rowhead,.row{
+  display:grid;grid-template-columns:24px 1fr 72px 60px 50px 78px;
+  gap:8px;align-items:center;
+}
+.rowhead{
+  padding:6px 14px;position:sticky;top:0;z-index:1;background:var(--surface-2);
+  border-bottom:1px solid var(--line);font-family:"Barlow Condensed",sans-serif;
+  font-weight:600;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+.rowhead .r{text-align:right}
+.row{padding:7px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--surface-2)}
+.row.sel{background:var(--accent-soft)}
+.row input{margin:0;cursor:pointer;accent-color:var(--accent)}
+.row input:disabled{cursor:not-allowed}
+.nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.num{
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  font-variant-numeric:tabular-nums;text-align:right;color:var(--ink-2);
+}
+.num.bad{color:var(--crit);font-weight:600}
+.swatch{
+  display:inline-block;width:9px;height:9px;border-radius:2px;
+  border:1px solid var(--line-2);margin-right:5px;vertical-align:-1px;
+}
+.status{
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:11px;
+  letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:3px;
+  text-align:center;white-space:nowrap;
+}
+.status.safe{background:var(--ok-soft);color:var(--ok)}
+.status.block{background:var(--crit-soft);color:var(--crit)}
+.status.hold{background:var(--warn-soft);color:var(--warn)}
+.empty{padding:30px 14px;color:var(--ink-3);text-align:center;margin:0;font-size:14px}
+
+.mover{display:flex;flex-direction:column;gap:9px;align-items:center;justify-content:center;padding:0 10px}
+.mv{
+  appearance:none;cursor:pointer;font-family:inherit;font-weight:600;font-size:14px;
+  background:var(--accent);color:var(--accent-ink);border:1px solid var(--accent);
+  border-radius:5px;padding:7px 14px;white-space:nowrap;
+}
+.mv.ghost{background:var(--surface);color:var(--ink-2);border-color:var(--line-2)}
+.mv:hover{filter:brightness(1.07)}
+.mv:disabled{opacity:.35;cursor:not-allowed;filter:none}
+.mv:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mv-note{
+  font-family:"Barlow Condensed",sans-serif;font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);text-align:center;line-height:1.35;
+}
+
+.acts{
+  display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;border-top:1px solid var(--line);
+  background:var(--surface-2);border-radius:0 0 6px 6px;min-height:46px;
+}
+.act{
+  appearance:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;
+  background:var(--surface);color:var(--ink-2);border:1px solid var(--line-2);
+  border-radius:5px;padding:5px 10px;
+}
+.act:hover{color:var(--ink);border-color:var(--ink-3)}
+.act.danger{color:var(--crit);border-color:var(--crit-soft)}
+.act:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.bulk{
+  margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  box-shadow:var(--shadow);padding:13px 15px;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
+}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:11px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+}
+.field input,.field select{
+  font-family:"IBM Plex Mono",monospace;font-size:14px;background:var(--surface-2);
+  border:1px solid var(--line-2);border-radius:5px;padding:6px 9px;color:var(--ink);width:118px;
+}
+.field select{font-family:"Barlow",sans-serif;width:172px}
+.bulk-note{color:var(--ink-3);font-size:13px;margin-left:auto;max-width:32ch;text-align:right}
+
+h2{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:34px 0 4px}
+h2 + .lede{margin-bottom:14px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(272px,1fr));gap:12px;margin-top:14px}
+.note{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:13px 15px}
+.note h3{
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:12px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 6px;
+}
+.note.q h3{color:var(--note)}
+.note p{margin:0;color:var(--ink-2);font-size:14px}
+.note p + p{margin-top:7px}
+.note code{
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;background:var(--surface-2);
+  padding:1px 4px;border-radius:3px;color:var(--ink);
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">PrintOS · Settings → Materials</p>
+  <h1>Material Families</h1>
+  <p class="lede">Two slots. Load any bucket into either one — a family, the holding pen, everything not in a family, the disabled legacy pile — and move variants between them in whichever direction you're working.</p>
+
+  <div class="mockbar">
+    <div><strong>Mockup, v2.</strong> The dropdowns, checkboxes, Move and Swap all work — try loading the holding pen on the left and a family on the right. Nothing writes to the database. Materials and counts are real.</div>
+  </div>
+
+  <div class="bench">
+
+    <div class="pane">
+      <div class="pane-head">
+        <p class="pane-label">Left slot</p>
+        <select class="bucket" id="sel-L"></select>
+        <div class="chips" id="chips-L"></div>
+        <input class="filter" id="flt-L" placeholder="Filter…">
+      </div>
+      <div class="rowhead" id="head-L"></div>
+      <div class="rows" id="rows-L"></div>
+      <div class="acts" id="acts-L"></div>
+    </div>
+
+    <div class="mover">
+      <button class="mv" id="btn-right" disabled>→</button>
+      <button class="mv ghost" id="btn-left" disabled>←</button>
+      <span class="mv-note" id="selcount">nothing<br>selected</span>
+      <button class="mv ghost" id="btn-swap" title="Swap the two slots">⇄</button>
+      <span class="mv-note">Swap</span>
+    </div>
+
+    <div class="pane">
+      <div class="pane-head">
+        <p class="pane-label">Right slot</p>
+        <select class="bucket" id="sel-R"></select>
+        <div class="chips" id="chips-R"></div>
+        <input class="filter" id="flt-R" placeholder="Filter…">
+      </div>
+      <div class="rowhead" id="head-R"></div>
+      <div class="rows" id="rows-R"></div>
+      <div class="acts" id="acts-R"></div>
+    </div>
+
+  </div>
+
+  <div class="bulk">
+    <div class="field">
+      <label for="f-cost">Cost</label>
+      <input id="f-cost" placeholder="unchanged">
+    </div>
+    <div class="field">
+      <label for="f-mult">Markup</label>
+      <input id="f-mult" placeholder="unchanged">
+    </div>
+    <div class="field">
+      <label for="f-formula">Pricing axis</label>
+      <select id="f-formula">
+        <option>— unchanged —</option>
+        <option>Area · per sq ft</option>
+        <option>Length · per inch</option>
+        <option>Unit · each</option>
+        <option>Perimeter</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-int">Internal only</label>
+      <select id="f-int">
+        <option>— unchanged —</option>
+        <option>No · we sell this</option>
+        <option>Yes · shop use only</option>
+      </select>
+    </div>
+    <button class="mv" style="height:33px" id="applybtn">Apply to selection</button>
+    <p class="bulk-note">Blank stays as it is. Applies to whatever is ticked, in either slot.</p>
+  </div>
+
+  <h2>What changed from v1</h2>
+  <p class="lede">Your model was better than mine in two places.</p>
+  <div class="notes">
+    <div class="note">
+      <h3>No modes</h3>
+      <p>Organise and Clean Up were tabs. They're gone — both are just buckets in the same dropdown, so you can pull a bad variant straight out of a family and drop it on the disabled pile without changing screens.</p>
+    </div>
+    <div class="note">
+      <h3>Swap, don't re-pick</h3>
+      <p>Empty twelve families into the holding pen, hit <code>⇄</code>, and now the pen is on the left and you're feeding it back out. Same two slots, opposite direction.</p>
+    </div>
+    <div class="note">
+      <h3>The holding pen writes nothing</h3>
+      <p>Your "take everything out first" raised a real question — where does a variant <em>live</em> while it's out of a family? Answer: it doesn't move at all. The pen is a basket. Nothing is written until a variant lands in a real family, so you can empty every family you own and still walk away having changed nothing.</p>
+    </div>
+    <div class="note">
+      <h3>Delete lives where the dead things are</h3>
+      <p>Load <code>Disabled · legacy</code> into a slot and the rows grow a status column and the pane grows a Delete button. It isn't a separate screen because it isn't a separate job.</p>
+    </div>
+  </div>
+
+  <h2>Still open</h2>
+  <p class="lede">Three I can't answer for you, and one thing this screen deliberately doesn't do.</p>
+  <div class="notes">
+    <div class="note q">
+      <h3>Colours on the move</h3>
+      <p>A variant belongs to a colour. Moving 15in Oracal 651 Black into a family with no Black — create the colour, pick an existing one, or ask every time?</p>
+    </div>
+    <div class="note q">
+      <h3>Move or copy</h3>
+      <p>Is a variant always in exactly one family, or can the same size legitimately sit in two?</p>
+    </div>
+    <div class="note q">
+      <h3>Not in a family</h3>
+      <p>Pulling the last variant out of a family leaves an empty shell. Delete it, deactivate it, or leave it for you to decide later?</p>
+    </div>
+    <div class="note">
+      <h3>Not this screen's job</h3>
+      <p>Vendors, part numbers, files, colour management, lot tracking — that's the material detail page. Click a family name here and it opens there. This screen only does bulk moves and family-wide corrections.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const BUCKETS = {
+  poly220:{ label:'Polycarbonate .220in – 1/4"', group:'Families', kind:'family',
+    chips:[['n','3 variants'],['n','1 colour'],['c','40× cost spread'],['w','mixed thickness']],
+    acts:['Rename family','Set formula','Split family','Open detail page','danger:Deactivate'],
+    rows:[
+      {n:'Polycarbonate Clear .220in – 1/4"', col:'#D8E4EA', s:'48 × 96', cost:'6.4100', m:'3.0000', p:'19.2300'},
+      {n:'Polycarbonate White .220in – 1/4"', col:'#F4F4F1', s:'48 × 96', cost:'6.4100', m:'3.0000', p:'19.2300'},
+      {n:'Polycarbonate Clear P95 .020in',    col:'#D8E4EA', s:'48 × 96', cost:'0.1580', m:'3.0000', p:'0.4740', bad:true},
+    ]},
+  poly150:{ label:'Polycarbonate .150in – 3/16"', group:'Families', kind:'family',
+    chips:[['n','6 variants'],['n','1 colour'],['g','consistent']],
+    acts:['Rename family','Set formula','Split family','Open detail page','danger:Deactivate'],
+    rows:[
+      {n:'Polycarbonate White 44in Reel', col:'#F4F4F1', s:'44 × 12', cost:'3.2956', m:'3.0000', p:'9.8868'},
+      {n:'Polycarbonate White 52in Reel', col:'#F4F4F1', s:'52 × 12', cost:'3.2956', m:'3.0000', p:'9.8868'},
+      {n:'Polycarbonate White 56in Reel', col:'#F4F4F1', s:'56 × 12', cost:'3.2956', m:'3.0000', p:'9.8868'},
+      {n:'Polycarbonate White 64in Reel', col:'#F4F4F1', s:'64 × 12', cost:'3.2956', m:'3.0000', p:'9.8868'},
+      {n:'Polycarbonate White 76in Reel', col:'#F4F4F1', s:'76 × 12', cost:'3.2956', m:'3.0000', p:'9.8868'},
+      {n:'Polycarbonate Clear 48 × 96',   col:'#D8E4EA', s:'48 × 96', cost:'4.1200', m:'3.0000', p:'12.3600'},
+    ]},
+  velcro:{ label:'Velcro (hook &amp; loop)', group:'Families', kind:'family',
+    chips:[['n','8 variants'],['n','4 colours'],['c','wrong pricing axis'],['w','Area → should be Length']],
+    acts:['Rename family','Set formula','Split family','Open detail page','danger:Deactivate'],
+    rows:[
+      {n:'Velcro .5in Hook Black',  col:'#1D1D1D', s:'0.5 × 900', cost:'6.7200', m:'2.5000', p:'16.8000', bad:true},
+      {n:'Velcro .5in Loop Black',  col:'#1D1D1D', s:'0.5 × 900', cost:'6.7200', m:'2.5000', p:'16.8000', bad:true},
+      {n:'Velcro .5in Hook White',  col:'#F4F4F1', s:'0.5 × 900', cost:'6.7200', m:'2.5000', p:'16.8000', bad:true},
+      {n:'Velcro .75in Hook Black', col:'#1D1D1D', s:'0.75 × 900', cost:'5.7600', m:'2.5000', p:'14.4000', bad:true},
+      {n:'Velcro Z Straps Black 10Pk', col:'#1D1D1D', s:'—', cost:'19.0000', m:'1.5000', p:'28.5000'},
+    ]},
+  pen:{ label:'⟡ Holding pen', group:'Working buckets', kind:'pen',
+    chips:[['p','nothing written yet']],
+    acts:['Empty the pen','Put everything back'],
+    rows:[]},
+  unassigned:{ label:'Not in a family', group:'Working buckets', kind:'loose',
+    chips:[['n','312 materials'],['w','single-variant']],
+    acts:['Open detail page','danger:Deactivate'],
+    rows:[
+      {n:'Rebar 3 × 20Ft',                  col:'#8A7A66', s:'—', cost:'6.2000',  m:'3.0000', p:'18.6000'},
+      {n:'Rebar 5 × 20Ft',                  col:'#8A7A66', s:'—', cost:'18.5000', m:'3.0000', p:'55.5000'},
+      {n:'Pipe Post 2 3/8in 24ft Galvanized',col:'#B7BCC0', s:'—', cost:'54.0000', m:'2.5000', p:'135.0000'},
+      {n:'Xante En/Press Fuser Unit 110v',  col:'#5C6166', s:'—', cost:'648.0000',m:'1.3000', p:'842.4000'},
+      {n:'Tag Strap 6in Clear',             col:'#E4EAEE', s:'—', cost:'0.0703', m:'10.0000', p:'0.7030'},
+    ]},
+  disabled:{ label:'Disabled · legacy', group:'Working buckets', kind:'dead',
+    chips:[['n','1,788 materials'],['c','1,226 blocked'],['g','562 safe']],
+    acts:['danger:Delete selected','Reactivate'],
+    rows:[
+      {n:'Dream Scape Sandblast 54in × 75ft',  col:'#E9E4DA', s:'54 × 900',  cost:'0.4711', m:'2.0000', st:'safe'},
+      {n:'Dream Scape Sandblast 54in × 150ft', col:'#E9E4DA', s:'54 × 1800', cost:'0.4489', m:'2.0000', st:'safe'},
+      {n:'Dream Scape Sandblast 54in × 300ft', col:'#E9E4DA', s:'54 × 3600', cost:'0.4363', m:'2.0000', st:'safe'},
+      {n:'Coroplast 4mm White',                col:'#F4F4F1', s:'48 × 96',   cost:'0.1094', m:'3.0000', st:'block'},
+      {n:'Velcro .5in Hook Black',             col:'#1D1D1D', s:'—',         cost:'0.0233', m:'2.5000', st:'block'},
+      {n:'Vinyl Oracal 651 Black 15in',        col:'#1D1D1D', s:'15 × 360',  cost:'0.1877', m:'2.5000', st:'hold'},
+    ]},
+};
+
+const state = { L:'poly220', R:'pen' };
+const data  = {};
+Object.entries(BUCKETS).forEach(([k,v]) => data[k] = v.rows.map(r=>({...r})));
+
+function options(){
+  const groups = {};
+  Object.entries(BUCKETS).forEach(([k,v])=>{ (groups[v.group] ||= []).push([k,v.label]); });
+  return Object.entries(groups).map(([g,items])=>
+    `<optgroup label="${g}">${items.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</optgroup>`
+  ).join('');
+}
+
+function render(side){
+  const key = state[side], B = BUCKETS[key], rows = data[key];
+  const dead = B.kind === 'dead';
+
+  document.getElementById('sel-'+side).innerHTML = options();
+  document.getElementById('sel-'+side).value = key;
+
+  const liveChips = [...B.chips];
+  if (B.kind === 'pen') liveChips.push(['n', rows.length + ' waiting']);
+  document.getElementById('chips-'+side).innerHTML =
+    liveChips.map(([c,t])=>`<span class="chip ${c}">${t}</span>`).join('');
+
+  document.getElementById('head-'+side).innerHTML =
+    `<span></span><span>Material</span><span class="r">Size</span>` +
+    `<span class="r">Cost</span><span class="r">Mult</span>` +
+    `<span class="r">${dead ? 'Delete?' : 'Price'}</span>`;
+
+  const flt = (document.getElementById('flt-'+side).value || '').toLowerCase();
+  const shown = rows.map((r,i)=>({r,i})).filter(({r})=>!flt || r.n.toLowerCase().includes(flt));
+
+  document.getElementById('rows-'+side).innerHTML = shown.length ? shown.map(({r,i})=>{
+    const last = dead
+      ? `<span class="status ${r.st}">${r.st==='safe'?'Safe':r.st==='block'?'Blocked':'Check'}</span>`
+      : `<span class="num">${r.p}</span>`;
+    const dis = dead && r.st === 'block' ? 'disabled' : '';
+    return `<label class="row" data-side="${side}" data-i="${i}">
+      <input type="checkbox" ${dis}>
+      <span class="nm"><span class="swatch" style="background:${r.col}"></span>${r.n}</span>
+      <span class="num">${r.s}</span>
+      <span class="num${r.bad?' bad':''}">${r.cost}</span>
+      <span class="num">${r.m}</span>
+      ${last}
+    </label>`;
+  }).join('') : `<p class="empty">${
+      B.kind==='pen' ? 'Pen is empty. Tick variants in a family and move them here.'
+      : flt ? 'Nothing matches that filter.' : 'Nothing here.'}</p>`;
+
+  document.getElementById('acts-'+side).innerHTML = B.acts.map(a=>{
+    const danger = a.startsWith('danger:');
+    return `<button class="act${danger?' danger':''}">${danger?a.slice(7):a}</button>`;
+  }).join('');
+
+  document.querySelectorAll(`.row[data-side="${side}"] input`).forEach(cb=>{
+    cb.addEventListener('change',()=>{ cb.closest('.row').classList.toggle('sel',cb.checked); sync(); });
+  });
+}
+
+function picked(side){
+  return [...document.querySelectorAll(`.row[data-side="${side}"] input:checked`)]
+    .map(cb=>+cb.closest('.row').dataset.i);
+}
+function sync(){
+  const l = picked('L').length, r = picked('R').length;
+  document.getElementById('btn-right').disabled = l===0;
+  document.getElementById('btn-left').disabled  = r===0;
+  const t = l+r;
+  document.getElementById('selcount').innerHTML = t===0 ? 'nothing<br>selected' : `${t}<br>selected`;
+}
+function move(side){
+  const from = data[state[side]], to = data[state[side==='L'?'R':'L']];
+  picked(side).sort((a,b)=>b-a).forEach(i=>{ to.unshift(from[i]); from.splice(i,1); });
+  render('L'); render('R'); sync();
+}
+
+document.getElementById('btn-right').addEventListener('click',()=>move('L'));
+document.getElementById('btn-left').addEventListener('click',()=>move('R'));
+document.getElementById('btn-swap').addEventListener('click',()=>{
+  [state.L,state.R] = [state.R,state.L];
+  document.getElementById('flt-L').value = '';
+  document.getElementById('flt-R').value = '';
+  render('L'); render('R'); sync();
+});
+['L','R'].forEach(side=>{
+  document.getElementById('sel-'+side).addEventListener('change',e=>{
+    state[side] = e.target.value;
+    document.getElementById('flt-'+side).value = '';
+    render(side); sync();
+  });
+  document.getElementById('flt-'+side).addEventListener('input',()=>{ render(side); sync(); });
+});
+document.getElementById('applybtn').addEventListener('click',()=>{
+  const n = picked('L').length + picked('R').length;
+  document.getElementById('applybtn').textContent =
+    n===0 ? 'Nothing selected' : `Would update ${n} variant${n===1?'':'s'}`;
+  setTimeout(()=>{document.getElementById('applybtn').textContent='Apply to selection';},1800);
+});
+
+render('L'); render('R'); sync();
+</script>

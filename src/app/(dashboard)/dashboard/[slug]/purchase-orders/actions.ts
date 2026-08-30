@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 
 export type PurchaseOrderSearchRow = {
   id: string
@@ -17,78 +17,69 @@ export type PurchaseOrderSearchRow = {
   sales_orders: { so_number: number; title: string | null } | null
 }
 
-// Search across title, vendor name, PO number, and total (typed as a
-// dollar amount). Same proven approach as invoices/actions.ts's
-// searchInvoices — PostgREST's or() logic-tree parser does NOT accept
-// embedded-resource dot paths ("vendors.name.ilike...") or column casts
-// ("po_number::text.ilike...") as condition fragments; both were confirmed
-// to fail with "failed to parse logic tree" while building the Invoices
-// version of this search. So vendor-name matching runs as a separate
-// preliminary lookup against the vendors table (flat ILIKE, no dot path)
-// whose matching ids feed a plain vendor_id.in.(...) condition, and
-// po-number matching uses an exact integer equality instead of a cast
-// substring search. Title stays a plain flat ILIKE since it's a real
-// column on purchase_orders itself.
+type PoFuzzyRpcRow = {
+  id: string
+  po_number: number
+  title: string | null
+  status: string
+  total: number
+  expected_delivery_date: string | null
+  received_date: string | null
+  created_at: string
+  vendor_id: string | null
+  vendor_name: string | null
+  sales_order_id: string | null
+  so_number: number | null
+  so_title: string | null
+}
+
+// Trigram fuzzy search (migration 127's search_purchase_orders_fuzzy) —
+// replaces the previous two-round-trip TypeScript approach (a preliminary
+// ILIKE-only vendor lookup feeding a vendor_id.in.(...) condition into the
+// main purchase_orders query), which existed only because PostgREST's
+// or() logic-tree parser can't express a nested-column ILIKE or a numeric
+// cast in one call. A real SQL function can freely JOIN and reference
+// joined columns, so this collapses to one round trip AND upgrades
+// vendor-name matching from exact-ILIKE-only to the same 3-strategy
+// fuzziness as title.
 //
 // purchase_orders.total is NUMERIC(12,2) — real dollars-and-cents (e.g.
 // 207.84), NOT integer cents like quotes/invoices/sales_orders (which
-// store 20784 for the same amount). The typed term is rounded to 2
-// decimals directly; it must NOT be multiplied by 100 the way the other
-// tables' search does, or every comparison would be 100x too large and
-// never match.
+// store 20784 for the same amount). Both this wrapper's dead-code-free
+// history and the RPC itself (search_purchase_orders_fuzzy's `ROUND(t.
+// commaless::numeric, 2)`, deliberately NOT `* 100`) preserve that —
+// confirmed no ×100 conversion crept in here the way it would if this had
+// been copy-pasted from Quotes/SO/Invoices by habit.
 export async function searchPurchaseOrders(orgId: string, term: string): Promise<PurchaseOrderSearchRow[]> {
   const cleaned = term.trim()
   if (cleaned.length < 2) return []
 
-  const supabase = await createClient()
-
-  // Strip commas (thousands separators) before checking whether the term is
-  // a bare dollar amount, e.g. "1,234.56" -> "1234.56".
-  const commaless = cleaned.replace(/,/g, '')
-  const isDollarAmount = /^\d+(\.\d+)?$/.test(commaless)
-  const totalMatch = isDollarAmount ? Math.round(parseFloat(commaless) * 100) / 100 : null
-  const isPlainInteger = /^\d+$/.test(commaless)
-  const poNumberMatch = isPlainInteger ? parseInt(commaless, 10) : null
-
-  // Strip characters that would break PostgREST's or() filter syntax.
-  const safeTerm = cleaned.replace(/[,()'"]/g, ' ').trim()
-
-  const conditions: string[] = []
-  if (safeTerm.length >= 2) {
-    conditions.push(`title.ilike.%${safeTerm}%`)
-  }
-  if (totalMatch !== null) {
-    conditions.push(`total.eq.${totalMatch}`)
-  }
-  if (poNumberMatch !== null) {
-    conditions.push(`po_number.eq.${poNumberMatch}`)
-  }
-  if (safeTerm.length >= 2) {
-    const { data: vendorRows } = await supabase
-      .from('vendors')
-      .select('id')
-      .eq('organization_id', orgId)
-      .ilike('name', `%${safeTerm}%`)
-      .limit(50)
-    const vendorIds = (vendorRows ?? []).map((r) => (r as { id: string }).id)
-    if (vendorIds.length > 0) {
-      conditions.push(`vendor_id.in.(${vendorIds.join(',')})`)
-    }
-  }
-  if (conditions.length === 0) return []
-
-  const { data, error } = await supabase
-    .from('purchase_orders')
-    .select('id, po_number, title, status, total, expected_delivery_date, received_date, created_at, vendor_id, vendors(name), sales_order_id, sales_orders(so_number, title)')
-    .eq('organization_id', orgId)
-    .or(conditions.join(','))
-    .order('po_number', { ascending: false })
-    .limit(50)
+  const service = createServiceClient()
+  const { data, error } = await service.rpc('search_purchase_orders_fuzzy', {
+    p_org_id: orgId,
+    p_term: cleaned,
+  }) as { data: PoFuzzyRpcRow[] | null; error: { message: string } | null }
 
   if (error) {
     console.error('[searchPurchaseOrders]', error.message)
     return []
   }
 
-  return (data ?? []) as PurchaseOrderSearchRow[]
+  // Reshape the RPC's flat vendor_name/so_number/so_title columns back
+  // into the nested `vendors`/`sales_orders` objects PurchaseOrderSearchRow
+  // (and every consumer of it) expects — keeps po-list-client.tsx untouched.
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    po_number: r.po_number,
+    title: r.title,
+    status: r.status,
+    total: r.total,
+    expected_delivery_date: r.expected_delivery_date,
+    received_date: r.received_date,
+    created_at: r.created_at,
+    vendor_id: r.vendor_id,
+    vendors: r.vendor_id ? { name: r.vendor_name ?? '' } : null,
+    sales_order_id: r.sales_order_id,
+    sales_orders: r.sales_order_id ? { so_number: r.so_number ?? 0, title: r.so_title } : null,
+  }))
 }

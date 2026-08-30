@@ -1,0 +1,42 @@
+-- ============================================================
+-- Migration 150: product_option_rates -- add real org-member RLS policy
+-- (currently zero policies, confirmed via pg_policies -- "Built But Not
+-- Connected" audit finding #4).
+-- Applied: LIVE — run by Ruben in the Supabase SQL Editor and verified
+--   via pg_policies ("org members can manage product option rates",
+--   FOR ALL). This header was never updated after that; corrected here.
+--   The delete-then-insert data-loss risk described below is therefore
+--   closed -- the Migrate page's Labor/Machine sections can see existing
+--   rows again, so a save no longer resubmits an empty/incomplete array.
+-- ============================================================
+--
+-- Paste ONLY the CREATE POLICY statement at the bottom -- not this whole
+-- comment block. Same convention as migrations 140-149.
+--
+-- Confirmed live: 5,903 rows, RLS enabled, 0 policies since the table
+-- was created (migration 034). Quote-time pricing is unaffected --
+-- src/lib/pricing/formula-engine.ts:78,283-287 reads this table through
+-- createServiceClient(), which bypasses RLS. The actual breakage is the
+-- product Migrate/Edit page (products/[id]/migrate/page.tsx:30,71),
+-- which reads it through the normal authenticated client -- with zero
+-- policies that silently returns an empty array, not an error.
+--
+-- CORRECTION to the audit's framing: this is NOT a duplication risk.
+-- Checked pg_constraint live -- product_option_rates already has
+-- UNIQUE(product_id, rate_type, rate_id) from migration 034, and a
+-- direct query for both exact and semantic (same product+rate_type+
+-- category, different rate_id) duplicates found ZERO of either across
+-- all 5,903 rows. The real risk is worse: the save path
+-- (products/[id]/migrate/actions.ts:134-152, replaceOptionRates) does
+-- an unconditional DELETE of every existing row for that product,
+-- THEN inserts whatever the client submitted -- and the DELETE runs
+-- before the "if (rates.length === 0) return null" guard even applies
+-- to the insert half. Since the edit page's initial load can't see
+-- existing rates (this same RLS gap), any save of that page for a
+-- product that already has option rates -- even one that only touches
+-- an unrelated section -- submits an empty/incomplete optionRates
+-- array and silently WIPES the existing rows to zero. This policy is
+-- the fix for the read; the delete-then-insert save behavior itself is
+-- unchanged by this migration and still worth a second look separately.
+
+CREATE POLICY "org members can manage product option rates" ON product_option_rates FOR ALL USING (product_id IN (SELECT id FROM products WHERE organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid()))) WITH CHECK (product_id IN (SELECT id FROM products WHERE organization_id IN (SELECT organization_id FROM organization_members WHERE user_id = auth.uid())));

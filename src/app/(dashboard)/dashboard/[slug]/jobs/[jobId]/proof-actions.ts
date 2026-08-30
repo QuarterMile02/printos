@@ -3,7 +3,6 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { logActivity } from '@/lib/logActivity'
-import { dbOrThrow } from '@/lib/db'
 import { uploadProofCore } from '@/lib/proofs/upload-proof-core'
 
 export async function uploadProof(formData: FormData) {
@@ -39,69 +38,9 @@ export async function uploadProof(formData: FormData) {
   redirect(`/dashboard/${orgSlug}/jobs/${jobId}`)
 }
 
-const STATUS_ADVANCE: Record<string, string> = {
-  new: 'in_progress',
-  in_progress: 'proof_review',
-  proof_review: 'ready_for_pickup',
-  ready_for_pickup: 'completed',
-}
-
-export async function updateProofStatus(formData: FormData) {
-  const proofId = formData.get('proofId') as string
-  const jobId = formData.get('jobId') as string
-  const orgId = formData.get('orgId') as string
-  const orgSlug = formData.get('orgSlug') as string
-  const newStatus = formData.get('status') as string
-
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const service = createServiceClient()
-
-  await dbOrThrow(service.from('proof_versions').update({ status: newStatus }).eq('id', proofId))
-
-  if (user && newStatus === 'approved') {
-    await logActivity({
-      org_id: orgId,
-      user_id: user.id,
-      entity_type: 'proof',
-      entity_id: proofId,
-      action: 'proof_approved',
-      metadata: { job_id: jobId },
-    })
-  }
-
-  // If approved, advance job to next stage
-  if (newStatus === 'approved') {
-    const { data: jobRow } = await service
-      .from('jobs')
-      .select('status')
-      .eq('id', jobId)
-      .single()
-    const currentStatus = (jobRow as { status: string } | null)?.status
-    if (currentStatus) {
-      const nextStatus = STATUS_ADVANCE[currentStatus]
-      if (nextStatus) {
-        await dbOrThrow(service.from('jobs').update({
-          status: nextStatus,
-          updated_at: new Date().toISOString(),
-        }).eq('id', jobId).eq('organization_id', orgId))
-
-        if (user) {
-          await logActivity({
-            org_id: orgId,
-            user_id: user.id,
-            entity_type: 'job',
-            entity_id: jobId,
-            action: 'stage_entered',
-            from_value: currentStatus,
-            to_value: nextStatus,
-            metadata: { triggered_by: 'proof_approved' },
-          })
-        }
-      }
-    }
-  }
-
-  redirect(`/dashboard/${orgSlug}/jobs/${jobId}`)
-}
+// updateProofStatus (staff-side proof approve/reject) removed here --
+// confirmed dead code: zero callers and no approve/reject control
+// anywhere in the staff job-detail UI. The real, working approval path
+// is customer-facing (respondToProofCore, via the emailed
+// /proofs/[token] link), which already logs correctly.
+// (schema-drift-findings.md Section 9)

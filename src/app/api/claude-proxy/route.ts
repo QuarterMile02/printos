@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -257,6 +258,16 @@ async function analyzeBrand(
 
 export async function POST(req: NextRequest) {
   try {
+    // Had NO gate at all -- anyone who found the URL could burn our
+    // ANTHROPIC_API_KEY for free (2 Claude calls + a fal.ai generation per
+    // hit downstream). No org-scoped resource is read or written here, so
+    // this only needs "is there a session at all", not org membership.
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const key = process.env.ANTHROPIC_API_KEY
     if (!key) {
       return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 })

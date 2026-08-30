@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { saveContact, type ContactInput } from './actions'
+import PhoneInput from '@/components/ui/PhoneInput'
 
 type Props = {
   customerId: string
@@ -95,11 +96,11 @@ export default function CreateContactModal({ customerId, orgId, orgSlug, onSucce
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
-              <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className={ic} placeholder="9561234567" />
+              <PhoneInput value={phone} onChange={(val) => setPhone(val.replace(/\D/g, '').length > 3 ? val : '')} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Phone 2</label>
-              <input type="text" value={phone2} onChange={e => setPhone2(e.target.value)} className={ic} />
+              <PhoneInput value={phone2} onChange={(val) => setPhone2(val.replace(/\D/g, '').length > 3 ? val : '')} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Ext</label>

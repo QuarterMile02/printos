@@ -1,0 +1,210 @@
+[
+  {
+    "shopvoxId": "a7d9d1ed-189e-4c61-9b99-ff4dbddfa732",
+    "name": "Acrylic Clear Custom Shape with White Ink 2 Sided (5 Layer)- Direct",
+    "status": "created",
+    "productId": "f758a08e-8d61-42f1-964c-d618c6fc1ae9",
+    "active": true,
+    "unresolvedRefs": [
+      "workflow_template_id"
+    ],
+    "pricingType": "Basic",
+    "modifierCount": 17,
+    "defaultItemCount": 18,
+    "optionRateCount": 14,
+    "dropdownMenuCount": 7,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "410cbac9-df4e-479e-b9fb-e7ba514d7f28",
+    "name": "Feather Angled 1 Sided Flag Only",
+    "status": "created",
+    "productId": "f06d27a6-265b-47df-9cf0-a8cb24c509d8",
+    "active": true,
+    "unresolvedRefs": [
+      "workflow_template_id"
+    ],
+    "pricingType": "Basic",
+    "modifierCount": 0,
+    "defaultItemCount": 0,
+    "optionRateCount": 0,
+    "dropdownMenuCount": 1,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "c4626af7-139d-44e8-9240-886268117945",
+    "name": "Feather Angled 1 Sided Flag with Hardware",
+    "status": "created",
+    "productId": "909c980b-9b51-45a9-8a34-36fd8c68ab14",
+    "active": true,
+    "unresolvedRefs": [],
+    "pricingType": "Basic",
+    "modifierCount": 0,
+    "defaultItemCount": 0,
+    "optionRateCount": 0,
+    "dropdownMenuCount": 4,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "08fa6a7a-3636-4ab9-b887-29aa7955aee9",
+    "name": "Feather Angled 2 Sided Flag Only",
+    "status": "created",
+    "productId": "c09019ce-b888-4f02-8453-0682712cd187",
+    "active": true,
+    "unresolvedRefs": [
+      "workflow_template_id"
+    ],
+    "pricingType": "Basic",
+    "modifierCount": 0,
+    "defaultItemCount": 0,
+    "optionRateCount": 0,
+    "dropdownMenuCount": 1,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "47322d3c-75ad-41c4-9e04-62d050e4bfdc",
+    "name": "Feather Angled 2 Sided Flag with Hardware",
+    "status": "created",
+    "productId": "e95b609c-443c-41b1-8cb4-978bf6adcf4b",
+    "active": true,
+    "unresolvedRefs": [],
+    "pricingType": "Basic",
+    "modifierCount": 0,
+    "defaultItemCount": 0,
+    "optionRateCount": 0,
+    "dropdownMenuCount": 4,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "f07384ce-7af2-47ff-8c63-06d4f5f25199",
+    "name": "Feather Convex 2 Sided Flag with Hardware",
+    "status": "created",
+    "productId": "41470093-2d5d-44f0-8b36-d732ff615a9d",
+    "active": true,
+    "unresolvedRefs": [],
+    "pricingType": "Basic",
+    "modifierCount": 0,
+    "defaultItemCount": 0,
+    "optionRateCount": 0,
+    "dropdownMenuCount": 4,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "261f12c3-ce4c-476b-930b-5c906695243f",
+    "name": "Magnet Fleet 30Mil- Direct Printing",
+    "status": "created",
+    "productId": "55e73c01-6ff7-40e3-8508-441362b73e73",
+    "active": true,
+    "unresolvedRefs": [],
+    "pricingType": "Formula",
+    "modifierCount": 2,
+    "defaultItemCount": 12,
+    "optionRateCount": 9,
+    "dropdownMenuCount": 2,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "89758a67-1cce-4291-b18b-c076ae695df7",
+    "name": "Magnet Fleet 30Mil- Kiss Cut Vinyl",
+    "status": "created",
+    "productId": "057314a6-cea3-4cdf-a99d-36ef614e6876",
+    "active": true,
+    "unresolvedRefs": [],
+    "pricingType": "Basic",
+    "modifierCount": 9,
+    "defaultItemCount": 13,
+    "optionRateCount": 8,
+    "dropdownMenuCount": 16,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "112c3243-0573-4c1b-9e6a-349e04596c85",
+    "name": "Magnet Fleet 30Mil- Vinyl Transfer",
+    "status": "created",
+    "productId": "331a1b68-e29e-40db-9b15-8e8ea687fc44",
+    "active": true,
+    "unresolvedRefs": [],
+    "pricingType": "Formula",
+    "modifierCount": 4,
+    "defaultItemCount": 18,
+    "optionRateCount": 13,
+    "dropdownMenuCount": 4,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "6b9f7fba-d8bb-4495-ad1e-c2b60080c878",
+    "name": "Lit Wall Signs- Comp Alum & Acrylic with GI-18 Pads, 3in 3/16in Studs & 1in .25in Spacers (2 Layer)",
+    "status": "created",
+    "productId": "e8d15f93-6ce8-4038-9823-3d08e04ece36",
+    "active": true,
+    "unresolvedRefs": [
+      "workflow_template_id"
+    ],
+    "pricingType": "Basic",
+    "modifierCount": 6,
+    "defaultItemCount": 24,
+    "optionRateCount": 9,
+    "dropdownMenuCount": 6,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "ea38c797-9ef8-4b40-b54c-0f37aba4f300",
+    "name": "Tickets - Custom Size",
+    "status": "created",
+    "productId": "3d5dcf76-0543-4c04-a750-4f02c02fa103",
+    "active": true,
+    "unresolvedRefs": [
+      "workflow_template_id"
+    ],
+    "pricingType": "Grid",
+    "modifierCount": 0,
+    "defaultItemCount": 0,
+    "optionRateCount": 0,
+    "dropdownMenuCount": 0,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "b46bcd01-7ccd-4d5f-8b78-d019fb8561e1",
+    "name": "Dash Voice A.I Receptionist Core",
+    "status": "created",
+    "productId": "a9cb186d-aada-4b81-a8e1-f57b2b262e31",
+    "active": true,
+    "unresolvedRefs": [],
+    "pricingType": "Basic",
+    "modifierCount": 0,
+    "defaultItemCount": 0,
+    "optionRateCount": 0,
+    "dropdownMenuCount": 0,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "bafd191b-5cf0-438f-9c1e-05e9697c13a2",
+    "name": "NOT READY Lit Wall Signs- .040 Solid Aluminum & Acrylic with GI-18 Pads, 3in) 3/16in Studs & 1in) .25in Spacers (2 Color)",
+    "status": "created",
+    "productId": "e100707f-6502-42e4-b9b1-e3cde240e5d2",
+    "active": true,
+    "unresolvedRefs": [
+      "workflow_template_id"
+    ],
+    "pricingType": "Basic",
+    "modifierCount": 7,
+    "defaultItemCount": 26,
+    "optionRateCount": 11,
+    "dropdownMenuCount": 3,
+    "unmatchedDefaultItems": []
+  },
+  {
+    "shopvoxId": "9c8aeedf-d17e-4e74-b4a3-50150e9c11bc",
+    "name": "Vehicle Wrap- Partial",
+    "status": "created",
+    "productId": "1b44d2b5-3f00-4ac4-a149-fe50d790bee2",
+    "active": false,
+    "unresolvedRefs": [],
+    "pricingType": "Formula",
+    "modifierCount": 9,
+    "defaultItemCount": 16,
+    "optionRateCount": 14,
+    "dropdownMenuCount": 7,
+    "unmatchedDefaultItems": []
+  }
+]

@@ -1,29 +1,77 @@
 // Required env vars (add to Vercel):
-//   GHL_WEBHOOK_SECRET  — if set, x-ghl-signature header is validated (HMAC-SHA256)
+//   GHL_WEBHOOK_SECRET  — PHASE 3: ENFORCED. Compared (constant-time) against
+//                         the x-ghl-shared-secret header GHL sends. A missing
+//                         or mismatched header is rejected (401); an unset
+//                         secret fails closed (500) rather than falling back
+//                         to permissive Phase 1 behavior. Phase 2 (observe
+//                         only, header confirmed matching in production —
+//                         Vercel logs, 2026-08-27 12:17:36: secretConfigured=
+//                         true headerPresent=true headerMatches=true) is what
+//                         cleared this for enforcement. See
+//                         known-issues/2026-08-25-ghl-webhook-shared-secret-and-test-customer-investigation.md
+//                         for the full 3-phase rollout.
 //   GHL_LOCATION_ID     — GHL location ID for this org (future use with GHL API client)
 //   GHL_ORG_SLUG        — PrintOS org slug to attach records to (default: quarter-mile-inc)
 
 import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
+import { createHash, timingSafeEqual } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 
-function verifySignature(rawBody: string, header: string | null, secret: string): boolean {
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
-  const candidate = header?.startsWith('sha256=') ? header.slice(7) : (header ?? '')
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(candidate.padEnd(expected.length, ' ')))
+// Constant-time compare -- never `===`, which short-circuits on the first
+// mismatched byte and leaks the secret's length/prefix via timing. Hashes
+// both values with SHA-256 first, then timingSafeEqual's the two 32-byte
+// digests -- always equal-length by construction, so timingSafeEqual
+// itself never sees a length mismatch (no `&&` short-circuit hiding it,
+// no zero-padding that would make "abc" and "abc\0" collide) and can
+// never throw.
+function constantTimeEqual(a: string, b: string): boolean {
+  const digestA = createHash('sha256').update(a).digest()
+  const digestB = createHash('sha256').update(b).digest()
+  return timingSafeEqual(digestA, digestB)
 }
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
-  console.log('[ghl-webhook] incoming payload:', rawBody)
 
-  // ── Signature verification ─────────────────────────────────────────────────
-  const secret = process.env.GHL_WEBHOOK_SECRET
-  if (secret) {
-    const sig = req.headers.get('x-ghl-signature')
-    if (!sig || !verifySignature(rawBody, sig, secret)) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-    }
+  // ── PHASE 3 — shared-secret auth: ENFORCED, fail closed ─────────────────────
+  // Phase 2 confirmed live in production (Vercel, 2026-08-27 12:17:36):
+  // secretConfigured=true headerPresent=true headerMatches=true. That's what
+  // clears this for enforcement -- reversing Phase 1's permissive "observe
+  // only, never reject" stance on purpose.
+  //
+  // Fail CLOSED on a missing secret, same reasoning as
+  // payment_gateway_settings: an unconfigured secret is never "allow", it's a
+  // 500. A missing or wrong header is a 401. Neither response tells the
+  // caller which specific thing was wrong -- both "no header" and "header
+  // present but mismatched" collapse into the same generic 401 below via
+  // headerMatches, and the 500/401 bodies never echo the header or secret.
+  //
+  // Logs ONLY booleans. Never the secret, the header value, or any part of
+  // either, at any log level, in any branch.
+  const expectedSecret = process.env.GHL_WEBHOOK_SECRET
+  const presentedHeader = req.headers.get('x-ghl-shared-secret')
+  const secretConfigured = !!expectedSecret
+  const headerPresent = !!presentedHeader
+  const headerMatches = secretConfigured && headerPresent
+    ? constantTimeEqual(presentedHeader!, expectedSecret!)
+    : false
+  // Grep target for "is GHL posting at all, and does Esteban's header
+  // match?" -- one line per inbound request, fires unconditionally, before
+  // any rejection below, so a rejected request is just as visible here as
+  // an accepted one.
+  console.log(`[ghl-webhook] request received -- secretConfigured=${secretConfigured} headerPresent=${headerPresent} headerMatches=${headerMatches}`)
+
+  if (!secretConfigured) {
+    // Distinct from the 401 below on purpose: this is OUR misconfiguration,
+    // not the caller's bad credential -- a 500 says so, a 401 would not.
+    console.log('[ghl-webhook] refusing request: GHL_WEBHOOK_SECRET not configured')
+    return NextResponse.json({ error: 'webhook not configured' }, { status: 500 })
+  }
+  if (!headerMatches) {
+    // Covers both "no header" and "header present but wrong" -- headerMatches
+    // is already false for either case, so this one check and one generic
+    // response can never leak which of the two actually happened.
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
   // ── Parse body ─────────────────────────────────────────────────────────────
@@ -31,8 +79,22 @@ export async function POST(req: NextRequest) {
   try {
     payload = JSON.parse(rawBody)
   } catch {
+    console.log('[ghl-webhook] payload shape:', JSON.stringify({ byteLength: rawBody.length, parseError: true }))
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  // Shape-only log — replaces the old unredacted full-raw-body log (this
+  // route used to log every incoming customer's name/email/phone in the
+  // clear, on every request, forever). Structure only: key names,
+  // presence booleans, byte length. Never a value.
+  console.log('[ghl-webhook] payload shape:', JSON.stringify({
+    byteLength: rawBody.length,
+    topLevelKeys: Object.keys(payload ?? {}),
+    hasContact: !!payload?.contact,
+    contactKeys: payload?.contact ? Object.keys(payload.contact) : [],
+    hasCustomData: !!payload?.customData,
+    customDataKeys: payload?.customData ? Object.keys(payload.customData) : [],
+  }))
 
   // Returns the first non-empty string among candidates. Used instead of
   // trusting a single object (e.g. payload.contact) for every field --

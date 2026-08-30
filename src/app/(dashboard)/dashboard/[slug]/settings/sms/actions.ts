@@ -2,6 +2,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { encryptCredential } from '@/lib/credential-crypto'
 
 function rev(orgSlug: string) {
   revalidatePath(`/dashboard/${orgSlug}/settings/sms`)
@@ -9,6 +10,14 @@ function rev(orgSlug: string) {
 
 // ─── SMS Settings ────────────────────────────────────────────────────────────
 
+// twilio_account_sid/twilio_auth_token are encrypted at rest (see
+// src/lib/credential-crypto.ts) -- same pattern as carrier_connections and
+// payment_gateway_settings. The client never receives decrypted (or even
+// encrypted) values (see sms-client.tsx / page.tsx), so a blank/omitted
+// field means "leave unchanged," not "clear it" -- these are independent
+// scalar columns, so simply not including a falsy field in the upsert
+// payload already leaves it untouched; no fetch-and-merge needed. Clearing
+// only happens via disconnectSms.
 export async function upsertSmsSettings(
   orgId: string,
   orgSlug: string,
@@ -21,12 +30,16 @@ export async function upsertSmsSettings(
   }>,
 ): Promise<{ error?: string }> {
   const svc = createServiceClient()
+  const row: Record<string, unknown> = { organization_id: orgId, updated_at: new Date().toISOString() }
+  if (patch.twilio_phone_number !== undefined) row.twilio_phone_number = patch.twilio_phone_number
+  if (patch.country_code !== undefined) row.country_code = patch.country_code
+  if (patch.is_connected !== undefined) row.is_connected = patch.is_connected
+  if (patch.twilio_account_sid?.trim()) row.twilio_account_sid = encryptCredential(patch.twilio_account_sid.trim())
+  if (patch.twilio_auth_token?.trim()) row.twilio_auth_token = encryptCredential(patch.twilio_auth_token.trim())
+
   const { error } = await svc
     .from('sms_settings')
-    .upsert(
-      { organization_id: orgId, ...patch, updated_at: new Date().toISOString() },
-      { onConflict: 'organization_id' },
-    )
+    .upsert(row, { onConflict: 'organization_id' })
   if (error) return { error: error.message }
   rev(orgSlug)
   return {}
@@ -39,7 +52,7 @@ export async function disconnectSms(orgId: string, orgSlug: string): Promise<{ e
     .upsert(
       {
         organization_id: orgId,
-        twilio_account_sid: null,
+        twilio_account_sid: null, // clearing to null needs no encryption
         twilio_auth_token: null,
         twilio_phone_number: null,
         is_connected: false,

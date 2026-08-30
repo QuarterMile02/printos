@@ -647,7 +647,34 @@ export default function ProductForm({
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Product Type">
-                <select value={form.product_type_id ?? ''} onChange={(e) => setForm({ ...form, product_type_id: e.target.value || null })} className={inputClass}>
+                {/* FIX 2026-08-24 -- dual-write, deliberately a bridge not
+                    the destination: product_type_id is the real FK (this
+                    dropdown), but every read site that shows or acts on a
+                    product's type (products list, its filter,
+                    resolveJobDepartments) still reads the legacy
+                    product_type TEXT column -- confirmed live, see
+                    known-issues/2026-08-24-products-category-type-split-report.md.
+                    Writing only product_type_id (as this form did before)
+                    is what left every product created here with no type on
+                    the read side. Sets product_type from the SAME
+                    selection's real name, not a separate guess, so the two
+                    columns can never disagree for a product saved through
+                    this form. product_category_id below gets the identical
+                    treatment. TODO(follow-up, not this change): once every
+                    read site is migrated onto product_type_id/
+                    product_category_id, drop this dual-write and the
+                    legacy columns entirely -- two columns holding the same
+                    fact is exactly what caused this bug, and the fix
+                    should not become permanent. */}
+                <select
+                  value={form.product_type_id ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value || null
+                    const name = id ? (productTypes.find((t) => t.id === id)?.name ?? null) : null
+                    setForm({ ...form, product_type_id: id, product_type: name })
+                  }}
+                  className={inputClass}
+                >
                   <option value="">— Select a type —</option>
                   {productTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
@@ -661,7 +688,20 @@ export default function ProductForm({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Product Category">
-                <select value={form.product_category_id ?? ''} onChange={(e) => setForm({ ...form, product_category_id: e.target.value || null })} className={inputClass}>
+                {/* FIX 2026-08-24 -- same bridge-not-destination dual-write
+                    as Product Type above. category_id and product_category_id
+                    are both real FKs to the SAME product_categories table
+                    (migration 010 and migration 067 respectively), so this
+                    is a direct id copy, not a guess -- the two columns
+                    literally cannot disagree once both are set here. */}
+                <select
+                  value={form.product_category_id ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value || null
+                    setForm({ ...form, product_category_id: id, category_id: id })
+                  }}
+                  className={inputClass}
+                >
                   <option value="">— None —</option>
                   {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -1005,7 +1045,17 @@ export default function ProductForm({
                                 <svg className="h-4 w-4 inline" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a1 1 0 000 2h1v12H7a1 1 0 100 2h6a1 1 0 100-2h-1V4h1a1 1 0 100-2H7z" /></svg>
                               </span>
                             </td>
-                            <td className="px-3 py-2 text-sm font-medium text-qm-black">{row.display_name}</td>
+                            <td className="px-3 py-2 text-sm font-medium text-qm-black">
+                              {row.display_name}
+                              {row.material_id && Number(materialMap.get(row.material_id)?.cost ?? 0) === 0 && (
+                                <span
+                                  className="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700"
+                                  title="This material's cost is $0 -- the product will price this line at $0 with no error."
+                                >
+                                  $0 cost
+                                </span>
+                              )}
+                            </td>
                             <td className="px-3 py-2">
                               <input
                                 type="text"
@@ -1455,7 +1505,17 @@ export default function ProductForm({
                       }}
                       className="w-full text-left px-5 py-2.5 hover:bg-qm-surface transition-colors"
                     >
-                      <div className="text-sm font-medium text-qm-black">{r.name}</div>
+                      <div className="text-sm font-medium text-qm-black">
+                        {r.name}
+                        {searchCategory === 'Material' && Number(r.cost ?? 0) === 0 && (
+                          <span
+                            className="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700"
+                            title="This material's cost is $0 -- the product will price this line at $0 with no error."
+                          >
+                            $0 cost
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-qm-gray">
                         ${Number(r.cost).toFixed(2)} cost · ${Number(r.price).toFixed(2)} price
                       </div>

@@ -50,23 +50,43 @@
 //   node scripts/scrape-shopvox-material-tiers.js --no-resume       # re-scrape everything
 //   node scripts/scrape-shopvox-material-tiers.js --debug           # screenshot every step
 //   node scripts/scrape-shopvox-material-tiers.js --cdp=http://localhost:9222  # attach to existing Chrome
-//   node scripts/scrape-shopvox-material-tiers.js --no-images       # skip the image_url backfill
+//   node scripts/scrape-shopvox-material-tiers.js --no-images       # skip the image_url capture
 //   node scripts/scrape-shopvox-material-tiers.js --reconcile-only  # re-run discovery + the new/deleted/status
 //                                                                    # reconciliation report only — reuses the
 //                                                                    # existing output.json's tier/vendor/image/
 //                                                                    # field data as-is, no per-material re-scrape
-//   node scripts/scrape-shopvox-material-tiers.js --create-uuids=uuid1,uuid2
-//                                                                    # create new PrintOS materials for ShopVOX
-//                                                                    # uuids confirmed to have no PrintOS match —
-//                                                                    # re-verifies each still exists, creates the
-//                                                                    # row, then runs the normal tier/vendor/image
-//                                                                    # pass on it
+//   --create-uuids=... has been REMOVED — see the "REMOVED" comment
+//   above computeSourceHash(). It used to create PrintOS materials
+//   directly; that write path no longer exists. Passing the flag now
+//   errors out immediately with a pointer to the migrate screen.
 //
-// Output: scripts/shopvox-material-tiers-output.json — { tiered, flat, retry },
-// consumed by scripts/import-material-tiers.mjs (writes material_pricing_tiers
-// and material_vendors). Progress is checkpointed to the same file after
-// every material, so a crash mid-run loses at most the material in flight;
-// re-running with --resume (the default) picks up where it left off.
+// ============================================================
+// REPOINTED 2026-08-21 (material redesign Build 1, item 10): this
+// script no longer INSERTs or UPDATEs public.materials, material_
+// vendors, or material_pricing_tiers, in any code path. Every scraped
+// material is upserted into the new public.shopvox_materials staging
+// table instead (see upsertShopvoxMaterialStaging), keyed by ShopVOX's
+// own material uuid (organization_id, shopvox_id) — not name-matched.
+// Real materials/material_vendors/material_pricing_tiers rows are only
+// ever created by Ruben accepting a proposal on the migrate screen.
+// scripts/import-material-tiers.mjs, which used to write
+// material_pricing_tiers/material_vendors from this script's output
+// file, has been repointed the same way — see that file's own header.
+// Rationale (unchanged from the instruction that drove this): Ruben
+// hand-enters shipping/min-max/shelf-life/delivery data with no ShopVOX
+// source; an in-place scrape would silently destroy it. And once
+// substrate families exist ("... NLC" instead of "... NLC 38in"), the
+// old exact-name match would stop matching and re-create 1,788 flat
+// materials from scratch instead of recognizing them as existing.
+// ============================================================
+//
+// Output: scripts/shopvox-material-tiers-output.json — { tiered, flat, retry }
+// — kept as a local run-log/checkpoint file (crash resume, --resume
+// dedup), NOT the source of truth for staged data anymore; the real
+// output of a run is what lands in shopvox_materials. Progress is
+// checkpointed to the JSON file after every material, so a crash mid-run
+// loses at most the material in flight; re-running with --resume (the
+// default) picks up where it left off.
 //
 // IMAGE CAPTURE: reads each material's own photo from the "General"
 // section of its detail page — the SAME page visit already made for
@@ -86,6 +106,7 @@ const { chromium } = require('playwright')
 const { createClient } = require('@supabase/supabase-js')
 const { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } = require('node:fs')
 const { resolve } = require('node:path')
+const { createHash } = require('node:crypto')
 
 // ── CLI flags ─────────────────────────────────────────────────────────
 const argv = process.argv.slice(2)
@@ -174,7 +195,7 @@ function getSupabase() {
   if (sb) return sb
   const env = loadEnv()
   if (!env.NEXT_PUBLIC_SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.warn('  (missing Supabase env vars — image_url writes disabled)')
+    console.warn('  (missing Supabase env vars — shopvox_materials staging writes disabled)')
     return null
   }
   sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
@@ -192,37 +213,19 @@ function stripImageTransform(url) {
   return url.replace(/\/transform\/.*?\/accounts\//, '/accounts/')
 }
 
-// Writes a material's own image_url — matched by exact case-insensitive
-// name (materials have no ShopVOX id stored to join on directly) — but
-// ONLY when the column is currently null/empty. Never overwrites a real
-// existing value. Called once per material, right after its own detail
-// page is scraped for tier/vendor data, not as a separate bulk pass.
-async function writeMaterialImageIfMissing(name, capturedUrl) {
-  if (NO_IMAGES) return 'skipped_flag'
-  if (!capturedUrl) return 'no_image_found' // confirmed live: this is the normal, correct outcome for most materials, not a failure
-  const client = getSupabase()
-  if (!client) return 'no_client'
-
-  const { data: match, error: findErr } = await client
-    .from('materials')
-    .select('id, image_url')
-    .eq('organization_id', ORG_ID)
-    .eq('name', name)
-    .limit(1)
-    .maybeSingle()
-  if (findErr) { console.warn(`  materials lookup failed for "${name}": ${findErr.message}`); return 'lookup_error' }
-  if (!match) return 'not_matched_by_name'
-  if (match.image_url && match.image_url.trim()) return 'already_set'
-
-  const rawUrl = stripImageTransform(capturedUrl)
-  const { error: updErr } = await client
-    .from('materials')
-    .update({ image_url: rawUrl })
-    .eq('id', match.id)
-    .eq('organization_id', ORG_ID)
-    .is('image_url', null) // belt-and-suspenders: re-check null at write time, not just at read time above
-  if (updErr) { console.warn(`  image_url update failed for "${name}": ${updErr.message}`); return 'write_error' }
-  return 'updated'
+// ── REPOINTED (material redesign Build 1, item 10) ─────────────────────
+// This used to write straight to materials.image_url (matched by exact
+// case-insensitive name, only when the column was empty). That write is
+// REMOVED — the scraper no longer touches public.materials at all. The
+// captured URL is now just staged data; writeMaterialImageIfMissing is
+// gone, replaced by this capture-only helper. Kept the name-stripping
+// logic (stripImageTransform) since the staged value should still be
+// the clean, non-transformed URL, matching what materials.image_url
+// would have received before.
+function captureMaterialImage(capturedUrl) {
+  if (NO_IMAGES) return { image_url: null, note: 'skipped_flag' }
+  if (!capturedUrl) return { image_url: null, note: 'no_image_found' } // confirmed live: this is the normal, correct outcome for most materials, not a failure
+  return { image_url: stripImageTransform(capturedUrl), note: 'captured' }
 }
 
 // ── Base-field diff-and-write ───────────────────────────────────────
@@ -343,15 +346,16 @@ const YES_NO = { yes: true, no: false }
 function parseBool(v) { if (v == null) return null; const t = String(v).trim().toLowerCase(); return t in YES_NO ? YES_NO[t] : null }
 function parseNum(v) { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
 
-// Maps ShopVOX's 39 confirmed fields to materials columns — shared by
-// both the update path (diffAndWriteMaterialFields) and the create path
-// (createMaterialFromShopVox), so the two never drift apart. Only the
-// 37 write-eligible fields (39 minus COG Account minus mystery
-// Multiplier — both excluded per explicit decision, see comment above
-// diffAndWriteMaterialFields). `undefined` in the output means "a name
-// lookup (Type/Category/Discount) didn't resolve" — the caller decides
-// what to do with that (skip touching it on update, log for manual
-// review on create); `null` means "ShopVOX genuinely shows this blank."
+// Maps ShopVOX's 39 confirmed fields to materials-shaped column names —
+// now consumed only by resolveShopVoxFields on the way into
+// shopvox_materials staging (the update/create paths that used to share
+// this are both removed, see the "REMOVED"/"REPOINTED" comments below).
+// Still returns only the 37 write-eligible fields (39 minus COG Account
+// minus mystery Multiplier — both staged separately, report-only, never
+// mapped to a dedicated column). `undefined` in the output means "a name
+// lookup (Type/Category/Discount) didn't resolve" — surfaced via
+// resolveShopVoxFields's unresolvedRefs; `null` means "ShopVOX genuinely
+// shows this blank."
 function buildCandidateFromShopVoxFields(sv, refs) {
   const typeId = sv.type ? refs.materialTypes.get(sv.type.toLowerCase().trim()) : undefined
   const categoryId = sv.category ? refs.materialCategories.get(sv.category.toLowerCase().trim()) : undefined
@@ -396,116 +400,123 @@ function buildCandidateFromShopVoxFields(sv, refs) {
   }
 }
 
-// Diffs the confirmed 39 fields against the current PrintOS row and
-// writes only what changed — never a blind overwrite. Matched by exact
-// case-insensitive name (materials carry no ShopVOX id to join on).
-// Returns a structured record for the run's reconciliation report.
-async function diffAndWriteMaterialFields(name, shopvoxFields) {
+// ── REPOINTED (material redesign Build 1, item 10) ─────────────────────
+// This used to diff the confirmed 39 fields against the live PrintOS
+// materials row and UPDATE whatever changed. That write is REMOVED —
+// the scraper no longer reads OR writes public.materials at all
+// (previously it read the row to diff against; now it doesn't need to,
+// since there's nothing to diff against — the staged row in
+// shopvox_materials just gets the latest scrape's values, full stop,
+// and CHANGED-vs-MIGRATED is derived later by comparing source_hash,
+// not by a field-by-field diff at scrape time).
+//
+// Renamed from diffAndWriteMaterialFields to make the new behavior
+// honest: this only resolves ShopVOX's raw label/value fields into
+// typed values (parsing numbers/booleans, looking up material_type_id/
+// category_id/discount_id) — it does not diff or write anything.
+// Kept the boolean-string normalization comment for history even though
+// the bug it guarded against (comparing against a live row) no longer
+// applies here.
+function resolveShopVoxFields(sv, refs) {
   if (NO_FIELDS) return { skipped: 'flag' }
-  const client = getSupabase()
-  if (!client) return { skipped: 'no_client' }
-  const refs = await loadReferenceCaches(client)
-
-  const { data: row, error: findErr } = await client
-    .from('materials')
-    .select('*')
-    .eq('organization_id', ORG_ID)
-    .eq('name', name)
-    .limit(1)
-    .maybeSingle()
-  if (findErr) return { error: findErr.message }
-
-  const sv = shopvoxFields
-  if (!row) return { not_matched_by_name: true, type: sv.type, category: sv.category }
-
   const candidate = buildCandidateFromShopVoxFields(sv, refs)
-
-  // Confirmed live (real bug caught 2026-08-10 in verification):
-  // materials.display_name_in_line_item is stored as the literal TEXT
-  // "true"/"false" — a pre-existing schema inconsistency (its sibling
-  // display_description_in_li is a real boolean column) — not something
-  // introduced here. Comparing a JS boolean against that string with
-  // strict !== flagged a false-positive "change" on every single run.
-  // Normalize any boolean-shaped string before comparing, defensively,
-  // in case other columns have the same quirk.
-  const normalizeBoolish = (v) => {
-    if (typeof v === 'string' && (v.toLowerCase() === 'true' || v.toLowerCase() === 'false')) return v.toLowerCase() === 'true'
-    return v
-  }
-
-  const diffs = {}
-  const unresolvedRefs = []
-  for (const [col, newVal] of Object.entries(candidate)) {
-    if (newVal === undefined) { unresolvedRefs.push(col); continue } // couldn't resolve a name lookup — skip, don't touch, report
-    const oldVal = normalizeBoolish(row[col])
-    const changed = typeof newVal === 'number' && typeof oldVal === 'number'
-      ? Math.abs(newVal - oldVal) > 1e-9
-      : (newVal ?? null) !== (oldVal ?? null)
-    if (changed) diffs[col] = { from: row[col], to: newVal }
-  }
-
-  if (Object.keys(diffs).length > 0) {
-    const writePayload = Object.fromEntries(Object.entries(diffs).map(([col, d]) => [col, d.to]))
-    const { error: updErr } = await client.from('materials').update(writePayload).eq('id', row.id).eq('organization_id', ORG_ID)
-    if (updErr) return { error: updErr.message, diffsAttempted: diffs }
-  }
-
-  // COG Account — report-only, confirmed decision, never written.
-  const shopvoxCog = sv.cog_account || null
-  const printosCog = row.cog_account_name || null
-  const cogMismatch = (shopvoxCog ?? '') !== (printosCog ?? '') ? { shopvox: shopvoxCog, printos: printosCog } : null
-
+  const unresolvedRefs = Object.entries(candidate)
+    .filter(([, v]) => v === undefined)
+    .map(([col]) => col)
   return {
-    materialId: row.id,
-    diffs,
-    diffCount: Object.keys(diffs).length,
+    candidate,
     unresolvedRefs,
-    cogMismatch,
+    cogAccountShopVox: sv.cog_account || null, // report-only field, staged as-is inside `fields`, never written to a dedicated materials column (unchanged decision from before this repoint)
     mysteryMultiplier: sv.mystery_multiplier,
   }
 }
 
-// Profile id used as created_by/updated_by — same constant already used
-// by scripts/_tmp-bulk-import-final.mjs and other one-off DB scripts
-// tonight for the same purpose.
-const CREATOR_ID = 'f86f2712-ebcd-4faa-bccb-0f0580bcfeae'
+// ── REMOVED (material redesign Build 1, item 10) ───────────────────────
+// createMaterialFromShopVox used to INSERT a brand-new materials row
+// directly for any ShopVOX material with no PrintOS name-match. That
+// write is REMOVED along with it — the scraper must never create a
+// materials row. An unmatched ShopVOX material now simply lands in
+// shopvox_materials with migrated_to_material_id NULL (status = NEW),
+// same as every other unmigrated row — Ruben creates the real material
+// by accepting its proposal on the migrate screen, same path as
+// everything else, not a separate create-mode shortcut. This is also
+// the fix for the exact failure mode the rationale in item 10 called
+// out: once families exist ("... NLC" not "... NLC 38in"), name-match
+// creation would insert a duplicate flat material instead of recognizing
+// it as a variant of an existing family — removing name-match creation
+// entirely removes that failure mode, it doesn't just reduce it.
+//
+// The --create-uuids flag and runCreateMode() below are removed with it
+// — see main() for the flag now erroring out with a pointer to the
+// migrate screen instead of silently doing nothing.
 
-// Creates a brand-new materials row from a ShopVOX material confirmed
-// to have no PrintOS counterpart — guarded against duplicate creation
-// (checks for an exact-name match immediately before inserting, in case
-// anything changed since the material was classified as "genuinely
-// new"). Only cost/price/name are NOT NULL at the schema level (see
-// supabase/migrations/010_product_builder_FIXED.sql:90-118); everything
-// else either has a DB default or is nullable, so a partial capture
-// still produces a valid row.
-async function createMaterialFromShopVox(name, shopvoxFields) {
+// Computes a deterministic hash of everything staged for one ShopVOX
+// material — the CHANGED-vs-MIGRATED signal on shopvox_materials
+// (migration 179). Must be a pure function of the payload only (no
+// timestamps inside it) so re-scraping unchanged data reproduces the
+// exact same hash.
+function computeSourceHash(payload) {
+  const stable = JSON.stringify(payload, Object.keys(payload).sort())
+  return createHash('sha256').update(stable).digest('hex')
+}
+
+// Upserts one material's full staged capture into shopvox_materials,
+// keyed on (organization_id, shopvox_id) — the ONLY table this script
+// writes to as of this repoint. Never touches materials, material_
+// vendors, or material_pricing_tiers.
+async function upsertShopvoxMaterialStaging(staged) {
   const client = getSupabase()
-  if (!client) return { status: 'flagged', reason: 'no_client' }
-  const refs = await loadReferenceCaches(client)
+  if (!client) return { status: 'no_client' }
 
-  const { data: existing, error: findErr } = await client
-    .from('materials').select('id').eq('organization_id', ORG_ID).eq('name', name).limit(1).maybeSingle()
-  if (findErr) return { status: 'flagged', reason: `existence check failed: ${findErr.message}` }
-  if (existing) return { status: 'flagged', reason: `PrintOS already has a material named exactly "${name}" (id ${existing.id}) — not creating a duplicate`, materialId: existing.id }
+  const hashPayload = {
+    name: staged.name, shopvox_status: staged.shopvox_status,
+    material_type_raw: staged.material_type_raw, category_raw: staged.category_raw,
+    width: staged.width, height: staged.height, sheet_cost: staged.sheet_cost,
+    cost: staged.cost, price: staged.price, multiplier: staged.multiplier, weight: staged.weight,
+    preferred_vendor: staged.preferred_vendor, part_number: staged.part_number, sku: staged.sku,
+    po_description: staged.po_description, info_url: staged.info_url, image_url: staged.image_url,
+    description: staged.description, fields: staged.fields,
+    vendor_pricing: staged.vendor_pricing, pricing_tiers: staged.pricing_tiers,
+  }
+  const source_hash = computeSourceHash(hashPayload)
 
-  const candidate = buildCandidateFromShopVoxFields(shopvoxFields, refs)
-  const unresolvedRefs = []
-  const insertPayload = { organization_id: ORG_ID, name, created_by: CREATOR_ID, updated_by: CREATOR_ID }
-  for (const [col, val] of Object.entries(candidate)) {
-    if (val === undefined) { unresolvedRefs.push(col); continue } // Type/Category/Discount name didn't resolve — omit, report for manual follow-up
-    insertPayload[col] = val
+  const row = {
+    organization_id: ORG_ID,
+    shopvox_id: staged.shopvox_id,
+    name: staged.name,
+    shopvox_status: staged.shopvox_status,
+    material_type_id: staged.material_type_id ?? null,
+    category_id: staged.category_id ?? null,
+    material_type_raw: staged.material_type_raw ?? null,
+    category_raw: staged.category_raw ?? null,
+    width: staged.width ?? null,
+    height: staged.height ?? null,
+    sheet_cost: staged.sheet_cost ?? null,
+    cost: staged.cost ?? null,
+    price: staged.price ?? null,
+    multiplier: staged.multiplier ?? null,
+    weight: staged.weight ?? null,
+    preferred_vendor: staged.preferred_vendor ?? null,
+    part_number: staged.part_number ?? null,
+    sku: staged.sku ?? null,
+    po_description: staged.po_description ?? null,
+    info_url: staged.info_url ?? null,
+    image_url: staged.image_url ?? null,
+    description: staged.description ?? null,
+    fields: staged.fields ?? {},
+    vendor_pricing: staged.vendor_pricing ?? [],
+    pricing_tiers: staged.pricing_tiers ?? [],
+    source_hash,
+    scraped_at: new Date().toISOString(),
   }
 
-  const { data: created, error: insErr } = await client.from('materials').insert(insertPayload).select('id').maybeSingle()
-  if (insErr) return { status: 'flagged', reason: `insert failed: ${insErr.message}` }
-
-  return {
-    status: 'created',
-    materialId: created.id,
-    unresolvedRefs,
-    cogAccountShopVox: shopvoxFields.cog_account || null, // report-only, same as the update path — never written
-    mysteryMultiplier: shopvoxFields.mystery_multiplier,
-  }
+  const { data, error } = await client
+    .from('shopvox_materials')
+    .upsert(row, { onConflict: 'organization_id,shopvox_id' })
+    .select('id, status')
+    .maybeSingle()
+  if (error) return { status: 'write_error', error: error.message }
+  return { status: 'staged', id: data?.id, derivedStatus: data?.status, source_hash }
 }
 
 // ── URLs ─────────────────────────────────────────────────────────────
@@ -975,23 +986,59 @@ async function extractOneMaterial(page, material) {
   // Same page, no extra navigation — the General section's own photo is
   // already rendered above the tab bar regardless of which tab is active.
   const capturedImageUrl = await page.evaluate(_extractMaterialImage).catch(() => null)
-  const imageWriteResult = await writeMaterialImageIfMissing(name, capturedImageUrl)
+  const imageCapture = captureMaterialImage(capturedImageUrl) // no longer writes — see captureMaterialImage's header comment
 
   // Base fields — "Show All Information" is on the General section,
   // also already present on this same page, also no extra navigation.
-  let fieldDiff = { skipped: 'flag' }
+  let fieldResolution = { skipped: 'flag' }
   if (!NO_FIELDS) {
     await page.evaluate(_clickShowAllInformation)
     await sleep(1200) // confirmed live: fields render a beat after the toggle click, same class of race as the tier/vendor grids
     const rawFields = await page.evaluate(_extractAllMaterialFields).catch(() => null)
-    fieldDiff = rawFields ? await diffAndWriteMaterialFields(name, rawFields) : { error: 'field_extraction_failed' }
+    const client = getSupabase()
+    if (rawFields && client) {
+      const refs = await loadReferenceCaches(client)
+      fieldResolution = { ...resolveShopVoxFields(rawFields, refs), rawFields }
+    } else if (!rawFields) {
+      fieldResolution = { error: 'field_extraction_failed' }
+    } else {
+      fieldResolution = { skipped: 'no_client', rawFields }
+    }
+  }
+
+  // ── Stage into shopvox_materials (item 10: the ONLY table this
+  // script writes to). Replaces the old writeMaterialImageIfMissing /
+  // diffAndWriteMaterialFields / createMaterialFromShopVox writes to
+  // materials / material_vendors / material_pricing_tiers.
+  let stagingResult = { status: 'skipped_no_fields' }
+  if (fieldResolution.candidate) {
+    const c = fieldResolution.candidate
+    stagingResult = await upsertShopvoxMaterialStaging({
+      shopvox_id: material.uuid,
+      name,
+      shopvox_status: material.shopvoxStatus ?? null,
+      material_type_id: c.material_type_id,
+      category_id: c.category_id,
+      material_type_raw: fieldResolution.rawFields?.type ?? null,
+      category_raw: fieldResolution.rawFields?.category ?? null,
+      width: c.width, height: c.height, sheet_cost: c.sheet_cost,
+      cost: c.cost, price: c.price, multiplier: c.multiplier, weight: c.weight,
+      preferred_vendor: c.preferred_vendor, part_number: c.part_number, sku: c.sku,
+      po_description: c.po_description, info_url: c.info_url,
+      image_url: imageCapture.image_url,
+      description: c.description,
+      fields: fieldResolution.rawFields ?? {},
+      vendor_pricing: vendorPricing?.rows ?? [],
+      pricing_tiers: extraction?.tiers ?? [],
+    })
   }
 
   return {
     uuid: material.uuid, name, scrapedAt: new Date().toISOString(),
     ...extraction, vendor_pricing: vendorPricing,
-    material_image: { captured: capturedImageUrl, write_result: imageWriteResult },
-    field_diff: fieldDiff,
+    material_image: { captured: capturedImageUrl, ...imageCapture },
+    field_resolution: fieldResolution,
+    staging: stagingResult,
     // Confirmed gap (2026-08-10): discoverMaterials() tags shopvoxStatus
     // on each queue item in-memory, but this returned record never
     // carried it through into what actually gets checkpointed to
@@ -1134,94 +1181,26 @@ async function ensureLoggedIn(page) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────
-// Creates PrintOS materials for ShopVOX uuids confirmed to have no
-// PrintOS counterpart. Re-verifies each one lives before creating
-// (page loads, name extractable) — a material could have been renamed,
-// deleted, or already created manually since it was classified. Reuses
-// the exact same proven per-material pipeline (extractOneMaterial) to
-// populate tier/vendor/image data after the row exists, rather than
-// hand-rolling a shortcut.
-async function runCreateMode(page) {
-  console.log(`Create mode: ${CREATE_UUIDS.length} ShopVOX UUID(s) to create as new PrintOS materials.\n`)
-  const results = []
-  for (const uuid of CREATE_UUIDS) {
-    console.log(`  ${uuid} — navigating to verify it still exists...`)
-    await page.goto(URLS.materialPricingMetrics(uuid), { waitUntil: 'domcontentloaded', timeout: 30000 })
-    try {
-      await page.waitForFunction(() => document.body.innerText.includes('Pricing Matrix'), { timeout: 25000 })
-    } catch {
-      results.push({ uuid, status: 'flagged', reason: 're-verify failed: ShopVOX page never loaded (material may no longer exist, or a transient timeout — worth a retry before assuming it is gone)' })
-      console.log(`    -> flagged: page load timeout`)
-      continue
-    }
-
-    const name = await page.evaluate(_extractMaterialName).catch(() => null)
-    if (!name) {
-      results.push({ uuid, status: 'flagged', reason: 're-verify failed: could not extract a name from the live page' })
-      console.log(`    -> flagged: no name found`)
-      continue
-    }
-    console.log(`    confirmed live: "${name}"`)
-
-    await page.evaluate(_clickShowAllInformation)
-    await sleep(1200)
-    const rawFields = await page.evaluate(_extractAllMaterialFields).catch(() => null)
-    if (!rawFields) {
-      results.push({ uuid, name, status: 'flagged', reason: 'field extraction failed after re-verify' })
-      console.log(`    -> flagged: field extraction failed`)
-      continue
-    }
-
-    const createResult = await createMaterialFromShopVox(name, rawFields)
-    if (createResult.status !== 'created') {
-      results.push({ uuid, name, ...createResult })
-      console.log(`    -> flagged: ${createResult.reason}`)
-      continue
-    }
-    console.log(`    created materials.id=${createResult.materialId}${createResult.unresolvedRefs.length ? ` (unresolved refs: ${createResult.unresolvedRefs.join(', ')})` : ''}`)
-
-    // Same proven pipeline used for every other material tonight — tier
-    // matrix, vendor pricing, image, and a confirming field re-read —
-    // on the row we just created, from the page we're already on.
-    const record = await extractOneMaterial(page, { uuid, name })
-    const bucket = classify(record)
-    output.generatedAt = new Date().toISOString()
-    saveJson(OUTPUT_FILE, output)
-    console.log(`    tier/vendor/image pass -> ${bucket}`)
-
-    results.push({
-      uuid, name, status: 'created', materialId: createResult.materialId,
-      unresolvedRefs: createResult.unresolvedRefs,
-      cogAccountShopVox: createResult.cogAccountShopVox,
-      mysteryMultiplier: createResult.mysteryMultiplier,
-      tierVendorImageBucket: bucket,
-      confirmingFieldDiff: record.field_diff,
-    })
-  }
-
-  console.log('\n=========== CREATE RESULT ===========')
-  console.log(JSON.stringify(results, null, 2))
-  return results
-}
+// runCreateMode / --create-uuids REMOVED (material redesign Build 1,
+// item 10) — it used to call createMaterialFromShopVox, which INSERTed
+// straight into public.materials. See the "REMOVED" comment above
+// computeSourceHash for why that write path is gone for good, not just
+// disabled. A ShopVOX material with no PrintOS match now stages into
+// shopvox_materials via the normal per-material pipeline (status = NEW)
+// and gets created for real only by accepting its proposal on the
+// migrate screen.
 
 async function main() {
   const startAt = Date.now()
+
+  if (CREATE_UUIDS) {
+    console.error('\n✗ --create-uuids has been removed. The scraper no longer creates materials rows directly (material redesign Build 1, item 10) — it only stages into shopvox_materials. Create the material by accepting its NEW proposal on the migrate screen instead.')
+    process.exit(1)
+  }
+
   const { context } = await launchBrowser()
   const page = context.pages()[0] ?? (await context.newPage())
   page.on('console', (msg) => { if (msg.type() === 'log') console.log('  BROWSER:', msg.text()) })
-
-  if (CREATE_UUIDS) {
-    // Lightweight check first — only fall into the full interactive
-    // "press ENTER" wait if genuinely signed out. An already-valid
-    // session (common when this is invoked back-to-back with other
-    // work in the same session) shouldn't block on a prompt nobody's
-    // there to answer.
-    await page.goto(URLS.materialsList, { timeout: 30000, waitUntil: 'domcontentloaded' }).catch(() => {})
-    if (/\/sign-in/i.test(page.url())) await ensureLoggedIn(page)
-    await runCreateMode(page)
-    await context.close()
-    return
-  }
 
   let queue
   if (SCOPED_UUIDS) {
@@ -1284,7 +1263,7 @@ async function main() {
     const client = getSupabase()
     const printosMaterials = client
       ? await fetchAllRows((from, to) =>
-          client.from('materials').select('id, name, active, in_use').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)
+          client.from('materials').select('id, name, active, in_use, cog_account_name').eq('organization_id', ORG_ID).order('id', { ascending: true }).range(from, to)
         )
       : []
     const printosByName = new Map(printosMaterials.map((m) => [m.name.toLowerCase().trim(), m]))
@@ -1315,12 +1294,25 @@ async function main() {
 
     // COG Account mismatches + non-default mystery-Multiplier sightings —
     // gathered from every material actually processed this run.
+    // REPOINTED (item 10): this used to read rec.field_diff, produced by
+    // diffAndWriteMaterialFields's live per-material read/write. That
+    // function is gone — cogMismatch is now computed here instead, a
+    // read-only lookup against the already-fetched printosByName map
+    // (no write, same as the rest of this reconciliation section always
+    // was). mysteryMultiplier comes from field_resolution, unchanged in
+    // meaning, just renamed.
     const cogMismatches = []
     const mysteryMultiplierLog = []
     for (const rec of [...output.tiered, ...output.flat]) {
-      if (rec.field_diff?.cogMismatch) cogMismatches.push({ name: rec.name, ...rec.field_diff.cogMismatch })
-      if (rec.field_diff?.mysteryMultiplier != null && rec.field_diff.mysteryMultiplier !== '1.0') {
-        mysteryMultiplierLog.push({ name: rec.name, value: rec.field_diff.mysteryMultiplier })
+      const shopvoxCog = rec.field_resolution?.cogAccountShopVox ?? null
+      const printosRow = printosByName.get((rec.name || '').toLowerCase().trim())
+      const printosCog = printosRow?.cog_account_name ?? null
+      if (rec.field_resolution?.rawFields && (shopvoxCog ?? '') !== (printosCog ?? '')) {
+        cogMismatches.push({ name: rec.name, shopvox: shopvoxCog, printos: printosCog })
+      }
+      const mm = rec.field_resolution?.mysteryMultiplier
+      if (mm != null && mm !== '1.0') {
+        mysteryMultiplierLog.push({ name: rec.name, value: mm })
       }
     }
 

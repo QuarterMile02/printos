@@ -138,6 +138,7 @@ export async function convertToSalesOrder(formData: FormData) {
         entity_id: soId,
         action: 'created',
         metadata: { so_number: soNumber, quote_id: quoteId },
+        order_thread_id: quoteId,
       })
       await logActivity({
         org_id: orgId,
@@ -147,6 +148,7 @@ export async function convertToSalesOrder(formData: FormData) {
         action: 'converted_to_so',
         to_value: soLabel,
         metadata: { sales_order_id: soId },
+        order_thread_id: quoteId,
       })
       for (const job of createdJobs) {
         await logActivity({
@@ -156,6 +158,7 @@ export async function convertToSalesOrder(formData: FormData) {
           entity_id: job.id,
           action: 'created',
           metadata: { job_number: job.job_number, sales_order_id: soId },
+          order_thread_id: quoteId,
         })
       }
     }

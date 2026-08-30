@@ -27,7 +27,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const { data, error } = await supabase
     .from('sales_leads')
     .select('id, title, estimated_value, created_at')
-    .eq('org_id', profile.organization_id)
+    .eq('organization_id', profile.organization_id)
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
 

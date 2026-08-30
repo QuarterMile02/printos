@@ -1,0 +1,44 @@
+-- ============================================================
+-- Migration 156: materials -- drop the permissive cross-org SELECT
+-- policy.
+-- Applied: PROPOSED, NOT run.
+-- ============================================================
+--
+-- materials has TWO SELECT policies today: the correct org-scoped
+-- "materials_select", and "Authenticated users can read materials"
+-- (TO authenticated, USING (true)). Postgres ORs permissive policies,
+-- so the loose one wins -- any authenticated user, from any org,
+-- currently reads every org's materials, costs, and vendor pricing.
+--
+-- Traced every read path against materials before proposing this
+-- (grepped the whole codebase for .from('materials'), ~30 sites):
+--   - Every service-role reader (formula-engine.ts, smart-material-
+--     engine.ts, LowStockWidget.tsx, all *-sr.ts server actions, the
+--     ShopVOX bulk-import and reference-pricing routes) is unaffected
+--     -- service-role bypasses RLS regardless of this policy.
+--   - Every authenticated-client reader (api/materials/route.ts,
+--     pricing-tiers-server.ts, every products/settings page.tsx via
+--     dbOrThrow, both browser list-client.tsx components) explicitly
+--     filters by organization_id sourced from the caller's own
+--     profile/org membership, or implicitly via already-org-scoped
+--     foreign key ids (material-categories-list-client.tsx's
+--     category_id filter). None of them depend on or benefit from
+--     cross-org visibility -- the org-scoped materials_select policy
+--     that remains after this DROP already returns exactly what every
+--     one of these callers expects.
+--
+-- One reader turns this from a hygiene fix into an active, currently
+-- exploitable leak: src/app/api/export/materials/route.ts takes orgId
+-- straight from a query parameter, never calls supabase.auth.getUser()
+-- or checks organization_members, and relies entirely on RLS for
+-- authorization. Today, any authenticated PrintOS user (any org) can
+-- hit /api/export/materials?orgId=<any-other-orgs-uuid> and download
+-- that org's full materials list -- names, costs, prices, preferred
+-- vendors. This DROP closes that specific path immediately; it is not
+-- a defense-in-depth-only change.
+--
+-- Conclusion: every legitimate caller keeps working identically after
+-- this DROP -- confirmed by tracing every call site, not assumed --
+-- and one currently-live cross-tenant leak gets closed.
+
+DROP POLICY "Authenticated users can read materials" ON materials;

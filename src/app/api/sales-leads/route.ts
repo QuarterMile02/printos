@@ -31,7 +31,7 @@ export async function GET() {
       assigned_profile:profiles!sales_leads_assigned_to_fkey(id, full_name),
       customer:customers(id, company_name, first_name, last_name)
     `)
-    .eq('org_id', profile.organization_id)
+    .eq('organization_id', profile.organization_id)
     .order('updated_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     .from('sales_leads')
     .insert({
       ...body,
-      org_id: profile.organization_id,
+      organization_id: profile.organization_id,
       created_by: user.id,
     })
     .select()

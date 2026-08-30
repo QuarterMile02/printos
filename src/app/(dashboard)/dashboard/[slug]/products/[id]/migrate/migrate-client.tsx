@@ -24,7 +24,7 @@ import {
   type MigrateOptionRate, type MigrateDropdownMenu,
 } from './actions'
 import ShopVOXReferencePanel from '@/components/products/shopvox-reference-panel'
-import ShopvoxQuotePreview from '@/components/products/shopvox-quote-preview'
+import ShopvoxQuotePreview, { type QuoteModifierInput } from '@/components/products/shopvox-quote-preview'
 
 // ---- ShopVOX data shape ----
 export type ShopvoxData = {
@@ -123,6 +123,11 @@ type Props = {
   existingOptionRates: ExistingOptionRate[]
   existingModifiers: ProductModifier[]
   existingDropdownMenus: ExistingDropdownMenu[]
+  // For Quote Preview -- the product's REAL recipe modifiers (product_modifiers
+  // joined to modifiers), not the raw shopvox_data scrape. Separate from
+  // existingModifiers above (which the right-panel builder UI owns) so
+  // Quote Preview's read doesn't interfere with that editing state.
+  productModifiers: QuoteModifierInput[]
 }
 
 // ---- Local row types ----
@@ -161,6 +166,7 @@ export default function MigrateClient({
   laborRates: initialLaborRates, machineRates: initialMachineRates,
   modifiersList: initialModifiersList,
   existingDefaultItems, existingOptionRates, existingModifiers, existingDropdownMenus,
+  productModifiers,
 }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -407,6 +413,48 @@ export default function MigrateClient({
         display_name: match.display_name,
         modifier_type: match.modifier_type,
       })
+    }
+
+    // Width/Height injection -- ShopVOX never stores these as modifiers for
+    // a Formula/dimensional product (Area, Total_Area, Perimeter need both;
+    // Width/Height-only formulas need one). It synthesizes them at its own
+    // quote time instead, so the scraped modifiers array above will never
+    // contain them -- the loop right above this comment can't find what
+    // was never there. This is THE fix for that: inject them into the
+    // recipe HERE, at the point a ShopVOX product is actually copied into
+    // a PrintOS recipe, so product_modifiers ends up with real Width/
+    // Height rows (using the org's existing "Width"/"Height" catalog
+    // modifiers, matched by name exactly like every other modifier above)
+    // even though shopvox_data never listed them. Previously this lived as
+    // a hardcoded default (Width=48/Height=96) inside the old
+    // ShopvoxQuotePreview component's local state -- moved here instead of
+    // deleted, since a UI-only default doesn't survive past that one
+    // component and doesn't make it into the saved recipe at all.
+    if (pricing.pricing_type === 'Formula') {
+      const dimensional: 'both' | 'width' | 'height' | 'none' =
+        pricing.formula === 'Area' || pricing.formula === 'Total_Area' || pricing.formula === 'Perimeter' ? 'both'
+        : pricing.formula === 'Width' ? 'width'
+        : pricing.formula === 'Height' ? 'height'
+        : 'none'
+      const needsWidth = dimensional === 'both' || dimensional === 'width'
+      const needsHeight = dimensional === 'both' || dimensional === 'height'
+      if (needsWidth) {
+        const widthMod = modifierByName.get('width')
+        if (widthMod && !seenModifiers.has(widthMod.id)) {
+          seenModifiers.add(widthMod.id)
+          newModifierRows.push({ id: uid(), modifier_id: widthMod.id, is_required: true, default_value: '48', display_name: widthMod.display_name, modifier_type: widthMod.modifier_type })
+        }
+      }
+      if (needsHeight) {
+        const heightMod = modifierByName.get('height')
+        if (heightMod && !seenModifiers.has(heightMod.id)) {
+          seenModifiers.add(heightMod.id)
+          newModifierRows.push({ id: uid(), modifier_id: heightMod.id, is_required: true, default_value: '96', display_name: heightMod.display_name, modifier_type: heightMod.modifier_type })
+        }
+      }
+      // If the org has no "Width"/"Height" modifier in its catalog at all,
+      // silently skip -- same behavior as any other unmatched modifier in
+      // the loop above, not a new failure mode.
     }
 
     // Dropdown menus — is_optional true if explicit flag OR name has "(Optional)".
@@ -707,9 +755,8 @@ export default function MigrateClient({
             )}
             {leftMode === 'preview' && hasShopvox && (
               <ShopvoxQuotePreview
-                shopvoxData={shopvoxData}
-                productName={product.name}
-                orgSlug={orgSlug}
+                productId={product.id}
+                productModifiers={productModifiers}
               />
             )}
           </div>
