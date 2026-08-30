@@ -83,3 +83,7 @@ scripts/state/
 scripts/shopvox-extract-orphans.json
 scripts/shopvox-material-tiers-output.json
 scripts/shopvox-materials-reconciliation-report.json
+
+# Customer data exports — never commit
+qmi_customers_april_export.csv
+*_customers_*_export.csv
