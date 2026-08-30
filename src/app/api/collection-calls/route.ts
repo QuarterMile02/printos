@@ -23,7 +23,50 @@ export async function POST(request: NextRequest) {
   const promiseDate = body.promise_date as string | null | undefined
   const notes = body.notes as string | null | undefined
 
+  // Both organization_id and customer_id arrive from the request body and
+  // the insert below runs on a service-role client, which bypasses RLS.
+  // Until now the only gate was "is anyone logged in", so any authenticated
+  // user could write a collection call into ANY org, against ANY customer
+  // id. Two checks, in order:
+  //
+  //   1. Does the CALLER belong to the org they named? Resolved from
+  //      organization_members against the supplied orgId -- the same shape
+  //      products/bulk-import-shopvox uses, and deliberately not
+  //      checkPermission(), which answers "does this role hold this
+  //      permission key", a different question from "is this your org".
+  //   2. Does the CUSTOMER belong to that same org? Membership alone
+  //      doesn't stop a member of org A writing against org B's customer
+  //      id -- the row would land in org A carrying a foreign customer_id,
+  //      and logActivity below would file it under that customer too.
+  //
+  // Both use the caller's own RLS-scoped client for the membership read,
+  // and the service client only after both have passed.
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('role')
+    .eq('organization_id', orgId)
+    .eq('user_id', user.id)
+    .maybeSingle() as { data: { role: string } | null; error: unknown }
+  if (!membership) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const service = createServiceClient()
+
+  const { data: customerRow } = await service
+    .from('customers')
+    .select('id')
+    .eq('id', customerId)
+    .eq('organization_id', orgId)
+    .maybeSingle() as { data: { id: string } | null; error: unknown }
+  if (!customerRow) {
+    // Same 403 as a failed membership check, deliberately: "this customer
+    // is in another org" and "this customer doesn't exist" must not be
+    // distinguishable from outside, or this becomes a cross-org customer-id
+    // probe.
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const { data, error } = await service
     .from('collection_call_logs')
     .insert({
